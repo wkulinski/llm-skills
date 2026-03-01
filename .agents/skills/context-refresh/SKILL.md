@@ -1,6 +1,14 @@
 ---
 name: context-refresh
-description: "Inicjalizacja i odświeżenie kontekstu projektu. Intencje: załaduj/odśwież kontekst, wczytaj dokumenty startowe, sprawdź stan repo. Użyj, gdy proszą o załadowanie kontekstu lub gdy uruchamiany jest $context-refresh."
+description: >-
+  Inicjalizacja i odświeżenie kontekstu projektu. Intencje: załaduj/odśwież
+  kontekst, wczytaj dokumenty startowe, sprawdź stan repo. Użyj, gdy proszą o
+  załadowanie kontekstu lub gdy uruchamiany jest $context-refresh.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/references/runtime-quality-procedures.md
+  - _shared/references/php-symfony-postgres-standards.md
+  - _shared/references/cqrs-monolith-standard-overrides.md
 ---
 
 # $context-refresh

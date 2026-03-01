@@ -1,6 +1,13 @@
 ---
 name: phpstorm-mcp-playbook
-description: "Playbook pracy MCP-first w PhpStorm z trybami quick-check (read-only), implement i refactor: discovery po indeksach IDE, symbolika (definicje/usages), bezpieczne refactory (rename), formatowanie i inspekcje. Użyj, gdy zadanie wymaga nawigacji semantycznej lub zmian wieloplikowych; rg/grep traktuj jako fallback lub ścieżkę awaryjną przy wysokiej latencji MCP."
+description: >-
+  Playbook pracy MCP-first w PhpStorm z trybami quick-check (read-only),
+  implement i refactor: discovery po indeksach IDE, symbolika
+  (definicje/usages), bezpieczne refactory (rename), formatowanie i inspekcje.
+  Użyj, gdy zadanie wymaga nawigacji semantycznej lub zmian wieloplikowych;
+  rg/grep traktuj jako fallback lub ścieżkę awaryjną przy wysokiej latencji MCP.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
 ---
 
 # Skill: PhpStorm MCP Playbook

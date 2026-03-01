@@ -1,6 +1,14 @@
 ---
 name: docs-sync
-description: "Aktualizacja i porządkowanie dokumentacji po większych zmianach. Intencje: sprawdź spójność dokumentacji, scal duplikaty, usuń rozbieżności, zaktualizuj odwołania. Użyj, gdy proszą o przegląd spójności dokumentów lub przy $docs-sync."
+description: >-
+  Aktualizacja i porządkowanie dokumentacji po większych zmianach. Intencje:
+  sprawdź spójność dokumentacji, scal duplikaty, usuń rozbieżności, zaktualizuj
+  odwołania. Użyj, gdy proszą o przegląd spójności dokumentów lub przy
+  $docs-sync.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/references/runtime-quality-procedures.md
+  - _shared/references/cqrs-monolith-standard-overrides.md
 ---
 
 # $docs-sync

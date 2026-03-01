@@ -1,6 +1,11 @@
 ---
 name: handoff-refresh
-description: "Przygotuj zrzut bieżącego stanu kontekstu dla kolejnego agenta LLM. Intencje: handoff, przekazanie kontekstu, podsumuj stan dla kolejnego agenta. Użyj przy $handoff-refresh."
+description: >-
+  Przygotuj zrzut bieżącego stanu kontekstu dla kolejnego agenta LLM. Intencje:
+  handoff, przekazanie kontekstu, podsumuj stan dla kolejnego agenta. Użyj przy
+  $handoff-refresh.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
 ---
 
 # $handoff-refresh

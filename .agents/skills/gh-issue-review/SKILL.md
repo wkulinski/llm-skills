@@ -1,6 +1,11 @@
 ---
 name: gh-issue-review
-description: "Zlecenie review: push brancha, PR do domyślnej gałęzi repo, status In review, opcjonalny reviewer."
+description: >-
+  Zlecenie review: push brancha, PR do domyślnej gałęzi repo, status In review,
+  opcjonalny reviewer.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/scripts/env-load.sh
 ---
 
 # $gh-issue-review

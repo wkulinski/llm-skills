@@ -1,6 +1,12 @@
 ---
 name: docs-todo
-description: "Wypisz sekcje TODO z dokumentacji wskazanej przez AGENTS.md (README główny + README modułów). Intencje: lista TODO w dokumentacji, wypisz otwarte zadania w docs. Użyj, gdy proszą o listę otwartych zadań dokumentacyjnych lub gdy ktoś uruchamia $docs-todo."
+description: >-
+  Wypisz sekcje TODO z dokumentacji wskazanej przez AGENTS.md (README główny +
+  README modułów). Intencje: lista TODO w dokumentacji, wypisz otwarte zadania w
+  docs. Użyj, gdy proszą o listę otwartych zadań dokumentacyjnych lub gdy ktoś
+  uruchamia $docs-todo.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
 ---
 
 # $docs-todo
