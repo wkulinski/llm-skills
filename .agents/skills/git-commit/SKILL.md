@@ -1,6 +1,13 @@
 ---
 name: git-commit
-description: "Pełna procedura testów, walidacji, workloga i commita. Intencje: zrób commit, przygotuj commit, pełna procedura QA+worklog+commit. Użyj przy $git-commit."
+description: >-
+  Pełna procedura testów, walidacji, workloga i commita. Intencje: zrób commit,
+  przygotuj commit, pełna procedura QA+worklog+commit. Użyj przy $git-commit.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/references/runtime-quality-procedures.md
+  - _shared/references/php-symfony-postgres-standards.md
+  - _shared/references/cqrs-monolith-standard-overrides.md
 ---
 
 # $git-commit

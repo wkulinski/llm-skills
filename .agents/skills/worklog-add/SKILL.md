@@ -1,6 +1,14 @@
 ---
 name: worklog-add
-description: "Tworzenie lub uzupełnianie wpisu w worklogu na podstawie bieżących zmian i historii commitów. Intencje: dodaj wpis do worklogu, uzupełnij worklog, przygotuj wpis do commita. Użyj przy $worklog-add."
+description: >-
+  Tworzenie lub uzupełnianie wpisu w worklogu na podstawie bieżących zmian i
+  historii commitów. Intencje: dodaj wpis do worklogu, uzupełnij worklog,
+  przygotuj wpis do commita. Użyj przy $worklog-add.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/references/runtime-quality-procedures.md
+  - _shared/references/php-symfony-postgres-standards.md
+  - _shared/references/cqrs-monolith-standard-overrides.md
 ---
 
 # $worklog-add

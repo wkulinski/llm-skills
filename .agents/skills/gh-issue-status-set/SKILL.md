@@ -1,6 +1,11 @@
 ---
 name: gh-issue-status-set
-description: "Ustawia status issue w GitHub Projects v2 na podstawie brancha/issue i danych z GitHub. Dopytuje tylko, gdy brakuje kluczowych danych."
+description: >-
+  Ustawia status issue w GitHub Projects v2 na podstawie brancha/issue i danych
+  z GitHub. Dopytuje tylko, gdy brakuje kluczowych danych.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/scripts/env-load.sh
 ---
 
 # $gh-issue-status-set

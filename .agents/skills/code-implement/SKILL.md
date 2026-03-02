@@ -1,6 +1,17 @@
 ---
 name: code-implement
-description: "Orkiestrator implementacji zmian w kodzie: intake prompta, dopytania/stop-conditions, doczytanie kontekstu repo, zasady kodowania, lekkie checki na końcu (`$review-quick` + opcjonalnie `$qa-run`), oraz standard raportowania. Użyj, gdy użytkownik zleca dodanie funkcjonalności, naprawę błędu lub refaktor."
+description: >-
+  Orkiestrator implementacji zmian w kodzie: intake prompta,
+  dopytania/stop-conditions, doczytanie kontekstu repo, zasady kodowania, lekkie
+  checki na końcu (`$review-quick` + opcjonalnie `$qa-run`), oraz standard
+  raportowania. Użyj, gdy użytkownik zleca dodanie funkcjonalności, naprawę
+  błędu lub refaktor.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/references/runtime-quality-procedures.md
+  - _shared/references/php-symfony-postgres-standards.md
+  - _shared/references/cqrs-monolith-standard-overrides.md
+  - _shared/scripts/env-load.sh
 ---
 
 # $code-implement

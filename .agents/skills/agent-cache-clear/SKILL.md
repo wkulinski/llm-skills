@@ -1,6 +1,11 @@
 ---
 name: agent-cache-clear
-description: "Czyści cache agenta w CACHE_PATH (domyślnie var/agent/cache; podkatalogi per skill). Użyj po udanym $git-commit lub na zadanie użytkownika."
+description: >-
+  Czyści cache agenta w CACHE_PATH (domyślnie var/agent/cache; podkatalogi per
+  skill). Użyj po udanym $git-commit lub na zadanie użytkownika.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/scripts/env-load.sh
 ---
 
 # $agent-cache-clear

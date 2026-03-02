@@ -1,6 +1,11 @@
 ---
 name: gh-issue-start
-description: "Start pracy nad issue: branch z domyślnej gałęzi repo, status In progress, assignee."
+description: >-
+  Start pracy nad issue: branch z domyślnej gałęzi repo, status In progress,
+  assignee.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/scripts/env-load.sh
 ---
 
 # $gh-issue-start

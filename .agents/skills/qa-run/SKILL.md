@@ -1,6 +1,11 @@
 ---
 name: qa-run
-description: "Deterministyczne uruchomienie QA (linty/testy) na podstawie repo-konfigurowalnej macierzy komend JSON i wykrytych zmian. Użyj przy $qa-run."
+description: >-
+  Deterministyczne uruchomienie QA (linty/testy) na podstawie
+  repo-konfigurowalnej macierzy komend JSON i wykrytych zmian. Użyj przy
+  $qa-run.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
 ---
 
 # $qa-run
