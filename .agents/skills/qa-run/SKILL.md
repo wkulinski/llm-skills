@@ -18,7 +18,7 @@ shared_files:
 Uruchomić QA w sposób w pełni deterministyczny:
 - wykryć typy zmian w repo (`*_CHANGED`),
 - uruchomić tylko komendy zdefiniowane przez repo dla aktywnych sekcji,
-- przerwać na pierwszym błędzie (fail-fast), aby agent mógł od razu przejść do naprawy.
+- działać iteracyjnie do skutku: błąd -> naprawa -> ponowne uruchomienie QA.
 
 ## Konfiguracja repo (JSON)
 Skrypt używa repo-konfigurowalnej macierzy:
@@ -60,8 +60,11 @@ Brak sekcji albo pusta tablica:
      - `CSS_SCSS_CHANGED`,
      - `TRANSLATIONS_CHANGED`,
      - `YAML_CHANGED`.
-3. Fail-fast:
-   - jeśli dowolna komenda zakończy się błędem, skrypt kończy działanie natychmiast na tej komendzie.
+3. Iteracja naprawcza (wymagana):
+   - skrypt działa fail-fast na pierwszej błędnej komendzie,
+   - po błędzie popraw kod/konfigurację powodującą błąd,
+   - uruchom skrypt ponownie od początku,
+   - powtarzaj cykl aż skrypt przejdzie bez błędów.
 4. Raport:
    - skrypt wypisuje wykryte flagi, sekcje uruchomione i pominięte oraz wynik końcowy.
 
@@ -70,16 +73,16 @@ Brak sekcji albo pusta tablica:
 - Poza zakresem: automatyczne zgadywanie komend QA, fallbacki oparte o discovery skryptów.
 
 ## Format odpowiedzi
-- Wynik: lista uruchomionych komend i status (OK/FAIL).
+- Wynik: lista uruchomionych komend i status (OK/naprawiono/FAIL).
 - Pominięte: sekcje pominięte z powodem:
   - brak zmian dla sekcji albo
   - brak komend/sekcji w konfiguracji.
 - Blokery: jeśli wystąpi błąd komendy lub błąd konfiguracji.
 
 ## Warunki przerwania
-- Pierwsza komenda QA z niezerowym exit code (fail-fast).
 - Niepoprawny JSON w pliku konfiguracyjnym.
 - Brak dostępu do repo Git (np. uruchomienie poza repo).
+- Twardy błąd środowiskowy lub uprawnień, którego nie da się naprawić w bieżącym kroku.
 
 ## Przykłady wejścia
 - "$qa-run"
@@ -99,11 +102,13 @@ Brak sekcji albo pusta tablica:
 - ```text
   Wynik:
   - [COMPOSER_CHANGED] ./bin/proxy/composer lint:composer:security — FAIL
+  - naprawiono problem i ponowiono uruchomienie
+  - [COMPOSER_CHANGED] ./bin/proxy/composer lint:composer:security — OK
+  - [COMPOSER_CHANGED] ./bin/proxy/composer lint:composer:dependency — OK
   Pominięte:
-  - brak (przerwano na pierwszym błędzie)
-  Blokery:
-  - fail-fast na komendzie: ./bin/proxy/composer lint:composer:security
+  - [TWIG_CHANGED] brak zmian
+  Blokery: brak
   ```
 
 ## Efekt
-QA wykonuje wyłącznie komendy zadeklarowane przez repo w JSON configu, w stałej kolejności i z fail-fast na pierwszym błędzie.
+QA wykonuje wyłącznie komendy zadeklarowane przez repo w JSON configu, w stałej kolejności, a agent prowadzi iterację naprawczą aż do pełnego przejścia.

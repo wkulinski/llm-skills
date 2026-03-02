@@ -36,6 +36,7 @@ Zautomatyzować start pracy nad issue: ustalenie numeru issue, utworzenie/checko
      - jeśli użyto `--issue-number`, przekaż ten numer,
      - w przeciwnym razie użyj numeru z outputu skryptu (`Issue #<ID> ready on branch ...`).
    - Jeśli nie da się jednoznacznie ustalić numeru issue, pozwól `$gh-issue-status-set` użyć własnych heurystyk i ewentualnie dopytać.
+   - Jeśli ustawienie statusu się nie powiedzie: nie ukrywaj błędu, zwróć użytkownikowi jawny komunikat (status nieustawiony + przyczyna), ale pozostaw informację, że branch/issue start zostały wykonane.
 
 ## Źródła parametrów
 - `--issue-number`: gdy użytkownik poda **numer** issue wprost (np. „start issue 46”, „zaczynamy pracę nad 46”).
@@ -69,7 +70,7 @@ Jeśli użytkownik podał `--issue-number`, a issue nie istnieje lub jest zamkni
 
 ## Format odpowiedzi
 - Wynik: issue + branch utworzone/przełączone, status ustawiony.
-- Uwagi: brakujące dane lub konflikty (jeśli dotyczy).
+- Uwagi: brakujące dane, konflikty oraz ewentualny błąd ustawienia statusu (jeśli dotyczy).
 
 ## Przykłady wejścia
 - "$gh-issue-start"

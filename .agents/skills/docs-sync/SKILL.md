@@ -33,7 +33,7 @@ Na koniec: opisy domeny i modułów muszą odpowiadać bieżącemu stanowi.
 ## Mapa ścieżek dokumentacji (AGENTS-first)
 1. Zawsze zaczynaj od `AGENTS.md`.
 2. Odczytaj mapę ścieżek dokumentacji `docs_map`.
-3. Wszystkie ścieżki z mapy traktuj jako repo-relative.
+3. Ścieżki względne traktuj jako repo-relative; ścieżki absolutne używaj 1:1 (bez prefiksu repo).
 4. Nie zgaduj ścieżek po nazwie pliku.
 
 ## Wymagane klucze dokumentacji (docs_map)
@@ -42,6 +42,8 @@ Na koniec: opisy domeny i modułów muszą odpowiadać bieżącemu stanowi.
   - `MODULE_INDEX_DOC`: indeks modułów.
   - `MODULE_DOCS_GLOB`: glob dla README dokumentacji modułów.
 - Opcjonalne:
+  - `AGENT_RULES_DOC`: lokalne zasady pracy agenta.
+  - `QUALITY_PROCEDURES_DOC`: lokalne procedury jakości.
   - `TESTS_README`: README testów.
   - `SKILLS_INDEX_DOC`: indeks skilli.
 
@@ -91,6 +93,7 @@ Jeśli zmiany w kodzie spełniają **którykolwiek** z warunków poniżej, trakt
    - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: uwzględnij `../_shared/references/cqrs-monolith-standard-overrides.md` jako aktywne zasady architektoniczne.
 2. (Faza domenowa) Odczytaj wymagane klucze mapy `docs_map`: `MAIN_DOC`, `MODULE_INDEX_DOC`, `MODULE_DOCS_GLOB`.
    - Jeśli mapy lub któregoś wymaganego klucza brakuje: zatrzymaj się i dopytaj użytkownika.
+   - Odczytaj też `AGENT_RULES_DOC` i `QUALITY_PROCEDURES_DOC`, jeśli te klucze są zdefiniowane (będą użyte obowiązkowo w fazie proceduralnej).
 3. (Faza domenowa) Zweryfikuj README główny dokumentacji pod kątem aktualności i kompletności:
    - czy opis high-level nadal odpowiada kodowi,
    - czy nowe globalne zachowania/zmiany są odnotowane (na poziomie architektury/domeny, bez procedur),
@@ -116,7 +119,8 @@ Jeśli zmiany w kodzie spełniają **którykolwiek** z warunków poniżej, trakt
      - odświeżenie indeksu skills → `$skills-index-refresh`
 8. (Faza proceduralna / skills-first) Przeskanuj dokumentację pod kątem duplikatów procedur już pokrytych przez skille:
    - obowiązkowo: README główny dokumentacji i indeks modułów,
-   - opcjonalnie (jeśli istnieją): `AGENTS.md`, dokumenty wskazane przez `AGENTS.md`, indeks skilli,
+   - obowiązkowo: `AGENT_RULES_DOC` i `QUALITY_PROCEDURES_DOC`, jeśli klucze są zdefiniowane w `docs_map`,
+   - opcjonalnie (jeśli istnieją): inne dokumenty wskazane przez `AGENTS.md` oraz indeks skilli,
    - moduły: README dokumentacji modułów,
    - (opcjonalnie, ale zalecane): README testów oraz inne istotne dokumenty, jeśli istnieją odwołania do QA/commit.
 9. (Faza proceduralna / skills-first) Wykryj „proceduralne duplikaty” (heurystyka; nie musisz idealnie, ale bądź konsekwentny):
