@@ -40,6 +40,7 @@ Zautomatyzować zlecenie review: push brancha na origin, utworzenie PR do domyś
      - jeśli użyto `--issue-number`, przekaż ten numer,
      - w przeciwnym razie użyj numeru ustalonego przez skrypt (heurystyka branch/subject).
    - Jeśli nie da się jednoznacznie ustalić numeru issue, pozwól `$gh-issue-status-set` użyć własnych heurystyk i ewentualnie dopytać.
+   - Jeśli ustawienie statusu się nie powiedzie: nie ukrywaj błędu, zwróć użytkownikowi jawny komunikat (status nieustawiony + przyczyna), ale pozostaw informację, że push/PR zostały wykonane.
 
 ## Algorytm doboru reviewera
 1. Jeśli podano `--reviewer` → użyj.
@@ -89,7 +90,7 @@ Po błędzie zawsze: odczytaj komunikat skryptu, spróbuj samodzielnie ustalić 
 
 ## Format odpowiedzi
 - Wynik: branch wypchnięty, PR utworzony, status ustawiony.
-- Uwagi: brakujące dane lub konflikty (jeśli dotyczy).
+- Uwagi: brakujące dane, konflikty oraz ewentualny błąd ustawienia statusu (jeśli dotyczy).
 
 ## Przyklady wejscia
 - "$gh-issue-review"

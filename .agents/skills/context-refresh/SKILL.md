@@ -28,13 +28,15 @@ W tym repozytorium źródłem prawdy dla “procedury startowej” jest ten skil
 ## Mapa ścieżek dokumentacji (AGENTS-first)
 1. Zawsze zaczynaj od `AGENTS.md`.
 2. Odczytaj mapę ścieżek dokumentacji `docs_map`.
-3. Wszystkie ścieżki z mapy traktuj jako repo-relative.
+3. Ścieżki względne traktuj jako repo-relative; ścieżki absolutne używaj 1:1 (bez prefiksu repo).
 4. Nie zgaduj ścieżek po nazwie pliku.
 
 ## Wymagane klucze dokumentacji (docs_map)
 - Wymagane:
   - `MAIN_DOC`: główny dokument opisowy projektu.
 - Opcjonalne:
+  - `AGENT_RULES_DOC`: lokalne zasady pracy agenta.
+  - `QUALITY_PROCEDURES_DOC`: lokalne procedury jakości.
   - `MODULE_INDEX_DOC`: indeks modułów.
   - `MODULE_DOCS_GLOB`: glob dla README dokumentacji modułów.
   - `TESTS_README`: README testów.
@@ -89,10 +91,12 @@ Przeczytaj w całości (to jest minimalny “rdzeń” reguł i konwencji):
 Następnie:
 5. Odczytaj `MAIN_DOC`.
    - Jeśli mapy lub klucza `MAIN_DOC` brakuje: zatrzymaj się i dopytaj użytkownika.
-6. Odczytaj `MODULE_INDEX_DOC` — jeśli zdefiniowano.
-7. Odczytaj `SKILLS_INDEX_DOC` — jeśli zdefiniowano.
-8. Odczytaj dokumenty worklogu z `WORKLOG_DIR` — jeśli zdefiniowano.
-9. Odczytaj `HANDOFF_DOC` — jeśli zdefiniowano.
+6. Odczytaj `AGENT_RULES_DOC` — jeśli zdefiniowano.
+7. Odczytaj `QUALITY_PROCEDURES_DOC` — jeśli zdefiniowano.
+8. Odczytaj `MODULE_INDEX_DOC` — jeśli zdefiniowano.
+9. Odczytaj `SKILLS_INDEX_DOC` — jeśli zdefiniowano.
+10. Odczytaj dokumenty worklogu z `WORKLOG_DIR` — jeśli zdefiniowano.
+11. Odczytaj `HANDOFF_DOC` — jeśli zdefiniowano.
 
 ### 3) Dokumentacja modułowa (lazy, ale bezpiecznie)
 1. Jeśli zdefiniowano `MODULE_DOCS_GLOB` i `git diff --name-only` zawiera zmiany w modułach, przeczytaj README dokumentacji dla każdego dotkniętego modułu.

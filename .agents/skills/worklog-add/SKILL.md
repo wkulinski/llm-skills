@@ -25,7 +25,7 @@ Celem jest utworzenie lub uzupełnienie wpisu worklogu dla bieżących zmian zgo
 ## Mapa ścieżek dokumentacji (AGENTS-first)
 1. Zawsze zaczynaj od `AGENTS.md`.
 2. Odczytaj mapę ścieżek dokumentacji `docs_map`.
-3. Wszystkie ścieżki z mapy traktuj jako repo-relative.
+3. Ścieżki względne traktuj jako repo-relative; ścieżki absolutne używaj 1:1 (bez prefiksu repo).
 4. Nie zgaduj ścieżek po nazwie pliku.
 
 ## Wymagane klucze dokumentacji (docs_map)
