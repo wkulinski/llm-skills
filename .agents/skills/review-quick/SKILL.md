@@ -1,6 +1,13 @@
 ---
 name: review-quick
-description: "Szybka auto‑weryfikacja bieżących zmian bez pełnej procedury commit. Intencje: szybki review, sprawdź zmiany, szybka weryfikacja. Użyj przy $review-quick."
+description: >-
+  Szybka auto‑weryfikacja bieżących zmian bez pełnej procedury commit. Intencje:
+  szybki review, sprawdź zmiany, szybka weryfikacja. Użyj przy $review-quick.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/references/php-symfony-postgres-standards.md
+  - _shared/references/cqrs-monolith-standard-overrides.md
+  - _shared/scripts/env-load.sh
 ---
 
 # $review-quick

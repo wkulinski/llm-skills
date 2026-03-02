@@ -1,6 +1,15 @@
 ---
 name: rules-sync
-description: "Synchronizacja lokalnych wytycznych współpracy i jakości z baseline `skills/_shared`: usuwa duplikaty z `AGENTS.md`/docs, zostawia lokalne nadpisania i raportuje je jawnie. Użyj po synchronizacji skilli lub przy porządkowaniu zasad."
+description: >-
+  Synchronizacja lokalnych wytycznych współpracy i jakości z baseline
+  `skills/_shared`: usuwa duplikaty z `AGENTS.md`/docs, zostawia lokalne
+  nadpisania i raportuje je jawnie. Użyj po synchronizacji skilli lub przy
+  porządkowaniu zasad.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/references/runtime-quality-procedures.md
+  - _shared/references/php-symfony-postgres-standards.md
+  - _shared/references/cqrs-monolith-standard-overrides.md
 ---
 
 # $rules-sync

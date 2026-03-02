@@ -1,6 +1,11 @@
 ---
 name: skills-index-refresh
-description: "Aktualizacja indeksu lokalnych skills w dokumentacji wskazanej przez AGENTS.md. Intencje: odśwież listę skilli, zaktualizuj indeks SKILLS. Użyj przy $skills-index-refresh."
+description: >-
+  Aktualizacja indeksu lokalnych skills w dokumentacji wskazanej przez
+  AGENTS.md. Intencje: odśwież listę skilli, zaktualizuj indeks SKILLS. Użyj
+  przy $skills-index-refresh.
+shared_files:
+  - _shared/references/runtime-collaboration-guidelines.md
 ---
 
 # $skills-index-refresh
