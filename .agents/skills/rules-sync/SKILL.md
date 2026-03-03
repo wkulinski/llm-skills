@@ -123,7 +123,7 @@ Poza zakresem:
      - `Nadpisywane źródło` (plik + sekcja)
      - `Uzasadnienie` (krótko, po co to odstępstwo).
 12. Walidacja końcowa:
-   - brak kroków proceduralnych QA/commit/review/worklog w lokalnych docs (powinny być linki do skilli),
+   - brak kroków proceduralnych QA/commit/review/commit-message w lokalnych docs (powinny być linki do skilli),
    - brak duplikatów oczywistych zasad runtime z `_shared`,
    - sekcja nadpisań zawiera tylko realne, świadome odstępstwa.
 

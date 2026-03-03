@@ -51,7 +51,7 @@ Celem jest odświeżenie indeksu skilli tak, aby odzwierciedlał aktualny stan k
 ## Przykłady wyjścia
 - ```text
   Wynik: indeks zaktualizowany.
-  Uwagi: dodano `$context-refresh`, `$docs-sync`, `$docs-todo`, `$git-commit`, `$handoff-refresh`, `$review-quick`, `$skills-index-refresh`, `$worklog-add`.
+  Uwagi: dodano `$context-refresh`, `$docs-sync`, `$docs-todo`, `$git-commit`, `$handoff-refresh`, `$review-quick`, `$skills-index-refresh`, `$commit-message-write`.
   ```
 - ```text
   Wynik: indeks bez zmian.

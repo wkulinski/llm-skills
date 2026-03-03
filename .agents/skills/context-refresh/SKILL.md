@@ -41,7 +41,7 @@ W tym repozytorium źródłem prawdy dla “procedury startowej” jest ten skil
   - `MODULE_DOCS_GLOB`: glob dla README dokumentacji modułów.
   - `TESTS_README`: README testów.
   - `SKILLS_INDEX_DOC`: indeks skilli.
-  - `WORKLOG_DIR`: katalog workloga.
+  - `COMMIT_MESSAGE_DIR`: katalog artefaktu `commit-message.txt` używanego przez commit flow.
   - `HANDOFF_DOC`: plik handoffu.
 
 ## Tryb wykonania (Quick vs Full)
@@ -95,8 +95,7 @@ Następnie:
 7. Odczytaj `QUALITY_PROCEDURES_DOC` — jeśli zdefiniowano.
 8. Odczytaj `MODULE_INDEX_DOC` — jeśli zdefiniowano.
 9. Odczytaj `SKILLS_INDEX_DOC` — jeśli zdefiniowano.
-10. Odczytaj dokumenty worklogu z `WORKLOG_DIR` — jeśli zdefiniowano.
-11. Odczytaj `HANDOFF_DOC` — jeśli zdefiniowano.
+10. Odczytaj `HANDOFF_DOC` — jeśli zdefiniowano.
 
 ### 3) Dokumentacja modułowa (lazy, ale bezpiecznie)
 1. Jeśli zdefiniowano `MODULE_DOCS_GLOB` i `git diff --name-only` zawiera zmiany w modułach, przeczytaj README dokumentacji dla każdego dotkniętego modułu.
@@ -121,7 +120,7 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
    - prompt wprost wymienia ścieżkę pliku (np. `src/.../Foo.php`) → przeczytaj ten plik i jego diff (jeśli ma),
    - prompt wprost wymienia symbol (klasa/metoda/komenda/route) → znajdź definicję (`rg`) i przeczytaj definicję + kontekst,
    - masz zmienić plik, który już jest zmieniony w repo (czyli “modyfikujesz cudze/bieżące zmiany”) → przeczytaj jego diff i aktualną treść przed edycją,
-   - masz opisać zmianę w worklogu (`$worklog-add`) → upewnij się, że rozumiesz “co” i “dlaczego” (diff/kluczowe fragmenty),
+   - masz przygotować treść commita (`$commit-message-write`) → upewnij się, że rozumiesz “co” i “dlaczego” (diff/kluczowe fragmenty),
    - QA/testy zwróciły błąd w pliku, którego nie analizowałeś → doczytaj od razu ten plik i sąsiedni kontekst,
    - pojawia się decyzja architektoniczna/domenowa, a nie czytałeś dokumentacji modułu/domeny dotkniętej zmianą → doczytaj README modułu (z `MODULE_DOCS_GLOB`) i relewantny fragment `MAIN_DOC`.
 
@@ -139,12 +138,12 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
 
 5. Doczytanie on-demand (krótka zasada wykonawcza):
    - zanim zmodyfikujesz plik, którego zmian nie rozumiesz (bo np. był już zmieniony przed Twoją pracą), doczytaj jego diff/treść w tym momencie,
-   - analogicznie: zanim napiszesz o nim w worklogu, upewnij się, że rozumiesz „co” i “dlaczego” (w praktyce robi to też `$worklog-add`).
-6. Uwaga: jeśli kolejnym krokiem ma być `$worklog-add`, to ten skill ma własną procedurę analizy zmian przed napisaniem wpisu — `$context-refresh` nie musi “wiedzieć wszystkiego” o każdej zmianie, ale musi wiedzieć, co jest zmienione i gdzie.
+   - analogicznie: zanim przygotujesz `commit-message.txt`, upewnij się, że rozumiesz „co” i “dlaczego” (w praktyce robi to też `$commit-message-write`).
+6. Uwaga: jeśli kolejnym krokiem ma być `$commit-message-write`, to ten skill ma własną procedurę analizy zmian przed zapisaniem `commit-message.txt` — `$context-refresh` nie musi “wiedzieć wszystkiego” o każdej zmianie, ale musi wiedzieć, co jest zmienione i gdzie.
 
 ### 6) Weryfikacja spójności procedur (jeśli dotyczy)
 Jeśli zmiany dotyczą procedur (pliki w `../_shared/references/runtime-collaboration-guidelines.md`, `../_shared/references/runtime-quality-procedures.md`, `../*`):
-1. Traktuj skille jako źródło prawdy dla procedur operacyjnych (QA/commit/worklog/review).
+1. Traktuj skille jako źródło prawdy dla procedur operacyjnych (QA/commit/commit-message/review).
 2. Jeśli widzisz rozbieżności, zanotuj je i zaproponuj korektę w skillu (nie dopisuj procedury “na boku” w docs).
 
 ### 7) Potwierdzenie gotowości
