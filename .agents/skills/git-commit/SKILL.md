@@ -1,8 +1,9 @@
 ---
 name: git-commit
 description: >-
-  Pełna procedura testów, walidacji, workloga i commita. Intencje: zrób commit,
-  przygotuj commit, pełna procedura QA+worklog+commit. Użyj przy $git-commit.
+  Pełna procedura testów, walidacji, przygotowania commit message i commita.
+  Intencje: zrób commit, przygotuj commit, pełna procedura QA+commit-message+commit.
+  Użyj przy $git-commit.
 shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
@@ -17,7 +18,7 @@ shared_files:
 - `../../../AGENTS.md` oraz dokumenty przez niego wskazane mają pierwszeństwo nad `_shared` dla danego repo; `_shared` traktuj jako przenośny baseline/fallback.
 
 ## Cel
-Celem jest przeprowadzenie kompletnej procedury QA, worklogu i commita zgodnie z lokalnymi zasadami. Chodzi o to, by commit był spójny z dokumentacją, procedurami i stanem repozytorium.
+Celem jest przeprowadzenie kompletnej procedury QA, przygotowania commit message i commita zgodnie z lokalnymi zasadami. Chodzi o to, by commit był spójny z dokumentacją, procedurami i stanem repozytorium.
 
 ## Mapa ścieżek dokumentacji (AGENTS-first)
 1. Zawsze zaczynaj od `AGENTS.md`.
@@ -27,7 +28,7 @@ Celem jest przeprowadzenie kompletnej procedury QA, worklogu i commita zgodnie z
 
 ## Wymagane klucze dokumentacji (docs_map)
 - Wymagane:
-  - `WORKLOG_DIR`: katalog z plikami worklogu per e-mail.
+  - `COMMIT_MESSAGE_DIR`: katalog z plikiem `commit-message.txt`.
 - Opcjonalne:
   - `HANDOFF_DOC`: plik handoffu (lokalny, niecommitowany).
 
@@ -53,8 +54,7 @@ Celem jest przeprowadzenie kompletnej procedury QA, worklogu i commita zgodnie z
    - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: `../_shared/references/cqrs-monolith-standard-overrides.md`
    oraz:
    - sprawdź `git status -sb`
-   - sprawdź `git config user.email` (wymagane do `$worklog-add`); jeśli brak — przerwij
-   - odczytaj `docs_map` i klucz `WORKLOG_DIR`; jeśli mapy lub klucza brakuje — przerwij i dopytaj użytkownika
+   - odczytaj `docs_map` i klucz `COMMIT_MESSAGE_DIR`; jeśli mapy lub klucza brakuje — przerwij i dopytaj użytkownika
    - odczytaj `HANDOFF_DOC`, jeśli klucz jest zdefiniowany
 4. Autonomiczne poprawki przygotowawcze (pre-QA) — dozwolone, ale w ograniczonym zakresie celu:
    - Cel: wykonać minimalne, sensowne poprawki, które są konieczne lub bardzo prawdopodobne do przejścia QA/lintów i utrzymania spójności kodu, bez wprowadzania nowej funkcjonalności.
@@ -80,25 +80,14 @@ Celem jest przeprowadzenie kompletnej procedury QA, worklogu i commita zgodnie z
        - jeśli plik był czysty w momencie snapshotu: porównaj z wersją z `HEAD` (hash zapisany w snapshotie).
      - dla plików binarnych lub nieczytelnych diffem (np. `.gz`) pokaż metadane: rozmiar i hash (bez próby prezentowania pełnego diffu).
      - STOP: kontynuuj dopiero po zatwierdzeniu przez użytkownika; w razie poprawek wróć do kroku 3.
-10. Wykonaj skill `$worklog-add` i przeczytaj zaktualizowany plik worklogu `<WORKLOG_DIR>/<email>.md` (gdzie `WORKLOG_DIR` pochodzi z `docs_map`, plik wyznaczony przez `git config user.email`).
+10. Wykonaj skill `$commit-message-write` i odczytaj plik `<COMMIT_MESSAGE_DIR>/commit-message.txt` (gdzie `COMMIT_MESSAGE_DIR` pochodzi z `docs_map`).
+    - Jeśli plik nie istnieje, nie jest czytelny albo jest pusty: przerwij i wróć do kroku 10.
 11. `git add .` (wszystkie pliki, w tym nowe/nieśledzone oraz zmiany z fixerów).
 12. Sprawdź staging (`git diff --cached --name-only`) i upewnij się, że nie ma plików śmieciowych/tymczasowych (np. `.env.local`, logi, cache); jeśli są — usuń je ze stagingu i wróć do kroku 3.
     - Preferowana sanity-check: `./scripts/staging-sanity.sh` (exit 0 = OK; exit 1 = wykryto podejrzane pliki).
-13. `git commit` w formacie Conventional Commits po polsku, bez kropki; treść commita **musi pochodzić z właśnie utworzonego/uzupełnionego wpisu workloga** (krok 10).
-
-    Zasada: nie wymyślaj tytułu commita “od zera” i nie tłumacz go — bierzesz go z workloga, aby uniknąć błędów językowych i rozjazdów.
-
-    Jak zbudować commit message:
-    - Ustal plik workloga na podstawie `git config user.email` i klucza `WORKLOG_DIR` z `docs_map`: `<WORKLOG_DIR>/<email>.md`.
-    - Znajdź bieżący wpis (ten, który `$worklog-add` właśnie utworzył/uzupełnił): pierwsza linia nagłówka w formacie `### [YYYY-MM-DD] Krótki tytuł [ULID]` liczona od góry pliku.
-    - Z nagłówka wyciągnij:
-      - `Krótki tytuł` (bez daty i bez `[ULID]`) → to jest **subject** commita,
-      - `[ULID]` → musi być identyczny w worklogu i commicie.
-    - Subject commita ma postać: `<type>: <Krótki tytuł> [ULID]`
-      - `<type>` dobierz zgodnie z Conventional Commits (`feat`, `fix`, `chore`, `refactor`, `docs`, …).
-      - Nie dodawaj daty do subjectu (data jest tylko w worklogu).
-    - Body commita ma być 1:1 z listą punktów spod nagłówka workloga (bez zmiany znaczenia; zachowaj kolejność i treść).
-    - Zapisz commit message do pliku `${CACHE_PATH:-var/agent/cache}/git-commit/commit-message-<ULID>.txt` (utwórz katalog, jeśli nie istnieje) i użyj `git commit -F <plik>`, aby uniknąć ucięcia/escaping w powłoce.
+13. Wykonaj `git commit -F <COMMIT_MESSAGE_DIR>/commit-message.txt`.
+    - Treść commita ma pochodzić 1:1 z pliku wygenerowanego przez `$commit-message-write` (krok 10), bez dopisywania lub przepisywania przez `$git-commit`.
+    - Jeśli odczyt pliku się nie powiedzie: przerwij i wróć do kroku 10.
 14. Potwierdź czystość `git status`, sprawdź poprawność commit message/body.
 15. Jeśli zdefiniowano klucz `HANDOFF_DOC`: usuń plik handoffu wskazany przez ten klucz (jeżeli istnieje). Plik jest lokalny i nie powinien trafiać do commita.
 16. Usuń katalog snapshotu z kroku 2 (sprzątanie obowiązkowe; snapshot jest tymczasowy i nie powinien zostawać po procedurze).
@@ -107,13 +96,13 @@ Celem jest przeprowadzenie kompletnej procedury QA, worklogu i commita zgodnie z
 18. Po wykonaniu procedury nie uruchamiaj jej ponownie ani `git commit` bez wyraźnego polecenia `$git-commit`.
 
 ## Zakres
-- W zakresie: pełna procedura QA, worklog i commit dla bieżących zmian.
+- W zakresie: pełna procedura QA, commit message i commit dla bieżących zmian.
 - Poza zakresem: nowe, nieuzgodnione zmiany funkcjonalne.
 
 ## Format odpowiedzi
 - Wynik: czy procedura zakończona, czy wstrzymana.
 - Użyte klucze dokumentacji:
-  - `WORKLOG_DIR=<resolved-path>`
+  - `COMMIT_MESSAGE_DIR=<resolved-path>`
   - `HANDOFF_DOC=<resolved-path>` (jeśli klucz był zdefiniowany)
 - Uwagi: jeśli wstrzymana, podaj powód i krok powrotu.
 
@@ -137,7 +126,7 @@ Pytanie: Akceptujesz te zmiany? Jeśli tak, kontynuuję kolejne kroki. Jeśli ni
 
 ## Warunki przerwania
 - Brak wyraźnego polecenia `$git-commit`.
-- Brak akceptacji zmian w kroku 9 — wstrzymaj procedurę przed `$worklog-add` i `git commit`.
+- Brak akceptacji zmian w kroku 9 — wstrzymaj procedurę przed `$commit-message-write` i `git commit`.
 - Błędy w lintach lub testach — napraw i wróć do kroku 3.
 
 ## Przykłady wejścia
@@ -150,7 +139,7 @@ Pytanie: Akceptujesz te zmiany? Jeśli tak, kontynuuję kolejne kroki. Jeśli ni
 ## Przykłady wyjścia
 - ```text
   Wynik: Procedura zakończona.
-  Uwagi: commit utworzony z ULID z `<WORKLOG_DIR>/<email>.md`, `git status` czysty.
+  Uwagi: commit utworzony z `<COMMIT_MESSAGE_DIR>/commit-message.txt`, `git status` czysty.
   ```
 - ```text
   Wynik: Procedura wstrzymana.
@@ -162,8 +151,8 @@ Pytanie: Akceptujesz te zmiany? Jeśli tak, kontynuuję kolejne kroki. Jeśli ni
   ```
 
 ## Efekt
-Commit został utworzony poprawnie z ULID z worklogu, a repo jest w czystym stanie.
+Commit został utworzony poprawnie z `<COMMIT_MESSAGE_DIR>/commit-message.txt`, a repo jest w czystym stanie.
 
 ## Przypadki brzegowe
 - Brak wyraźnego polecenia użytkownika.
-- Brak mapy `docs_map` w `AGENTS.md` lub brak klucza `WORKLOG_DIR` — przerwij i dopytaj użytkownika.
+- Brak mapy `docs_map` w `AGENTS.md` lub brak klucza `COMMIT_MESSAGE_DIR` — przerwij i dopytaj użytkownika.

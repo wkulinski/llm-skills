@@ -24,7 +24,7 @@ Dodatkowo ten skill ma **dwie obowiązkowe fazy**:
 1) fazę domenową (aktualność i kompletność opisu systemu i modułów),
 2) fazę proceduralną (skills-first: skille jako źródło prawdy dla procedur).
 
-Dodatkowo ten skill traktuje **skille jako nadrzędne źródło prawdy dla procedur operacyjnych** (QA/commit/worklog/review itp.) i dba o to, aby:
+Dodatkowo ten skill traktuje **skille jako nadrzędne źródło prawdy dla procedur operacyjnych** (QA/commit/commit-message/review itp.) i dba o to, aby:
 - pozostała dokumentacja projektu (README/moduły/testy oraz opcjonalne AGENTS/QUALITY) **nie dublowała** procedur już pokrytych przez skille,
 - ewentualne zmiany proceduralne były wdrażane **w skillach**, a nie dopisywane „na boku” w innych dokumentach.
 
@@ -113,7 +113,7 @@ Jeśli zmiany w kodzie spełniają **którykolwiek** z warunków poniżej, trakt
    - przykładowe mapowanie (jeśli te skille istnieją w repo):
      - QA/linty/testy → `$qa-run` (`../qa-run/SKILL.md`)
      - commit (snapshot/akceptacja/staging/commit) → `$git-commit` (`../git-commit/SKILL.md`)
-     - worklog (plik per email + ULID) → `$worklog-add` (`../worklog-add/SKILL.md`)
+     - commit-message (generowanie pliku `commit-message.txt`) → `$commit-message-write` (`../commit-message-write/SKILL.md`)
      - szybka weryfikacja zmian → `$review-quick`
      - inicjalizacja kontekstu → `$context-refresh`
      - odświeżenie indeksu skills → `$skills-index-refresh`
@@ -126,20 +126,20 @@ Jeśli zmiany w kodzie spełniają **którykolwiek** z warunków poniżej, trakt
 9. (Faza proceduralna / skills-first) Wykryj „proceduralne duplikaty” (heurystyka; nie musisz idealnie, ale bądź konsekwentny):
    - listy komend QA lub kolejność lintów/testów (np. wzmianki o `lint:*`, komendach z `BIN_PATH` albo natywnych entrypointach repo),
    - opis krok po kroku commitowania (np. `git add`, `git commit`, `git commit -F`, format message, staging check),
-   - procedury workloga (np. ULID generation, zasady edycji wpisów),
+   - procedury commit-message (np. generowanie/format `commit-message.txt`),
    - procedury „review po QA” (jeśli istnieje dedykowany skill),
    - proceduralne „jak używać skilli” (jeśli to już jest w indeksie skilli / `SKILL.md`).
 10. (Faza proceduralna / skills-first) Dla każdego wykrytego duplikatu:
    - jeśli jest pokryty przez skill: usuń/skrót do linku i pozostaw tylko inwarianty,
    - jeśli NIE jest pokryty przez skill, ale powinien (bo to procedura operacyjna): rozważ dodanie/rozszerzenie skilla i dopiero potem zostaw link w docs.
 11. (Faza proceduralna / skills-first) Wykrywanie i „przenoszenie zmian proceduralnych” (kluczowe):
-   - jeśli w docs pojawił się nowy krok/komenda w procedurze QA/commit/worklog, a istnieje odpowiedni skill (`$qa-run`, `$git-commit`, `$worklog-add`):
+   - jeśli w docs pojawił się nowy krok/komenda w procedurze QA/commit/commit-message, a istnieje odpowiedni skill (`$qa-run`, `$git-commit`, `$commit-message-write`):
      - zaktualizuj skill tak, aby obejmował tę zmianę,
      - usuń krok/komendę z docs i zamień na odwołanie do skilla (skills-first),
      - upewnij się, że nie ma sprzeczności między dokumentacją projektu (jeśli istnieje) a skillami.
-   - jeśli zmiana proceduralna dotyczy repo-procesu (QA/commit/worklog), a Ty ją wdrożyłeś w skillu:
+   - jeśli zmiana proceduralna dotyczy repo-procesu (QA/commit/commit-message), a Ty ją wdrożyłeś w skillu:
      - upewnij się, że dokumentacja projektu nie zawiera już starej wersji procedury (ma link, nie opis),
-     - przy przygotowaniu commita uwzględnij tę zmianę w worklogu (standardowo przez `$worklog-add` w ramach `$git-commit`).
+     - przy przygotowaniu commita uwzględnij tę zmianę w commit message (standardowo przez `$commit-message-write` w ramach `$git-commit`).
 12. Sprawdź spójność linków i indeksów:
    - indeks modułów ↔ README dokumentacji modułów,
    - indeks skilli ↔ `../` (jeśli plik istnieje),
@@ -185,7 +185,7 @@ Jeśli zmiany w kodzie spełniają **którykolwiek** z warunków poniżej, trakt
 - ```text
   Wynik:
   - Usunięto duplikację procedury QA w dokumentacji projektu (zastąpiono listę komend linkiem do `$qa-run`).
-  - Uporządkowano dokument proceduralny projektu tak, aby nie powielał kroków commit/worklog (odsyła do `$git-commit` i `$worklog-add`).
+  - Uporządkowano dokument proceduralny projektu tak, aby nie powielał kroków commit/commit-message (odsyła do `$git-commit` i `$commit-message-write`).
   - Zaktualizowano `../qa-run/SKILL.md`, bo w docs pojawiła się nowa komenda QA — przeniesiono ją do skilla (skills-first).
   Uwagi: brak.
   ```
