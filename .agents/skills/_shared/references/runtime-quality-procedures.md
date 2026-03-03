@@ -30,7 +30,7 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
 ## 4. Przed zakończeniem zadania
 1. Jeśli to zadanie implementacyjne: zastosuj `$code-implement` jako orkiestrator.
 2. Jeśli potrzebujesz szybkiej auto-weryfikacji: uruchom `$review-quick`.
-3. Jeśli przygotowujesz commit: uruchom `$git-commit` (zawiera QA, worklog i commit flow).
+3. Jeśli przygotowujesz commit: uruchom `$git-commit` (zawiera QA, commit-message i commit flow).
 4. Jeśli trzeba uporządkować dokumentację: uruchom `$docs-sync`.
 
 ## 5. Po commicie / finalna kontrola
@@ -38,5 +38,5 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
 2. W podsumowaniu wskaż wykonane kroki jakości oraz ograniczenia/ryzyka.
 
 ## 6. Zasada skills-first
-- Procedury QA/commit/worklog/review utrzymuj w skillach, nie w dokumentach projektu.
+- Procedury QA/commit/commit-message/review utrzymuj w skillach, nie w dokumentach projektu.
 - Jeśli znajdziesz rozbieżność: popraw odpowiedni skill, a nie dubluj kroków w wielu miejscach.
