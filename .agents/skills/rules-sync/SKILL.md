@@ -30,12 +30,6 @@ Celem jest precyzyjna synchronizacja lokalnych zasad repo z aktualnym stanem ski
 - zostawić lokalne, repo-specyficzne reguły i świadome odstępstwa,
 - jawnie wypisać lokalne nadpisania względem `_shared`/skills, aby użytkownik widział różnice.
 
-## Mapa ścieżek dokumentacji (AGENTS-first)
-1. Zawsze zaczynaj od `AGENTS.md`.
-2. Odczytaj mapę ścieżek dokumentacji `docs_map`.
-3. Wszystkie ścieżki z mapy traktuj jako repo-relative.
-4. Nie zgaduj ścieżek po nazwie pliku.
-
 ## Klucze dokumentacji (docs_map)
 - Preferowane:
   - `AGENT_RULES_DOC`: lokalny dokument zasad współpracy/architektury.

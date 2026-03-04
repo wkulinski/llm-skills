@@ -37,12 +37,6 @@ Ten skill działa dwuetapowo:
    - commitowalne = `tracked` + `staged` + `untracked` nieignorowane przez git,
    - elementy, których nie da się powiązać z commitowalnym zakresem plików, nie mogą trafić do finalnego `commit-message.txt`.
 
-## Mapa ścieżek dokumentacji (AGENTS-first)
-1. Zawsze zaczynaj od `AGENTS.md`.
-2. Odczytaj mapę ścieżek dokumentacji `docs_map`.
-3. Ścieżki względne traktuj jako repo-relative; ścieżki absolutne używaj 1:1 (bez prefiksu repo).
-4. Nie zgaduj ścieżek po nazwie pliku.
-
 ## Wymagane klucze dokumentacji (docs_map)
 - Wymagane:
   - `COMMIT_MESSAGE_DIR`: katalog dla pliku `commit-message.txt`.

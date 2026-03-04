@@ -23,12 +23,6 @@ shared_files:
 ## Cel
 Celem jest przygotowanie zwięzłego handoffu dla kolejnego agenta, zawierającego aktualny stan, ryzyka i kolejne kroki. Dzięki temu następna osoba może płynnie kontynuować pracę.
 
-## Mapa ścieżek dokumentacji (AGENTS-first)
-1. Zawsze zaczynaj od `AGENTS.md`.
-2. Odczytaj mapę ścieżek dokumentacji `docs_map`.
-3. Wszystkie ścieżki z mapy traktuj jako repo-relative.
-4. Nie zgaduj ścieżek po nazwie pliku.
-
 ## Wymagane klucze dokumentacji (docs_map)
 - Wymagane:
   - `HANDOFF_DOC`: ścieżka pliku handoffu.

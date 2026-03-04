@@ -23,12 +23,6 @@ shared_files:
 ## Cel
 Celem jest odświeżenie indeksu skilli tak, aby odzwierciedlał aktualny stan katalogu `../`. Dzięki temu dokumentacja skilli pozostaje kompletna i spójna.
 
-## Mapa ścieżek dokumentacji (AGENTS-first)
-1. Zawsze zaczynaj od `AGENTS.md`.
-2. Odczytaj mapę ścieżek dokumentacji `docs_map`.
-3. Wszystkie ścieżki z mapy traktuj jako repo-relative.
-4. Nie zgaduj ścieżek po nazwie pliku.
-
 ## Wymagane klucze dokumentacji (docs_map)
 - Wymagane:
   - `SKILLS_INDEX_DOC`: ścieżka pliku indeksu skilli.

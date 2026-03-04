@@ -24,12 +24,6 @@ shared_files:
 ## Cel
 Celem jest zebranie wszystkich otwartych TODO z dokumentacji głównej i modułowej w jednym zestawieniu. Dzięki temu użytkownik widzi pełną listę prac do wykonania bez przeszukiwania plików.
 
-## Mapa ścieżek dokumentacji (AGENTS-first)
-1. Zawsze zaczynaj od `AGENTS.md`.
-2. Odczytaj mapę ścieżek dokumentacji `docs_map`.
-3. Wszystkie ścieżki z mapy traktuj jako repo-relative.
-4. Nie zgaduj ścieżek po nazwie pliku.
-
 ## Wymagane klucze dokumentacji (docs_map)
 - Wymagane:
   - `MAIN_DOC`: główny dokument opisowy projektu.
