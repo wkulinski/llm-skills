@@ -16,9 +16,15 @@ shared_files:
 
 # $code-implement
 
+## Reguły rozwiązywania ścieżek
+- Ścieżki z prefiksem `./` są repo-relative (`./` = `git rev-parse --show-toplevel`), a nie względem katalogu procesu.
+- Ścieżki w `shared_files` są względne względem katalogu z bieżącym `SKILL.md` (np. `_shared/...` oznacza `../_shared/...`).
+
 ## Priorytet zasad (globalny kontrakt)
-- Kolejność i rozstrzyganie konfliktów reguł: `../_shared/references/runtime-collaboration-guidelines.md` (sekcja "Priorytet reguł").
-- `../../../AGENTS.md` oraz dokumenty przez niego wskazane mają pierwszeństwo nad `_shared` dla danego repo; `_shared` traktuj jako przenośny baseline/fallback.
+1. Instrukcje systemowe/developerskie środowiska
+2. `./AGENTS.md` i dokumenty z `docs_map`
+3. Bieżący `SKILL.md`
+4. Pliki wskazane w `shared_files`
 
 ## Cel
 Poprowadzić implementację zmian w kodzie end-to-end w sposób powtarzalny i bezpieczny:
@@ -111,9 +117,9 @@ Minimalny format (utrzymuj spójnie):
   - `- R3 (DONE): Zmiana e-maila profilu działa w Core`
   - `  - Kryteria: Formularz zapisuje e-mail; flash sukcesu; użytkownik pozostaje zalogowany`
   - `  - Dowody: src/Core/UI/Controller/Profile/EmailController.php; sprawdzenie manualne`
-- **Dziennik odczytów**: dopisuj wyłącznie przez `./scripts/state-readlog.sh "<msg>"`.
+- **Dziennik odczytów**: dopisuj wyłącznie przez `scripts/state-readlog.sh "<msg>"`.
   - Przykład: `- [2026-01-16T21:20:00+01:00] rg "EntityConnection" -n src; git diff --stat`
-- **Dziennik iteracji**: dopisuj wyłącznie przez `./scripts/state-log.sh "<msg>"`.
+- **Dziennik iteracji**: dopisuj wyłącznie przez `scripts/state-log.sh "<msg>"`.
   - Timestamp zawsze z systemu (`date --iso-8601=seconds`); zero wpisów ręcznych.
   - Trzymaj "### Dziennik iteracji" jako ostatnią sekcję, aby skrypt dopisywał w poprawnym miejscu.
 
@@ -133,14 +139,14 @@ Czyszczenie stanu (ważne):
      - “uruchom state-clear”
      - “clear code-implement state”
      
-     → uruchom `./scripts/state-clear.sh`,
+     → uruchom `scripts/state-clear.sh`,
   2) użytkownik jednoznacznie anuluje zadanie i chce wycofać zmiany:
      - przykładowe jednoznaczne polecenia:
        - “anuluj zadanie i wycofaj zmiany”
        - “odwróć zmiany z tego zadania i wyczyść stan code-implement”
      - najpierw dopytaj, czy chodzi o wycofanie **wszystkich** niecommitowanych zmian w repo, czy tylko zmian z tego zadania,
      - wycofaj zmiany **wyłącznie** na wyraźne polecenie użytkownika (zgodnie z `../_shared/references/runtime-collaboration-guidelines.md`),
-     - dopiero po wycofaniu zmian uruchom `./scripts/state-clear.sh`.
+     - dopiero po wycofaniu zmian uruchom `scripts/state-clear.sh`.
 
 Jeśli nie masz pewności, czy użytkownik chce czyszczenia stanu: dopytaj wprost “Czy mam wyczyścić stan code-implement?” i nie uruchamiaj `state-clear.sh` bez potwierdzenia.
 
@@ -148,7 +154,7 @@ Jeśli nie masz pewności, czy użytkownik chce czyszczenia stanu: dopytaj wpros
 Traktuj plik jako **krytyczny**, jeśli spełnia dowolny warunek:
 1. Wpływa na globalne zachowanie aplikacji albo pipeline (config/tooling/CI), np.:
    - `composer.json`, `composer.lock`, `package.json`, `yarn.lock`
-   - `config/**`, `.github/**`, `.docker/**`, `Makefile`
+   - `config/**`, `./.github/**`, `./.docker/**`, `Makefile`
    - `bin/**` (w tym wrappery narzędziowe)
 2. Jest “entrypointem” (zmienia publiczne wejścia do systemu), np.:
    - `src/*/UI/Controller/**`, `src/*/UI/Command/**`, `src/*/Api/**`
@@ -250,7 +256,7 @@ Traktuj zmianę jako rozległą, jeśli zachodzi co najmniej jeden warunek:
    - “ryzykowne obszary” (jeśli dotyczy: security/migracje/zależności).
  
 Opcjonalnie (zalecane): do stworzenia szablonu użyj
-`./scripts/state-init.sh`.
+`scripts/state-init.sh`.
 
 ### 1) Intake (zanim dotkniesz kodu)
 1. Zreasumuj zadanie w 1–3 zdaniach (“Rozumiem, że mam…”).
@@ -272,14 +278,14 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
    - doczytaj README dokumentacji dla dotkniętych modułów (zgodnie z `docs_map` z `AGENTS.md`).
    - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: doczytaj `../_shared/references/cqrs-monolith-standard-overrides.md` przed decyzjami architektonicznymi (warstwy/CQRS/Doctrine/FCF).
 3. Zrób preflight entrypointów narzędzi:
-   - załaduj `.agents/skills/_shared/scripts/env-load.sh`,
+   - załaduj `./.agents/skills/_shared/scripts/env-load.sh`,
    - ustal komendy narzędziowe dla repo (co najmniej `composer`, `console`, `yarn`, `codecept`) wyłącznie przez `resolve_tool_cmd`,
    - `resolve_tool_cmd` traktuj jako jedyne źródło prawdy; `.env`/`.env.local` są ładowane automatycznie w resolverze,
    - nie mieszaj wielu wariantów entrypointów w ramach jednego zadania.
 4. Przed zmianą krytycznego pliku **lub** przed edycją pliku, który jest już zmieniony w repo (tracked/untracked):
    - przeczytaj diff (`git diff -- <plik>`) i aktualną treść (relewantne sekcje),
    - dopiero potem edytuj.
-5. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) dopisz wpis do Dziennika odczytów przez `./scripts/state-readlog.sh "<msg>"` (możesz grupować kilka odczytów w jeden wpis).
+5. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) dopisz wpis do Dziennika odczytów przez `scripts/state-readlog.sh "<msg>"` (możesz grupować kilka odczytów w jeden wpis).
 6. Jeśli w trakcie implementacji wychodzi, że trzeba zmodyfikować plik, który nie wynika wprost z zadania:
    - jeśli to **krytyczny plik**: zatrzymaj się i dopytaj użytkownika, czy taki scope jest akceptowalny,
    - jeśli to **nie jest krytyczny plik**: nie “zasypuj pytaniami” — spróbuj znaleźć rozwiązanie w obrębie ustalonego zakresu; jeśli to niemożliwe, wykonaj minimalną zmianę konieczną technicznie i jawnie zaraportuj to w podsumowaniu.
@@ -355,7 +361,7 @@ Gdy użytkownik zgłasza błąd/uwagę po Twojej implementacji:
 5. Jeśli Rejestr wymagań lub Dziennik odczytów nie odzwierciedlają aktualnych zmian, uzupełnij je przed zakończeniem.
 
 Opcjonalnie (zalecane): do szybkiej klasyfikacji zmian użyj
-`./scripts/change-inspect.sh`.
+`scripts/change-inspect.sh`.
 
 ### 7) Raport końcowy (format)
 Zakończ odpowiedź w stałej strukturze:
@@ -395,4 +401,4 @@ Zakończ odpowiedź w stałej strukturze:
 ## Przypadki brzegowe
 - Jeśli użytkownik prosi “zakomituj” → użyj `$git-commit`, nie `$code-implement`.
 - Jeśli zmiany są tylko w docs/skillach → pomiń `$review-quick` i `$qa-run`, chyba że użytkownik prosi inaczej.
-- Jeśli użytkownik wyraźnie każe wyczyścić stan: uruchom `./scripts/state-clear.sh` i zakończ bez dalszych zmian.
+- Jeśli użytkownik wyraźnie każe wyczyścić stan: uruchom `scripts/state-clear.sh` i zakończ bez dalszych zmian.
