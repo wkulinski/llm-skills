@@ -19,7 +19,6 @@ shared_files: []
 3. Bieżący `SKILL.md`
 4. Pliki wskazane w `shared_files`
 
-
 ## Cel
 Uprościć obsługę `skills-sync.mjs` bez duplikowania logiki.
 Ten skill nie implementuje reguł synchronizacji ani publish samodzielnie, tylko uruchamia komendy CLI.

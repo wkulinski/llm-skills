@@ -36,12 +36,6 @@ Dodatkowo ten skill traktuje **skille jako nadrzędne źródło prawdy dla proce
 
 Na koniec: opisy domeny i modułów muszą odpowiadać bieżącemu stanowi.
 
-## Mapa ścieżek dokumentacji (AGENTS-first)
-1. Zawsze zaczynaj od `AGENTS.md`.
-2. Odczytaj mapę ścieżek dokumentacji `docs_map`.
-3. Ścieżki względne traktuj jako repo-relative; ścieżki absolutne używaj 1:1 (bez prefiksu repo).
-4. Nie zgaduj ścieżek po nazwie pliku.
-
 ## Wymagane klucze dokumentacji (docs_map)
 - Wymagane:
   - `MAIN_DOC`: główny dokument opisowy projektu.

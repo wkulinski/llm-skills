@@ -26,20 +26,27 @@ shared_files:
 ## Cel
 Celem jest przeprowadzenie kompletnej procedury QA, przygotowania commit message i commita zgodnie z lokalnymi zasadami. Chodzi o to, by commit był spójny z dokumentacją, procedurami i stanem repozytorium.
 
-## Mapa ścieżek dokumentacji (AGENTS-first)
-1. Zawsze zaczynaj od `AGENTS.md`.
-2. Odczytaj mapę ścieżek dokumentacji `docs_map`.
-3. Ścieżki względne traktuj jako repo-relative; ścieżki absolutne używaj 1:1 (bez prefiksu repo).
-4. Nie zgaduj ścieżek po nazwie pliku.
-
 ## Wymagane klucze dokumentacji (docs_map)
 - Wymagane:
   - `COMMIT_MESSAGE_DIR`: katalog z plikiem `commit-message.txt`.
 - Opcjonalne:
   - `HANDOFF_DOC`: plik handoffu (lokalny, niecommitowany).
 
+## Reguła aktywacji
+Uruchom ten skill zawsze, gdy użytkownik wyraża intencję wykonania commita
+(np. `zrób commit`, `commit`, `skomituj`, `zakomituj`, `przygotuj commit`).
+Literalne `$git-commit` jest aliasem, nie jedynym poprawnym triggerem.
+
+## Reguła wygaszania intencji
+Po zakończeniu tej procedury intencja wykonywania commita jest uznana za zrealizowaną i wygasa.
+Nie wolno zakładać „ciągłej” intencji na kolejne commity.
+Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekcji „Reguła aktywacji”.
+
 ## Kroki
-1. Upewnij się, że użytkownik wyraźnie wydał polecenie `$git-commit`. Jeśli nie — przerwij (bez `git add`/`git commit`).
+1. Upewnij się, że użytkownik wyraził intencję wykonania commita
+   (polecenie `$git-commit` lub równoważne polecenie językowe). Jeśli nie — przerwij (bez `git add`/`git commit`).
+   - Domyślny zakres commita: jeśli użytkownik nie ograniczył zakresu, commit obejmuje wszystkie zmiany w repo zgodnie z krokiem 11 (`git add .`).
+   - Selektywny commit wolno wykonać tylko przy jednoznacznym poleceniu użytkownika (np. „commit tylko te pliki: ...”).
 2. Wykonaj snapshot bazowy (punkt odniesienia do kroku akceptacji), zanim zaczniesz wprowadzać poprawki w repo:
    - Utwórz katalog snapshotu unikalny dla tego uruchomienia (np. `/tmp/agent-git-commit-snapshot-<timestamp>-<ulid>/`) i zapamiętaj jego ścieżkę.
    - Preferowana ścieżka deterministyczna: uruchom `scripts/snapshot-create.sh` i zapamiętaj ścieżkę z stdout.
@@ -99,11 +106,16 @@ Celem jest przeprowadzenie kompletnej procedury QA, przygotowania commit message
 16. Usuń katalog snapshotu z kroku 2 (sprzątanie obowiązkowe; snapshot jest tymczasowy i nie powinien zostawać po procedurze).
     - Preferowane sprzątanie bezpieczne: `scripts/snapshot-clean.sh --current` (usuwa też `/tmp/agent-git-commit-snapshot-pointer.txt`).
 17. Po udanym commicie uruchom `$agent-cache-clear` (czyszczenie `CACHE_PATH`, domyślnie `var/agent/cache/`).
-18. Po wykonaniu procedury nie uruchamiaj jej ponownie ani `git commit` bez wyraźnego polecenia `$git-commit`.
+18. Po wykonaniu procedury nie uruchamiaj jej ponownie ani `git commit` bez nowej, wyraźnej intencji commita od użytkownika.
 
 ## Zakres
 - W zakresie: pełna procedura QA, commit message i commit dla bieżących zmian.
 - Poza zakresem: nowe, nieuzgodnione zmiany funkcjonalne.
+
+## Niedozwolone skróty
+- Nie zastępuj tego skilla ręcznym flow (`git commit -m`, selektywny commit), jeśli trigger intencji commita został spełniony.
+- Obowiązkowo wykonaj krok 10 (`$commit-message-write`) i commit z `-F`.
+- Wykonanie commita z całkowitym pominięciem tego skilla jest kategorycznie zabronione.
 
 ## Format odpowiedzi
 - Wynik: czy procedura zakończona, czy wstrzymana.
@@ -131,7 +143,7 @@ Reguły pokazywania diffów:
 Pytanie: Akceptujesz te zmiany? Jeśli tak, kontynuuję kolejne kroki. Jeśli nie, napisz poprawki.
 
 ## Warunki przerwania
-- Brak wyraźnego polecenia `$git-commit`.
+- Brak intencji wykonania commita (komenda `$git-commit` lub równoważne polecenie językowe).
 - Brak akceptacji zmian w kroku 9 — wstrzymaj procedurę przed `$commit-message-write` i `git commit`.
 - Błędy w lintach lub testach — napraw i wróć do kroku 3.
 
@@ -160,5 +172,5 @@ Pytanie: Akceptujesz te zmiany? Jeśli tak, kontynuuję kolejne kroki. Jeśli ni
 Commit został utworzony poprawnie z `<COMMIT_MESSAGE_DIR>/commit-message.txt`, a repo jest w czystym stanie.
 
 ## Przypadki brzegowe
-- Brak wyraźnego polecenia użytkownika.
+- Brak intencji wykonania commita po stronie użytkownika.
 - Brak mapy `docs_map` w `AGENTS.md` lub brak klucza `COMMIT_MESSAGE_DIR` — przerwij i dopytaj użytkownika.
