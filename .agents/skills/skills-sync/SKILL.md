@@ -9,6 +9,17 @@ shared_files: []
 
 # $skills-sync
 
+## Reguły rozwiązywania ścieżek
+- Ścieżki z prefiksem `./` są repo-relative (`./` = `git rev-parse --show-toplevel`), a nie względem katalogu procesu.
+- Ścieżki w `shared_files` są względne względem katalogu z bieżącym `SKILL.md` (np. `_shared/...` oznacza `../_shared/...`).
+
+## Priorytet zasad (globalny kontrakt)
+1. Instrukcje systemowe/developerskie środowiska
+2. `./AGENTS.md` i dokumenty z `docs_map`
+3. Bieżący `SKILL.md`
+4. Pliki wskazane w `shared_files`
+
+
 ## Cel
 Uprościć obsługę `skills-sync.mjs` bez duplikowania logiki.
 Ten skill nie implementuje reguł synchronizacji ani publish samodzielnie, tylko uruchamia komendy CLI.

@@ -10,6 +10,15 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
 - Odstępstwa architektoniczne (warunkowe): `./cqrs-monolith-standard-overrides.md`.
 - Procedury operacyjne (QA/commit/commit-message/review): właściwe skille (`$qa-run`, `$git-commit`, `$commit-message-write`, `$review-quick`, ...).
 
+## 1a. Reguły ścieżek i priorytetu dla skilli
+- W treści `SKILL.md` zapis `./` oznacza ścieżkę repo-relative (`./` = `git rev-parse --show-toplevel`).
+- W `shared_files` ścieżki są rozwiązywane względem katalogu bieżącego skilla (katalogu z tym `SKILL.md`).
+- Zalecany porządek priorytetu reguł w skillach:
+  1. Instrukcje systemowe/developerskie środowiska
+  2. `./AGENTS.md` i dokumenty z `docs_map`
+  3. Bieżący `SKILL.md`
+  4. Pliki wskazane w `shared_files`
+
 ## 2. Współpraca i komunikacja
 - Najpierw doprecyzuj cel i kryteria akceptacji; nie zgaduj, gdy brakuje kluczowych danych.
 - Odpowiadaj językiem użytkownika; kod i identyfikatory pozostają po angielsku.

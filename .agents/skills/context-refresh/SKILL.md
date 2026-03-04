@@ -13,9 +13,15 @@ shared_files:
 
 # $context-refresh
 
+## Reguły rozwiązywania ścieżek
+- Ścieżki z prefiksem `./` są repo-relative (`./` = `git rev-parse --show-toplevel`), a nie względem katalogu procesu.
+- Ścieżki w `shared_files` są względne względem katalogu z bieżącym `SKILL.md` (np. `_shared/...` oznacza `../_shared/...`).
+
 ## Priorytet zasad (globalny kontrakt)
-- Kolejność i rozstrzyganie konfliktów reguł: `../_shared/references/runtime-collaboration-guidelines.md` (sekcja "Priorytet reguł").
-- `../../../AGENTS.md` oraz dokumenty przez niego wskazane mają pierwszeństwo nad `_shared` dla danego repo; `_shared` traktuj jako przenośny baseline/fallback.
+1. Instrukcje systemowe/developerskie środowiska
+2. `./AGENTS.md` i dokumenty z `docs_map`
+3. Bieżący `SKILL.md`
+4. Pliki wskazane w `shared_files`
 
 ## Cel
 Celem jest załadowanie lub odświeżenie kontekstu projektu w sposób spójny i skalowalny, tak aby dalsze działania były oparte na:
@@ -79,7 +85,7 @@ Ustal, czy wykonujesz `$context-refresh` w trybie **Quick** czy **Full** (sekcja
    - dokumentacji wskazanej przez klucze `docs_map`,
    - konkretnego modułu (`src/<Module>/...`),
    - testów (`tests/`),
-   - konfiguracji toolingu/CI (np. `composer.*`, `package.json`, `Makefile`, `.github/`, wrappery narzędziowe wynikające z `BIN_PATH`).
+   - konfiguracji toolingu/CI (np. `composer.*`, `package.json`, `Makefile`, `./.github/`, wrappery narzędziowe wynikające z `BIN_PATH`).
 
 ### 2) Minimalny baseline (zawsze)
 Przeczytaj w całości (to jest minimalny “rdzeń” reguł i konwencji):
@@ -87,8 +93,6 @@ Przeczytaj w całości (to jest minimalny “rdzeń” reguł i konwencji):
 2. `../_shared/references/runtime-quality-procedures.md`
 3. `../_shared/references/php-symfony-postgres-standards.md`
 4. Jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: `../_shared/references/cqrs-monolith-standard-overrides.md`
-
-Następnie:
 5. Odczytaj `MAIN_DOC`.
    - Jeśli mapy lub klucza `MAIN_DOC` brakuje: zatrzymaj się i dopytaj użytkownika.
 6. Odczytaj `AGENT_RULES_DOC` — jeśli zdefiniowano.

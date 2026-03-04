@@ -13,9 +13,15 @@ shared_files:
 
 # $git-commit
 
+## Reguły rozwiązywania ścieżek
+- Ścieżki z prefiksem `./` są repo-relative (`./` = `git rev-parse --show-toplevel`), a nie względem katalogu procesu.
+- Ścieżki w `shared_files` są względne względem katalogu z bieżącym `SKILL.md` (np. `_shared/...` oznacza `../_shared/...`).
+
 ## Priorytet zasad (globalny kontrakt)
-- Kolejność i rozstrzyganie konfliktów reguł: `../_shared/references/runtime-collaboration-guidelines.md` (sekcja "Priorytet reguł").
-- `../../../AGENTS.md` oraz dokumenty przez niego wskazane mają pierwszeństwo nad `_shared` dla danego repo; `_shared` traktuj jako przenośny baseline/fallback.
+1. Instrukcje systemowe/developerskie środowiska
+2. `./AGENTS.md` i dokumenty z `docs_map`
+3. Bieżący `SKILL.md`
+4. Pliki wskazane w `shared_files`
 
 ## Cel
 Celem jest przeprowadzenie kompletnej procedury QA, przygotowania commit message i commita zgodnie z lokalnymi zasadami. Chodzi o to, by commit był spójny z dokumentacją, procedurami i stanem repozytorium.
@@ -36,7 +42,7 @@ Celem jest przeprowadzenie kompletnej procedury QA, przygotowania commit message
 1. Upewnij się, że użytkownik wyraźnie wydał polecenie `$git-commit`. Jeśli nie — przerwij (bez `git add`/`git commit`).
 2. Wykonaj snapshot bazowy (punkt odniesienia do kroku akceptacji), zanim zaczniesz wprowadzać poprawki w repo:
    - Utwórz katalog snapshotu unikalny dla tego uruchomienia (np. `/tmp/agent-git-commit-snapshot-<timestamp>-<ulid>/`) i zapamiętaj jego ścieżkę.
-   - Preferowana ścieżka deterministyczna: uruchom `./scripts/snapshot-create.sh` i zapamiętaj ścieżkę z stdout.
+   - Preferowana ścieżka deterministyczna: uruchom `scripts/snapshot-create.sh` i zapamiętaj ścieżkę z stdout.
    - Zasada: nie polegaj na „pamięci” ścieżki snapshotu:
      - `snapshot-create.sh` zapisuje pointer do snapshotu w `/tmp/agent-git-commit-snapshot-pointer.txt`,
      - kolejne kroki używają wariantu `--current`, aby nie przenosić `snapshot_dir` ręcznie (odporne na wznowienia sesji).
@@ -69,12 +75,12 @@ Celem jest przeprowadzenie kompletnej procedury QA, przygotowania commit message
 7. Wykonaj skill `$docs-sync`.
 8. Wykonaj skill `$skills-index-refresh`.
 9. Krok akceptacji: jeśli od momentu snapshotu (krok 2) zaszły jakiekolwiek zmiany w repo, zaraportuj je do akceptacji (wyłącznie „delta od snapshotu”, niepełna lista wszystkich zmian w repo):
-   - Preferowane obliczenie delty: `./scripts/snapshot-delta-list.sh --current` (generuje `delta-all.txt` i zwraca kod 0 gdy pusta, 1 gdy niepusta).
+   - Preferowane obliczenie delty: `scripts/snapshot-delta-list.sh --current` (generuje `delta-all.txt` i zwraca kod 0 gdy pusta, 1 gdy niepusta).
    - Jeśli “delta od snapshotu” jest pusta: napisz wprost “Brak zmian delta od snapshotu (krok 2)” i przejdź do kroku 10.
    - Jeśli “delta od snapshotu” nie jest pusta:
      - wypisz listę plików, których treść zmieniła się względem snapshotu (oraz pliki dodane/usunięte od snapshotu),
      - dla każdego pliku: “Co”, “Dlaczego” i (jeśli zmiany nie są rozległe) pokaż konkretny diff “snapshot → teraz”.
-       - Preferowane pokazywanie diffów: `./scripts/snapshot-delta-show.sh --current <path>` (lub `--all`).
+       - Preferowane pokazywanie diffów: `scripts/snapshot-delta-show.sh --current <path>` (lub `--all`).
      - baseline diffu:
        - jeśli plik istniał i był zmieniony/nieśledzony w momencie snapshotu: porównaj z kopią w katalogu snapshotu,
        - jeśli plik był czysty w momencie snapshotu: porównaj z wersją z `HEAD` (hash zapisany w snapshotie).
@@ -84,14 +90,14 @@ Celem jest przeprowadzenie kompletnej procedury QA, przygotowania commit message
     - Jeśli plik nie istnieje, nie jest czytelny albo jest pusty: przerwij i wróć do kroku 10.
 11. `git add .` (wszystkie pliki, w tym nowe/nieśledzone oraz zmiany z fixerów).
 12. Sprawdź staging (`git diff --cached --name-only`) i upewnij się, że nie ma plików śmieciowych/tymczasowych (np. `.env.local`, logi, cache); jeśli są — usuń je ze stagingu i wróć do kroku 3.
-    - Preferowana sanity-check: `./scripts/staging-sanity.sh` (exit 0 = OK; exit 1 = wykryto podejrzane pliki).
+    - Preferowana sanity-check: `scripts/staging-sanity.sh` (exit 0 = OK; exit 1 = wykryto podejrzane pliki).
 13. Wykonaj `git commit -F <COMMIT_MESSAGE_DIR>/commit-message.txt`.
     - Treść commita ma pochodzić 1:1 z pliku wygenerowanego przez `$commit-message-write` (krok 10), bez dopisywania lub przepisywania przez `$git-commit`.
     - Jeśli odczyt pliku się nie powiedzie: przerwij i wróć do kroku 10.
 14. Potwierdź czystość `git status`, sprawdź poprawność commit message/body.
 15. Jeśli zdefiniowano klucz `HANDOFF_DOC`: usuń plik handoffu wskazany przez ten klucz (jeżeli istnieje). Plik jest lokalny i nie powinien trafiać do commita.
 16. Usuń katalog snapshotu z kroku 2 (sprzątanie obowiązkowe; snapshot jest tymczasowy i nie powinien zostawać po procedurze).
-    - Preferowane sprzątanie bezpieczne: `./scripts/snapshot-clean.sh --current` (usuwa też `/tmp/agent-git-commit-snapshot-pointer.txt`).
+    - Preferowane sprzątanie bezpieczne: `scripts/snapshot-clean.sh --current` (usuwa też `/tmp/agent-git-commit-snapshot-pointer.txt`).
 17. Po udanym commicie uruchom `$agent-cache-clear` (czyszczenie `CACHE_PATH`, domyślnie `var/agent/cache/`).
 18. Po wykonaniu procedury nie uruchamiaj jej ponownie ani `git commit` bez wyraźnego polecenia `$git-commit`.
 

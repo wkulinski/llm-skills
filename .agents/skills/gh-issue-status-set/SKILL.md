@@ -10,9 +10,15 @@ shared_files:
 
 # $gh-issue-status-set
 
+## Reguły rozwiązywania ścieżek
+- Ścieżki z prefiksem `./` są repo-relative (`./` = `git rev-parse --show-toplevel`), a nie względem katalogu procesu.
+- Ścieżki w `shared_files` są względne względem katalogu z bieżącym `SKILL.md` (np. `_shared/...` oznacza `../_shared/...`).
+
 ## Priorytet zasad (globalny kontrakt)
-- Kolejność i rozstrzyganie konfliktów reguł: `../_shared/references/runtime-collaboration-guidelines.md` (sekcja "Priorytet reguł").
-- `../../../AGENTS.md` oraz dokumenty przez niego wskazane mają pierwszeństwo nad `_shared` dla danego repo; `_shared` traktuj jako przenośny baseline/fallback.
+1. Instrukcje systemowe/developerskie środowiska
+2. `./AGENTS.md` i dokumenty z `docs_map`
+3. Bieżący `SKILL.md`
+4. Pliki wskazane w `shared_files`
 
 ## Cel
 Ustawić status issue w GitHub Projects v2 na podstawie bieżącego brancha, numeru issue i danych z GitHub. Najpierw próbujemy ustalić wszystko automatycznie; dopytujemy tylko, gdy brakuje danych lub jest konflikt.
@@ -24,7 +30,7 @@ Ustawić status issue w GitHub Projects v2 na podstawie bieżącego brancha, num
    - Jeśli używasz `GH_TOKEN`: upewnij się, że token ma scope `project` i `read:org` (Projects v2 w org); `gh auth refresh` nie zadziała przy ustawionym `GH_TOKEN`.
    - Jeśli nie używasz `GH_TOKEN` i brakuje scope `project` lub `read:org`: `gh auth refresh -h github.com -s project,read:org`
 3. Uruchom skrypt:
-   - `./scripts/set-status.sh --status "<STATUS>"`
+   - `scripts/set-status.sh --status "<STATUS>"`
    - Opcjonalnie: `--issue <ID>`, `--project-number <NUM>`, `--field <NAZWA>`
 4. Jeśli skrypt zwraca błąd, zinterpretuj kod wyjścia i **zawsze** uruchom skrypt ponownie z uzupełnionymi danymi (bez ręcznego “rzeźbienia”).
 

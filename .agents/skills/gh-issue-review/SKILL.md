@@ -10,9 +10,15 @@ shared_files:
 
 # $gh-issue-review
 
+## Reguły rozwiązywania ścieżek
+- Ścieżki z prefiksem `./` są repo-relative (`./` = `git rev-parse --show-toplevel`), a nie względem katalogu procesu.
+- Ścieżki w `shared_files` są względne względem katalogu z bieżącym `SKILL.md` (np. `_shared/...` oznacza `../_shared/...`).
+
 ## Priorytet zasad (globalny kontrakt)
-- Kolejność i rozstrzyganie konfliktów reguł: `../_shared/references/runtime-collaboration-guidelines.md` (sekcja "Priorytet reguł").
-- `../../../AGENTS.md` oraz dokumenty przez niego wskazane mają pierwszeństwo nad `_shared` dla danego repo; `_shared` traktuj jako przenośny baseline/fallback.
+1. Instrukcje systemowe/developerskie środowiska
+2. `./AGENTS.md` i dokumenty z `docs_map`
+3. Bieżący `SKILL.md`
+4. Pliki wskazane w `shared_files`
 
 ## Cel
 Zautomatyzować zlecenie review: push brancha na origin, utworzenie PR do domyślnej gałęzi repo (lub `--base`), ustawienie statusu w Projects v2 na **In review** oraz (opcjonalnie) request review.
@@ -23,7 +29,7 @@ Zautomatyzować zlecenie review: push brancha na origin, utworzenie PR do domyś
    - Jeśli używasz `GH_TOKEN`: upewnij się, że token ma scope `project` i `read:org` (Projects v2 w org); `gh auth refresh` nie zadziała przy ustawionym `GH_TOKEN`.
    - Jeśli nie używasz `GH_TOKEN` i brakuje `project` lub `read:org`: `gh auth refresh -h github.com -s project,read:org`
 2. Uruchom skrypt:
-   - `./scripts/finish.sh`
+   - `scripts/finish.sh`
    - Opcje:
      - `--issue-number <NUMER>` (numer issue w repo)
      - `--reviewer <login>`
@@ -52,8 +58,8 @@ Zautomatyzować zlecenie review: push brancha na origin, utworzenie PR do domyś
 4. Jeśli nadal brak → dopytaj użytkownika.
 
 ## Algorytm templatek PR
-1. Jeśli istnieje `.github/PULL_REQUEST_TEMPLATE.md` lub `.github/pull_request_template.md` → użyj go.
-2. Jeśli istnieje `.github/PULL_REQUEST_TEMPLATE/` z wieloma plikami → dopytaj o wybór i uruchom ponownie z `--template`.
+1. Jeśli istnieje `./.github/PULL_REQUEST_TEMPLATE.md` lub `./.github/pull_request_template.md` → użyj go.
+2. Jeśli istnieje `./.github/PULL_REQUEST_TEMPLATE/` z wieloma plikami → dopytaj o wybór i uruchom ponownie z `--template`.
 3. Jeśli brak templatek → użyj standardu zdefiniowanego w tym skillu (poniżej). Sekcje wypełnij automatycznie; gdy brak danych, zostaw krótką notę.
 
 ## Standardowa templatka PR (gdy brak plików w repo)
