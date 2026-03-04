@@ -61,7 +61,7 @@ docs_map:
     MODULE_INDEX_DOC: docs/modules/README.md
     MODULE_DOCS_GLOB: docs/modules/*/README.md
     TESTS_README: docs/tests/README.md
-    WORKLOG_DIR: docs/worklog
+    COMMIT_MESSAGE_DIR: /tmp/
     HANDOFF_DOC: var/agent/HANDOFF.md
     SKILLS_INDEX_DOC: docs/SKILLS.md
 ```
@@ -69,18 +69,17 @@ docs_map:
 Key semantics:
 - `*_DOC`: single file path
 - `*_DIR`: directory path
-- `*_GLOB`: glob pattern for multiple files
 - All paths are repo-relative.
 
 Required vs optional keys in this skills set:
 - Required by `context-refresh`: `MAIN_DOC`
 - Required by `docs-sync`: `MAIN_DOC`, `MODULE_INDEX_DOC`, `MODULE_DOCS_GLOB`
 - Required by `docs-todo`: `MAIN_DOC`, `MODULE_DOCS_GLOB`
-- Required by `worklog-add`: `WORKLOG_DIR`
+- Required by `commit-message-write`: `COMMIT_MESSAGE_DIR`
 - Required by `handoff-refresh`: `HANDOFF_DOC`
 - Required by `skills-index-refresh`: `SKILLS_INDEX_DOC`
-- Required by `git-commit`: `WORKLOG_DIR`
-- Optional in selected skills: `TESTS_README`, `HANDOFF_DOC`, `SKILLS_INDEX_DOC`, `MODULE_INDEX_DOC`, `MODULE_DOCS_GLOB`, `WORKLOG_DIR`
+- Required by `git-commit`: `COMMIT_MESSAGE_DIR`
+- Optional in selected skills: `TESTS_README`, `HANDOFF_DOC`, `SKILLS_INDEX_DOC`, `MODULE_INDEX_DOC`, `MODULE_DOCS_GLOB`, `COMMIT_MESSAGE_DIR`
 
 Important:
 - You do not have to define every key globally.
