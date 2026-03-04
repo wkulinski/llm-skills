@@ -68,3 +68,16 @@ Notes:
 - This is a minimal map, not a full matrix for every skill.
 - In target projects define only keys required by skills you plan to run.
 - Missing required key should block only that skill and trigger a question for the missing path.
+
+### Documentation path map contract (project `AGENTS.md`)
+Skills that read/write project documentation use a path map from the **consumer project** `AGENTS.md`.
+
+Use this block in project `AGENTS.md`:
+```yaml
+docs_map:
+    MAIN_DOC: docs/README.md
+    AGENT_RULES_DOC: AGENTS.md
+    COMMIT_MESSAGE_DIR: /tmp/
+    HANDOFF_DOC: var/agent/HANDOFF.md
+    SKILLS_INDEX_DOC: docs/SKILLS.md
+```
