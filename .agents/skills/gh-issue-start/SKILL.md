@@ -10,9 +10,15 @@ shared_files:
 
 # $gh-issue-start
 
+## Reguły rozwiązywania ścieżek
+- Ścieżki z prefiksem `./` są repo-relative (`./` = `git rev-parse --show-toplevel`), a nie względem katalogu procesu.
+- Ścieżki w `shared_files` są względne względem katalogu z bieżącym `SKILL.md` (np. `_shared/...` oznacza `../_shared/...`).
+
 ## Priorytet zasad (globalny kontrakt)
-- Kolejność i rozstrzyganie konfliktów reguł: `../_shared/references/runtime-collaboration-guidelines.md` (sekcja "Priorytet reguł").
-- `../../../AGENTS.md` oraz dokumenty przez niego wskazane mają pierwszeństwo nad `_shared` dla danego repo; `_shared` traktuj jako przenośny baseline/fallback.
+1. Instrukcje systemowe/developerskie środowiska
+2. `./AGENTS.md` i dokumenty z `docs_map`
+3. Bieżący `SKILL.md`
+4. Pliki wskazane w `shared_files`
 
 ## Cel
 Zautomatyzować start pracy nad issue: ustalenie numeru issue, utworzenie/checkout brancha z domyślnej gałęzi repo (lub z `--base`), ustawienie statusu w Projects v2 na **In progress** oraz przypisanie aktualnego użytkownika.
@@ -23,7 +29,7 @@ Zautomatyzować start pracy nad issue: ustalenie numeru issue, utworzenie/checko
    - Jeśli używasz `GH_TOKEN`: upewnij się, że token ma scope `project` i `read:org` (Projects v2 w org); `gh auth refresh` nie zadziała przy ustawionym `GH_TOKEN`.
    - Jeśli nie używasz `GH_TOKEN` i brakuje `project` lub `read:org`: `gh auth refresh -h github.com -s project,read:org`
 2. Uruchom skrypt startowy (automatyzuje wykrycie issue, tworzenie/checkout brancha oraz przypisanie aktualnego użytkownika do issue):
-   - `./scripts/start.sh`
+   - `scripts/start.sh`
    - Opcje:
      - `--issue-number <NUMER>`
      - `--title "<Tytuł>"` (używane, gdy trzeba utworzyć nowe issue)

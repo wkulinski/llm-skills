@@ -44,18 +44,25 @@ function parseArgs(argv) {
             result.help = true;
             continue;
         }
+
         if (arg === "--config") {
-            const value = args.shift();
-            if (!value) {
-                throw new Error("Missing value for --config");
-            }
-            result.configPath = value;
+            result.configPath = readRequiredArgValue(args, "--config");
             continue;
         }
+
         throw new Error(`Unknown argument: ${arg}`);
     }
 
     return result;
+}
+
+function readRequiredArgValue(args, flagName) {
+    const value = args.shift();
+    if (value) {
+        return value;
+    }
+
+    throw new Error(`Missing value for ${flagName}`);
 }
 
 function printHelp() {
@@ -141,58 +148,57 @@ function ensureConfig(configAbsPath) {
 }
 
 function loadConfig(configAbsPath) {
-    let raw = "";
+    const raw = readConfigRaw(configAbsPath);
+    return parseConfig(raw, configAbsPath);
+}
+
+function readConfigRaw(configAbsPath) {
     try {
-        raw = readFileSync(configAbsPath, "utf-8");
+        return readFileSync(configAbsPath, "utf-8");
     } catch (error) {
         throw new Error(`Cannot read config file: ${configAbsPath}`);
     }
+}
 
-    let parsed;
+function parseConfig(raw, configAbsPath) {
+    const parsed = parseJsonConfig(raw, configAbsPath);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed;
+    }
+
+    throw new Error("Config root must be a JSON object.");
+}
+
+function parseJsonConfig(raw, configAbsPath) {
     try {
-        parsed = JSON.parse(raw);
+        return JSON.parse(raw);
     } catch (error) {
         throw new Error(`Invalid JSON config: ${configAbsPath}`);
     }
-
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error("Config root must be a JSON object.");
-    }
-
-    return parsed;
 }
 
 function normalizeCommands(config, sectionName) {
-    if (sectionName === "ALWAYS") {
-        const value = config.ALWAYS;
-        if (value === undefined) {
-            return [];
-        }
-        if (!Array.isArray(value)) {
-            throw new Error('Config section "ALWAYS" must be an array of command strings.');
-        }
-        const commands = [];
-        for (const entry of value) {
-            if (typeof entry !== "string") {
-                throw new Error(
-                    'Config section "ALWAYS" must contain only strings (invalid entry type).'
-                );
-            }
-            const trimmed = entry.trim();
-            if (trimmed.length > 0) {
-                commands.push(trimmed);
-            }
-        }
-        return commands;
-    }
-
-    const value = config[sectionName];
-    if (value === undefined) {
+    const value = readSectionConfigValue(config, sectionName);
+    if (value === null) {
         return [];
     }
+
+    return normalizeSectionCommandList(sectionName, value);
+}
+
+function readSectionConfigValue(config, sectionName) {
+    if (Object.hasOwn(config, sectionName)) {
+        return config[sectionName];
+    }
+
+    return null;
+}
+
+function normalizeSectionCommandList(sectionName, value) {
     if (!Array.isArray(value)) {
         throw new Error(`Config section "${sectionName}" must be an array of command strings.`);
     }
+
     const commands = [];
     for (const entry of value) {
         if (typeof entry !== "string") {
@@ -206,6 +212,19 @@ function normalizeCommands(config, sectionName) {
         }
     }
     return commands;
+}
+
+function runSectionCommands(repoRoot, section, commands) {
+    const executed = [];
+    for (const command of commands) {
+        const exitCode = executeCommand(repoRoot, section, command);
+        if (exitCode !== 0) {
+            return {ok: false, exitCode, executed};
+        }
+        executed.push({section, command});
+    }
+
+    return {ok: true, exitCode: 0, executed};
 }
 
 function executeCommand(repoRoot, section, command) {
@@ -309,13 +328,11 @@ function main() {
             continue;
         }
 
-        for (const command of commands) {
-            const exitCode = executeCommand(repoRoot, section, command);
-            if (exitCode !== 0) {
-                process.exit(exitCode);
-            }
-            executed.push({section, command});
+        const sectionResult = runSectionCommands(repoRoot, section, commands);
+        if (!sectionResult.ok) {
+            process.exit(sectionResult.exitCode);
         }
+        sectionResult.executed.forEach((entry) => executed.push(entry));
     }
 
     console.log("\nSummary:");

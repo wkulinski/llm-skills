@@ -16,9 +16,15 @@ shared_files:
 
 # $code-implement
 
+## Reguły rozwiązywania ścieżek
+- Ścieżki z prefiksem `./` są repo-relative (`./` = `git rev-parse --show-toplevel`), a nie względem katalogu procesu.
+- Ścieżki w `shared_files` są względne względem katalogu z bieżącym `SKILL.md` (np. `_shared/...` oznacza `../_shared/...`).
+
 ## Priorytet zasad (globalny kontrakt)
-- Kolejność i rozstrzyganie konfliktów reguł: `../_shared/references/runtime-collaboration-guidelines.md` (sekcja "Priorytet reguł").
-- `../../../AGENTS.md` oraz dokumenty przez niego wskazane mają pierwszeństwo nad `_shared` dla danego repo; `_shared` traktuj jako przenośny baseline/fallback.
+1. Instrukcje systemowe/developerskie środowiska
+2. `./AGENTS.md` i dokumenty z `docs_map`
+3. Bieżący `SKILL.md`
+4. Pliki wskazane w `shared_files`
 
 ## Cel
 Poprowadzić implementację zmian w kodzie end-to-end w sposób powtarzalny i bezpieczny:
@@ -27,6 +33,21 @@ Poprowadzić implementację zmian w kodzie end-to-end w sposób powtarzalny i be
 - wdrożyć zmianę zgodnie z zasadami projektu,
 - wykonać lekką weryfikację na końcu (`$review-quick`, a `$qa-run` tylko gdy zmiana jest rozległa),
 - zaraportować wynik w stałym formacie.
+
+## Tryb domyślny i autonomia
+- Domyślnie `$code-implement` działa w trybie `autonomous`.
+- `autonomous` oznacza: agent samodzielnie implementuje i weryfikuje zmianę bez dopytywania, o ile nie zachodzi `stop-condition`.
+- Dopytanie jest wymagane wyłącznie przy blockerach z listy `STOP_CODES`.
+
+## Kontrakt iteracji (obowiązkowy)
+- `Iteracja` = jedna zamknięta pętla: cel -> implementacja -> weryfikacja -> aktualizacja stanu.
+- Dla każdej iteracji raportuj wewnętrznie (w `STATE_PATH`):
+  - `Cel iteracji`,
+  - `Kryterium gotowe`,
+  - `Wynik`,
+  - `Dowody` (pliki/komendy),
+  - `Decyzja next`.
+- Nie zamykaj iteracji bez aktualizacji statusów R#.
 
 ## Problem, który ten skill ma rozwiązać (v2/v3)
 Ten skill ma minimalizować typowe problemy w pracy iteracyjnej:
@@ -96,9 +117,9 @@ Minimalny format (utrzymuj spójnie):
   - `- R3 (DONE): Zmiana e-maila profilu działa w Core`
   - `  - Kryteria: Formularz zapisuje e-mail; flash sukcesu; użytkownik pozostaje zalogowany`
   - `  - Dowody: src/Core/UI/Controller/Profile/EmailController.php; sprawdzenie manualne`
-- **Dziennik odczytów**: dopisuj wyłącznie przez `./scripts/state-readlog.sh "<msg>"`.
+- **Dziennik odczytów**: dopisuj wyłącznie przez `scripts/state-readlog.sh "<msg>"`.
   - Przykład: `- [2026-01-16T21:20:00+01:00] rg "EntityConnection" -n src; git diff --stat`
-- **Dziennik iteracji**: dopisuj wyłącznie przez `./scripts/state-log.sh "<msg>"`.
+- **Dziennik iteracji**: dopisuj wyłącznie przez `scripts/state-log.sh "<msg>"`.
   - Timestamp zawsze z systemu (`date --iso-8601=seconds`); zero wpisów ręcznych.
   - Trzymaj "### Dziennik iteracji" jako ostatnią sekcję, aby skrypt dopisywał w poprawnym miejscu.
 
@@ -118,14 +139,14 @@ Czyszczenie stanu (ważne):
      - “uruchom state-clear”
      - “clear code-implement state”
      
-     → uruchom `./scripts/state-clear.sh`,
+     → uruchom `scripts/state-clear.sh`,
   2) użytkownik jednoznacznie anuluje zadanie i chce wycofać zmiany:
      - przykładowe jednoznaczne polecenia:
        - “anuluj zadanie i wycofaj zmiany”
        - “odwróć zmiany z tego zadania i wyczyść stan code-implement”
      - najpierw dopytaj, czy chodzi o wycofanie **wszystkich** niecommitowanych zmian w repo, czy tylko zmian z tego zadania,
      - wycofaj zmiany **wyłącznie** na wyraźne polecenie użytkownika (zgodnie z `../_shared/references/runtime-collaboration-guidelines.md`),
-     - dopiero po wycofaniu zmian uruchom `./scripts/state-clear.sh`.
+     - dopiero po wycofaniu zmian uruchom `scripts/state-clear.sh`.
 
 Jeśli nie masz pewności, czy użytkownik chce czyszczenia stanu: dopytaj wprost “Czy mam wyczyścić stan code-implement?” i nie uruchamiaj `state-clear.sh` bez potwierdzenia.
 
@@ -133,7 +154,7 @@ Jeśli nie masz pewności, czy użytkownik chce czyszczenia stanu: dopytaj wpros
 Traktuj plik jako **krytyczny**, jeśli spełnia dowolny warunek:
 1. Wpływa na globalne zachowanie aplikacji albo pipeline (config/tooling/CI), np.:
    - `composer.json`, `composer.lock`, `package.json`, `yarn.lock`
-   - `config/**`, `.github/**`, `.docker/**`, `Makefile`
+   - `config/**`, `./.github/**`, `./.docker/**`, `Makefile`
    - `bin/**` (w tym wrappery narzędziowe)
 2. Jest “entrypointem” (zmienia publiczne wejścia do systemu), np.:
    - `src/*/UI/Controller/**`, `src/*/UI/Command/**`, `src/*/Api/**`
@@ -164,9 +185,63 @@ Reguły (format + kiedy + użycie):
 - na koniec zadania raportuj statusy (zwięźle, bez wklejania całej listy).
 Jeśli masz wątpliwości co do kompletności Kryteriów lub Dowodów, ustaw `IN_PROGRESS` i dodaj Notatki.
 
+Twarde reguły statusów:
+- `TODO` -> `IN_PROGRESS`: gdy rozpoczęto implementację wymagań R#.
+- `IN_PROGRESS` -> `DONE`: tylko jeśli wszystkie kryteria R# są spełnione i wpisano dowody.
+- `IN_PROGRESS` -> `BLOCKED`: tylko z kodem blokera i uzasadnieniem.
+- `DONE` -> `IN_PROGRESS`: jeśli nowy feedback obala kryterium „gotowe”.
+- `OUT-OF-SCOPE`: tylko po jawnym potwierdzeniu użytkownika.
+
+### `STOP_CODES` (zamknięta lista blockerów)
+- `missing_acceptance_criteria`
+- `security_scope_unclear`
+- `migration_requires_decision`
+- `dependency_change_requires_approval`
+- `critical_scope_expansion`
+- `env_blocker`
+- `qa_iteration_limit_reached`
+
+### Słownik `STOP_CODES` (znaczenie + kiedy użyć)
+#### `missing_acceptance_criteria`
+- Znaczenie: brak minimalnych kryteriów akceptacji uniemożliwia bezpieczną implementację.
+- Kiedy zwracać: nie da się określić `done/not done` dla R#.
+- Kiedy nie zwracać: kryteria są niepełne, ale wystarczają do wykonania minimalnej, odwracalnej iteracji.
+
+#### `security_scope_unclear`
+- Znaczenie: zmiana dotyka auth/security/permissions bez jednoznacznego wymagania.
+- Kiedy zwracać: implementacja wymaga decyzji o modelu uprawnień lub ścieżce autoryzacji.
+- Kiedy nie zwracać: zmiana jest czysto techniczna i nie zmienia zachowania security.
+
+#### `migration_requires_decision`
+- Znaczenie: potrzebna migracja lub zmiana relacji danych bez zgody użytkownika.
+- Kiedy zwracać: modyfikacja schematu jest niezbędna do realizacji R#.
+- Kiedy nie zwracać: można spełnić R# bez migracji.
+
+#### `dependency_change_requires_approval`
+- Znaczenie: potrzebna zmiana zależności (`composer`/`yarn`) bez akceptacji.
+- Kiedy zwracać: brak możliwej implementacji w istniejącym stacku.
+- Kiedy nie zwracać: istnieje rozwiązanie bez nowych zależności.
+
+#### `critical_scope_expansion`
+- Znaczenie: realizacja wymaga wejścia w krytyczne pliki poza uzgodnionym zakresem.
+- Kiedy zwracać: bez tej zmiany implementacja byłaby błędna lub niekompletna.
+- Kiedy nie zwracać: da się zrobić minimalny fix w aktualnym zakresie.
+
+#### `env_blocker`
+- Znaczenie: środowisko blokuje weryfikację/implementację (narzędzia, kontenery, DB, uprawnienia).
+- Kiedy zwracać: błąd jest reprodukowalny i nieusuwalny w bieżącej sesji.
+- Kiedy nie zwracać: problem znika po poprawnym użyciu lokalnych entrypointów (`resolve_tool_cmd`) lub prostym retry.
+
+#### `qa_iteration_limit_reached`
+- Znaczenie: `$qa-run` nie osiągnął `PASS` w limicie iteracji.
+- Kiedy zwracać: wyczerpany limit iteracji i nadal `FAIL`.
+- Kiedy nie zwracać: limit nie został osiągnięty albo QA zakończone `PASS`.
+
 ### “Rozległa zmiana”
-Traktuj zmianę jako rozległą, jeśli:
+Traktuj zmianę jako rozległą, jeśli zachodzi co najmniej jeden warunek:
 - liczba plików zmienionych + untracked jest duża (domyślnie: `>= 15`), lub
+- zmiany obejmują więcej niż 2 moduły, lub
+- zmiany obejmują krytyczne entrypointy, persistence, security lub tooling, lub
 - użytkownik wprost mówi, że to duża zmiana, lub
 - po implementacji widać, że zakres “uciekł” poza pierwotne założenia.
 
@@ -181,7 +256,7 @@ Traktuj zmianę jako rozległą, jeśli:
    - “ryzykowne obszary” (jeśli dotyczy: security/migracje/zależności).
  
 Opcjonalnie (zalecane): do stworzenia szablonu użyj
-`./scripts/state-init.sh`.
+`scripts/state-init.sh`.
 
 ### 1) Intake (zanim dotkniesz kodu)
 1. Zreasumuj zadanie w 1–3 zdaniach (“Rozumiem, że mam…”).
@@ -203,14 +278,14 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
    - doczytaj README dokumentacji dla dotkniętych modułów (zgodnie z `docs_map` z `AGENTS.md`).
    - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: doczytaj `../_shared/references/cqrs-monolith-standard-overrides.md` przed decyzjami architektonicznymi (warstwy/CQRS/Doctrine/FCF).
 3. Zrób preflight entrypointów narzędzi:
-   - załaduj `.agents/skills/_shared/scripts/env-load.sh`,
+   - załaduj `./.agents/skills/_shared/scripts/env-load.sh`,
    - ustal komendy narzędziowe dla repo (co najmniej `composer`, `console`, `yarn`, `codecept`) wyłącznie przez `resolve_tool_cmd`,
    - `resolve_tool_cmd` traktuj jako jedyne źródło prawdy; `.env`/`.env.local` są ładowane automatycznie w resolverze,
    - nie mieszaj wielu wariantów entrypointów w ramach jednego zadania.
 4. Przed zmianą krytycznego pliku **lub** przed edycją pliku, który jest już zmieniony w repo (tracked/untracked):
    - przeczytaj diff (`git diff -- <plik>`) i aktualną treść (relewantne sekcje),
    - dopiero potem edytuj.
-5. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) dopisz wpis do Dziennika odczytów przez `./scripts/state-readlog.sh "<msg>"` (możesz grupować kilka odczytów w jeden wpis).
+5. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) dopisz wpis do Dziennika odczytów przez `scripts/state-readlog.sh "<msg>"` (możesz grupować kilka odczytów w jeden wpis).
 6. Jeśli w trakcie implementacji wychodzi, że trzeba zmodyfikować plik, który nie wynika wprost z zadania:
    - jeśli to **krytyczny plik**: zatrzymaj się i dopytaj użytkownika, czy taki scope jest akceptowalny,
    - jeśli to **nie jest krytyczny plik**: nie “zasypuj pytaniami” — spróbuj znaleźć rozwiązanie w obrębie ustalonego zakresu; jeśli to niemożliwe, wykonaj minimalną zmianę konieczną technicznie i jawnie zaraportuj to w podsumowaniu.
@@ -245,6 +320,15 @@ Wstrzymaj implementację i zadaj pytania, jeśli pojawia się którykolwiek przy
 - implementacja zaczyna wymagać zmian poza zakresem w **krytycznym pliku** (tj. edycja nie wynika wprost z zadania),
 - zakres znacząco przekracza pierwotne założenia.
 
+Mapowanie przypadków na `STOP_CODES`:
+- brak danych wejściowych / kryteriów akceptacji -> `missing_acceptance_criteria`
+- niejasny zakres security/auth/capabilities/permissions -> `security_scope_unclear`
+- wymagana migracja lub zmiana relacji danych -> `migration_requires_decision`
+- wymagana zmiana zależności (`composer.json`/`package.json`) bez zgody -> `dependency_change_requires_approval`
+- wymagane wyjście poza zakres w krytycznym pliku / znaczące przekroczenie zakresu -> `critical_scope_expansion`
+- twardy problem środowiskowy blokujący dalsze kroki -> `env_blocker`
+- limit iteracji `$qa-run` osiągnięty bez `PASS` -> `qa_iteration_limit_reached`
+
 ### 5.1) Dyscyplina iteracji (feedback loop)
 Gdy użytkownik zgłasza błąd/uwagę po Twojej implementacji:
 1. Zapisz feedback w `STATE_PATH` (log iteracji).
@@ -268,24 +352,53 @@ Gdy użytkownik zgłasza błąd/uwagę po Twojej implementacji:
    - PHP (`.php`), Twig (`.twig`), JS/TS (`.js/.jsx/.ts/.tsx`), CSS/SCSS (`.css/.scss`), YAML (`.yml/.yaml`), tłumaczenia (`translations/**` lub `src/*/UI/Translation/**`)
    to wykonaj `$review-quick`.
 3. `$qa-run` uruchom automatycznie **tylko**, gdy zmiana jest rozległa (definicja wyżej).
-   - W przeciwnym razie: nie uruchamiaj `$qa-run` na koniec z automatu (i tak będzie wymagane przed commitem przez `$git-commit`).
-4. Jeśli Rejestr wymagań lub Dziennik odczytów nie odzwierciedlają aktualnych zmian, uzupełnij je przed zakończeniem.
+   - dla zmiany rozległej uruchomienie `$qa-run` jest obowiązkowe,
+   - w przeciwnym razie: nie uruchamiaj `$qa-run` na koniec z automatu (i tak będzie wymagane przed commitem przez `$git-commit`).
+4. Jeśli `$code-implement` uruchamia `$qa-run`, dziedziczy kontrakt pętli naprawczej z `qa-run`:
+   - nie kończ po pierwszym `FAIL`,
+   - przechodź przez iteracje naprawcze do `PASS` albo `BLOCKED`,
+   - raportuj liczbę iteracji QA i status końcowy.
+5. Jeśli Rejestr wymagań lub Dziennik odczytów nie odzwierciedlają aktualnych zmian, uzupełnij je przed zakończeniem.
 
 Opcjonalnie (zalecane): do szybkiej klasyfikacji zmian użyj
-`./scripts/change-inspect.sh`.
+`scripts/change-inspect.sh`.
 
 ### 7) Raport końcowy (format)
 Zakończ odpowiedź w stałej strukturze:
 - Wynik: co zostało zrobione (1–5 punktów).
+- Status wymagań: skrót statusów każdego R# (`DONE` / `IN_PROGRESS` / `BLOCKED` / `OUT-OF-SCOPE`).
+- Dowody dla `DONE`: pliki/komendy potwierdzające zamknięcie każdego ukończonego R#.
 - Pliki/obszary: gdzie dotknięto (moduły / kluczowe pliki).
 - Weryfikacja:
   - `$review-quick` — wykonano / pominięto (dlaczego),
   - `$qa-run` — wykonano / pominięto (dlaczego).
+- Iteracje QA: jeśli uruchomiono `$qa-run`, podaj `Wykonano iteracji: X/20` i `Status końcowy: PASS | BLOCKED`.
 - Ryzyka/Błędy: co wymaga uwagi (jeśli dotyczy).
 - Testy: sugerowane scenariusze lub testy do dodania (jeśli dotyczy).
+- Blokery: jeśli wystąpiły, podaj `STOP_CODE` + przyczynę.
 - Następny krok: czy robimy `$git-commit`, czy jeszcze poprawki.
+
+## Zakres automatycznych poprawek
+- Dozwolone:
+  - zmiany wynikające bezpośrednio z R#,
+  - minimalne techniczne poprawki konieczne do domknięcia kryterium.
+- Niedozwolone bez zgody użytkownika:
+  - nowe zależności,
+  - migracje danych/schematu,
+  - zmiany security/permissions,
+  - szerokie refaktory poza celem iteracji.
+
+## Warunek zakończenia skilla
+- Skill kończy się wyłącznie, gdy:
+  - wszystkie R# są `DONE`, albo
+  - istnieją `BLOCKED` z kodami `STOP_CODES` i jasnym uzasadnieniem.
+- Odpowiedź finalna musi zawierać:
+  - status każdego R# (skrót),
+  - dowody dla `DONE`,
+  - listę blockerów (jeśli są),
+  - informację czy wykonano `$review-quick` i/lub `$qa-run`.
 
 ## Przypadki brzegowe
 - Jeśli użytkownik prosi “zakomituj” → użyj `$git-commit`, nie `$code-implement`.
 - Jeśli zmiany są tylko w docs/skillach → pomiń `$review-quick` i `$qa-run`, chyba że użytkownik prosi inaczej.
-- Jeśli użytkownik wyraźnie każe wyczyścić stan: uruchom `./scripts/state-clear.sh` i zakończ bez dalszych zmian.
+- Jeśli użytkownik wyraźnie każe wyczyścić stan: uruchom `scripts/state-clear.sh` i zakończ bez dalszych zmian.

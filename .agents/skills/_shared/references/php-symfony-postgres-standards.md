@@ -40,5 +40,5 @@ Ten dokument opisuje **domyślny baseline** dla skilli używanych w projektach P
 - Nie wyłączaj lokalnie lintów/testów/supresji jako „naprawy” problemu jakości.
 
 ## 7. Współdziałanie ze skillami
-- Procedury operacyjne (QA/commit/worklog/review) są opisane w skillach, nie tutaj.
+- Procedury operacyjne (QA/commit/commit-message/review) są opisane w skillach, nie tutaj.
 - Ten dokument opisuje standardy techniczne i sposób implementacji, a nie sekwencję kroków procesu.

@@ -13,9 +13,15 @@ shared_files:
 
 # $context-refresh
 
+## Reguły rozwiązywania ścieżek
+- Ścieżki z prefiksem `./` są repo-relative (`./` = `git rev-parse --show-toplevel`), a nie względem katalogu procesu.
+- Ścieżki w `shared_files` są względne względem katalogu z bieżącym `SKILL.md` (np. `_shared/...` oznacza `../_shared/...`).
+
 ## Priorytet zasad (globalny kontrakt)
-- Kolejność i rozstrzyganie konfliktów reguł: `../_shared/references/runtime-collaboration-guidelines.md` (sekcja "Priorytet reguł").
-- `../../../AGENTS.md` oraz dokumenty przez niego wskazane mają pierwszeństwo nad `_shared` dla danego repo; `_shared` traktuj jako przenośny baseline/fallback.
+1. Instrukcje systemowe/developerskie środowiska
+2. `./AGENTS.md` i dokumenty z `docs_map`
+3. Bieżący `SKILL.md`
+4. Pliki wskazane w `shared_files`
 
 ## Cel
 Celem jest załadowanie lub odświeżenie kontekstu projektu w sposób spójny i skalowalny, tak aby dalsze działania były oparte na:
@@ -41,7 +47,7 @@ W tym repozytorium źródłem prawdy dla “procedury startowej” jest ten skil
   - `MODULE_DOCS_GLOB`: glob dla README dokumentacji modułów.
   - `TESTS_README`: README testów.
   - `SKILLS_INDEX_DOC`: indeks skilli.
-  - `WORKLOG_DIR`: katalog workloga.
+  - `COMMIT_MESSAGE_DIR`: katalog artefaktu `commit-message.txt` używanego przez commit flow.
   - `HANDOFF_DOC`: plik handoffu.
 
 ## Tryb wykonania (Quick vs Full)
@@ -79,7 +85,7 @@ Ustal, czy wykonujesz `$context-refresh` w trybie **Quick** czy **Full** (sekcja
    - dokumentacji wskazanej przez klucze `docs_map`,
    - konkretnego modułu (`src/<Module>/...`),
    - testów (`tests/`),
-   - konfiguracji toolingu/CI (np. `composer.*`, `package.json`, `Makefile`, `.github/`, wrappery narzędziowe wynikające z `BIN_PATH`).
+   - konfiguracji toolingu/CI (np. `composer.*`, `package.json`, `Makefile`, `./.github/`, wrappery narzędziowe wynikające z `BIN_PATH`).
 
 ### 2) Minimalny baseline (zawsze)
 Przeczytaj w całości (to jest minimalny “rdzeń” reguł i konwencji):
@@ -87,16 +93,13 @@ Przeczytaj w całości (to jest minimalny “rdzeń” reguł i konwencji):
 2. `../_shared/references/runtime-quality-procedures.md`
 3. `../_shared/references/php-symfony-postgres-standards.md`
 4. Jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: `../_shared/references/cqrs-monolith-standard-overrides.md`
-
-Następnie:
 5. Odczytaj `MAIN_DOC`.
    - Jeśli mapy lub klucza `MAIN_DOC` brakuje: zatrzymaj się i dopytaj użytkownika.
 6. Odczytaj `AGENT_RULES_DOC` — jeśli zdefiniowano.
 7. Odczytaj `QUALITY_PROCEDURES_DOC` — jeśli zdefiniowano.
 8. Odczytaj `MODULE_INDEX_DOC` — jeśli zdefiniowano.
 9. Odczytaj `SKILLS_INDEX_DOC` — jeśli zdefiniowano.
-10. Odczytaj dokumenty worklogu z `WORKLOG_DIR` — jeśli zdefiniowano.
-11. Odczytaj `HANDOFF_DOC` — jeśli zdefiniowano.
+10. Odczytaj `HANDOFF_DOC` — jeśli zdefiniowano.
 
 ### 3) Dokumentacja modułowa (lazy, ale bezpiecznie)
 1. Jeśli zdefiniowano `MODULE_DOCS_GLOB` i `git diff --name-only` zawiera zmiany w modułach, przeczytaj README dokumentacji dla każdego dotkniętego modułu.
@@ -121,7 +124,7 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
    - prompt wprost wymienia ścieżkę pliku (np. `src/.../Foo.php`) → przeczytaj ten plik i jego diff (jeśli ma),
    - prompt wprost wymienia symbol (klasa/metoda/komenda/route) → znajdź definicję (`rg`) i przeczytaj definicję + kontekst,
    - masz zmienić plik, który już jest zmieniony w repo (czyli “modyfikujesz cudze/bieżące zmiany”) → przeczytaj jego diff i aktualną treść przed edycją,
-   - masz opisać zmianę w worklogu (`$worklog-add`) → upewnij się, że rozumiesz “co” i “dlaczego” (diff/kluczowe fragmenty),
+   - masz przygotować treść commita (`$commit-message-write`) → upewnij się, że rozumiesz “co” i “dlaczego” (diff/kluczowe fragmenty),
    - QA/testy zwróciły błąd w pliku, którego nie analizowałeś → doczytaj od razu ten plik i sąsiedni kontekst,
    - pojawia się decyzja architektoniczna/domenowa, a nie czytałeś dokumentacji modułu/domeny dotkniętej zmianą → doczytaj README modułu (z `MODULE_DOCS_GLOB`) i relewantny fragment `MAIN_DOC`.
 
@@ -139,12 +142,12 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
 
 5. Doczytanie on-demand (krótka zasada wykonawcza):
    - zanim zmodyfikujesz plik, którego zmian nie rozumiesz (bo np. był już zmieniony przed Twoją pracą), doczytaj jego diff/treść w tym momencie,
-   - analogicznie: zanim napiszesz o nim w worklogu, upewnij się, że rozumiesz „co” i “dlaczego” (w praktyce robi to też `$worklog-add`).
-6. Uwaga: jeśli kolejnym krokiem ma być `$worklog-add`, to ten skill ma własną procedurę analizy zmian przed napisaniem wpisu — `$context-refresh` nie musi “wiedzieć wszystkiego” o każdej zmianie, ale musi wiedzieć, co jest zmienione i gdzie.
+   - analogicznie: zanim przygotujesz `commit-message.txt`, upewnij się, że rozumiesz „co” i “dlaczego” (w praktyce robi to też `$commit-message-write`).
+6. Uwaga: jeśli kolejnym krokiem ma być `$commit-message-write`, to ten skill ma własną procedurę analizy zmian przed zapisaniem `commit-message.txt` — `$context-refresh` nie musi “wiedzieć wszystkiego” o każdej zmianie, ale musi wiedzieć, co jest zmienione i gdzie.
 
 ### 6) Weryfikacja spójności procedur (jeśli dotyczy)
 Jeśli zmiany dotyczą procedur (pliki w `../_shared/references/runtime-collaboration-guidelines.md`, `../_shared/references/runtime-quality-procedures.md`, `../*`):
-1. Traktuj skille jako źródło prawdy dla procedur operacyjnych (QA/commit/worklog/review).
+1. Traktuj skille jako źródło prawdy dla procedur operacyjnych (QA/commit/commit-message/review).
 2. Jeśli widzisz rozbieżności, zanotuj je i zaproponuj korektę w skillu (nie dopisuj procedury “na boku” w docs).
 
 ### 7) Potwierdzenie gotowości
