@@ -21,13 +21,37 @@ W razie konfliktu z baseline: ten dokument ma pierwszeństwo.
 - Kontrolery HTTP i komendy CLI pozostają cienkie: walidacja + dispatch command/query.
 - Logika biznesowa żyje w handlerach/use-case (`Application`).
 - Nie mieszaj mapowania wejścia i logiki domenowej w jednej klasie.
-- Gdy inna warstwa musi użyć command/query z innego modułu, preferuj dedykowany serwis aplikacyjny zamiast bezpośredniego łączenia warstw.
+- Gdy inna warstwa musi użyć command/query z innego modułu, twórz dedykowany serwis aplikacyjny zamiast bezpośredniego 
+  łączenia warstw.
 - Messages przyjmują proste argumenty (prymitywy/VO), bez przekazywania encji i ciężkich DTO.
+
+### 3.1 Jednoznaczna definicja `Port/In` i `Port/Out`
+Reguły poniżej zawsze interpretuj z perspektywy jednego modułu `M`:
+- `Application/Port/In`:
+  - to publiczny kontrakt wejścia do modułu `M`,
+  - służy do interakcji z `M` z zewnątrz (cross-module API) albo jako punkt rozszerzenia implementowany przez inne moduły,
+  - jest częścią stabilnego API modułu.
+- `Application/Port/Out`:
+  - to kontrakt zależności wychodzącej z modułu `M`,
+  - opisuje, czego use case modułu `M` potrzebuje od świata zewnętrznego (I/O, repozytoria read-model, adaptery infrastruktury),
+  - nie jest publicznym API modułu dla innych modułów.
+- `Application/Port` bez podfolderu:
+  - traktuj jako legacy i nie dodawaj nowych portów w tej lokalizacji,
+  - wyjątek: porty techniczne w module współdzielonym (np. `Shared`), gdy klasyfikacja In/Out nie wnosi wartości domenowej.
 
 ## 4. Deptrac jako hard guard (override)
 - Granice warstw/modułów są egzekwowane przez Deptrac.
 - Naruszeń zależności nie „obchodzimy” zmianą reguł bez decyzji architektonicznej.
 - Domyślna reakcja na naruszenie: poprawa kodu i granic odpowiedzialności.
+
+### 4.1 Twarde reguły zależności cross-module
+- Dozwolone cross-module:
+  - zależność do `TargetModule/Application/Port/In/**` (publiczne API modułu),
+  - uzgodnione kontrakty współdzielone z `Shared`.
+- Niedozwolone cross-module:
+  - zależność do `TargetModule/Application/Port/Out/**`,
+  - zależność do `TargetModule/Application/Port/*.php` (płaskie porty legacy poza wyjątkami technicznymi),
+  - zależność do `TargetModule/Domain/**` i `TargetModule/Infrastructure/**` innego modułu.
 
 ## 5. Doctrine i model relacji (override)
 - Preferuj model relacji przez VO ID + jawne kolumny/indeksy.

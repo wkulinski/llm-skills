@@ -41,6 +41,9 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
   - użyj helpera `./.agents/skills/_shared/scripts/env-load.sh` (`resolve_tool_cmd`),
   - komendy wyznaczaj wyłącznie przez `resolve_tool_cmd`,
   - nie wyprowadzaj ścieżek ręcznie z `BIN_PATH`; resolver ładuje `.env`/`.env.local` automatycznie.
+- Jeśli review dotyczy regresji runtime, logów, profilera albo DI:
+  - możesz pomocniczo użyć `$dev-mate` (`../dev-mate/SKILL.md`),
+  - ale findings nadal mają mapować się do kodu, konfiguracji lub zachowania aplikacji.
 
 ## Kontrakt wykonania (quick-check)
 1. Zidentyfikuj zakres przeglądu na podstawie prompta i zmienionych plików.
