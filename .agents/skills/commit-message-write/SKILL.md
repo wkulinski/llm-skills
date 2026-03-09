@@ -31,6 +31,7 @@ Celem jest przygotowanie kompletnej treści commita (subject + body) na podstawi
 Ten skill działa dwuetapowo:
 1. `Draft` (szeroki kontekst):
    - można użyć pełnego kontekstu sesji (odczyty, diffy, wcześniejsze decyzje), aby dobrze uchwycić sens zmian.
+   - jeśli wcześniej użyto `$dev-mate` do diagnozy runtime (logi/profiler/DI), te ustalenia mogą pomóc w `Draft`, ale tylko jako kontekst pomocniczy do zrozumienia zmian.
    - draft może być bogatszy opisowo niż finalna lista commitowalnych plików.
 2. `Prune` (twarde przycięcie do commitowalności):
    - przed zapisem finalnego pliku treść musi zostać przycięta wyłącznie do zmian commitowalnych w repo,

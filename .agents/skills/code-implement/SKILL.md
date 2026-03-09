@@ -68,6 +68,7 @@ Mechanizmy:
 - baseline techniczny stacka: `../_shared/references/php-symfony-postgres-standards.md`
 - override architektoniczny (warunkowy): `../_shared/references/cqrs-monolith-standard-overrides.md` — tylko gdy `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`
 - kontekst repo: `$context-refresh` (`../context-refresh/SKILL.md`)
+- diagnostyka runtime/introspekcja: `$dev-mate` (`../dev-mate/SKILL.md`) — użyj, gdy problem dotyczy logów, profilera albo DI i potrzebujesz ustrukturyzowanych dowodów z AI Mate
 - szybkie review: `$review-quick` (`../review-quick/SKILL.md`)
 - pełne QA: `$qa-run` (`../qa-run/SKILL.md`)
 - commit: wyłącznie `$git-commit` (`../git-commit/SKILL.md`)

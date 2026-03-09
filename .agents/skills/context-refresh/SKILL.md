@@ -137,6 +137,7 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
 5. Doczytanie on-demand (krótka zasada wykonawcza):
    - zanim zmodyfikujesz plik, którego zmian nie rozumiesz (bo np. był już zmieniony przed Twoją pracą), doczytaj jego diff/treść w tym momencie,
    - analogicznie: zanim przygotujesz `commit-message.txt`, upewnij się, że rozumiesz „co” i “dlaczego” (w praktyce robi to też `$commit-message-write`).
+   - jeśli zadanie jest wyraźnie runtime/debuggingowe i AI Mate jest dostępny, możesz pomocniczo użyć `$dev-mate` do zebrania logów/profilera/DI; nie zastępuje to odczytu kodu ani dokumentacji.
 6. Uwaga: jeśli kolejnym krokiem ma być `$commit-message-write`, to ten skill ma własną procedurę analizy zmian przed zapisaniem `commit-message.txt` — `$context-refresh` nie musi “wiedzieć wszystkiego” o każdej zmianie, ale musi wiedzieć, co jest zmienione i gdzie.
 
 ### 6) Weryfikacja spójności procedur (jeśli dotyczy)
