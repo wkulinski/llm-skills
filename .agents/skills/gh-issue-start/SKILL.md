@@ -11,8 +11,7 @@ shared_files:
 # $gh-issue-start
 
 ## Reguły rozwiązywania ścieżek
-- Ścieżki z prefiksem `./` są repo-relative (`./` = `git rev-parse --show-toplevel`), a nie względem katalogu procesu.
-- Ścieżki w `shared_files` są względne względem katalogu z bieżącym `SKILL.md` (np. `_shared/...` oznacza `../_shared/...`).
+- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
 
 ## Priorytet zasad (globalny kontrakt)
 1. Instrukcje systemowe/developerskie środowiska

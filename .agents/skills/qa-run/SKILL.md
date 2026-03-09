@@ -11,8 +11,7 @@ shared_files:
 # $qa-run
 
 ## Reguły rozwiązywania ścieżek
-- Ścieżki z prefiksem `./` są repo-relative (`./` = `git rev-parse --show-toplevel`), a nie względem katalogu procesu.
-- Ścieżki w `shared_files` są względne względem katalogu z bieżącym `SKILL.md` (np. `_shared/...` oznacza `../_shared/...`).
+- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
 
 ## Priorytet zasad (globalny kontrakt)
 1. Instrukcje systemowe/developerskie środowiska
@@ -83,9 +82,8 @@ Brak sekcji albo pusta tablica:
 
 ## Kroki
 1. Uruchom skrypt:
-   - najpierw ustal katalog skilla `qa-run` na podstawie ścieżki wskazanej w `AGENTS.md` (nie zakładaj stałej struktury katalogów),
-   - uruchom: `node <QA_RUN_SKILL_DIR>/scripts/run-matrix.mjs`
-   - opcjonalnie: `node <QA_RUN_SKILL_DIR>/scripts/run-matrix.mjs --config <ścieżka>`
+   - uruchom: `node scripts/run-matrix.mjs`
+   - opcjonalnie: `node scripts/run-matrix.mjs --config <ścieżka>`
 2. Skrypt:
    - wykrywa zmiany: tracked (staged + unstaged) oraz untracked,
    - wyznacza flagi `*_CHANGED`,
