@@ -17,8 +17,7 @@ shared_files:
 # $code-implement
 
 ## Reguły rozwiązywania ścieżek
-- Ścieżki z prefiksem `./` są repo-relative (`./` = `git rev-parse --show-toplevel`), a nie względem katalogu procesu.
-- Ścieżki w `shared_files` są względne względem katalogu z bieżącym `SKILL.md` (np. `_shared/...` oznacza `../_shared/...`).
+- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
 
 ## Priorytet zasad (globalny kontrakt)
 1. Instrukcje systemowe/developerskie środowiska
@@ -279,7 +278,7 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
    - doczytaj README dokumentacji dla dotkniętych modułów (zgodnie z `docs_map` z `AGENTS.md`).
    - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: doczytaj `../_shared/references/cqrs-monolith-standard-overrides.md` przed decyzjami architektonicznymi (warstwy/CQRS/Doctrine/FCF).
 3. Zrób preflight entrypointów narzędzi:
-   - załaduj `./.agents/skills/_shared/scripts/env-load.sh`,
+   - załaduj helper `env-load.sh` wskazany w `shared_files`,
    - ustal komendy narzędziowe dla repo (co najmniej `composer`, `console`, `yarn`, `codecept`) wyłącznie przez `resolve_tool_cmd`,
    - `resolve_tool_cmd` traktuj jako jedyne źródło prawdy; `.env`/`.env.local` są ładowane automatycznie w resolverze,
    - nie mieszaj wielu wariantów entrypointów w ramach jednego zadania.

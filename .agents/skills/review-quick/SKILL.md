@@ -13,8 +13,7 @@ shared_files:
 # $review-quick
 
 ## Reguły rozwiązywania ścieżek
-- Ścieżki z prefiksem `./` są repo-relative (`./` = `git rev-parse --show-toplevel`), a nie względem katalogu procesu.
-- Ścieżki w `shared_files` są względne względem katalogu z bieżącym `SKILL.md` (np. `_shared/...` oznacza `../_shared/...`).
+- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
 
 ## Priorytet zasad (globalny kontrakt)
 1. Instrukcje systemowe/developerskie środowiska
@@ -38,7 +37,7 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
   - override `../_shared/references/cqrs-monolith-standard-overrides.md` (gdy `CQRS_MONOLITH_STANDARD_OVERRIDES=1`),
   - dowodach z odczytów plików i komend uruchomionych w tej sesji.
 - Jeśli uruchamiasz komendy pomocnicze podczas weryfikacji:
-  - użyj helpera `./.agents/skills/_shared/scripts/env-load.sh` (`resolve_tool_cmd`),
+  - użyj helpera `env-load.sh` wskazanego w `shared_files` (`resolve_tool_cmd`),
   - komendy wyznaczaj wyłącznie przez `resolve_tool_cmd`,
   - nie wyprowadzaj ścieżek ręcznie z `BIN_PATH`; resolver ładuje `.env`/`.env.local` automatycznie.
 - Jeśli review dotyczy regresji runtime, logów, profilera albo DI:
