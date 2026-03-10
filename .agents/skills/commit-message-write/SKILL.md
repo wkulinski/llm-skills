@@ -41,6 +41,13 @@ Ten skill działa dwuetapowo:
 - Wymagane:
   - `COMMIT_MESSAGE_DIR`: katalog dla pliku `commit-message.txt`.
 
+## Reguła języka commit message
+- Źródłem prawdy dla języka commita są `AGENTS.md` oraz dokument wskazany przez `docs_map.AGENT_RULES_DOC`, jeśli taki klucz jest zdefiniowany.
+- Jeśli dokumentacja projektu jawnie wymaga konkretnego języka, użyj tego języka dla subjectu i body.
+- Jeśli dokumentacja projektu nie narzuca języka, użyj języka bieżącej komunikacji z użytkownikiem.
+- Format Conventional Commits nie narzuca języka całej treści commita.
+- Techniczny prefiks `<type>` (`feat`, `fix`, `chore`, itd.) pozostaje zgodny z Conventional Commits, ale część po `:` oraz body muszą być w języku wynikającym z powyższej reguły.
+
 ## Kroki
 1. Otwórz `AGENTS.md` i odczytaj mapę `docs_map`.
 2. Odczytaj klucz `COMMIT_MESSAGE_DIR`.
@@ -62,32 +69,40 @@ Ten skill działa dwuetapowo:
    - próg (threshold):
      - jeśli liczba plików w `COMMIT_SCOPE` jest mała (np. <= 20): przejrzyj diff każdego pliku lub kluczowe fragmenty,
      - jeśli jest duża: przejrzyj pełne diffy przynajmniej dla plików high-risk (procedury, konfiguracje, security/migracje, core domena) oraz dla obszaru wskazanego przez użytkownika; resztę opisz na podstawie `--stat/--numstat` + krótkiej inspekcji plików.
-6. Przygotuj draft treści commit message (etap `Draft`) w formacie:
+6. Ustal `COMMIT_LANGUAGE` przed tworzeniem draftu:
+   - sprawdź, czy `AGENTS.md` lub dokument wskazany przez `docs_map.AGENT_RULES_DOC` narzucają język treści commita,
+   - jeśli tak: ustaw `COMMIT_LANGUAGE` na język wymagany przez dokumentację projektu,
+   - jeśli nie: ustaw `COMMIT_LANGUAGE` na język bieżącej komunikacji z użytkownikiem,
+   - nie przełączaj języka domyślnie na angielski tylko dlatego, że commit ma format Conventional Commits.
+7. Przygotuj draft treści commit message (etap `Draft`) w formacie:
    - linia 1: subject w konwencji Conventional Commits, bez kropki na końcu,
    - linia 2: pusta,
    - kolejne linie: lista punktów (`- ...`) opisująca pełen zakres bieżących zmian.
-   - język subjectu i body:
-     - Treść commita twórz w języku wymaganym przez dokumentację projektu (źródło prawdy: `AGENTS.md` oraz dokument wskazany przez `docs_map.AGENT_RULES_DOC`).
-     - Jeśli brak jawnej reguły językowej, użyj języka bieżącej komunikacji z użytkownikiem.
-7. Wykonaj etap `Prune` (obowiązkowy) i przytnij draft wyłącznie do `COMMIT_SCOPE`:
+   - subject i body twórz w języku wynikającym z `COMMIT_LANGUAGE`.
+8. Wykonaj etap `Prune` (obowiązkowy) i przytnij draft wyłącznie do `COMMIT_SCOPE`:
    - każdy punkt body musi mapować się do co najmniej jednego pliku z `COMMIT_SCOPE`,
    - punkty niemapowalne usuń albo przepisz tak, aby odzwierciedlały wyłącznie zmiany commitowalne,
    - subject zbuduj po przycięciu, na podstawie punktów które przeszły filtr `COMMIT_SCOPE`,
    - nie zostawiaj w finalnym tekście wzmianek o zmianach wyłącznie kontekstowych (np. z plików ignorowanych), jeśli nie mają pokrycia w `COMMIT_SCOPE`.
-8. Zasady tworzenia subjectu (linia 1):
+9. Zasady tworzenia subjectu (linia 1):
    - format: `<type>: <Krótki tytuł>`
    - `<type>` dobierz zgodnie z Conventional Commits (`feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `build`, `ci`, `style`, `perf`, `revert`),
-   - `Krótki tytuł` adekwatny do zmian,
+   - `Krótki tytuł` adekwatny do zmian i zapisany w języku wynikającym z `COMMIT_LANGUAGE`,
+   - `<type>` pozostaje technicznym prefiksem Conventional Commits i nie zmienia języka reszty subjectu ani body,
    - zakazane są formy rozkazujące (np. `Dodaj`, `Ustaw`, `Zrób`) i kalka językowa.
-9. Zasady tworzenia body:
+10. Zasady tworzenia body:
    - body ma odzwierciedlać realnie wykryte i zrozumiane zmiany,
    - body ma opisywać wyłącznie zmiany z `COMMIT_SCOPE`,
+   - body ma być zgodne z `COMMIT_LANGUAGE`,
    - każdy punkt ma być krótki, konkretny i bez duplikatów,
    - kolejność punktów powinna iść od zmian najbardziej istotnych do pomocniczych.
-10. Zapisz treść do `<COMMIT_MESSAGE_DIR>/commit-message.txt`.
+11. Przed zapisem wykonaj końcowy check języka:
+   - potwierdź, że subject i body są zgodne z `COMMIT_LANGUAGE`,
+   - jeśli commit jest w złym języku, popraw go przed zapisem.
+12. Zapisz treść do `<COMMIT_MESSAGE_DIR>/commit-message.txt`.
    - Zapis traktuj jako obowiązkowy.
    - Jeśli zapis się nie powiedzie (brak uprawnień, brak miejsca, błąd I/O): przerwij z błędem i nie stosuj obejść/fallbacków.
-11. Po zapisie zweryfikuj, że plik istnieje, jest czytelny i nie jest pusty.
+13. Po zapisie zweryfikuj, że plik istnieje, jest czytelny i nie jest pusty.
     - Jeśli walidacja nie przejdzie: przerwij z błędem.
 
 ## Zakres
