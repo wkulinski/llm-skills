@@ -93,7 +93,12 @@ search_issue_by_title() {
   fi
 
   local result
-  result="$(gh search issues "repo:${owner}/${repo} is:issue is:open in:title ${keywords}" --json number,title -q '.[] | "\(.number)\t\(.title)"' || true)"
+  result="$(gh search issues "$keywords" \
+    --repo "${owner}/${repo}" \
+    --state open \
+    --match title \
+    --json number,title \
+    -q '.[] | "\(.number)\t\(.title)"' || true)"
 
   if [ -z "$result" ]; then
     return 1
@@ -167,7 +172,8 @@ if [ -z "$issue_number" ]; then
     exit 10
   fi
 
-  issue_number="$(gh issue create --title "$title" --body "" --json number -q .number)"
+  created_issue_url="$(gh issue create --repo "${owner}/${repo}" --title "$title" --body "")"
+  issue_number="$(printf '%s\n' "$created_issue_url" | sed -nE 's#.*/issues/([0-9]+)$#\1#p' | tail -n 1)"
   if [ -z "$issue_number" ]; then
     echo "Failed to create issue." >&2
     exit 11
