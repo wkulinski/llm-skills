@@ -48,7 +48,7 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
    - Selektywny commit wolno wykonać tylko przy jednoznacznym poleceniu użytkownika (np. „commit tylko te pliki: ...”).
 2. Wykonaj snapshot bazowy (punkt odniesienia do kroku akceptacji), zanim zaczniesz wprowadzać poprawki w repo:
    - Utwórz katalog snapshotu unikalny dla tego uruchomienia (np. `/tmp/agent-git-commit-snapshot-<timestamp>-<ulid>/`) i zapamiętaj jego ścieżkę.
-   - Preferowana ścieżka deterministyczna: uruchom `scripts/snapshot-create.sh` i zapamiętaj ścieżkę z stdout.
+   - Preferowana ścieżka deterministyczna: uruchom `<skill_dir>/scripts/snapshot-create.sh` i zapamiętaj ścieżkę z stdout.
    - Zasada: nie polegaj na „pamięci” ścieżki snapshotu:
      - `snapshot-create.sh` zapisuje pointer do snapshotu w `/tmp/agent-git-commit-snapshot-pointer.txt`,
      - kolejne kroki używają wariantu `--current`, aby nie przenosić `snapshot_dir` ręcznie (odporne na wznowienia sesji).
@@ -60,10 +60,10 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
    - Skopiuj do katalogu snapshotu bieżące wersje plików, które w momencie snapshotu są zmienione lub nieśledzone (z zachowaniem ścieżek).
    - Snapshot służy wyłącznie do raportowania zmian “delta od snapshotu” w kroku akceptacji — nie trafia do commita.
 3. Przeczytaj aktualne:
-   - `../_shared/references/runtime-collaboration-guidelines.md`
-   - `../_shared/references/runtime-quality-procedures.md`
-   - `../_shared/references/php-symfony-postgres-standards.md`
-   - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: `../_shared/references/cqrs-monolith-standard-overrides.md`
+   - `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`
+   - `<skills_root>/_shared/references/runtime-quality-procedures.md`
+   - `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
+   - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`
    oraz:
    - sprawdź `git status -sb`
    - odczytaj `docs_map` i klucz `COMMIT_MESSAGE_DIR`; jeśli mapy lub klucza brakuje — przerwij i dopytaj użytkownika
@@ -81,12 +81,12 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
 7. Wykonaj skill `$docs-sync`.
 8. Wykonaj skill `$skills-index-refresh`.
 9. Krok akceptacji: jeśli od momentu snapshotu (krok 2) zaszły jakiekolwiek zmiany w repo, zaraportuj je do akceptacji (wyłącznie „delta od snapshotu”, niepełna lista wszystkich zmian w repo):
-   - Preferowane obliczenie delty: `scripts/snapshot-delta-list.sh --current` (generuje `delta-all.txt` i zwraca kod 0 gdy pusta, 1 gdy niepusta).
+   - Preferowane obliczenie delty: `<skill_dir>/scripts/snapshot-delta-list.sh --current` (generuje `delta-all.txt` i zwraca kod 0 gdy pusta, 1 gdy niepusta).
    - Jeśli “delta od snapshotu” jest pusta: napisz wprost “Brak zmian delta od snapshotu (krok 2)” i przejdź do kroku 10.
    - Jeśli “delta od snapshotu” nie jest pusta:
      - wypisz listę plików, których treść zmieniła się względem snapshotu (oraz pliki dodane/usunięte od snapshotu),
      - dla każdego pliku: “Co”, “Dlaczego” i (jeśli zmiany nie są rozległe) pokaż konkretny diff “snapshot → teraz”.
-       - Preferowane pokazywanie diffów: `scripts/snapshot-delta-show.sh --current <path>` (lub `--all`).
+       - Preferowane pokazywanie diffów: `<skill_dir>/scripts/snapshot-delta-show.sh --current <path>` (lub `--all`).
      - baseline diffu:
        - jeśli plik istniał i był zmieniony/nieśledzony w momencie snapshotu: porównaj z kopią w katalogu snapshotu,
        - jeśli plik był czysty w momencie snapshotu: porównaj z wersją z `HEAD` (hash zapisany w snapshotie).
@@ -96,14 +96,14 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
     - Jeśli plik nie istnieje, nie jest czytelny albo jest pusty: przerwij i wróć do kroku 10.
 11. `git add .` (wszystkie pliki, w tym nowe/nieśledzone oraz zmiany z fixerów).
 12. Sprawdź staging (`git diff --cached --name-only`) i upewnij się, że nie ma plików śmieciowych/tymczasowych (np. `.env.local`, logi, cache); jeśli są — usuń je ze stagingu i wróć do kroku 3.
-    - Preferowana sanity-check: `scripts/staging-sanity.sh` (exit 0 = OK; exit 1 = wykryto podejrzane pliki).
+    - Preferowana sanity-check: `<skill_dir>/scripts/staging-sanity.sh` (exit 0 = OK; exit 1 = wykryto podejrzane pliki).
 13. Wykonaj `git commit -F <COMMIT_MESSAGE_DIR>/commit-message.txt`.
     - Treść commita ma pochodzić 1:1 z pliku wygenerowanego przez `$commit-message-write` (krok 10), bez dopisywania lub przepisywania przez `$git-commit`.
     - Jeśli odczyt pliku się nie powiedzie: przerwij i wróć do kroku 10.
 14. Potwierdź czystość `git status`, sprawdź poprawność commit message/body.
 15. Jeśli zdefiniowano klucz `HANDOFF_DOC`: usuń plik handoffu wskazany przez ten klucz (jeżeli istnieje). Plik jest lokalny i nie powinien trafiać do commita.
 16. Usuń katalog snapshotu z kroku 2 (sprzątanie obowiązkowe; snapshot jest tymczasowy i nie powinien zostawać po procedurze).
-    - Preferowane sprzątanie bezpieczne: `scripts/snapshot-clean.sh --current` (usuwa też `/tmp/agent-git-commit-snapshot-pointer.txt`).
+    - Preferowane sprzątanie bezpieczne: `<skill_dir>/scripts/snapshot-clean.sh --current` (usuwa też `/tmp/agent-git-commit-snapshot-pointer.txt`).
 17. Po udanym commicie uruchom `$agent-cache-clear` (czyszczenie `CACHE_PATH`, domyślnie `var/agent/cache/`).
 18. Po wykonaniu procedury nie uruchamiaj jej ponownie ani `git commit` bez nowej, wyraźnej intencji commita od użytkownika.
 

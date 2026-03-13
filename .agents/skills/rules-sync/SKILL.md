@@ -71,11 +71,11 @@ Fallback resolve ścieżek:
   - `agent_rules_doc_path` (resolved z klucza lub fallbacku od `MAIN_DOC`),
   - `quality_procedures_doc_path` (resolved z klucza lub fallbacku od `MAIN_DOC`).
 - Źródła porównania:
-  - wszystkie `../*/SKILL.md` (z pominięciem `../_shared/` i tego skilla),
-  - `../_shared/references/runtime-collaboration-guidelines.md`,
-  - `../_shared/references/runtime-quality-procedures.md`,
-  - `../_shared/references/php-symfony-postgres-standards.md`,
-  - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: `../_shared/references/cqrs-monolith-standard-overrides.md`.
+  - wszystkie `<skills_root>/*/SKILL.md` (z pominięciem `<skills_root>/_shared/` i tego skilla),
+  - `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`,
+  - `<skills_root>/_shared/references/runtime-quality-procedures.md`,
+  - `<skills_root>/_shared/references/php-symfony-postgres-standards.md`,
+  - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`.
 
 Poza zakresem:
 - dokumentacja domenowa i modułowa (`MAIN_DOC`, `MODULE_DOCS_GLOB`),

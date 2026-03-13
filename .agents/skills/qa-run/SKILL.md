@@ -82,8 +82,8 @@ Brak sekcji albo pusta tablica:
 
 ## Kroki
 1. Uruchom skrypt:
-   - uruchom: `node scripts/run-matrix.mjs`
-   - opcjonalnie: `node scripts/run-matrix.mjs --config <ścieżka>`
+   - uruchom: `node <skill_dir>/scripts/run-matrix.mjs`
+   - opcjonalnie: `node <skill_dir>/scripts/run-matrix.mjs --config <ścieżka>`
 2. Skrypt:
    - wykrywa zmiany: tracked (staged + unstaged) oraz untracked,
    - wyznacza flagi `*_CHANGED`,

@@ -82,10 +82,10 @@ Ustal, czy wykonujesz `$context-refresh` w trybie **Quick** czy **Full** (sekcja
 
 ### 2) Minimalny baseline (zawsze)
 Przeczytaj w całości (to jest minimalny “rdzeń” reguł i konwencji):
-1. `../_shared/references/runtime-collaboration-guidelines.md`
-2. `../_shared/references/runtime-quality-procedures.md`
-3. `../_shared/references/php-symfony-postgres-standards.md`
-4. Jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: `../_shared/references/cqrs-monolith-standard-overrides.md`
+1. `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`
+2. `<skills_root>/_shared/references/runtime-quality-procedures.md`
+3. `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
+4. Jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`
 5. Odczytaj `MAIN_DOC`.
    - Jeśli mapy lub klucza `MAIN_DOC` brakuje: zatrzymaj się i dopytaj użytkownika.
 6. Odczytaj `AGENT_RULES_DOC` — jeśli zdefiniowano.
@@ -140,7 +140,7 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
 6. Uwaga: jeśli kolejnym krokiem ma być `$commit-message-write`, to ten skill ma własną procedurę analizy zmian przed zapisaniem `commit-message.txt` — `$context-refresh` nie musi “wiedzieć wszystkiego” o każdej zmianie, ale musi wiedzieć, co jest zmienione i gdzie.
 
 ### 6) Weryfikacja spójności procedur (jeśli dotyczy)
-Jeśli zmiany dotyczą procedur (pliki w `../_shared/references/runtime-collaboration-guidelines.md`, `../_shared/references/runtime-quality-procedures.md`, `../*`):
+Jeśli zmiany dotyczą procedur (pliki w `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`, `<skills_root>/_shared/references/runtime-quality-procedures.md`, `<skills_root>/*`):
 1. Traktuj skille jako źródło prawdy dla procedur operacyjnych (QA/commit/commit-message/review).
 2. Jeśli widzisz rozbieżności, zanotuj je i zaproponuj korektę w skillu (nie dopisuj procedury “na boku” w docs).
 
@@ -167,7 +167,7 @@ Podsumuj krótko:
 - ```text
   Wynik: Kontekst załadowany/odświeżony.
   Tryb: Quick
-  Wczytane: `../_shared/references/runtime-collaboration-guidelines.md`, `../_shared/references/runtime-quality-procedures.md`, `../_shared/references/php-symfony-postgres-standards.md`, `MAIN_DOC` z `docs_map`.
+  Wczytane: `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`, `<skills_root>/_shared/references/runtime-quality-procedures.md`, `<skills_root>/_shared/references/php-symfony-postgres-standards.md`, `MAIN_DOC` z `docs_map`.
   Zmiany w repo: dotknięte moduły: Core, Migration (12 plików zmienionych, 1 untracked).
   Uwagi: brak.
   ```
@@ -190,6 +190,6 @@ Podsumuj krótko:
 Kontekst projektu jest wczytany, a ewentualne braki lub niejasności zostały jasno odnotowane; agent wie też, jakie obszary są zmienione w repo.
 
 ## Przypadki brzegowe
-- Brak jednego z kluczowych plików baseline skilli (`../_shared/references/runtime-collaboration-guidelines.md`, `../_shared/references/runtime-quality-procedures.md`, `../_shared/references/php-symfony-postgres-standards.md`).
+- Brak jednego z kluczowych plików baseline skilli (`<skills_root>/_shared/references/runtime-collaboration-guidelines.md`, `<skills_root>/_shared/references/runtime-quality-procedures.md`, `<skills_root>/_shared/references/php-symfony-postgres-standards.md`).
 - Brak mapy `docs_map` w `AGENTS.md` — dopytaj użytkownika o wymagane klucze i wstrzymaj wykonanie.
 - Brak klucza `MAIN_DOC` w `docs_map` — dopytaj użytkownika i wstrzymaj wykonanie.

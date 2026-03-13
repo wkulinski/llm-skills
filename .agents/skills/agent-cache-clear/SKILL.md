@@ -29,7 +29,7 @@ Wyczyścić pliki tymczasowe agenta z `CACHE_PATH` (domyślnie `var/agent/cache/
 
 ## Kroki
 1. Ustal root repo (`git rev-parse --show-toplevel`).
-2. Usuń zawartość katalogu cache bez usuwania samego katalogu (preferowany skrypt `scripts/clear.sh`).
+2. Usuń zawartość katalogu cache bez usuwania samego katalogu (preferowany skrypt `<skill_dir>/scripts/clear.sh`).
 3. Potwierdź, że cache jest pusty.
 
 ## Format odpowiedzi

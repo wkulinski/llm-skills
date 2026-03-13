@@ -11,8 +11,17 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
 - Procedury operacyjne (QA/commit/commit-message/review): właściwe skille (`$qa-run`, `$git-commit`, `$commit-message-write`, `$review-quick`, ...).
 
 ## 1a. Reguły ścieżek i priorytetu dla skilli
-- W treści `SKILL.md` zapis `./` oznacza ścieżkę repo-relative (`./` = `git rev-parse --show-toplevel`).
-- W `shared_files` ścieżki są rozwiązywane względem katalogu bieżącego skilla (katalogu z tym `SKILL.md`).
+- Po wybraniu skilla agent zna pełną ścieżkę do aktywnego `SKILL.md`.
+- Definicje kontraktowe:
+  - `skill_dir` = katalog aktywnego `SKILL.md`
+  - `skills_root` = katalog nadrzędny wobec `skill_dir`
+- W treści `SKILL.md` używaj wyłącznie jawnej notacji:
+  - `./...` dla ścieżek repo-relative (`./` = root repo),
+  - `<skill_dir>/...` dla plików aktywnego skilla,
+  - `<skills_root>/_shared/...` dla plików współdzielonych,
+  - `<skills_root>/<nazwa-skilla>/SKILL.md` dla odwołań do innych skilli.
+- Nie używaj w treści `SKILL.md` gołych ścieżek względnych typu `scripts/...`, `references/...`, `assets/...`, `templates/...`, `_shared/...` ani `../...`.
+- W `shared_files` ścieżki pozostają relative względem `skills_root` z powodów kompatybilności z toolingiem repo.
 - Zalecany porządek priorytetu reguł w skillach:
   1. Instrukcje systemowe/developerskie środowiska
   2. `./AGENTS.md` i dokumenty z `docs_map`
