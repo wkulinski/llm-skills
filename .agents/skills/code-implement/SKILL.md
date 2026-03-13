@@ -62,15 +62,15 @@ Mechanizmy:
 - **dyscyplina iteracji** (1 iteracja = 1 cel + 1 kryterium “gotowe”).
 
 Źródła prawdy:
-- zasady współpracy/runtime: `../_shared/references/runtime-collaboration-guidelines.md`
-- checklisty jakości: `../_shared/references/runtime-quality-procedures.md`
-- baseline techniczny stacka: `../_shared/references/php-symfony-postgres-standards.md`
-- override architektoniczny (warunkowy): `../_shared/references/cqrs-monolith-standard-overrides.md` — tylko gdy `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`
-- kontekst repo: `$context-refresh` (`../context-refresh/SKILL.md`)
-- diagnostyka runtime/introspekcja: `$dev-mate` (`../dev-mate/SKILL.md`) — użyj, gdy problem dotyczy logów, profilera albo DI i potrzebujesz ustrukturyzowanych dowodów z AI Mate
-- szybkie review: `$review-quick` (`../review-quick/SKILL.md`)
-- pełne QA: `$qa-run` (`../qa-run/SKILL.md`)
-- commit: wyłącznie `$git-commit` (`../git-commit/SKILL.md`)
+- zasady współpracy/runtime: `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`
+- checklisty jakości: `<skills_root>/_shared/references/runtime-quality-procedures.md`
+- baseline techniczny stacka: `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
+- override architektoniczny (warunkowy): `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` — tylko gdy `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`
+- kontekst repo: `$context-refresh` (`<skills_root>/context-refresh/SKILL.md`)
+- diagnostyka runtime/introspekcja: `$dev-mate` (`<skills_root>/dev-mate/SKILL.md`) — użyj, gdy problem dotyczy logów, profilera albo DI i potrzebujesz ustrukturyzowanych dowodów z AI Mate
+- szybkie review: `$review-quick` (`<skills_root>/review-quick/SKILL.md`)
+- pełne QA: `$qa-run` (`<skills_root>/qa-run/SKILL.md`)
+- commit: wyłącznie `$git-commit` (`<skills_root>/git-commit/SKILL.md`)
 
 ## Kiedy użyć
 Użyj, gdy użytkownik prosi o zmianę w kodzie (feature/bugfix/refactor), np.:
@@ -117,9 +117,9 @@ Minimalny format (utrzymuj spójnie):
   - `- R3 (DONE): Zmiana e-maila profilu działa w Core`
   - `  - Kryteria: Formularz zapisuje e-mail; flash sukcesu; użytkownik pozostaje zalogowany`
   - `  - Dowody: src/Core/UI/Controller/Profile/EmailController.php; sprawdzenie manualne`
-- **Dziennik odczytów**: dopisuj wyłącznie przez `scripts/state-readlog.sh "<msg>"`.
+- **Dziennik odczytów**: dopisuj wyłącznie przez `<skill_dir>/scripts/state-readlog.sh "<msg>"`.
   - Przykład: `- [2026-01-16T21:20:00+01:00] rg "EntityConnection" -n src; git diff --stat`
-- **Dziennik iteracji**: dopisuj wyłącznie przez `scripts/state-log.sh "<msg>"`.
+- **Dziennik iteracji**: dopisuj wyłącznie przez `<skill_dir>/scripts/state-log.sh "<msg>"`.
   - Timestamp zawsze z systemu (`date --iso-8601=seconds`); zero wpisów ręcznych.
   - Trzymaj "### Dziennik iteracji" jako ostatnią sekcję, aby skrypt dopisywał w poprawnym miejscu.
 
@@ -139,14 +139,14 @@ Czyszczenie stanu (ważne):
      - “uruchom state-clear”
      - “clear code-implement state”
      
-     → uruchom `scripts/state-clear.sh`,
+     → uruchom `<skill_dir>/scripts/state-clear.sh`,
   2) użytkownik jednoznacznie anuluje zadanie i chce wycofać zmiany:
      - przykładowe jednoznaczne polecenia:
        - “anuluj zadanie i wycofaj zmiany”
        - “odwróć zmiany z tego zadania i wyczyść stan code-implement”
      - najpierw dopytaj, czy chodzi o wycofanie **wszystkich** niecommitowanych zmian w repo, czy tylko zmian z tego zadania,
-     - wycofaj zmiany **wyłącznie** na wyraźne polecenie użytkownika (zgodnie z `../_shared/references/runtime-collaboration-guidelines.md`),
-     - dopiero po wycofaniu zmian uruchom `scripts/state-clear.sh`.
+     - wycofaj zmiany **wyłącznie** na wyraźne polecenie użytkownika (zgodnie z `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`),
+     - dopiero po wycofaniu zmian uruchom `<skill_dir>/scripts/state-clear.sh`.
 
 Jeśli nie masz pewności, czy użytkownik chce czyszczenia stanu: dopytaj wprost “Czy mam wyczyścić stan code-implement?” i nie uruchamiaj `state-clear.sh` bez potwierdzenia.
 
@@ -256,7 +256,7 @@ Traktuj zmianę jako rozległą, jeśli zachodzi co najmniej jeden warunek:
    - “ryzykowne obszary” (jeśli dotyczy: security/migracje/zależności).
  
 Opcjonalnie (zalecane): do stworzenia szablonu użyj
-`scripts/state-init.sh`.
+`<skill_dir>/scripts/state-init.sh`.
 
 ### 1) Intake (zanim dotkniesz kodu)
 1. Zreasumuj zadanie w 1–3 zdaniach (“Rozumiem, że mam…”).
@@ -276,7 +276,7 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
 2. Ustal obszar zmian:
    - znajdź docelowe moduły/pliki (np. przez `rg` po symbolach),
    - doczytaj README dokumentacji dla dotkniętych modułów (zgodnie z `docs_map` z `AGENTS.md`).
-   - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: doczytaj `../_shared/references/cqrs-monolith-standard-overrides.md` przed decyzjami architektonicznymi (warstwy/CQRS/Doctrine/FCF).
+   - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: doczytaj `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` przed decyzjami architektonicznymi (warstwy/CQRS/Doctrine/FCF).
 3. Zrób preflight entrypointów narzędzi:
    - załaduj helper `env-load.sh` wskazany w `shared_files`,
    - ustal komendy narzędziowe dla repo (co najmniej `composer`, `console`, `yarn`, `codecept`) wyłącznie przez `resolve_tool_cmd`,
@@ -285,7 +285,7 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
 4. Przed zmianą krytycznego pliku **lub** przed edycją pliku, który jest już zmieniony w repo (tracked/untracked):
    - przeczytaj diff (`git diff -- <plik>`) i aktualną treść (relewantne sekcje),
    - dopiero potem edytuj.
-5. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) dopisz wpis do Dziennika odczytów przez `scripts/state-readlog.sh "<msg>"` (możesz grupować kilka odczytów w jeden wpis).
+5. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) dopisz wpis do Dziennika odczytów przez `<skill_dir>/scripts/state-readlog.sh "<msg>"` (możesz grupować kilka odczytów w jeden wpis).
 6. Jeśli w trakcie implementacji wychodzi, że trzeba zmodyfikować plik, który nie wynika wprost z zadania:
    - jeśli to **krytyczny plik**: zatrzymaj się i dopytaj użytkownika, czy taki scope jest akceptowalny,
    - jeśli to **nie jest krytyczny plik**: nie “zasypuj pytaniami” — spróbuj znaleźć rozwiązanie w obrębie ustalonego zakresu; jeśli to niemożliwe, wykonaj minimalną zmianę konieczną technicznie i jawnie zaraportuj to w podsumowaniu.
@@ -295,7 +295,7 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
 2. Jeśli w trakcie okaże się, że zakres rośnie: zatrzymaj się, zaktualizuj plan i poproś o potwierdzenie.
 
 ### 4) Implementacja (zasady + bramki)
-1. Implementuj zgodnie z `../_shared/references/runtime-collaboration-guidelines.md`, baseline `../_shared/references/php-symfony-postgres-standards.md` oraz aktywnym override (jeśli flaga włączona).
+1. Implementuj zgodnie z `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`, baseline `<skills_root>/_shared/references/php-symfony-postgres-standards.md` oraz aktywnym override (jeśli flaga włączona).
 2. Twierdzenia oparte na dowodach (anty-“kłamstwo”):
    - nie pisz “sprawdziłem/zweryfikowałem/przeczytałem”, jeśli nie wykonałeś realnego odczytu pliku lub komendy w tej sesji,
    - jeśli nie wiesz (albo nie sprawdziłeś): powiedz wprost i sprawdź,
@@ -308,7 +308,7 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
    - nie rób migracji/zmian schematu bez wyraźnego polecenia,
    - nie zmieniaj zachowania security/permissions bez jednoznacznego potwierdzenia.
 5. Po dodaniu nowych plików PHP:
-   - wykonaj `<COMPOSER_CMD> dump-autoload --no-scripts`, gdzie `<COMPOSER_CMD>` pochodzi z preflightu opartego o `resolve_tool_cmd` (zgodnie z `../_shared/references/runtime-quality-procedures.md`).
+   - wykonaj `<COMPOSER_CMD> dump-autoload --no-scripts`, gdzie `<COMPOSER_CMD>` pochodzi z preflightu opartego o `resolve_tool_cmd` (zgodnie z `<skills_root>/_shared/references/runtime-quality-procedures.md`).
 
 ### 5) Stop-conditions (kiedy przerwać i dopytać)
 Wstrzymaj implementację i zadaj pytania, jeśli pojawia się którykolwiek przypadek:
@@ -361,7 +361,7 @@ Gdy użytkownik zgłasza błąd/uwagę po Twojej implementacji:
 5. Jeśli Rejestr wymagań lub Dziennik odczytów nie odzwierciedlają aktualnych zmian, uzupełnij je przed zakończeniem.
 
 Opcjonalnie (zalecane): do szybkiej klasyfikacji zmian użyj
-`scripts/change-inspect.sh`.
+`<skill_dir>/scripts/change-inspect.sh`.
 
 ### 7) Raport końcowy (format)
 Zakończ odpowiedź w stałej strukturze:
@@ -401,4 +401,4 @@ Zakończ odpowiedź w stałej strukturze:
 ## Przypadki brzegowe
 - Jeśli użytkownik prosi “zakomituj” → użyj `$git-commit`, nie `$code-implement`.
 - Jeśli zmiany są tylko w docs/skillach → pomiń `$review-quick` i `$qa-run`, chyba że użytkownik prosi inaczej.
-- Jeśli użytkownik wyraźnie każe wyczyścić stan: uruchom `scripts/state-clear.sh` i zakończ bez dalszych zmian.
+- Jeśli użytkownik wyraźnie każe wyczyścić stan: uruchom `<skill_dir>/scripts/state-clear.sh` i zakończ bez dalszych zmian.

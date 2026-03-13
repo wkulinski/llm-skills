@@ -78,7 +78,7 @@ Jeśli zmiany w kodzie spełniają **którykolwiek** z warunków poniżej, trakt
 1. Jeśli jakaś procedura jest pokryta przez skill, to **skill jest źródłem prawdy**, a dokumentacja w `docs/` ma jedynie:
    - krótki opis intencji,
    - ograniczenia/inwarianty,
-   - link do odpowiedniego skilla (np. `../qa-run/SKILL.md`).
+   - link do odpowiedniego skilla (np. `<skills_root>/qa-run/SKILL.md`).
 2. Jeśli wykryjesz, że ktoś dopisał/zmienił procedurę w dokumentacji projektu (np. `AGENTS.md` lub dokumentach przez niego wskazanych), a jest to procedura pokryta przez skill:
    - **przenieś zmianę do właściwego skilla** (update `../<skill>/SKILL.md`),
    - w docs zostaw tylko link (i ewentualnie inwariant, jeśli to nie jest „krok po kroku”).
@@ -89,7 +89,7 @@ Jeśli zmiany w kodzie spełniają **którykolwiek** z warunków poniżej, trakt
    - sprawdź `git status -sb`,
    - zbierz listę zmienionych plików (`git diff --name-only`) i nowe pliki (`git ls-files --others --exclude-standard`),
    - określ, które moduły są dotknięte zmianami (`src/<Module>/...`) i czy spełniony jest threshold kompletności (sekcja wyżej).
-   - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: uwzględnij `../_shared/references/cqrs-monolith-standard-overrides.md` jako aktywne zasady architektoniczne.
+   - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: uwzględnij `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` jako aktywne zasady architektoniczne.
 2. (Faza domenowa) Odczytaj wymagane klucze mapy `docs_map`: `MAIN_DOC`, `MODULE_INDEX_DOC`, `MODULE_DOCS_GLOB`.
    - Jeśli mapy lub któregoś wymaganego klucza brakuje: zatrzymaj się i dopytaj użytkownika.
    - Odczytaj też `AGENT_RULES_DOC` i `QUALITY_PROCEDURES_DOC`, jeśli te klucze są zdefiniowane (będą użyte obowiązkowo w fazie proceduralnej).
@@ -107,12 +107,12 @@ Jeśli zmiany w kodzie spełniają **którykolwiek** z warunków poniżej, trakt
 6. (Faza domenowa) Opcjonalnie (jeśli dotyczy i zdefiniowano `TESTS_README`): README testów:
    - jeśli zmiana dotyczy sposobu uruchamiania testów lub infrastruktury testów, zaktualizuj opis tak, by odpowiadał stanowi repo.
 7. (Faza proceduralna / skills-first) Ustal mapę źródeł prawdy:
-   - sprawdź zawartość `../` oraz dokumenty proceduralne shared (`../_shared/references/runtime-collaboration-guidelines.md`, `../_shared/references/runtime-quality-procedures.md`),
+   - sprawdź zawartość `<skills_root>/` oraz dokumenty proceduralne shared (`<skills_root>/_shared/references/runtime-collaboration-guidelines.md`, `<skills_root>/_shared/references/runtime-quality-procedures.md`),
    - dla procedur operacyjnych przyjmij skille jako nadrzędne (skills-first),
    - przykładowe mapowanie (jeśli te skille istnieją w repo):
-     - QA/linty/testy → `$qa-run` (`../qa-run/SKILL.md`)
-     - commit (snapshot/akceptacja/staging/commit) → `$git-commit` (`../git-commit/SKILL.md`)
-     - commit-message (generowanie pliku `commit-message.txt`) → `$commit-message-write` (`../commit-message-write/SKILL.md`)
+     - QA/linty/testy → `$qa-run` (`<skills_root>/qa-run/SKILL.md`)
+     - commit (snapshot/akceptacja/staging/commit) → `$git-commit` (`<skills_root>/git-commit/SKILL.md`)
+     - commit-message (generowanie pliku `commit-message.txt`) → `$commit-message-write` (`<skills_root>/commit-message-write/SKILL.md`)
      - szybka weryfikacja zmian → `$review-quick`
      - inicjalizacja kontekstu → `$context-refresh`
      - odświeżenie indeksu skills → `$skills-index-refresh`
@@ -166,7 +166,7 @@ Jeśli zmiany w kodzie spełniają **którykolwiek** z warunków poniżej, trakt
   - lista skilli, które zaktualizowano, bo to one są źródłem prawdy.
 - Użyte klucze dokumentacji: lista użytych kluczy `docs_map` z resolved paths.
 - Uwagi: opcjonalne ryzyka lub braki.
-- Przy aktywnym `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: wskaż ewentualne rozbieżności docs względem `../_shared/references/cqrs-monolith-standard-overrides.md`.
+- Przy aktywnym `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: wskaż ewentualne rozbieżności docs względem `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`.
 - Jeśli brak rozbieżności, napisz: "Brak rozbieżności w dokumentacji."
 
 ## Przykłady wejścia
@@ -185,7 +185,7 @@ Jeśli zmiany w kodzie spełniają **którykolwiek** z warunków poniżej, trakt
   Wynik:
   - Usunięto duplikację procedury QA w dokumentacji projektu (zastąpiono listę komend linkiem do `$qa-run`).
   - Uporządkowano dokument proceduralny projektu tak, aby nie powielał kroków commit/commit-message (odsyła do `$git-commit` i `$commit-message-write`).
-  - Zaktualizowano `../qa-run/SKILL.md`, bo w docs pojawiła się nowa komenda QA — przeniesiono ją do skilla (skills-first).
+  - Zaktualizowano `<skills_root>/qa-run/SKILL.md`, bo w docs pojawiła się nowa komenda QA — przeniesiono ją do skilla (skills-first).
   Uwagi: brak.
   ```
 

@@ -28,7 +28,7 @@ Zautomatyzować zlecenie review: push brancha na origin, utworzenie PR do domyś
    - Jeśli używasz `GH_TOKEN`: upewnij się, że token ma scope `project` i `read:org` (Projects v2 w org); `gh auth refresh` nie zadziała przy ustawionym `GH_TOKEN`.
    - Jeśli nie używasz `GH_TOKEN` i brakuje `project` lub `read:org`: `gh auth refresh -h github.com -s project,read:org`
 2. Uruchom skrypt:
-   - `scripts/finish.sh`
+   - `<skill_dir>/scripts/finish.sh`
    - Opcje:
      - `--issue-number <NUMER>` (numer issue w repo)
      - `--reviewer <login>`

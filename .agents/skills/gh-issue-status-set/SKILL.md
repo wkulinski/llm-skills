@@ -29,7 +29,7 @@ Ustawić status issue w GitHub Projects v2 na podstawie bieżącego brancha, num
    - Jeśli używasz `GH_TOKEN`: upewnij się, że token ma scope `project` i `read:org` (Projects v2 w org); `gh auth refresh` nie zadziała przy ustawionym `GH_TOKEN`.
    - Jeśli nie używasz `GH_TOKEN` i brakuje scope `project` lub `read:org`: `gh auth refresh -h github.com -s project,read:org`
 3. Uruchom skrypt:
-   - `scripts/set-status.sh --status "<STATUS>"`
+   - `<skill_dir>/scripts/set-status.sh --status "<STATUS>"`
    - Opcjonalnie: `--issue <ID>`, `--project-number <NUM>`, `--field <NAZWA>`
 4. Jeśli skrypt zwraca błąd, zinterpretuj kod wyjścia i **zawsze** uruchom skrypt ponownie z uzupełnionymi danymi (bez ręcznego “rzeźbienia”).
 

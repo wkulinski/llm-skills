@@ -33,24 +33,24 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
 - Sprawdzenia opieraj na:
   - promptcie użytkownika i/lub planie zadania,
   - realnie zmienionych plikach w repo,
-  - baseline `../_shared/references/php-symfony-postgres-standards.md`,
-  - override `../_shared/references/cqrs-monolith-standard-overrides.md` (gdy `CQRS_MONOLITH_STANDARD_OVERRIDES=1`),
+  - baseline `<skills_root>/_shared/references/php-symfony-postgres-standards.md`,
+  - override `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` (gdy `CQRS_MONOLITH_STANDARD_OVERRIDES=1`),
   - dowodach z odczytów plików i komend uruchomionych w tej sesji.
 - Jeśli uruchamiasz komendy pomocnicze podczas weryfikacji:
   - użyj helpera `env-load.sh` wskazanego w `shared_files` (`resolve_tool_cmd`),
   - komendy wyznaczaj wyłącznie przez `resolve_tool_cmd`,
   - nie wyprowadzaj ścieżek ręcznie z `BIN_PATH`; resolver ładuje `.env`/`.env.local` automatycznie.
 - Jeśli review dotyczy regresji runtime, logów, profilera albo DI:
-  - możesz pomocniczo użyć `$dev-mate` (`../dev-mate/SKILL.md`),
+  - możesz pomocniczo użyć `$dev-mate` (`<skills_root>/dev-mate/SKILL.md`),
   - ale findings nadal mają mapować się do kodu, konfiguracji lub zachowania aplikacji.
 
 ## Kontrakt wykonania (quick-check)
 1. Zidentyfikuj zakres przeglądu na podstawie prompta i zmienionych plików.
 2. Potwierdź zgodność zmian z promptem i/lub planem.
 3. Zweryfikuj zgodność zmian z baseline:
-   - `../_shared/references/php-symfony-postgres-standards.md`
+   - `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
 4. Jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: zweryfikuj zgodność zmian z:
-   - `../_shared/references/cqrs-monolith-standard-overrides.md`
+   - `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`
 5. Priorytetyzuj analizę:
    - najpierw pliki high-risk (security, persistence, entrypointy, config/tooling),
    - następnie obszar wskazany w prompt,
