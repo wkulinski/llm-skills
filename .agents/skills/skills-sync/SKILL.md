@@ -1,9 +1,11 @@
 ---
 name: skills-sync
 description: >-
-  Lekki wrapper operatorski dla `bin/skills-sync.mjs`: sync i publish (w tym
-  dry-run, selektywne dodawanie nowych skilli przez `--new-skill` oraz
-  kontrolowane usuwanie przez `--remove-skill` + `--confirm-deletes`.
+  Publikacja i synchronizacja skilli przez `bin/skills-sync.mjs` (`sync`,
+  `publish`, `publish --dry-run`), w tym selektywne dodawanie nowych skilli
+  przez `--new-skill` oraz kontrolowane usuwanie przez `--remove-skill` +
+  `--confirm-deletes`. Użyj, gdy użytkownik prosi o publikację zmian w
+  skillach, wypchnięcie skilli, sync skilli albo dry-run publikacji skilli.
 shared_files: []
 ---
 
@@ -22,10 +24,39 @@ shared_files: []
 Uprościć obsługę `skills-sync.mjs` bez duplikowania logiki.
 Ten skill nie implementuje reguł synchronizacji ani publish samodzielnie, tylko uruchamia komendy CLI.
 
+## Reguła aktywacji
+Uruchom ten skill zawsze, gdy intencja użytkownika dotyczy publikacji, synchronizacji albo dry-runu zmian w skillach.
+
+Przykładowe frazy aktywujące:
+- "opublikuj zmiany w skillach"
+- "opublikuj skille"
+- "wypchnij skille"
+- "zrób skills publish"
+- "skills-sync publish"
+- "zsynchronizuj skille"
+- "puść dry-run publikacji skilli"
+
 ## Kiedy użyć
 - Gdy chcesz odświeżyć lokalne skille z upstream (`sync`).
 - Gdy chcesz wypchnąć lokalne zmiany skilli do source (`publish`).
 - Gdy chcesz najpierw zobaczyć plan zmian (`publish --dry-run`).
+
+## Reguła pierwszeństwa nad workflow Git/GitHub
+Jeśli polecenie użytkownika dotyczy `skills` / `skilli`, ten skill ma pierwszeństwo nad ogólnymi workflow typu `git-commit`, `git push`, `gh-issue-review` albo ręczne tworzenie PR.
+
+Nie wolno domyślnie interpretować publikacji skilli jako:
+- zwykły `git commit`
+- zwykły `git push`
+- utworzenie lub aktualizacja PR w bieżącym repo
+
+Workflow gitowy wolno rozważyć dopiero wtedy, gdy użytkownik jednoznacznie prosi o publikację zmian definicji skilli do tego repozytorium Git, a nie o publish przez `skills-sync`.
+
+## Rozstrzyganie dwuznaczności
+Słowo `opublikuj` samo w sobie jest niejednoznaczne.
+
+Jeśli jednak obiektem polecenia są `skills` / `skille`, domyślną interpretacją jest publish przez `skills-sync`, a nie publikacja przez Git/GitHub.
+
+Dopytanie użytkownika jest potrzebne tylko wtedy, gdy jednocześnie pojawia się język skilli oraz commita/pusha/PR do repo.
 
 ## Komendy
 1. Synchronizacja z upstream:
