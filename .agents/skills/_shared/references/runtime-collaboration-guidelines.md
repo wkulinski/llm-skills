@@ -32,7 +32,36 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
 - Najpierw doprecyzuj cel i kryteria akceptacji; nie zgaduj, gdy brakuje kluczowych danych.
 - Odpowiadaj językiem użytkownika; kod i identyfikatory pozostają po angielsku.
 - Komunikuj tylko twierdzenia oparte na dowodach (odczyt plików, wynik komend, diff).
-- Jeśli pojawia się konflikt zakresu, zatrzymaj się i potwierdź kierunek zamiast rozszerzać zadanie „po cichu”.
+
+## 2a. Triggery konsultacji
+
+### Konflikt zakresu
+- Opis: w trakcie realizacji zadania pojawia się rozjazd między bieżącym poleceniem a implikowanym rozszerzeniem zakresu.
+- Trigger: sensowna kontynuacja wymagałaby dodania prac, których użytkownik nie zlecił wprost, albo zmiany celu zadania „po cichu”.
+- Działanie: agent ma zatrzymać implementację i potwierdzić kierunek zamiast samodzielnie rozszerzać zakres.
+
+### Czysty model vs kompatybilność kontraktu
+- Opis: nowy, idiomatyczny albo framework-native model nie pasuje naturalnie do starego kontraktu wejścia.
+- Trigger: wdrożenie nowego modelu wymaga dodatkowych adapterów, listenerów, normalizerów albo przepakowywania danych wyłącznie po to, aby zachować stary kontrakt wejścia.
+- Trigger: więcej niż jedna warstwa kodu istnieje tylko po to, by pogodzić nowy model z niezmienionym payloadem, bez samodzielnej wartości biznesowej lub walidacyjnej.
+- Działanie: agent ma zatrzymać implementację i przedstawić użytkownikowi wybór „czysty model z jawną zmianą kontraktu” vs „zachowanie kontraktu z warstwą adaptacyjną”.
+
+### Refaktor zmienia publiczny kontrakt
+- Opis: praca zaczęta jako refaktor techniczny przestaje być zmianą wyłącznie wewnętrzną i zaczyna modyfikować publiczny kontrakt używany przez inne warstwy, moduły albo klientów.
+- Trigger: refaktor zmienia kształt requestu lub response, publiczne DTO, payload frontend-backend, publiczny interfejs z `Api/` albo inny jawny kontrakt współdzielony poza lokalną implementacją.
+- Trigger: refaktor zmienia semantykę błędów, nazwy pól, strukturę danych albo reguły kompatybilności w miejscu, które jest częścią uzgodnionego lub testowanego kontraktu.
+- Działanie: agent ma zatrzymać refaktor i skonsultować z użytkownikiem, czy priorytetem jest zachowanie kompatybilności, czy świadoma zmiana publicznego kontraktu.
+- Ta zasada nie powinna odpalać konsultacji dla:
+  - zwykłego refaktoru prywatnej metody,
+  - zmian nazw klas lub metod niewystawionych poza lokalny moduł,
+  - zmian wewnętrznego przepływu danych, jeśli publiczny shape wejścia i wyjścia pozostaje taki sam,
+  - porządków architektonicznych bez wpływu na granice modułu.
+- Powinna odpalać konsultację dopiero wtedy, gdy ruszamy coś w rodzaju:
+  - payloadu runtime między frontendem i backendem,
+  - klas z `src/*/Api/`,
+  - kontraktu formularza lub endpointu używanego przez klienta,
+  - shape błędów `400` / `403` / `422`, jeśli jest częścią kontraktu i testów,
+  - publicznego interface/portu używanego poza lokalnym miejscem implementacji.
 
 ## 3. Zasady bezpiecznej edycji
 - Nie nadpisuj cudzych zmian i nie edytuj plików „w ciemno”.
