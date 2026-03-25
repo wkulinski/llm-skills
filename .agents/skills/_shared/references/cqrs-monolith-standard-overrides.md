@@ -1,7 +1,6 @@
 # CQRS Monolith Standard Overrides
 
-Ten dokument opisuje **świadome odstępstwa** od baseline'u
-`php-symfony-postgres-standards.md` dla profilu modularnego monolitu z CQRS.
+Ten dokument opisuje **świadome odstępstwa** od baseline'u `php-symfony-postgres-standards.md` dla projektu opartego o architekturę modularnego monolitu z modułami w architekturze heksagonalnej i CQRS.
 
 ## 1. Aktywacja i pierwszeństwo
 Stosuj ten dokument tylko, gdy w `.env` / `.env.local` ustawiono:
@@ -38,6 +37,107 @@ Reguły poniżej zawsze interpretuj z perspektywy jednego modułu `M`:
 - `Application/Port` bez podfolderu:
   - traktuj jako legacy i nie dodawaj nowych portów w tej lokalizacji,
   - wyjątek: porty techniczne w module współdzielonym (np. `Shared`), gdy klasyfikacja In/Out nie wnosi wartości domenowej.
+
+### 3.2 Nazewnictwo klas, sufiksy i ścieżka decyzyjna
+Poniższe reguły służą do spójnego nazywania klas i katalogów w modularnym monolicie CQRS/hexagonal:
+- nazwa klasy odpowiada przede wszystkim jej roli,
+- katalog odpowiada przede wszystkim jej pozycji architektonicznej,
+- nazwa klasy i nazwa katalogu nie muszą używać tego samego słowa.
+
+#### 3.2.1 Rozdzielenie roli klasy od warstwy
+- `Application/Adapter/...` opisuje pozycję architektoniczną:
+  - klasa integruje moduł z cudzym kontraktem,
+  - implementuje port innego modułu albo tłumaczy jeden kontrakt na drugi.
+- sufiks klasy opisuje jej rolę operacyjną:
+  - `Adapter`, `Provider`, `Resolver`, `Repository`, `Service`, `Criteria` itp.
+- dlatego poniższe połączenia są poprawne:
+  - `Application/Adapter/<Context>/<Something>Adapter`,
+  - `Application/Adapter/<Context>/<Something>Provider`.
+- reguła praktyczna:
+  - katalog odpowiada na pytanie: "gdzie ta klasa siedzi w architekturze?",
+  - nazwa klasy odpowiada na pytanie: "co ta klasa robi?".
+
+#### 3.2.2 Klasyfikacja najczęstszych sufiksów
+- `Port`
+  - kontrakt graniczny, zwykle interfejs,
+  - nie jest implementacją,
+  - przykłady: `SomeUseCasePort`, `SomeResolverPort`, `SomeReadRepositoryPort`.
+- `Adapter`
+  - implementacja cudzego portu albo translator między kontraktami,
+  - zwykle cienka warstwa integracyjna delegująca do domeny, read-side albo infrastruktury,
+  - dobry sygnał: klasa istnieje głównie po to, by dopasować model modułu `M` do wymagań modułu `N`.
+- `Provider`
+  - klasa dostarcza definicję, konfigurację, strategię albo zestaw danych dla określonego kontraktu,
+  - `Provider` opisuje rolę, nie warstwę,
+  - może legalnie żyć w katalogu `Adapter`, jeśli implementuje obcy port jako punkt rozszerzenia.
+- `Resolver`
+  - klasa rozstrzyga wybór, dopasowanie albo regułę na podstawie wejścia,
+  - często występuje jako adapter do portu typu resolver.
+- `Repository`
+  - klasa odpowiada za odczyt/zapis danych,
+  - kontrakt: `...RepositoryPort`,
+  - implementacja: `...Repository`,
+  - dla read-side dopuszczalne i zalecane są nazwy doprecyzowane, np. `...GridReadRepository`.
+- `Service`
+  - nazwa zapasowa dla logiki operacyjnej/orkiestracyjnej, gdy brak lepszego, precyzyjniejszego sufiksu,
+  - nie używaj `Service` domyślnie, jeśli realnie lepiej pasują `Resolver`, `Provider`, `Factory`, `Builder`, `Mapper` itp.
+- `DTO`
+  - neutralny obiekt transferu danych,
+  - używaj, gdy repo nie potrzebuje mocniejszego rozróżnienia,
+  - jeśli projekt jawnie rozdziela read-side, można preferować `View`, `RowView`, `ResultView`, `QueryModel`.
+- `View` / `RowView` / `ResultView`
+  - model odczytu dla UI lub read-side,
+  - preferowany tam, gdzie nazwa ma ujawniać, że obiekt reprezentuje wynik odczytu, a nie input use case'a.
+
+#### 3.2.3 Kiedy `Adapter` jest trafny
+Słowo `Adapter` jest trafne, gdy klasa spełnia większość poniższych warunków:
+- implementuje port z innego modułu albo kontrakt frameworkowy,
+- tłumaczy jeden model wejścia/wyjścia na drugi,
+- sama nie jest głównym miejscem logiki domenowej,
+- deleguje do domeny, read-side, repozytorium lub innego serwisu,
+- istnieje głównie po to, by połączyć dwa konteksty.
+
+Przykłady trafnego użycia:
+- `Application/Adapter/<Context>/<Something>Adapter`,
+- `Application/Adapter/<Context>/<Something>ResolverAdapter`.
+
+Przykład dopuszczalny, choć bardziej graniczny:
+- `Application/Adapter/<Context>/<Something>Provider`,
+  - katalog `Adapter` jest poprawny, bo klasa integruje moduł biznesowy z cudzym punktem rozszerzenia lub portem,
+  - nazwa `Provider` jest poprawna, bo opisuje rolę klasy w tym kontrakcie.
+
+#### 3.2.4 Czego nie wkładać do `Adapter`
+Do katalogu `Adapter` nie wkładaj modeli, które nie pełnią funkcji integracyjnej:
+- `FilterInput`,
+- `SortInput`,
+- `QueryModel`,
+- prostych `DTO`,
+- lokalnych modeli read-side, jeśli nie implementują obcego kontraktu.
+
+Jeśli taka klasa jest tylko modelem danych dla read-side lub wyszukiwania, preferuj lokalizacje:
+- `Application/QueryModel/...`,
+- `Application/View/...`,
+- `Application/Grid/...`,
+- albo inny katalog opisujący model, nie integrację.
+
+#### 3.2.5 Ścieżka decyzyjna
+Przy dodawaniu nowej klasy przejdź przez poniższe pytania w kolejności:
+1. Czy to jest kontrakt graniczny?
+   - tak -> `Port`.
+2. Czy to implementuje cudzy port albo tłumaczy kontrakt modułu `A` na kontrakt modułu `B`?
+   - tak -> katalog `Application/Adapter/...`.
+3. Jeśli to adapter: jaka jest jego rzeczywista rola?
+   - dostarcza definicję / zestaw możliwości -> `Provider`,
+   - rozstrzyga dopasowanie / wybór -> `Resolver`,
+   - po prostu cienko translatuje kontrakt -> `Adapter`.
+4. Czy to jest tylko model wejścia do wyszukiwania, filtrowania, sortowania lub paginacji?
+   - tak -> `Criteria` / `QueryModel` / `FilterInput`, ale nie `Adapter`.
+5. Czy to jest model odczytu dla UI lub read-side?
+   - tak -> `View` / `RowView` / `ResultView` albo `DTO`.
+6. Czy to jest logika operacyjna lub orkiestracyjna bez lepszego precyzyjnego sufiksu?
+   - tak -> `Service`.
+7. Czy to jest dostęp do danych?
+   - tak -> `Repository` albo `RepositoryPort`.
 
 ## 4. Deptrac jako hard guard (override)
 - Granice warstw/modułów są egzekwowane przez Deptrac.
