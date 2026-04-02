@@ -31,6 +31,32 @@ Uruchomić QA w sposób w pełni deterministyczny:
 - `fail-fast` dotyczy pojedynczego uruchomienia `run-matrix.mjs`, nie zakończenia całego zadania przez agenta.
 - `full final pass` jest obowiązkowy po udanym `delta rerun`, jeśli runner wypisze `full_final_pass_recommended=1`.
 
+## Guardrail: delta-first po naprawie
+- Po lokalnej naprawie po `FAIL` agent NIE MOŻE z własnej decyzji uruchomić pełnego rerunu.
+- Domyślny i wymagany następny krok po naprawie to zawsze rerun `delta` względem snapshotu zapisanego przed naprawą.
+- Pełny rerun po naprawie jest dozwolony wyłącznie gdy zachodzi co najmniej jeden warunek:
+  - poprzedni rerun `delta` zwrócił `full_final_pass_recommended=1`,
+  - snapshot nie istnieje albo jest nieczytelny,
+  - naprawa zmieniła samą mechanikę QA lub macierz QA,
+  - użytkownik jawnie polecił pełny rerun.
+- Uruchomienie pełnego rerunu po naprawie bez spełnienia jednego z warunków powyżej jest błędem proceduralnym.
+- Przy każdym uruchomieniu `run-matrix.mjs` agent ma jawnie wskazać powód rerunu flagą `--rerun-reason`, tak aby tryb wykonania był czytelny i mechanicznie weryfikowalny.
+
+## CLI contract: `--rerun-reason`
+- `--rerun-reason initial`
+  - znaczenie: pierwszy pełny przebieg albo świadomie rozpoczęty pełny rerun niezwiązany z lokalną naprawą po `FAIL`,
+  - dozwolone z: brak `--delta-from-snapshot`,
+  - niedozwolone z: `--delta-from-snapshot`.
+- `--rerun-reason post-fix-delta`
+  - znaczenie: rerun po lokalnej naprawie błędu QA,
+  - dozwolone z: `--delta-from-snapshot <ścieżka>`,
+  - niedozwolone bez: `--delta-from-snapshot <ścieżka>`.
+- `--rerun-reason full-final-pass`
+  - znaczenie: pełny rerun uruchamiany wyłącznie po udanym rerunie `delta`, gdy runner wymusił `full_final_pass_recommended=1`, albo gdy wystąpił jawny wyjątek z sekcji guardrail,
+  - dozwolone z: brak `--delta-from-snapshot`,
+  - niedozwolone z: `--delta-from-snapshot`.
+- Jeśli kombinacja flag jest niedozwolona, agent ma traktować to jako błąd procedury, a nie „luźną sugestię”.
+
 ## Semantyka fail-fast (precyzyjnie)
 - `fail-fast` oznacza: pojedyncze uruchomienie `run-matrix.mjs` kończy się na pierwszej błędnej komendzie.
 - `fail-fast` nie oznacza: zakończenia całego wykonania skilla `$qa-run` w trybie `repair`.
@@ -40,15 +66,15 @@ Uruchomić QA w sposób w pełni deterministyczny:
 - `MAX_ITERATIONS=20` (twardy limit).
 - `Iteracja` = jedno uruchomienie `run-matrix.mjs` w trybie `full` albo `delta`.
 - Algorytm:
-  1. Iteracja `1` zawsze uruchamia pełny przebieg: `node <skill_dir>/scripts/run-matrix.mjs`.
+  1. Iteracja `1` zawsze uruchamia pełny przebieg: `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason initial`.
   2. Jeśli wynik to `PASS`, zakończ skill statusem końcowym `PASS`.
   3. Jeśli wynik to `FAIL`, zapisz snapshot stanu dirty files przed naprawą:
      - `node <skill_dir>/scripts/run-matrix.mjs --snapshot-only --snapshot-write <ścieżka>`
   4. Wykonaj naprawy w dozwolonym zakresie (sekcja „Zakres automatycznych poprawek”).
   5. Uruchom iterację `n+1` w trybie delta względem snapshotu:
-     - `node <skill_dir>/scripts/run-matrix.mjs --delta-from-snapshot <ścieżka>`
+     - `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason post-fix-delta --delta-from-snapshot <ścieżka>`
   6. Jeśli delta rerun przejdzie i runner wypisze `full_final_pass_recommended=1`, obowiązkowo uruchom pełny rerun:
-     - `node <skill_dir>/scripts/run-matrix.mjs`
+     - `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason full-final-pass`
   7. Jeśli delta rerun przejdzie i `full_final_pass_recommended=0`, zakończ skill statusem końcowym `PASS`.
   8. Jeśli obowiązkowy pełny rerun przejdzie, zakończ skill statusem końcowym `PASS`.
   9. Powtarzaj do `PASS`, do wystąpienia hard blockera, albo do osiągnięcia `MAX_ITERATIONS`.
@@ -119,10 +145,11 @@ Brak sekcji albo pusta tablica:
 
 ## Kroki
 1. Uruchom skrypt:
-   - uruchom: `node <skill_dir>/scripts/run-matrix.mjs`
+   - uruchom: `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason initial`
    - opcjonalnie: `node <skill_dir>/scripts/run-matrix.mjs --config <ścieżka>`
    - zapis snapshotu bez QA: `node <skill_dir>/scripts/run-matrix.mjs --snapshot-only --snapshot-write <ścieżka>`
-   - delta rerun: `node <skill_dir>/scripts/run-matrix.mjs --delta-from-snapshot <ścieżka>`
+   - delta rerun: `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason post-fix-delta --delta-from-snapshot <ścieżka>`
+   - pełny rerun po udanym delta, gdy wymuszony przez runner: `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason full-final-pass`
 2. Skrypt:
    - wykrywa zmiany: tracked (staged + unstaged) oraz untracked,
    - wyznacza flagi `*_CHANGED`,
@@ -142,6 +169,7 @@ Brak sekcji albo pusta tablica:
    - po pierwszym `FAIL` zapisz snapshot, wykonaj naprawę i uruchom delta rerun względem snapshotu,
    - po kolejnych `FAIL` powtarzaj ten sam schemat: snapshot -> naprawa -> delta rerun,
    - jeśli delta rerun wypisze `full_final_pass_recommended=1`, uruchom pełny rerun przed zakończeniem skilla,
+   - nie zastępuj rerunu `delta` pełnym rerunem tylko dlatego, że pełny rerun jest „bezpieczniejszy”; pełny rerun bez spełnionego guardrailu jest błędem procedury,
    - nie kończ wykonania skilla po pierwszym nieudanym przebiegu.
 4. Raport:
    - skrypt wypisuje wykryte flagi, sekcje uruchomione i pominięte,

@@ -26,6 +26,11 @@ const FULL_FINAL_PASS_TRIGGER_SECTIONS = new Set([
     "PHP_CHANGED",
     "YAML_CHANGED",
 ]);
+const RERUN_REASONS = new Set([
+    "initial",
+    "post-fix-delta",
+    "full-final-pass",
+]);
 
 const DEFAULT_CONFIG = {
     ALWAYS: [],
@@ -44,6 +49,7 @@ function parseArgs(argv) {
         configPath: DEFAULT_CONFIG_REL_PATH,
         deltaFromSnapshotPath: null,
         help: false,
+        rerunReason: "initial",
         snapshotOnly: false,
         snapshotWritePath: null,
     };
@@ -70,6 +76,11 @@ function parseArgs(argv) {
             continue;
         }
 
+        if (arg === "--rerun-reason") {
+            result.rerunReason = readRequiredArgValue(args, "--rerun-reason");
+            continue;
+        }
+
         if (arg === "--snapshot-write") {
             result.snapshotWritePath = readRequiredArgValue(args, "--snapshot-write");
             continue;
@@ -80,6 +91,12 @@ function parseArgs(argv) {
 
     if (result.snapshotOnly && !result.snapshotWritePath) {
         throw new Error("--snapshot-only requires --snapshot-write <path>.");
+    }
+
+    if (!RERUN_REASONS.has(result.rerunReason)) {
+        throw new Error(
+            `Invalid value for --rerun-reason: ${result.rerunReason}. Expected one of: ${[...RERUN_REASONS].join(", ")}.`
+        );
     }
 
     return result;
@@ -99,6 +116,7 @@ function printHelp() {
 
 Options:
   --config <path>                Use custom matrix JSON config.
+  --rerun-reason <reason>        Rerun intent: initial | post-fix-delta | full-final-pass.
   --snapshot-write <path>        Write current dirty working-tree snapshot to JSON.
   --snapshot-only                Write snapshot and exit without running commands.
   --delta-from-snapshot <path>   Run only sections affected by changes since snapshot.
@@ -425,9 +443,42 @@ function executeCommand(repoRoot, section, command) {
     return 0;
 }
 
-function printDetectedChanges(mode, files, flags, snapshotAbsPath = null) {
+function enforceRerunReasonConsistency(cli) {
+    if (cli.snapshotOnly) {
+        return;
+    }
+
+    if (cli.rerunReason === "initial") {
+        if (cli.deltaFromSnapshotPath) {
+            throw new Error(
+                'Initial rerun cannot use --delta-from-snapshot. Use --rerun-reason post-fix-delta instead.'
+            );
+        }
+
+        return;
+    }
+
+    if (cli.rerunReason === "post-fix-delta") {
+        if (!cli.deltaFromSnapshotPath) {
+            throw new Error(
+                'Post-fix delta rerun requires --delta-from-snapshot <path>.'
+            );
+        }
+
+        return;
+    }
+
+    if (cli.rerunReason === "full-final-pass" && cli.deltaFromSnapshotPath) {
+        throw new Error(
+            'Full final pass cannot use --delta-from-snapshot. Run it as a full rerun after a successful delta rerun.'
+        );
+    }
+}
+
+function printDetectedChanges(mode, rerunReason, files, flags, snapshotAbsPath = null) {
     console.log("Detected changes:");
     console.log(`- mode=${mode}`);
+    console.log(`- rerun_reason=${rerunReason}`);
     if (snapshotAbsPath) {
         console.log(`- delta_from_snapshot=${snapshotAbsPath}`);
     }
@@ -481,6 +532,13 @@ function main() {
     if (cli.help) {
         printHelp();
         process.exit(0);
+    }
+
+    try {
+        enforceRerunReasonConsistency(cli);
+    } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(2);
     }
 
     let repoRoot = "";
@@ -540,7 +598,7 @@ function main() {
     }
 
     const flags = detectFlags(files);
-    printDetectedChanges(mode, files, flags, deltaFromSnapshotAbsPath);
+    printDetectedChanges(mode, cli.rerunReason, files, flags, deltaFromSnapshotAbsPath);
 
     const configAbsPath = path.isAbsolute(cli.configPath)
         ? cli.configPath

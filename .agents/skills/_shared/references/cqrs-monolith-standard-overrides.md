@@ -20,8 +20,14 @@ W razie konfliktu z baseline: ten dokument ma pierwszeństwo.
 - Kontrolery HTTP i komendy CLI pozostają cienkie: walidacja + dispatch command/query.
 - Logika biznesowa żyje w handlerach/use-case (`Application`).
 - Nie mieszaj mapowania wejścia i logiki domenowej w jednej klasie.
-- Gdy inna warstwa musi użyć command/query z innego modułu, twórz dedykowany serwis aplikacyjny zamiast bezpośredniego 
-  łączenia warstw.
+- Cross-module API w tym profilu ma charakter **hybrydowy (`Application/Port/In` + `Application/UseCase`)**:
+  - `Application/Port/In` pozostaje preferowanym, jawnym kontraktem wejścia do modułu,
+  - równolegle message classes z `Application/UseCase/Command/**` oraz `Application/UseCase/Query/**`, dispatchowane przez `CommandBus` / `QueryBus`, są uznawane za wspieraną część publicznego synchronicznego API modułu,
+  - `UseCase` w tym profilu może więc pełnić rolę publicznego kontraktu messages, a nie wyłącznie prywatnego detalu implementacyjnego.
+- Gdy inna warstwa musi użyć command/query z innego modułu:
+  - dozwolone jest użycie obcego `Port/In`,
+  - dozwolony jest też dispatch obcego `Command` / `Query`,
+  - preferuj dedykowany serwis aplikacyjny lub adapter, gdy integracja wymaga tłumaczenia modeli, kompozycji kilku wywołań albo chcesz ukryć szczegóły zależności.
 - Messages przyjmują proste argumenty (prymitywy/VO), bez przekazywania encji i ciężkich DTO.
 
 ### 3.1 Jednoznaczna definicja `Port/In` i `Port/Out`
@@ -30,6 +36,10 @@ Reguły poniżej zawsze interpretuj z perspektywy jednego modułu `M`:
   - to publiczny kontrakt wejścia do modułu `M`,
   - służy do interakcji z `M` z zewnątrz (cross-module API) albo jako punkt rozszerzenia implementowany przez inne moduły,
   - jest częścią stabilnego API modułu.
+- `Application/UseCase/Command` i `Application/UseCase/Query`:
+  - w tym profilu są również traktowane jako część publicznego synchronicznego API modułu, jeśli są dispatchowane przez `CommandBus` / `QueryBus`,
+  - reprezentują kontrakty messages request/response,
+  - mogą być używane cross-module bez dodatkowego opakowania w `Port/In`, jeśli taki sposób integracji jest prostszy i wystarczająco czytelny.
 - `Application/Port/Out`:
   - to kontrakt zależności wychodzącej z modułu `M`,
   - opisuje, czego use case modułu `M` potrzebuje od świata zewnętrznego (I/O, repozytoria read-model, adaptery infrastruktury),
@@ -147,11 +157,15 @@ Przy dodawaniu nowej klasy przejdź przez poniższe pytania w kolejności:
 ### 4.1 Twarde reguły zależności cross-module
 - Dozwolone cross-module:
   - zależność do `TargetModule/Application/Port/In/**` (publiczne API modułu),
+  - zależność do `TargetModule/Application/UseCase/Command/**` oraz `TargetModule/Application/UseCase/Query/**` jako publicznych kontraktów messages w tym profilu,
   - uzgodnione kontrakty współdzielone z `Shared`.
 - Niedozwolone cross-module:
   - zależność do `TargetModule/Application/Port/Out/**`,
   - zależność do `TargetModule/Application/Port/*.php` (płaskie porty legacy poza wyjątkami technicznymi),
   - zależność do `TargetModule/Domain/**` i `TargetModule/Infrastructure/**` innego modułu.
+- Niedozwolone obejścia:
+  - bezpośredni odczyt tabel, encji Doctrine, repozytoriów lub innych szczegółów persystencji obcego modułu tylko po to, aby ominąć jego application layer,
+  - „sprytne” odpowiedniki cross-module API budowane poza `Port/In` i poza `CommandBus` / `QueryBus`.
 
 ## 5. Doctrine i model relacji (override)
 - Preferuj model relacji przez VO ID + jawne kolumny/indeksy.
