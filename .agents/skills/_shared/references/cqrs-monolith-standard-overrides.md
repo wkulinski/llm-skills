@@ -16,45 +16,83 @@ W razie konfliktu z baseline: ten dokument ma pierwszeństwo.
 - Cały nowy kod umieszczaj w istniejących modułach/warstwach; nie dodawaj nowych warstw bez jawnej decyzji.
 - Porty umieszczaj jawnie (`Application/Port/*`, `Domain/Port/*`) i trzymaj kontrakty po stronie domeny/aplikacji, implementacje po stronie infrastruktury.
 
-## 3. CQRS i przepływ odpowiedzialności (override)
-- Kontrolery HTTP i komendy CLI pozostają cienkie: walidacja + dispatch command/query.
-- Logika biznesowa żyje w handlerach/use-case (`Application`).
-- Nie mieszaj mapowania wejścia i logiki domenowej w jednej klasie.
-- Cross-module API w tym profilu ma charakter **hybrydowy (`Application/Port/In` + `Application/UseCase`)**:
-  - `Application/Port/In` pozostaje preferowanym, jawnym kontraktem wejścia do modułu,
-  - równolegle message classes z `Application/UseCase/Command/**` oraz `Application/UseCase/Query/**`, dispatchowane przez `CommandBus` / `QueryBus`, są uznawane za wspieraną część publicznego synchronicznego API modułu,
-  - `UseCase` w tym profilu może więc pełnić rolę publicznego kontraktu messages, a nie wyłącznie prywatnego detalu implementacyjnego.
-- Gdy inna warstwa musi użyć command/query z innego modułu:
-  - dozwolone jest użycie obcego `Port/In`,
-  - dozwolony jest też dispatch obcego `Command` / `Query`,
-  - preferuj dedykowany serwis aplikacyjny lub adapter, gdy integracja wymaga tłumaczenia modeli, kompozycji kilku wywołań albo chcesz ukryć szczegóły zależności.
-- Messages przyjmują proste argumenty (prymitywy/VO), bez przekazywania encji i ciężkich DTO.
+## 3. Granica UI -> Application (reguła twarda)
+- Warstwa UI (`Controller`, komendy CLI, `TwigComponent`, `LiveComponent`) wywołuje logikę modułu wyłącznie przez `CommandBus` / `QueryBus`.
+- Odczyt danych realizuj wyłącznie przez `QueryBus` i klasy z `Application/UseCase/Query/**` tego samego modułu.
+- Zmianę stanu realizuj wyłącznie przez `CommandBus` i klasy z `Application/UseCase/Command/**` tego samego modułu.
+- UI nie wywołuje bezpośrednio `Application Service`, `Port/Out`, repozytoriów, serwisów domenowych ani adapterów infrastruktury.
+- UI nie tworzy własnych ścieżek odczytu/zapisu danych poza dispatch na busach.
 
-### 3.1 Jednoznaczna definicja `Port/In` i `Port/Out`
+## 4. Workflow operacyjny (jedyny wyjątek od reguły z pkt 3)
+- Workflow operacyjny to wyjątek dla operacji wieloetapowych, które orkiestrują kilka use case i zwracają raport procesu.
+- Workflow operacyjny może być wywołany z UI przez dedykowany `Application/Port/In/**` zamiast pojedynczego `Command` / `Query`.
+- Workflow operacyjny nie może być pretekstem do omijania busa dla CRUD i prostych odczytów.
+
+### 4.1 Co jest workflow operacyjnym
+- Operacja uruchamia co najmniej dwa kroki use case i koordynuje ich kolejność.
+- Operacja zawiera logikę przekrojową (np. synchronizacja katalogu + aktualizacja tieru + aktualizacja grup uprawnień).
+- Operacja zwraca raport procesu (statusy kroków, pominięcia, podsumowanie).
+
+### 4.2 Co nie jest workflow operacyjnym
+- Pojedynczy CRUD (`create`, `update`, `delete`, `get`, `list`).
+- Jedna komenda lub jedno zapytanie opakowane w serwis "dla wygody".
+- Ominięcie busa wyłącznie po to, aby skrócić kod UI.
+- Bezpośredni dostęp UI do `Port/Out` lub repozytorium pod pretekstem "szybszego odczytu".
+
+### 4.3 Checklista wyjątku workflow
+- Czy operacja składa się z co najmniej dwóch kroków use case?
+- Czy operacja koordynuje proces end-to-end, a nie pojedyncze wywołanie?
+- Czy wynik operacji jest raportem procesu, a nie zwykłym DTO CRUD?
+- Czy modelowanie jako pojedynczy `Command` / `Query` byłoby sztuczne?
+- Czy wyjątek został jawnie opisany w README modułu?
+- Jeśli którekolwiek pytanie ma odpowiedź "nie", wróć do reguły z pkt 3.
+
+## 5. Komunikacja `Application` -> inne moduły i udostępnianie danych
+- Warstwa `Application` odpytuje inne moduły wyłącznie przez `CommandBus` / `QueryBus` i publiczne klasy `Application/UseCase/Command/**` oraz `Application/UseCase/Query/**` modułu docelowego.
+- Warstwa `Application` nie odwołuje się bezpośrednio do `Domain` ani `Infrastructure` obcego modułu.
+- Wyjątek od reguły busowej: kontrakty pluginowe `Application/Port/In/**` modułu docelowego, jeśli moduł docelowy publikuje jawnie punkt rozszerzeń (np. provider/resolver), a moduł wywołujący dostarcza implementację tego kontraktu.
+- Kontrakt pluginowy `Port/In` nie zastępuje `Command` / `Query` dla odczytu i zapisu danych biznesowych między modułami.
+- Kompozycja, mapowanie i tłumaczenie danych cross-module dzieją się w lokalnych adapterach `Application/Adapter/**` modułu wywołującego.
+- Inne warstwy korzystają z lokalnych adapterów/use-case modułu wywołującego, a nie z obcych kontraktów technicznych.
+- Messages przekazywane przez bus przyjmują proste argumenty (`prymitywy` / `VO`), bez przekazywania encji i ciężkich DTO.
+
+## 6. Reguły `Port/In` i `Port/Out`
+### 6.1 Jednoznaczna definicja `Port/In` i `Port/Out`
 Reguły poniżej zawsze interpretuj z perspektywy jednego modułu `M`:
 - `Application/Port/In`:
   - to publiczny kontrakt wejścia do modułu `M`,
-  - służy do interakcji z `M` z zewnątrz (cross-module API) albo jako punkt rozszerzenia implementowany przez inne moduły,
-  - jest częścią stabilnego API modułu.
-- `Application/UseCase/Command` i `Application/UseCase/Query`:
-  - w tym profilu są również traktowane jako część publicznego synchronicznego API modułu, jeśli są dispatchowane przez `CommandBus` / `QueryBus`,
-  - reprezentują kontrakty messages request/response,
-  - mogą być używane cross-module bez dodatkowego opakowania w `Port/In`, jeśli taki sposób integracji jest prostszy i wystarczająco czytelny.
+  - występuje w dwóch dopuszczalnych wariantach:
+    - `workflow entrypoint`: kontrakt uruchamiania workflow operacyjnego (pkt 4) z UI lub innej warstwy zewnętrznej wobec use case,
+    - `plugin extension point`: kontrakt rozszerzeń implementowany przez inne moduły i konsumowany przez moduł właściciela (np. provider/resolver),
+  - nie zastępuje standardowej ścieżki `CommandBus` / `QueryBus` dla CRUD i zwykłych odczytów.
 - `Application/Port/Out`:
   - to kontrakt zależności wychodzącej z modułu `M`,
   - opisuje, czego use case modułu `M` potrzebuje od świata zewnętrznego (I/O, repozytoria read-model, adaptery infrastruktury),
-  - nie jest publicznym API modułu dla innych modułów.
+  - jest używany wyłącznie przez warstwę `Application`, nigdy bezpośrednio przez UI.
 - `Application/Port` bez podfolderu:
   - traktuj jako legacy i nie dodawaj nowych portów w tej lokalizacji,
   - wyjątek: porty techniczne w module współdzielonym (np. `Shared`), gdy klasyfikacja In/Out nie wnosi wartości domenowej.
 
-### 3.2 Nazewnictwo klas, sufiksy i ścieżka decyzyjna
+### 6.2 Reguła decyzyjna tworzenia kontraktu wejścia
+- Domyślnie twórz `Command` / `Query` i wywołuj je przez bus.
+- `Port/In` typu `workflow entrypoint` twórz tylko wtedy, gdy operacja spełnia checklistę workflow z pkt 4.3.
+- `Port/In` typu `plugin extension point` twórz tylko wtedy, gdy moduł właściciel potrzebuje rejestru rozszerzeń dostarczanych przez inne moduły (provider/resolver/strategy), a nie wywołania CRUD/read use case.
+- `Port/In` nie służy do "opakowania jednego query/command", jeśli nie ma realnej orkiestracji albo realnego mechanizmu rozszerzeń.
+
+### 6.3 Checklista kontraktu pluginowego `Port/In`
+- Czy kontrakt reprezentuje punkt rozszerzeń modułu właściciela (a nie standardowy use case CRUD/read)?
+- Czy implementacje mają być dostarczane przez inne moduły jako adaptery `Application/Adapter/**`?
+- Czy moduł właściciel konsumuje implementacje jako rejestr/iterację (np. tag DI), a nie przez UI dispatch?
+- Czy kontrakt nie służy do bezpośredniego pobierania lub modyfikacji danych biznesowych obcego modułu?
+- Jeśli którekolwiek pytanie ma odpowiedź "nie", nie twórz `Port/In` pluginowego.
+
+## 7. Nazewnictwo klas, sufiksy i ścieżka decyzyjna
 Poniższe reguły służą do spójnego nazywania klas i katalogów w modularnym monolicie CQRS/hexagonal:
 - nazwa klasy odpowiada przede wszystkim jej roli,
 - katalog odpowiada przede wszystkim jej pozycji architektonicznej,
 - nazwa klasy i nazwa katalogu nie muszą używać tego samego słowa.
 
-#### 3.2.1 Rozdzielenie roli klasy od warstwy
+### 7.1 Rozdzielenie roli klasy od warstwy
 - `Application/Adapter/...` opisuje pozycję architektoniczną:
   - klasa integruje moduł z cudzym kontraktem,
   - implementuje port innego modułu albo tłumaczy jeden kontrakt na drugi.
@@ -67,7 +105,7 @@ Poniższe reguły służą do spójnego nazywania klas i katalogów w modularnym
   - katalog odpowiada na pytanie: "gdzie ta klasa siedzi w architekturze?",
   - nazwa klasy odpowiada na pytanie: "co ta klasa robi?".
 
-#### 3.2.2 Klasyfikacja najczęstszych sufiksów
+### 7.2 Klasyfikacja najczęstszych sufiksów
 - `Port`
   - kontrakt graniczny, zwykle interfejs,
   - nie jest implementacją,
@@ -99,7 +137,7 @@ Poniższe reguły służą do spójnego nazywania klas i katalogów w modularnym
   - model odczytu dla UI lub read-side,
   - preferowany tam, gdzie nazwa ma ujawniać, że obiekt reprezentuje wynik odczytu, a nie input use case'a.
 
-#### 3.2.3 Kiedy `Adapter` jest trafny
+### 7.3 Kiedy `Adapter` jest trafny
 Słowo `Adapter` jest trafne, gdy klasa spełnia większość poniższych warunków:
 - implementuje port z innego modułu albo kontrakt frameworkowy,
 - tłumaczy jeden model wejścia/wyjścia na drugi,
@@ -116,7 +154,7 @@ Przykład dopuszczalny, choć bardziej graniczny:
   - katalog `Adapter` jest poprawny, bo klasa integruje moduł biznesowy z cudzym punktem rozszerzenia lub portem,
   - nazwa `Provider` jest poprawna, bo opisuje rolę klasy w tym kontrakcie.
 
-#### 3.2.4 Czego nie wkładać do `Adapter`
+### 7.4 Czego nie wkładać do `Adapter`
 Do katalogu `Adapter` nie wkładaj modeli, które nie pełnią funkcji integracyjnej:
 - `FilterInput`,
 - `SortInput`,
@@ -130,7 +168,7 @@ Jeśli taka klasa jest tylko modelem danych dla read-side lub wyszukiwania, pref
 - `Application/Grid/...`,
 - albo inny katalog opisujący model, nie integrację.
 
-#### 3.2.5 Ścieżka decyzyjna
+### 7.5 Ścieżka decyzyjna
 Przy dodawaniu nowej klasy przejdź przez poniższe pytania w kolejności:
 1. Czy to jest kontrakt graniczny?
    - tak -> `Port`.
@@ -149,42 +187,43 @@ Przy dodawaniu nowej klasy przejdź przez poniższe pytania w kolejności:
 7. Czy to jest dostęp do danych?
    - tak -> `Repository` albo `RepositoryPort`.
 
-## 4. Deptrac jako hard guard (override)
+## 8. Deptrac jako hard guard (override)
 - Granice warstw/modułów są egzekwowane przez Deptrac.
 - Naruszeń zależności nie „obchodzimy” zmianą reguł bez decyzji architektonicznej.
 - Domyślna reakcja na naruszenie: poprawa kodu i granic odpowiedzialności.
 
-### 4.1 Twarde reguły zależności cross-module
+### 8.1 Twarde reguły zależności cross-module
 - Dozwolone cross-module:
-  - zależność do `TargetModule/Application/Port/In/**` (publiczne API modułu),
   - zależność do `TargetModule/Application/UseCase/Command/**` oraz `TargetModule/Application/UseCase/Query/**` jako publicznych kontraktów messages w tym profilu,
+  - zależność do `TargetModule/Application/Port/In/**` wyłącznie przy implementacji jawnie udokumentowanego kontraktu pluginowego modułu docelowego,
   - uzgodnione kontrakty współdzielone z `Shared`.
 - Niedozwolone cross-module:
+  - zależność do `TargetModule/Application/Port/In/**` jako alternatywy dla `CommandBus` / `QueryBus` w odczycie i zapisie danych biznesowych,
   - zależność do `TargetModule/Application/Port/Out/**`,
   - zależność do `TargetModule/Application/Port/*.php` (płaskie porty legacy poza wyjątkami technicznymi),
   - zależność do `TargetModule/Domain/**` i `TargetModule/Infrastructure/**` innego modułu.
 - Niedozwolone obejścia:
   - bezpośredni odczyt tabel, encji Doctrine, repozytoriów lub innych szczegółów persystencji obcego modułu tylko po to, aby ominąć jego application layer,
-  - „sprytne” odpowiedniki cross-module API budowane poza `Port/In` i poza `CommandBus` / `QueryBus`.
+  - „sprytne” odpowiedniki cross-module API budowane poza `CommandBus` / `QueryBus`.
 
-## 5. Doctrine i model relacji (override)
+## 9. Doctrine i model relacji (override)
 - Preferuj model relacji przez VO ID + jawne kolumny/indeksy.
 - Nie używaj bezpośrednich relacji encji jako domyślnego mechanizmu komunikacji między modułami/agregatami.
 - W tym profilu preferowane jest podejście bez twardych FK między modułami; wyjątki wymagają jawnej decyzji.
 - Typy Doctrine deklaruj przez `Types::*` lub stałe custom type.
 - Daty/timestampy trzymaj jako immutable i UTC.
 
-### 5.1 Dodatkowe zasady danych (profil rozszerzony)
+### 9.1 Dodatkowe zasady danych (profil rozszerzony)
 - Unikaj `float/decimal` w modelu domenowym i trwałości dla wartości pieniężnych; preferuj liczby całkowite (np. grosze).
 - W kluczach relacyjnych używaj spójnego nazewnictwa snake_case oraz jawnych indeksów.
 - Nazwy kluczy obcych i tabel łączących utrzymuj spójnie i przewidywalnie (konwencja projektu).
 
-## 6. Wielobazowość / per-entity connection (override, gdy dotyczy)
+## 10. Wielobazowość / per-entity connection (override, gdy dotyczy)
 - Dopuszczalny jest model wielu connection/EntityManagerów (np. `core`/`tenant`) wybieranych per encja.
 - Repozytoria i konfiguracja EM powinny jednoznacznie wskazywać kontekst bazy.
 - Jeśli moduł wymaga tego modelu, dokumentuj konsekwencje w README modułu i migracjach.
 
-## 7. FCF (Form-Command-First) (override)
+## 11. FCF (Form-Command-First) (override)
 - Formularze Symfony mapuj domyślnie bezpośrednio na command (`data_class = command`).
 - DTO formularzowe są wyjątkiem i wymagają krótkiego uzasadnienia.
 - Dla `Create` i `Update` preferuj osobne formularze z bazą wspólnych pól.
@@ -192,7 +231,7 @@ Przy dodawaniu nowej klasy przejdź przez poniższe pytania w kolejności:
 - Dla submitów preferuj jednolity schemat dispatchu oparty o zweryfikowane dane formularza.
 - Endpointy bez formularza nie podlegają regułom FCF.
 
-## 8. Frontend (override, gdy repo używa Twig/LiveComponent)
+## 12. Frontend (override, gdy repo używa Twig/LiveComponent)
 
 ### TwigComponents i LiveComponents
 - Trzymaj komponenty w warstwie UI modułu i stosuj jedną, spójną konwencję katalogów w całym repo.
@@ -213,7 +252,7 @@ Przy dodawaniu nowej klasy przejdź przez poniższe pytania w kolejności:
 - Assets: style/TS/JS są współlokalne i podpięte do właściwego entrypointu modułu/layeru; brak stylu komponentowego w entrypoincie globalnym.
 - Cleanup i weryfikacja: usunięto martwe klasy/selektory po refaktorze; wykonano adekwatny lint (co najmniej Twig, a dla zmian assetów także SCSS/TS/JS).
 
-## 9. Zakres stosowania
+## 13. Zakres stosowania
 Dokument jest wspólną referencją dla skilli:
 - `$code-implement`
 - `$context-refresh`
