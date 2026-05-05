@@ -17,16 +17,66 @@ W razie konfliktu z baseline: ten dokument ma pierwszeństwo.
 - Porty umieszczaj jawnie (`Application/Port/*`, `Domain/Port/*`) i trzymaj kontrakty po stronie domeny/aplikacji, implementacje po stronie infrastruktury.
 
 ## 3. Granica UI -> Application (reguła twarda)
-- Warstwa UI (`Controller`, komendy CLI, `TwigComponent`, `LiveComponent`) wywołuje logikę modułu wyłącznie przez `CommandBus` / `QueryBus`.
-- Odczyt danych realizuj wyłącznie przez `QueryBus` i klasy z `Application/UseCase/Query/**` tego samego modułu.
+- Warstwa UI (`Controller`, komendy CLI, `TwigComponent`, `LiveComponent`) wywołuje logikę modułu:
+  - bezpośrednio przez `CommandBus` / `QueryBus`,
+  - albo przez lokalny wrapper odczytu `UI/ReadFacade/*ReadFacade` zgodny z regułami z pkt 3.2.
 - Zmianę stanu realizuj wyłącznie przez `CommandBus` i klasy z `Application/UseCase/Command/**` tego samego modułu.
+- Odczyt danych realizuj przez `QueryBus` i klasy z `Application/UseCase/Query/**` tego samego modułu:
+  - bezpośrednio w komponencie/kontrolerze/komendzie CLI,
+  - albo pośrednio przez `UI/ReadFacade/*ReadFacade`, jeśli spełnione są kryteria z pkt 3.4.
 - UI nie wywołuje bezpośrednio `Application Service`, `Port/Out`, repozytoriów, serwisów domenowych ani adapterów infrastruktury.
-- UI nie tworzy własnych ścieżek odczytu/zapisu danych poza dispatch na busach.
+- UI nie tworzy własnych ścieżek odczytu/zapisu danych poza regułami z pkt 3.1-3.6.
+
+### 3.1 Tryb domyślny (bez wrappera)
+- Domyślnie używaj bezpośredniego dispatch:
+  - `QueryBus` dla odczytu,
+  - `CommandBus` dla zapisu.
+- Jeśli dany odczyt występuje lokalnie w jednym miejscu i nie ma potrzeby kompozycji, nie twórz dodatkowej warstwy.
+
+### 3.2 Dopuszczony wrapper odczytu: `UI/ReadFacade/*ReadFacade`
+- Wrapper odczytu jest dopuszczalny wyłącznie dla odczytu danych pod UI.
+- Wrapper odczytu umieszczaj w warstwie UI modułu, w katalogu `UI/ReadFacade/`.
+- Nazwa klasy wrappera odczytu musi kończyć się sufiksem `ReadFacade`.
+- `ReadFacade` jest lokalnym helperem modułu UI:
+  - nie jest publicznym kontraktem cross-module,
+  - nie zastępuje `Application/UseCase/Query/**`,
+  - nie zastępuje workflow `Application/Port/In/**` z pkt 4.
+
+### 3.3 Twarde inwarianty `ReadFacade`
+- `ReadFacade` korzysta wyłącznie z `QueryBus`.
+- `ReadFacade` nie może korzystać z:
+  - `CommandBus`,
+  - `Application/Port/Out/**`,
+  - repozytoriów,
+  - `Domain/**`,
+  - `Infrastructure/**`.
+- `ReadFacade` nie zawiera logiki biznesowej:
+  - dopuszczalne jest mapowanie i normalizacja danych pod potrzeby prezentacji,
+  - niedopuszczalne są decyzje domenowe, reguły walidacyjne i zmiany stanu.
+
+### 3.4 Kiedy warto użyć `ReadFacade`
+- Ten sam read-flow jest współdzielony przez co najmniej dwa elementy UI.
+- Potrzebujesz stabilnej kompozycji kilku query i jednego, przewidywalnego wyniku dla UI.
+- Chcesz usunąć duplikację powtarzalnego kodu `dispatch + kontrola typu + fallback`.
+
+### 3.5 Kiedy nie używać `ReadFacade`
+- Odczyt jest pojedynczym dispatch w jednym miejscu.
+- Wrapper byłby tylko cienkim "przekazaniem dalej" jednego query bez wartości.
+- Wrapper miałby ukrywać zapis, logikę domenową lub dostęp do `Port/Out`.
+
+### 3.6 Wymagania jakości `ReadFacade`
+- Każdy `ReadFacade` powinien mieć testy potwierdzające:
+  - poprawny dispatch właściwych query,
+  - brak side-effectów zapisu,
+  - stabilne zachowanie fallbacków/obsługi braków danych.
+- W code review traktuj `ReadFacade` jako warstwę UI-read:
+  - jeśli pojawia się logika domenowa albo zależność do `Port/Out`, to naruszenie.
 
 ## 4. Workflow operacyjny (jedyny wyjątek od reguły z pkt 3)
 - Workflow operacyjny to wyjątek dla operacji wieloetapowych, które orkiestrują kilka use case i zwracają raport procesu.
 - Workflow operacyjny może być wywołany z UI przez dedykowany `Application/Port/In/**` zamiast pojedynczego `Command` / `Query`.
 - Workflow operacyjny nie może być pretekstem do omijania busa dla CRUD i prostych odczytów.
+- Workflow operacyjny nie jest substytutem `UI/ReadFacade/*ReadFacade`: facady służą tylko do odczytu pod UI, a workflow do orkiestracji procesu end-to-end.
 
 ### 4.1 Co jest workflow operacyjnym
 - Operacja uruchamia co najmniej dwa kroki use case i koordynuje ich kolejność.

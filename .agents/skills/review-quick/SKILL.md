@@ -55,11 +55,17 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
    - najpierw pliki high-risk (security, persistence, entrypointy, config/tooling),
    - następnie obszar wskazany w prompt,
    - na końcu pozostałe pliki w zakresie quick-check.
-6. Każde istotne ustalenie musi mieć dowód:
+6. Jeśli diff dotyka treści widocznych użytkownikowi, wykonaj check UTF-8/diakrytyków:
+   - obejmuje to w szczególności migracje seedujące słowniki, klasy `*Dictionary*`, translacje `messages.*.yaml`, Twig, formularze, komunikaty walidacyjne oraz pola/wartości typu `name`, `label`, `title`, `description`, `placeholder`;
+   - porównaj wartości user-facing z promptem, issue lub dokumentacją domenową;
+   - zgłoś jako finding każdą nieuzasadnioną transliterację, np. `Spółka` -> `Spolka`, `działalność` -> `dzialalnosc`;
+   - nie traktuj starszych danych ASCII jako automatycznego wzorca, jeśli bieżąca specyfikacja podaje tekst z polskimi znakami;
+   - jeśli repo zawiera sprzeczne przykłady albo nie wiadomo, czy ASCII jest wymaganiem kontraktu, dodaj Open Question zamiast zakładać normalizację.
+7. Każde istotne ustalenie musi mieć dowód:
    - referencję do pliku/sekcji, albo
    - wynik komendy użytej w tej sesji.
-7. Nie uruchamiaj pełnego QA z automatu.
-8. Jeśli quick-check ujawnia problemy przekraczające zakres szybkiej weryfikacji, zwróć rekomendację uruchomienia `$qa-run`.
+8. Nie uruchamiaj pełnego QA z automatu.
+9. Jeśli quick-check ujawnia problemy przekraczające zakres szybkiej weryfikacji, zwróć rekomendację uruchomienia `$qa-run`.
 
 ## Zakres
 - W zakresie: szybka weryfikacja zmian bez pełnej procedury commit.
@@ -67,7 +73,7 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
 
 ## Poziomy ustaleń
 - `HIGH`: realny bug, regresja, naruszenie bezpieczeństwa, ryzyko danych.
-- `MEDIUM`: ryzyko utrzymaniowe, brak ważnego testu, słabe pokrycie edge-case.
+- `MEDIUM`: ryzyko utrzymaniowe, brak ważnego testu, słabe pokrycie edge-case, nieuzasadniona utrata znaków diakrytycznych albo rozjazd user-facing label względem issue/specyfikacji.
 - `LOW`: drobne niespójności, kosmetyka, sugestie usprawnień.
 
 ## Format odpowiedzi (findings-first)
