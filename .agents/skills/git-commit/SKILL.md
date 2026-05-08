@@ -74,15 +74,15 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
    - Niedozwolone: nowe funkcjonalności i zmiany domenowe, migracje/zmiany schematu, zmiany bezpieczeństwa/autoryzacji zmieniające zachowanie w sposób nieoczywisty, dodawanie nowych zależności lub zmiany `composer.json`/`package.json` bez wyraźnego polecenia użytkownika.
    - Dopuszczalne wyjątki: zmiany w lockfile (`composer.lock`, `yarn.lock`) wynikające z uruchomionych narzędzi QA są akceptowalne, ale muszą zostać pokazane jako “delta od snapshotu” w kroku akceptacji.
    - Zasada “ostatniego słowa użytkownika”: wszystkie zmiany z tego kroku muszą trafić do raportu w kroku akceptacji jako „delta od snapshotu” (krok 2).
-5. Wykonaj skill `$qa-run`. Po ukończeniu skilla, jeżeli w trakcie jego wykonania dokonywałeś poprawek, wróć do kroku 3 i kontynuuj od tego punktu włącznie.
+5. Wykonaj skill `$qa-run`. `$qa-run` obejmuje matrix QA, reruny delta oraz fazę `$review-quick`; nie uruchamiaj `$review-quick` osobno z poziomu `$git-commit`.
+   - Po ukończeniu skilla, jeżeli w trakcie jego wykonania dokonywałeś poprawek, wróć do kroku 3 i kontynuuj od tego punktu włącznie.
    - Zasada: nie uruchamiaj „na boku” pojedynczych lintów/testów poza `$qa-run` tylko po to, aby „coś się uruchomiło”.
    - Jeśli `$qa-run` zdecyduje, że nie ma relewantnych zmian (wszystkie kategorie pominięte), to jest poprawny wynik — przejdź dalej w procedurze.
-6. Wykonaj skill `$review-quick`. Jeśli coś poprawiasz, wróć do kroku 3 i kontynuuj od tego punktu włącznie.
-7. Wykonaj skill `$docs-sync`.
-8. Wykonaj skill `$skills-index-refresh`.
-9. Krok akceptacji: jeśli od momentu snapshotu (krok 2) zaszły jakiekolwiek zmiany w repo, zaraportuj je do akceptacji (wyłącznie „delta od snapshotu”, niepełna lista wszystkich zmian w repo):
+6. Wykonaj skill `$docs-sync`.
+7. Wykonaj skill `$skills-index-refresh`.
+8. Krok akceptacji: jeśli od momentu snapshotu (krok 2) zaszły jakiekolwiek zmiany w repo, zaraportuj je do akceptacji (wyłącznie „delta od snapshotu”, niepełna lista wszystkich zmian w repo):
    - Preferowane obliczenie delty: `<skill_dir>/scripts/snapshot-delta-list.sh --current` (generuje `delta-all.txt` i zwraca kod 0 gdy pusta, 1 gdy niepusta).
-   - Jeśli “delta od snapshotu” jest pusta: napisz wprost “Brak zmian delta od snapshotu (krok 2)” i przejdź do kroku 10.
+   - Jeśli “delta od snapshotu” jest pusta: napisz wprost “Brak zmian delta od snapshotu (krok 2)” i przejdź do kroku 9.
    - Jeśli “delta od snapshotu” nie jest pusta:
      - wypisz listę plików, których treść zmieniła się względem snapshotu (oraz pliki dodane/usunięte od snapshotu),
      - dla każdego pliku: “Co”, “Dlaczego” i (jeśli zmiany nie są rozległe) pokaż konkretny diff “snapshot → teraz”.
@@ -92,20 +92,20 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
        - jeśli plik był czysty w momencie snapshotu: porównaj z wersją z `HEAD` (hash zapisany w snapshotie).
      - dla plików binarnych lub nieczytelnych diffem (np. `.gz`) pokaż metadane: rozmiar i hash (bez próby prezentowania pełnego diffu).
      - STOP: kontynuuj dopiero po zatwierdzeniu przez użytkownika; w razie poprawek wróć do kroku 3.
-10. Wykonaj skill `$commit-message-write` i odczytaj plik `<COMMIT_MESSAGE_DIR>/commit-message.txt` (gdzie `COMMIT_MESSAGE_DIR` pochodzi z `docs_map`).
-    - Jeśli plik nie istnieje, nie jest czytelny albo jest pusty: przerwij i wróć do kroku 10.
-11. `git add .` (wszystkie pliki, w tym nowe/nieśledzone oraz zmiany z fixerów).
-12. Sprawdź staging (`git diff --cached --name-only`) i upewnij się, że nie ma plików śmieciowych/tymczasowych (np. `.env.local`, logi, cache); jeśli są — usuń je ze stagingu i wróć do kroku 3.
+9. Wykonaj skill `$commit-message-write` i odczytaj plik `<COMMIT_MESSAGE_DIR>/commit-message.txt` (gdzie `COMMIT_MESSAGE_DIR` pochodzi z `docs_map`).
+    - Jeśli plik nie istnieje, nie jest czytelny albo jest pusty: przerwij i wróć do kroku 9.
+10. `git add .` (wszystkie pliki, w tym nowe/nieśledzone oraz zmiany z fixerów).
+11. Sprawdź staging (`git diff --cached --name-only`) i upewnij się, że nie ma plików śmieciowych/tymczasowych (np. `.env.local`, logi, cache); jeśli są — usuń je ze stagingu i wróć do kroku 3.
     - Preferowana sanity-check: `<skill_dir>/scripts/staging-sanity.sh` (exit 0 = OK; exit 1 = wykryto podejrzane pliki).
-13. Wykonaj `git commit -F <COMMIT_MESSAGE_DIR>/commit-message.txt`.
-    - Treść commita ma pochodzić 1:1 z pliku wygenerowanego przez `$commit-message-write` (krok 10), bez dopisywania lub przepisywania przez `$git-commit`.
-    - Jeśli odczyt pliku się nie powiedzie: przerwij i wróć do kroku 10.
-14. Potwierdź czystość `git status`, sprawdź poprawność commit message/body.
-15. Jeśli zdefiniowano klucz `HANDOFF_DOC`: usuń plik handoffu wskazany przez ten klucz (jeżeli istnieje). Plik jest lokalny i nie powinien trafiać do commita.
-16. Usuń katalog snapshotu z kroku 2 (sprzątanie obowiązkowe; snapshot jest tymczasowy i nie powinien zostawać po procedurze).
+12. Wykonaj `git commit -F <COMMIT_MESSAGE_DIR>/commit-message.txt`.
+    - Treść commita ma pochodzić 1:1 z pliku wygenerowanego przez `$commit-message-write` (krok 9), bez dopisywania lub przepisywania przez `$git-commit`.
+    - Jeśli odczyt pliku się nie powiedzie: przerwij i wróć do kroku 9.
+13. Potwierdź czystość `git status`, sprawdź poprawność commit message/body.
+14. Jeśli zdefiniowano klucz `HANDOFF_DOC`: usuń plik handoffu wskazany przez ten klucz (jeżeli istnieje). Plik jest lokalny i nie powinien trafiać do commita.
+15. Usuń katalog snapshotu z kroku 2 (sprzątanie obowiązkowe; snapshot jest tymczasowy i nie powinien zostawać po procedurze).
     - Preferowane sprzątanie bezpieczne: `<skill_dir>/scripts/snapshot-clean.sh --current` (usuwa też `/tmp/agent-git-commit-snapshot-pointer.txt`).
-17. Po udanym commicie uruchom `$agent-cache-clear` (czyszczenie `CACHE_PATH`, domyślnie `var/agent/cache/`).
-18. Po wykonaniu procedury nie uruchamiaj jej ponownie ani `git commit` bez nowej, wyraźnej intencji commita od użytkownika.
+16. Po udanym commicie uruchom `$agent-cache-clear` (czyszczenie `CACHE_PATH`, domyślnie `var/agent/cache/`).
+17. Po wykonaniu procedury nie uruchamiaj jej ponownie ani `git commit` bez nowej, wyraźnej intencji commita od użytkownika.
 
 ## Zakres
 - W zakresie: pełna procedura QA, commit message i commit dla bieżących zmian.
@@ -113,7 +113,7 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
 
 ## Niedozwolone skróty
 - Nie zastępuj tego skilla ręcznym flow (`git commit -m`, selektywny commit), jeśli trigger intencji commita został spełniony.
-- Obowiązkowo wykonaj krok 10 (`$commit-message-write`) i commit z `-F`.
+- Obowiązkowo wykonaj krok 9 (`$commit-message-write`) i commit z `-F`.
 - Wykonanie commita z całkowitym pominięciem tego skilla jest kategorycznie zabronione.
 
 ## Format odpowiedzi
@@ -123,7 +123,7 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
   - `HANDOFF_DOC=<resolved-path>` (jeśli klucz był zdefiniowany)
 - Uwagi: jeśli wstrzymana, podaj powód i krok powrotu.
 
-## Format akceptacji zmian (krok 9)
+## Format akceptacji zmian (krok 8)
 Cel: użytkownik ma zobaczyć i zaakceptować wyłącznie zmiany powstałe „delta od snapshotu” (krok 2), niepełną listę plików, które finalnie trafią do commita.
 
 Podsumowanie zmian do akceptacji (delta od snapshotu):
@@ -137,13 +137,13 @@ Reguły pokazywania diffów:
 - Jeśli diff jest niewielki, pokaż go w całości.
 - Jeśli diff jest bardzo duży (np. lockfile), pokaż skrót + kluczowe fragmenty; pełny diff pokaż na żądanie.
 - Jeśli plik jest binarny lub nieczytelny diffem, pokaż metadane (rozmiar/hash) zamiast diffu.
-- Jeśli potrzebujesz zachować snapshot do debugowania, skopiuj go w inne miejsce przed krokiem 16 (sprzątanie snapshotu jest obowiązkowe).
+- Jeśli potrzebujesz zachować snapshot do debugowania, skopiuj go w inne miejsce przed krokiem 15 (sprzątanie snapshotu jest obowiązkowe).
 
 Pytanie: Akceptujesz te zmiany? Jeśli tak, kontynuuję kolejne kroki. Jeśli nie, napisz poprawki.
 
 ## Warunki przerwania
 - Brak intencji wykonania commita (komenda `$git-commit` lub równoważne polecenie językowe).
-- Brak akceptacji zmian w kroku 9 — wstrzymaj procedurę przed `$commit-message-write` i `git commit`.
+- Brak akceptacji zmian w kroku 8 — wstrzymaj procedurę przed `$commit-message-write` i `git commit`.
 - Błędy w lintach lub testach — napraw i wróć do kroku 3.
 
 ## Przykłady wejścia

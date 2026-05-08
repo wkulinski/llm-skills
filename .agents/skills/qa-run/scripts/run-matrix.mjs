@@ -2,46 +2,23 @@
 
 import {spawnSync} from "node:child_process";
 import {createHash} from "node:crypto";
-import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
+import {copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import {fileURLToPath} from "node:url";
 
 const DEFAULT_CONFIG_REL_PATH = ".agents/qa-run.matrix.json";
+const DEFAULT_CONFIG_TEMPLATE_REL_PATH = "../templates/qa-run.matrix.dist.json";
 const SNAPSHOT_VERSION = 1;
+const SESSION_VERSION = 1;
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 
-const SECTION_ORDER = [
-    "ALWAYS",
-    "COMPOSER_CHANGED",
-    "PHP_CHANGED",
-    "TWIG_CHANGED",
-    "JS_TS_CHANGED",
-    "CSS_SCSS_CHANGED",
-    "TRANSLATIONS_CHANGED",
-    "YAML_CHANGED",
-];
-
-const CHANGE_SECTIONS = SECTION_ORDER.filter((section) => section !== "ALWAYS");
-const FULL_FINAL_PASS_TRIGGER_SECTIONS = new Set([
-    "COMPOSER_CHANGED",
-    "PHP_CHANGED",
-    "YAML_CHANGED",
-]);
 const RERUN_REASONS = new Set([
     "initial",
     "post-fix-delta",
+    "review-fix-delta",
     "full-final-pass",
 ]);
-
-const DEFAULT_CONFIG = {
-    ALWAYS: [],
-    COMPOSER_CHANGED: [],
-    PHP_CHANGED: [],
-    TWIG_CHANGED: [],
-    JS_TS_CHANGED: [],
-    CSS_SCSS_CHANGED: [],
-    TRANSLATIONS_CHANGED: [],
-    YAML_CHANGED: [],
-};
 
 function parseArgs(argv) {
     const args = [...argv];
@@ -50,6 +27,7 @@ function parseArgs(argv) {
         deltaFromSnapshotPath: null,
         help: false,
         rerunReason: "initial",
+        sessionPath: null,
         snapshotOnly: false,
         snapshotWritePath: null,
     };
@@ -78,6 +56,11 @@ function parseArgs(argv) {
 
         if (arg === "--rerun-reason") {
             result.rerunReason = readRequiredArgValue(args, "--rerun-reason");
+            continue;
+        }
+
+        if (arg === "--session") {
+            result.sessionPath = readRequiredArgValue(args, "--session");
             continue;
         }
 
@@ -116,7 +99,8 @@ function printHelp() {
 
 Options:
   --config <path>                Use custom matrix JSON config.
-  --rerun-reason <reason>        Rerun intent: initial | post-fix-delta | full-final-pass.
+  --rerun-reason <reason>        Rerun intent: initial | post-fix-delta | review-fix-delta | full-final-pass.
+  --session <path>               Persist deterministic QA session ledger.
   --snapshot-write <path>        Write current dirty working-tree snapshot to JSON.
   --snapshot-only                Write snapshot and exit without running commands.
   --delta-from-snapshot <path>   Run only sections affected by changes since snapshot.
@@ -124,11 +108,12 @@ Options:
 
 Deterministic QA runner for $qa-run:
 - detects changed files (tracked staged/unstaged + untracked),
-- maps changes to fixed sections (*_CHANGED),
+- maps changes to configured sections,
 - loads repo config from JSON,
 - runs commands section by section (fail-fast on first command error),
 - supports snapshot-based delta reruns after repair iterations,
-- auto-creates config file when missing.
+- can persist a session ledger for deferred final full pass decisions,
+- copies config from the bundled dist template when missing.
 
 Default config path: ${DEFAULT_CONFIG_REL_PATH}`);
 }
@@ -219,8 +204,13 @@ function ensureConfig(configAbsPath) {
         return false;
     }
 
+    const templateAbsPath = path.resolve(SCRIPT_DIR, DEFAULT_CONFIG_TEMPLATE_REL_PATH);
+    if (!existsSync(templateAbsPath)) {
+        throw new Error(`Default QA matrix template not found: ${templateAbsPath}`);
+    }
+
     mkdirSync(path.dirname(configAbsPath), {recursive: true});
-    writeFileSync(configAbsPath, `${JSON.stringify(DEFAULT_CONFIG, null, 2)}\n`, "utf-8");
+    copyFileSync(templateAbsPath, configAbsPath);
     return true;
 }
 
@@ -240,7 +230,7 @@ function readConfigRaw(configAbsPath) {
 function parseConfig(raw, configAbsPath) {
     const parsed = parseJsonConfig(raw, configAbsPath);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed;
+        return normalizeConfig(parsed);
     }
 
     throw new Error("Config root must be a JSON object.");
@@ -254,21 +244,141 @@ function parseJsonConfig(raw, configAbsPath) {
     }
 }
 
+function normalizeConfig(config) {
+    const sections = normalizeSections(config);
+    const sectionOrder = normalizeSectionOrder(config, sections);
+
+    return {
+        raw: config,
+        sectionOrder,
+        sections,
+    };
+}
+
+function normalizeSections(config) {
+    if (!config.sections || typeof config.sections !== "object" || Array.isArray(config.sections)) {
+        throw new Error('Config field "sections" must be an object.');
+    }
+
+    const sections = {};
+    for (const [sectionName, sectionConfig] of Object.entries(config.sections)) {
+        sections[sectionName] = normalizeSectionConfig(sectionName, sectionConfig);
+    }
+
+    return sections;
+}
+
+function normalizeSectionOrder(config, sections) {
+    if (!Array.isArray(config.sectionOrder)) {
+        throw new Error('Config field "sectionOrder" must be an array of section names.');
+    }
+
+    const sectionOrder = normalizeRootStringList("sectionOrder", config.sectionOrder);
+    const uniqueSectionOrder = [...new Set(sectionOrder)];
+    for (const sectionName of uniqueSectionOrder) {
+        if (!Object.hasOwn(sections, sectionName)) {
+            throw new Error(`Config sectionOrder references missing section "${sectionName}".`);
+        }
+    }
+
+    const unorderedSections = Object.keys(sections)
+        .filter((sectionName) => !uniqueSectionOrder.includes(sectionName));
+    if (unorderedSections.length > 0) {
+        throw new Error(`Config sections missing from sectionOrder: ${unorderedSections.join(", ")}.`);
+    }
+
+    return uniqueSectionOrder;
+}
+
+function normalizeSectionConfig(sectionName, value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error(`Config section "${sectionName}" must be an object.`);
+    }
+
+    assertRequiredSectionField(sectionName, value, "commands");
+    assertRequiredSectionField(sectionName, value, "patterns");
+    assertRequiredSectionField(sectionName, value, "runOn");
+    assertRequiredSectionField(sectionName, value, "requiresFinalFullPass");
+
+    return {
+        name: sectionName,
+        commands: normalizeSectionCommandList(sectionName, value.commands),
+        patterns: normalizeStringList(sectionName, "patterns", value.patterns),
+        requiresFinalFullPass: normalizeBoolean(sectionName, "requiresFinalFullPass", value.requiresFinalFullPass),
+        runOn: normalizeRunOn(sectionName, value.runOn),
+    };
+}
+
+function assertRequiredSectionField(sectionName, value, fieldName) {
+    if (!Object.hasOwn(value, fieldName)) {
+        throw new Error(`Config section "${sectionName}" field "${fieldName}" is required.`);
+    }
+}
+
+function normalizeRootStringList(fieldName, value) {
+    if (!Array.isArray(value)) {
+        throw new Error(`Config field "${fieldName}" must be an array of strings.`);
+    }
+
+    const strings = [];
+    for (const entry of value) {
+        if (typeof entry !== "string") {
+            throw new Error(`Config field "${fieldName}" must contain only strings.`);
+        }
+        const trimmed = entry.trim();
+        if (trimmed.length > 0) {
+            strings.push(trimmed);
+        }
+    }
+
+    return strings;
+}
+
+function normalizeBoolean(sectionName, fieldName, value) {
+    if (typeof value !== "boolean") {
+        throw new Error(`Config section "${sectionName}" field "${fieldName}" must be a boolean.`);
+    }
+
+    return value;
+}
+
+function normalizeStringList(sectionName, fieldName, value) {
+    if (!Array.isArray(value)) {
+        throw new Error(`Config section "${sectionName}" field "${fieldName}" must be an array of strings.`);
+    }
+
+    const strings = [];
+    for (const entry of value) {
+        if (typeof entry !== "string") {
+            throw new Error(`Config section "${sectionName}" field "${fieldName}" must contain only strings.`);
+        }
+        const trimmed = entry.trim();
+        if (trimmed.length > 0) {
+            strings.push(trimmed);
+        }
+    }
+
+    return strings;
+}
+
+function normalizeRunOn(sectionName, value) {
+    const runOn = normalizeStringList(sectionName, "runOn", value);
+    for (const mode of runOn) {
+        if (mode !== "full" && mode !== "rerun") {
+            throw new Error(`Config section "${sectionName}" field "runOn" supports only "full" and "rerun".`);
+        }
+    }
+
+    return [...new Set(runOn)];
+}
+
 function normalizeCommands(config, sectionName) {
-    const value = readSectionConfigValue(config, sectionName);
-    if (value === null) {
+    const section = config.sections[sectionName] ?? null;
+    if (!section) {
         return [];
     }
 
-    return normalizeSectionCommandList(sectionName, value);
-}
-
-function readSectionConfigValue(config, sectionName) {
-    if (Object.hasOwn(config, sectionName)) {
-        return config[sectionName];
-    }
-
-    return null;
+    return section.commands;
 }
 
 function normalizeSectionCommandList(sectionName, value) {
@@ -371,44 +481,116 @@ function detectChangedFilesFromSnapshot(currentState, snapshot) {
         .sort();
 }
 
-function detectFlags(files) {
-    const hasMatch = (regex) => files.some((file) => regex.test(file));
+function detectActiveSections(files, config, mode) {
+    const active = {};
+    const runKind = mode === "full" ? "full" : "rerun";
 
-    return {
-        COMPOSER_CHANGED: hasMatch(/(^|\/)composer\.(json|lock)$/),
-        PHP_CHANGED: hasMatch(/\.php$/),
-        TWIG_CHANGED: hasMatch(/\.twig$/),
-        JS_TS_CHANGED: hasMatch(/\.(js|jsx|ts|tsx|mjs)$/),
-        CSS_SCSS_CHANGED: hasMatch(/\.(css|scss)$/),
-        TRANSLATIONS_CHANGED: hasMatch(
-            /(^|\/)translations\/|(^|\/)src\/[^/]+\/UI\/Translation\//
-        ),
-        YAML_CHANGED: hasMatch(/\.(yml|yaml)$/),
-    };
+    for (const sectionName of config.sectionOrder) {
+        const section = config.sections[sectionName];
+        active[sectionName] = isSectionActive(section, files, runKind);
+    }
+
+    return active;
 }
 
-function getChangedSections(flags) {
-    return CHANGE_SECTIONS.filter((section) => Boolean(flags[section]));
+function isSectionActive(section, files, runKind) {
+    if (!section.runOn.includes(runKind)) {
+        return false;
+    }
+
+    if (section.name === "ALWAYS_FULL") {
+        return runKind === "full";
+    }
+
+    if (section.name === "ALWAYS_ON_RERUN") {
+        return runKind === "rerun" && files.length > 0;
+    }
+
+    return section.patterns.some((pattern) => files.some((file) => matchGlob(pattern, file)));
 }
 
-function assessRiskForFullFinalPass(flags) {
-    const changedSections = getChangedSections(flags);
+function matchGlob(pattern, filePath) {
+    return globToRegExp(pattern).test(filePath);
+}
+
+function globToRegExp(pattern) {
+    let source = "^";
+
+    for (let index = 0; index < pattern.length; index += 1) {
+        const char = pattern[index];
+        if (char === "*") {
+            if (pattern[index + 1] === "*") {
+                if (pattern[index + 2] === "/") {
+                    source += "(?:.*/)?";
+                    index += 2;
+                } else {
+                    source += ".*";
+                    index += 1;
+                }
+            } else {
+                source += "[^/]*";
+            }
+            continue;
+        }
+
+        if (char === "?") {
+            source += "[^/]";
+            continue;
+        }
+
+        source += escapeRegExp(char);
+    }
+
+    source += "$";
+    return new RegExp(source);
+}
+
+function escapeRegExp(char) {
+    return /[\\^$.*+?()[\]{}|]/.test(char) ? `\\${char}` : char;
+}
+
+function getActiveSectionNames(activeSections) {
+    return Object.entries(activeSections)
+        .filter(([, isActive]) => isActive)
+        .map(([sectionName]) => sectionName);
+}
+
+function assessRiskForFullFinalPass(activeSections, config) {
+    const changedSections = getActiveSectionNames(activeSections)
+        .filter((sectionName) => sectionName !== "ALWAYS_FULL" && sectionName !== "ALWAYS_ON_RERUN");
     const reasons = [];
 
     for (const section of changedSections) {
-        if (FULL_FINAL_PASS_TRIGGER_SECTIONS.has(section)) {
-            reasons.push(`high_risk_section:${section}`);
+        if (config.sections[section]?.requiresFinalFullPass) {
+            reasons.push(`section_requires_final_full_pass:${section}`);
         }
-    }
-
-    if (changedSections.length > 1) {
-        reasons.push("multiple_changed_sections");
     }
 
     return {
         changedSections,
         reasons,
         shouldRunFullFinalPass: reasons.length > 0,
+    };
+}
+
+function includeSessionRiskForFullFinalPass(riskAssessment, session, config, mode) {
+    const matrixChangedSinceLastFullPass = mode === "delta"
+        && session.lastFullPass?.matrixHash
+        && session.lastFullPass.matrixHash !== hashJson(config.raw);
+
+    if (!matrixChangedSinceLastFullPass) {
+        return riskAssessment;
+    }
+
+    return {
+        ...riskAssessment,
+        reasons: [
+            ...new Set([
+                ...riskAssessment.reasons,
+                "matrix_changed_since_last_full_pass",
+            ]),
+        ],
+        shouldRunFullFinalPass: true,
     };
 }
 
@@ -458,10 +640,10 @@ function enforceRerunReasonConsistency(cli) {
         return;
     }
 
-    if (cli.rerunReason === "post-fix-delta") {
+    if (cli.rerunReason === "post-fix-delta" || cli.rerunReason === "review-fix-delta") {
         if (!cli.deltaFromSnapshotPath) {
             throw new Error(
-                'Post-fix delta rerun requires --delta-from-snapshot <path>.'
+                'Delta rerun requires --delta-from-snapshot <path>.'
             );
         }
 
@@ -475,7 +657,7 @@ function enforceRerunReasonConsistency(cli) {
     }
 }
 
-function printDetectedChanges(mode, rerunReason, files, flags, snapshotAbsPath = null) {
+function printDetectedChanges(mode, rerunReason, files, activeSections, config, snapshotAbsPath = null) {
     console.log("Detected changes:");
     console.log(`- mode=${mode}`);
     console.log(`- rerun_reason=${rerunReason}`);
@@ -483,8 +665,8 @@ function printDetectedChanges(mode, rerunReason, files, flags, snapshotAbsPath =
         console.log(`- delta_from_snapshot=${snapshotAbsPath}`);
     }
     console.log(`- files_count=${files.length}`);
-    for (const section of CHANGE_SECTIONS) {
-        console.log(`- ${section}=${flags[section] ? 1 : 0}`);
+    for (const section of config.sectionOrder) {
+        console.log(`- ${section}=${activeSections[section] ? 1 : 0}`);
     }
 }
 
@@ -511,10 +693,112 @@ function printRiskSummary(riskAssessment) {
         `- changed_sections=${riskAssessment.changedSections.length > 0 ? riskAssessment.changedSections.join(", ") : "none"}`
     );
     console.log(
-        `- full_final_pass_recommended=${riskAssessment.shouldRunFullFinalPass ? 1 : 0}`
+        `- pending_final_full_pass=${riskAssessment.shouldRunFullFinalPass ? 1 : 0}`
     );
     console.log(
-        `- full_final_pass_reasons=${riskAssessment.reasons.length > 0 ? riskAssessment.reasons.join(", ") : "none"}`
+        `- pending_final_full_pass_reasons=${riskAssessment.reasons.length > 0 ? riskAssessment.reasons.join(", ") : "none"}`
+    );
+}
+
+function hashJson(value) {
+    return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function loadSession(sessionAbsPath) {
+    if (!sessionAbsPath || !existsSync(sessionAbsPath)) {
+        return {
+            version: SESSION_VERSION,
+            pendingFinalFullPass: false,
+            pendingReasons: [],
+        };
+    }
+
+    let raw;
+    try {
+        raw = readFileSync(sessionAbsPath, "utf-8");
+    } catch (error) {
+        throw new Error(`Cannot read session file: ${sessionAbsPath}`);
+    }
+
+    let parsed;
+    try {
+        parsed = JSON.parse(raw);
+    } catch (error) {
+        throw new Error(`Invalid JSON session: ${sessionAbsPath}`);
+    }
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error(`Session must be a JSON object: ${sessionAbsPath}`);
+    }
+
+    if (parsed.version !== SESSION_VERSION) {
+        throw new Error(`Unsupported session version in ${sessionAbsPath}: ${parsed.version ?? "missing"}`);
+    }
+
+    return {
+        ...parsed,
+        pendingFinalFullPass: Boolean(parsed.pendingFinalFullPass),
+        pendingReasons: Array.isArray(parsed.pendingReasons) ? parsed.pendingReasons : [],
+    };
+}
+
+function saveSession(sessionAbsPath, session) {
+    if (!sessionAbsPath) {
+        return;
+    }
+
+    mkdirSync(path.dirname(sessionAbsPath), {recursive: true});
+    writeFileSync(sessionAbsPath, `${JSON.stringify(session, null, 2)}\n`, "utf-8");
+    console.log(`INFO: Session written: ${sessionAbsPath}`);
+}
+
+function updateSession(session, cli, mode, currentState, config, riskAssessment) {
+    const matrixHash = hashJson(config.raw);
+    const matrixChangedSinceLastFullPass = mode === "delta"
+        && session.lastFullPass?.matrixHash
+        && session.lastFullPass.matrixHash !== matrixHash;
+    const nextSession = {
+        ...session,
+        version: SESSION_VERSION,
+        matrixHash,
+        lastRun: {
+            completedAt: new Date().toISOString(),
+            mode,
+            rerunReason: cli.rerunReason,
+            snapshotHash: hashJson(currentState.files),
+        },
+    };
+
+    if (cli.rerunReason === "full-final-pass") {
+        nextSession.pendingFinalFullPass = false;
+        nextSession.pendingReasons = [];
+    } else if (mode === "delta" && (riskAssessment.shouldRunFullFinalPass || matrixChangedSinceLastFullPass)) {
+        nextSession.pendingFinalFullPass = true;
+        nextSession.pendingReasons = [
+            ...new Set([
+                ...(nextSession.pendingReasons ?? []),
+                ...riskAssessment.reasons,
+                ...(matrixChangedSinceLastFullPass ? ["matrix_changed_since_last_full_pass"] : []),
+            ]),
+        ];
+    }
+
+    if (mode === "full") {
+        nextSession.lastFullPass = {
+            completedAt: nextSession.lastRun.completedAt,
+            matrixHash: nextSession.matrixHash,
+            snapshotHash: nextSession.lastRun.snapshotHash,
+        };
+    }
+
+    return nextSession;
+}
+
+function printSessionSummary(session) {
+    console.log("\nSession:");
+    console.log(`- pending_final_full_pass=${session.pendingFinalFullPass ? 1 : 0}`);
+    console.log(
+        `- pending_final_full_pass_reasons=${session.pendingReasons.length > 0 ? session.pendingReasons.join(", ") : "none"}`
     );
 }
 
@@ -597,16 +881,19 @@ function main() {
         mode = "delta";
     }
 
-    const flags = detectFlags(files);
-    printDetectedChanges(mode, cli.rerunReason, files, flags, deltaFromSnapshotAbsPath);
-
     const configAbsPath = path.isAbsolute(cli.configPath)
         ? cli.configPath
         : path.join(repoRoot, cli.configPath);
 
-    const wasCreated = ensureConfig(configAbsPath);
+    let wasCreated = false;
+    try {
+        wasCreated = ensureConfig(configAbsPath);
+    } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(2);
+    }
     if (wasCreated) {
-        console.log(`INFO: Config file not found. Created default config: ${configAbsPath}`);
+        console.log(`INFO: Config file not found. Copied default config template to: ${configAbsPath}`);
     }
 
     let config;
@@ -617,37 +904,48 @@ function main() {
         process.exit(2);
     }
 
+    const sessionAbsPath = cli.sessionPath
+        ? resolveRepoPath(repoRoot, cli.sessionPath)
+        : null;
+
+    let session;
+    try {
+        session = loadSession(sessionAbsPath);
+    } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(2);
+    }
+
+    const activeSections = detectActiveSections(files, config, mode);
+    printDetectedChanges(mode, cli.rerunReason, files, activeSections, config, deltaFromSnapshotAbsPath);
+
     const executed = [];
     const skippedNoCommands = [];
     const skippedNoChanges = [];
 
-    for (const section of SECTION_ORDER) {
-        const enabled = section === "ALWAYS"
-            ? (mode === "full" || files.length > 0)
-            : Boolean(flags[section]);
-
-        if (!enabled) {
-            skippedNoChanges.push(section);
+    for (const sectionName of config.sectionOrder) {
+        if (!activeSections[sectionName]) {
+            skippedNoChanges.push(sectionName);
             continue;
         }
 
         let commands;
         try {
-            commands = normalizeCommands(config, section);
+            commands = normalizeCommands(config, sectionName);
         } catch (error) {
             console.error(`ERROR: ${error.message}`);
             process.exit(2);
         }
 
         if (commands.length === 0) {
-            skippedNoCommands.push(section);
+            skippedNoCommands.push(sectionName);
             console.log(
-                `INFO: section ${section} skipped (no commands configured / section missing).`
+                `INFO: section ${sectionName} skipped (no commands configured / section missing).`
             );
             continue;
         }
 
-        const sectionResult = runSectionCommands(repoRoot, section, commands);
+        const sectionResult = runSectionCommands(repoRoot, sectionName, commands);
         if (!sectionResult.ok) {
             process.exit(sectionResult.exitCode);
         }
@@ -656,9 +954,19 @@ function main() {
 
     printSummary(executed, skippedNoChanges, skippedNoCommands);
 
+    const riskAssessment = includeSessionRiskForFullFinalPass(
+        assessRiskForFullFinalPass(activeSections, config),
+        session,
+        config,
+        mode
+    );
     if (mode === "delta") {
-        printRiskSummary(assessRiskForFullFinalPass(flags));
+        printRiskSummary(riskAssessment);
     }
+
+    const nextSession = updateSession(session, cli, mode, currentState, config, riskAssessment);
+    printSessionSummary(nextSession);
+    saveSession(sessionAbsPath, nextSession);
 }
 
 main();
