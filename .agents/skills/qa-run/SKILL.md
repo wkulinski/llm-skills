@@ -1,8 +1,8 @@
 ---
 name: qa-run
 description: >-
-  Deterministyczne uruchomienie QA (linty/testy) na podstawie
-  repo-konfigurowalnej macierzy komend JSON i wykrytych zmian. Użyj przy
+  Deterministyczne uruchomienie QA (linty/testy + review-quick) na podstawie
+  repo-konfigurowalnej macierzy komend JSON, snapshotów i sesji QA. Użyj przy
   $qa-run.
 shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
@@ -20,222 +20,199 @@ shared_files:
 4. Pliki wskazane w `shared_files`
 
 ## Cel
-Uruchomić QA w sposób w pełni deterministyczny:
-- wykryć typy zmian w repo (`*_CHANGED`),
-- uruchomić tylko komendy zdefiniowane przez repo dla aktywnych sekcji,
-- działać iteracyjnie do skutku: pierwszy pełny przebieg -> naprawa -> delta rerun względem snapshotu.
+Uruchomić QA w sposób deterministyczny:
+- wykryć zmienione pliki na podstawie Git,
+- przypisać je do jawnie skonfigurowanych sekcji QA przez patterny ścieżek,
+- uruchomić tylko komendy przypisane do aktywnych sekcji,
+- włączyć `$review-quick` jako fazę QA, a nie osobny krok commita,
+- po poprawkach uruchamiać reruny delta względem snapshotów,
+- odkładać finalny pełny przebieg do końca sesji QA i wykonywać go najwyżej raz.
+
+## Zasada minimalnej heurystyki
+- Runner nie analizuje semantyki diffu (np. "to tylko komentarz", "to tylko PHPDoc").
+- Decyzje o sekcjach wynikają z jawnych patternów ścieżek w `./.agents/qa-run.matrix.json`.
+- Decyzje o finalnym pełnym przebiegu wynikają z jawnego pola `requiresFinalFullPass` w konfiguracji sekcji.
+- Agent nie dobiera komend "na wyczucie"; wykonuje komendy z matrixa i fazy opisane w tym skillu.
 
 ## Tryb domyślny
-- Domyślnie `$qa-run` działa w trybie `repair` (auto-iteracja naprawcza).
-- Tryb `report-only` uruchamiaj tylko, gdy użytkownik wyraźnie zaznaczy brak napraw (np. „tylko sprawdź”, „bez poprawek”, „check-only”).
-- `fail-fast` dotyczy pojedynczego uruchomienia `run-matrix.mjs`, nie zakończenia całego zadania przez agenta.
-- `full final pass` jest obowiązkowy po udanym `delta rerun`, jeśli runner wypisze `full_final_pass_recommended=1`.
+- Domyślnie `$qa-run` działa w trybie `repair`.
+- `repair` oznacza: matrix QA -> naprawa po FAIL -> delta rerun -> `$review-quick` -> naprawa po review -> delta rerun -> ewentualny final full pass.
+- Tryb `report-only` uruchamiaj tylko, gdy użytkownik wyraźnie zaznaczy brak napraw (np. "tylko sprawdź", "bez poprawek", "check-only").
+- `fail-fast` dotyczy pojedynczego uruchomienia `run-matrix.mjs`, nie całego skilla.
 
-## Guardrail: delta-first po naprawie
-- Po lokalnej naprawie po `FAIL` agent NIE MOŻE z własnej decyzji uruchomić pełnego rerunu.
-- Domyślny i wymagany następny krok po naprawie to zawsze rerun `delta` względem snapshotu zapisanego przed naprawą.
-- Pełny rerun po naprawie jest dozwolony wyłącznie gdy zachodzi co najmniej jeden warunek:
-  - poprzedni rerun `delta` zwrócił `full_final_pass_recommended=1`,
-  - snapshot nie istnieje albo jest nieczytelny,
-  - naprawa zmieniła samą mechanikę QA lub macierz QA,
-  - użytkownik jawnie polecił pełny rerun.
-- Uruchomienie pełnego rerunu po naprawie bez spełnienia jednego z warunków powyżej jest błędem proceduralnym.
-- Przy każdym uruchomieniu `run-matrix.mjs` agent ma jawnie wskazać powód rerunu flagą `--rerun-reason`, tak aby tryb wykonania był czytelny i mechanicznie weryfikowalny.
+## CLI contract: `run-matrix.mjs`
+Podstawowy runner:
+- `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason initial`
+- `node <skill_dir>/scripts/run-matrix.mjs --snapshot-only --snapshot-write <ścieżka>`
+- `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason post-fix-delta --delta-from-snapshot <ścieżka>`
+- `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason review-fix-delta --delta-from-snapshot <ścieżka>`
+- `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason full-final-pass`
 
-## CLI contract: `--rerun-reason`
-- `--rerun-reason initial`
-  - znaczenie: pierwszy pełny przebieg albo świadomie rozpoczęty pełny rerun niezwiązany z lokalną naprawą po `FAIL`,
-  - dozwolone z: brak `--delta-from-snapshot`,
-  - niedozwolone z: `--delta-from-snapshot`.
-- `--rerun-reason post-fix-delta`
-  - znaczenie: rerun po lokalnej naprawie błędu QA,
-  - dozwolone z: `--delta-from-snapshot <ścieżka>`,
-  - niedozwolone bez: `--delta-from-snapshot <ścieżka>`.
-- `--rerun-reason full-final-pass`
-  - znaczenie: pełny rerun uruchamiany wyłącznie po udanym rerunie `delta`, gdy runner wymusił `full_final_pass_recommended=1`, albo gdy wystąpił jawny wyjątek z sekcji guardrail,
-  - dozwolone z: brak `--delta-from-snapshot`,
-  - niedozwolone z: `--delta-from-snapshot`.
-- Jeśli kombinacja flag jest niedozwolona, agent ma traktować to jako błąd procedury, a nie „luźną sugestię”.
+Opcjonalnie przekazuj sesję:
+- `--session <ścieżka>` zapisuje ledger QA: hash matrixa, ostatni przebieg, ostatni full pass i `pendingFinalFullPass`.
 
-## Semantyka fail-fast (precyzyjnie)
-- `fail-fast` oznacza: pojedyncze uruchomienie `run-matrix.mjs` kończy się na pierwszej błędnej komendzie.
-- `fail-fast` nie oznacza: zakończenia całego wykonania skilla `$qa-run` w trybie `repair`.
-- W trybie `repair` po każdym `FAIL` agent ma obowiązek wejść w krok naprawy i uruchomić kolejną iterację, o ile nie wystąpi hard blocker.
+Dozwolone `--rerun-reason`:
+- `initial`:
+  - pierwszy pełny przebieg albo świadomie rozpoczęty pełny przebieg,
+  - bez `--delta-from-snapshot`.
+- `post-fix-delta`:
+  - rerun po naprawie błędu z matrix QA,
+  - wymaga `--delta-from-snapshot`.
+- `review-fix-delta`:
+  - rerun po poprawce wynikającej z `$review-quick`,
+  - wymaga `--delta-from-snapshot`.
+- `full-final-pass`:
+  - pełny finalny przebieg uruchamiany na końcu sesji QA, jeśli ledger albo wynik delta ma `pending_final_full_pass=1`,
+  - bez `--delta-from-snapshot`.
 
-## Pętla wykonania (kontrakt)
-- `MAX_ITERATIONS=20` (twardy limit).
-- `Iteracja` = jedno uruchomienie `run-matrix.mjs` w trybie `full` albo `delta`.
-- Algorytm:
-  1. Iteracja `1` zawsze uruchamia pełny przebieg: `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason initial`.
-  2. Jeśli wynik to `PASS`, zakończ skill statusem końcowym `PASS`.
-  3. Jeśli wynik to `FAIL`, zapisz snapshot stanu dirty files przed naprawą:
-     - `node <skill_dir>/scripts/run-matrix.mjs --snapshot-only --snapshot-write <ścieżka>`
-  4. Wykonaj naprawy w dozwolonym zakresie (sekcja „Zakres automatycznych poprawek”).
-  5. Uruchom iterację `n+1` w trybie delta względem snapshotu:
-     - `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason post-fix-delta --delta-from-snapshot <ścieżka>`
-  6. Jeśli delta rerun przejdzie i runner wypisze `full_final_pass_recommended=1`, obowiązkowo uruchom pełny rerun:
-     - `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason full-final-pass`
-  7. Jeśli delta rerun przejdzie i `full_final_pass_recommended=0`, zakończ skill statusem końcowym `PASS`.
-  8. Jeśli obowiązkowy pełny rerun przejdzie, zakończ skill statusem końcowym `PASS`.
-  9. Powtarzaj do `PASS`, do wystąpienia hard blockera, albo do osiągnięcia `MAX_ITERATIONS`.
-- Status po osiągnięciu limitu bez pełnego przejścia: `BLOCKED: iteration_limit_reached`.
-- Odpowiedź finalną zwracaj dopiero po `PASS` albo `BLOCKED` (nie kończ po pierwszym `FAIL`).
-
-## Snapshoty i reruny delta
-- Snapshot jest lekkim JSON-em opisującym aktualny stan dirty files:
-  - ścieżka pliku,
-  - `exists`,
-  - hash zawartości.
-- Snapshot zapisuj przed każdą naprawą, jeśli poprzednia iteracja zakończyła się `FAIL`.
-- Delta rerun uruchamia tylko sekcje wynikające z różnicy między:
-  - snapshotem sprzed naprawy,
-  - bieżącym stanem working tree po naprawie.
-- Jeśli delta jest pusta:
-  - runner nie uruchomi żadnej komendy sekcyjnej,
-  - agent traktuje to jako sygnał, że naprawa nie wprowadziła realnych zmian i powinien ocenić, czy problem został faktycznie rozwiązany.
-- Sekcja `ALWAYS`:
-  - w trybie `full` uruchamia się zawsze,
-  - w trybie `delta` uruchamia się tylko wtedy, gdy delta zawiera jakiekolwiek zmiany.
-
-## Triggery obowiązkowego full final pass
-- `run-matrix.mjs` w trybie `delta` raportuje sekcję `Risk evaluation`.
-- `full_final_pass_recommended=1` oznacza obowiązek uruchomienia pełnego rerunu przez agenta wykonującego skill.
-- Aktualne triggery ustawiające obowiązkowy pełny rerun:
-  - delta obejmuje `COMPOSER_CHANGED`,
-  - delta obejmuje `PHP_CHANGED`,
-  - delta obejmuje `YAML_CHANGED`,
-  - delta obejmuje więcej niż jedną sekcję `*_CHANGED`.
-- Jeśli trigger wystąpi:
-  - agent nie kończy na `PASS` po samym delta rerunie,
-  - agent obowiązkowo uruchamia pełny rerun całej macierzy,
-  - `PASS` wolno zwrócić dopiero po udanym pełnym rerunie.
-
-## Zakres automatycznych poprawek
-- Dozwolone bez dodatkowej zgody:
-  - poprawki w plikach wskazanych bezpośrednio przez błąd QA,
-  - poprawki w plikach ściśle powiązanych z błędem (np. lokalna konfiguracja lint/test dla danej komendy),
-  - deterministyczne autofixy narzędzi QA uruchamianych przez repo.
-- Niedozwolone bez świadomej decyzji użytkownika:
-  - szerokie refaktory poza obszarem błędu,
-  - zmiany architektoniczne lub domenowe wykraczające poza naprawę QA,
-  - zmiany bezpieczeństwa, migracje danych, dodawanie/usuwanie zależności.
-- Jeśli błąd wynika z legacy debt poza bieżącym zakresem i naprawa wymaga szerokiej ingerencji, zakończ jako `BLOCKED` z jasnym uzasadnieniem.
+Niepoprawna kombinacja flag jest błędem procedury.
 
 ## Konfiguracja repo (JSON)
-Skrypt używa repo-konfigurowalnej macierzy:
-- domyślna ścieżka: `./.agents/qa-run.matrix.json`
-- jeśli plik nie istnieje: skrypt utworzy go automatycznie z pustym szablonem.
+Domyślna ścieżka: `./.agents/qa-run.matrix.json`.
 
-Sekcje wspierane:
-- `ALWAYS` (opcjonalnie)
-- `COMPOSER_CHANGED`
+Jeśli plik nie istnieje, `run-matrix.mjs` kopiuje template:
+- `<skill_dir>/templates/qa-run.matrix.dist.json`
+
+Brak template jest twardym błędem procedury. Runner nie ma zakodowanego defaultowego matrixa w JS.
+
+Wymagany format:
+```json
+{
+    "sectionOrder": [
+        "ALWAYS_FULL",
+        "ALWAYS_ON_RERUN",
+        "PHP_CHANGED"
+    ],
+    "sections": {
+        "ALWAYS_FULL": {
+            "patterns": [],
+            "commands": ["..."],
+            "runOn": ["full"],
+            "requiresFinalFullPass": false
+        },
+        "ALWAYS_ON_RERUN": {
+            "patterns": [],
+            "commands": ["..."],
+            "runOn": ["rerun"],
+            "requiresFinalFullPass": false
+        },
+        "PHP_CHANGED": {
+            "patterns": ["**/*.php"],
+            "commands": ["..."],
+            "runOn": ["full", "rerun"],
+            "requiresFinalFullPass": false
+        }
+    }
+}
+```
+
+Znaczenie pól:
+- `sectionOrder`: jawna kolejność wykonywania wszystkich sekcji; musi zawierać każdą sekcję z `sections` dokładnie raz.
+- `patterns`: jawne globy ścieżek repo, które aktywują sekcje.
+- `commands`: pełne komendy do wykonania 1:1.
+- `runOn`: `full`, `rerun` albo oba.
+- `requiresFinalFullPass`: jeśli `true`, udany rerun delta nie odpala od razu pełnej macierzy, tylko ustawia `pendingFinalFullPass`.
+
+Każda sekcja musi jawnie deklarować `patterns`, `commands`, `runOn` i `requiresFinalFullPass`.
+
+Sekcje specjalne:
+- `ALWAYS_FULL`: uruchamia się przy pełnym przebiegu.
+- `ALWAYS_ON_RERUN`: uruchamia się przy każdym rerunie delta z niepustą delta.
+
+Rekomendowane sekcje zmianowe:
+- `DEPENDENCIES_CHANGED`
 - `PHP_CHANGED`
 - `TWIG_CHANGED`
 - `JS_TS_CHANGED`
 - `CSS_SCSS_CHANGED`
 - `TRANSLATIONS_CHANGED`
 - `YAML_CHANGED`
+- `MAKEFILE_CHANGED`
+- `DOCS_CHANGED`
+- `QA_CONFIG_CHANGED`
+- `AGENT_SKILLS_CHANGED`
 
-Wartość każdej sekcji:
-- tablica stringów, gdzie każdy wpis to pełna komenda do wykonania 1:1 (bez discovery ścieżek).
+Stary format z płaskimi tablicami nie jest obsługiwany. Runner ma przerwać wykonanie na niezgodnym formacie zamiast stosować fallbacki.
 
-Brak sekcji albo pusta tablica:
-- to nie jest błąd,
-- sekcja zostaje pominięta z informacją w logu.
+## Snapshoty i reruny delta
+- Snapshot jest lekkim JSON-em opisującym aktualny stan dirty files:
+  - ścieżka pliku,
+  - `exists`,
+  - hash zawartości.
+- Snapshot zapisuj przed każdą naprawą po `FAIL` oraz przed każdą poprawką wynikającą z `$review-quick`.
+- Delta rerun uruchamia tylko sekcje wynikające z różnicy między snapshotem a bieżącym working tree.
+- Jeśli delta jest pusta, runner nie uruchomi żadnej sekcji zmianowej; agent musi ocenić, czy naprawa faktycznie wprowadziła zmianę.
 
-## Kroki
-1. Uruchom skrypt:
-   - uruchom: `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason initial`
-   - opcjonalnie: `node <skill_dir>/scripts/run-matrix.mjs --config <ścieżka>`
-   - zapis snapshotu bez QA: `node <skill_dir>/scripts/run-matrix.mjs --snapshot-only --snapshot-write <ścieżka>`
-   - delta rerun: `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason post-fix-delta --delta-from-snapshot <ścieżka>`
-   - pełny rerun po udanym delta, gdy wymuszony przez runner: `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason full-final-pass`
-2. Skrypt:
-   - wykrywa zmiany: tracked (staged + unstaged) oraz untracked,
-   - wyznacza flagi `*_CHANGED`,
-   - ładuje JSON config,
-   - opcjonalnie zapisuje snapshot dirty files do JSON,
-   - uruchamia sekcje w stałej kolejności:
-     - `ALWAYS`,
-     - `COMPOSER_CHANGED`,
-     - `PHP_CHANGED`,
-     - `TWIG_CHANGED`,
-     - `JS_TS_CHANGED`,
-     - `CSS_SCSS_CHANGED`,
-     - `TRANSLATIONS_CHANGED`,
-     - `YAML_CHANGED`.
-3. Iteracja naprawcza (wymagana, tryb `repair`):
-   - wykonuj pętlę dokładnie według sekcji „Pętla wykonania (kontrakt)”,
-   - po pierwszym `FAIL` zapisz snapshot, wykonaj naprawę i uruchom delta rerun względem snapshotu,
-   - po kolejnych `FAIL` powtarzaj ten sam schemat: snapshot -> naprawa -> delta rerun,
-   - jeśli delta rerun wypisze `full_final_pass_recommended=1`, uruchom pełny rerun przed zakończeniem skilla,
-   - nie zastępuj rerunu `delta` pełnym rerunem tylko dlatego, że pełny rerun jest „bezpieczniejszy”; pełny rerun bez spełnionego guardrailu jest błędem procedury,
-   - nie kończ wykonania skilla po pierwszym nieudanym przebiegu.
-4. Raport:
-   - skrypt wypisuje wykryte flagi, sekcje uruchomione i pominięte,
-   - w trybie `delta` skrypt wypisuje też `Risk evaluation`,
-   - raport końcowy zawsze zawiera: `Wykonano iteracji: X/20`,
-   - raport końcowy zawiera też status: `PASS` albo `BLOCKED`,
-   - dla `BLOCKED` raport końcowy zawiera kod blokera i jego przyczynę.
+## Final full pass
+- `pending_final_full_pass=1` nie oznacza natychmiastowego pełnego rerunu.
+- Agent kumuluje ten stan w sesji QA.
+- Pełny finalny przebieg wolno uruchomić najwyżej raz na końcu sesji, po:
+  - udanych rerunach delta,
+  - wykonaniu `$review-quick`,
+  - poprawkach wynikających z `$review-quick` i ich rerunach delta.
+- Jeśli finalny pełny przebieg przejdzie, status końcowy QA to `PASS`.
+- Jeśli finalny pełny przebieg nie jest wymagany, status końcowy QA można zwrócić po udanych sekcjach i `$review-quick`.
 
-## Zakres
-- W zakresie: deterministyczne uruchomienie repo-zdefiniowanych komend QA dla bieżących zmian.
-- Poza zakresem: automatyczne zgadywanie komend QA, fallbacki oparte o discovery skryptów.
+## Pętla wykonania (kontrakt)
+- `MAX_ITERATIONS=20`.
+- Iteracja = jedno uruchomienie matrix runnera (`full` albo `delta`) albo faza `$review-quick` zakończona poprawką wymagającą rerunu.
 
-## Format odpowiedzi
-- Wynik: lista uruchomionych komend i status (OK/naprawiono/FAIL).
-- Pominięte: sekcje pominięte z powodem:
-  - brak zmian dla sekcji albo
-  - brak komend/sekcji w konfiguracji.
-- Przebieg iteracji:
-  - dla każdej iteracji: numer iteracji + tryb (`full`/`delta`) + komenda kończąca + wynik (`PASS`/`FAIL`) + krótka informacja o wykonanej naprawie (jeśli była).
-  - dla iteracji `delta`: wskaż także, z jakiego snapshotu liczono deltę oraz czy runner wymusił `full final pass`.
-- Wykonano iteracji: `X/20`.
-- Status końcowy: `PASS` albo `BLOCKED`.
-- Blokery:
-  - jeśli status to `PASS`: `brak`,
-  - jeśli status to `BLOCKED`: podaj kod blokera + przyczynę + ostatni błąd + listę podjętych prób.
+Algorytm:
+1. Utwórz ścieżkę sesji, np. `/tmp/qa-run-session-<timestamp>.json`.
+2. Uruchom pełny przebieg:
+   - `node <skill_dir>/scripts/run-matrix.mjs --session <session> --rerun-reason initial`
+3. Jeśli matrix zwróci `FAIL`:
+   - zapisz snapshot,
+   - wykonaj dozwoloną naprawę,
+   - uruchom `post-fix-delta` z tym snapshotem i tą samą sesją.
+4. Powtarzaj snapshot -> naprawa -> delta do `PASS`, hard blockera albo limitu.
+5. Po udanym matrix QA uruchom `$review-quick`.
+6. Jeśli `$review-quick` nie ma uwag: przejdź do finalizacji.
+7. Jeśli `$review-quick` wykryje problem do poprawy w zakresie zadania:
+   - zapisz snapshot przed poprawką,
+   - popraw minimalnie,
+   - uruchom `review-fix-delta` z tym snapshotem i tą samą sesją,
+   - wróć do oceny, czy `$review-quick` trzeba ponowić dla poprawionego zakresu.
+8. Jeśli sesja albo ostatni rerun raportuje `pending_final_full_pass=1`, uruchom raz:
+   - `node <skill_dir>/scripts/run-matrix.mjs --session <session> --rerun-reason full-final-pass`
+9. Zakończ `PASS` albo `BLOCKED`.
+
+## Zakres automatycznych poprawek
+Dozwolone bez dodatkowej zgody:
+- poprawki w plikach wskazanych bezpośrednio przez błąd QA,
+- poprawki w plikach ściśle powiązanych z błędem,
+- deterministyczne autofixy narzędzi QA z matrixa,
+- minimalne poprawki wynikające z `$review-quick`, jeśli mieszczą się w bieżącym zakresie zadania.
+
+Niedozwolone bez decyzji użytkownika:
+- szerokie refaktory poza obszarem błędu,
+- zmiany architektoniczne lub domenowe wykraczające poza naprawę QA,
+- zmiany security,
+- migracje danych,
+- dodawanie/usuwanie zależności.
+
+## Raport
+Raport końcowy zawiera:
+- wykonane komendy i sekcje,
+- sekcje pominięte z powodem,
+- przebieg iteracji (`full`, `post-fix-delta`, `review-fix-delta`, `$review-quick`, `full-final-pass`),
+- informacje o sesji: `pending_final_full_pass` i powody,
+- `Wykonano iteracji: X/20`,
+- status: `PASS` albo `BLOCKED`,
+- blokery, jeśli wystąpiły.
 
 ## Warunki przerwania
-- Niepoprawny JSON w pliku konfiguracyjnym.
-- Brak dostępu do repo Git (np. uruchomienie poza repo).
-- Twardy błąd środowiskowy lub uprawnień, którego nie da się naprawić w bieżącym kroku.
-- Konieczność zmiany wykraczającej poza dozwolony zakres automatycznych poprawek (np. decyzja architektoniczna/domenowa/security/migracje/dependency).
-- Legacy debt poza bieżącym zakresem, którego naprawa wymaga szerokiego refaktoru.
-- Osiągnięcie `MAX_ITERATIONS=20` bez pełnego przejścia QA (`BLOCKED: iteration_limit_reached`).
+- Niepoprawny JSON w konfiguracji.
+- Brak dostępu do repo Git.
+- Twardy błąd środowiskowy lub uprawnień.
+- Konieczność zmiany wykraczającej poza dozwolony zakres automatycznych poprawek.
+- Legacy debt poza bieżącym zakresem wymagający szerokiego refaktoru.
+- Osiągnięcie `MAX_ITERATIONS=20`.
 
 ## Przykłady wejścia
 - "$qa-run"
 - "uruchom QA"
 - "sprawdź linty i testy"
 
-## Przykłady wyjścia
-- ```text
-  Wynik:
-  - [PHP_CHANGED] ./bin/proxy/composer lint:phpstan:fresh — OK
-  - [PHP_CHANGED] ./bin/proxy/composer test — OK
-  Pominięte:
-  - [TWIG_CHANGED] brak zmian
-  - [JS_TS_CHANGED] brak komend w konfiguracji
-  Wykonano iteracji: 1/20
-  Status końcowy: PASS
-  Blokery: brak
-  ```
-- ```text
-  Wynik:
-  - [COMPOSER_CHANGED] ./bin/proxy/composer lint:composer:security — FAIL
-  - zapisano snapshot `/tmp/qa-run-iter-1.json`
-  - naprawiono problem i uruchomiono delta rerun względem snapshotu
-  - [COMPOSER_CHANGED] ./bin/proxy/composer lint:composer:security — OK
-  - [COMPOSER_CHANGED] ./bin/proxy/composer lint:composer:dependency — OK
-  - Risk evaluation: full_final_pass_recommended=1 (`high_risk_section:COMPOSER_CHANGED`)
-  - uruchomiono obowiązkowy pełny rerun całej macierzy
-  Pominięte:
-  - [TWIG_CHANGED] brak zmian
-  Wykonano iteracji: 3/20
-  Status końcowy: PASS
-  Blokery: brak
-  ```
-
 ## Efekt
-QA wykonuje wyłącznie komendy zadeklarowane przez repo w JSON configu, w stałej kolejności, a agent prowadzi iterację naprawczą przez snapshoty i reruny delta, przy czym `full_final_pass_recommended=1` automatycznie eskaluje wykonanie do obowiązkowego pełnego rerunu całej macierzy.
+QA jest wykonywane według jawnych sekcji i stanu sesji. `$review-quick` jest częścią przepływu QA, a pełny finalny przebieg jest odkładany do końca i uruchamiany najwyżej raz, tylko gdy wymaga tego skonfigurowana polityka.

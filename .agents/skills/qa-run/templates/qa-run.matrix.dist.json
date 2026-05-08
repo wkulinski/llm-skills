@@ -1,0 +1,201 @@
+{
+    "sectionOrder": [
+        "ALWAYS_FULL",
+        "ALWAYS_ON_RERUN",
+        "DEPENDENCIES_CHANGED",
+        "PHP_CHANGED",
+        "TWIG_CHANGED",
+        "JS_TS_CHANGED",
+        "CSS_SCSS_CHANGED",
+        "TRANSLATIONS_CHANGED",
+        "YAML_CHANGED",
+        "MAKEFILE_CHANGED",
+        "DOCS_CHANGED",
+        "QA_CONFIG_CHANGED",
+        "AGENT_SKILLS_CHANGED"
+    ],
+    "sections": {
+        "ALWAYS_FULL": {
+            "patterns": [],
+            "commands": [
+                "./bin/proxy/yarn lint:yarn:dedupe:fix",
+                "./bin/proxy/yarn lint:yarn:dedupe",
+                "./bin/proxy/composer lint:composer:security",
+                "./bin/proxy/yarn lint:yarn:security"
+            ],
+            "runOn": [
+                "full"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "ALWAYS_ON_RERUN": {
+            "patterns": [],
+            "commands": [],
+            "runOn": [
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "DEPENDENCIES_CHANGED": {
+            "patterns": [
+                "composer.json",
+                "composer.lock",
+                "package.json",
+                "yarn.lock"
+            ],
+            "commands": [
+                "./bin/proxy/composer lint:composer:dependency",
+                "./bin/proxy/composer lint:composer:normalize:fix"
+            ],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": true
+        },
+        "PHP_CHANGED": {
+            "patterns": [
+                "**/*.php"
+            ],
+            "commands": [
+                "./bin/proxy/composer dump-autoload",
+                "./bin/proxy/console lint:container",
+                "./bin/proxy/console app:deptrac-config:generate",
+                "./bin/proxy/composer lint:deptrac",
+                "./bin/proxy/composer lint:phpstan",
+                "./bin/proxy/composer lint:php:fix",
+                "./bin/proxy/composer test"
+            ],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "TWIG_CHANGED": {
+            "patterns": [
+                "**/*.twig"
+            ],
+            "commands": [
+                "./bin/proxy/composer lint:twig:fix",
+                "./bin/proxy/composer lint:twig"
+            ],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "JS_TS_CHANGED": {
+            "patterns": [
+                "**/*.js",
+                "**/*.jsx",
+                "**/*.ts",
+                "**/*.tsx",
+                "**/*.mjs"
+            ],
+            "commands": [
+                "./bin/proxy/yarn lint:js:fix",
+                "./bin/proxy/yarn lint:js",
+                "./bin/proxy/yarn lint:ts:typecheck"
+            ],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "CSS_SCSS_CHANGED": {
+            "patterns": [
+                "**/*.css",
+                "**/*.scss"
+            ],
+            "commands": [
+                "./bin/proxy/yarn lint:style:fix",
+                "./bin/proxy/yarn lint:style"
+            ],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "TRANSLATIONS_CHANGED": {
+            "patterns": [
+                "translations/**",
+                "src/*/UI/Translation/**"
+            ],
+            "commands": [
+                "./bin/proxy/composer lint:translations"
+            ],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "YAML_CHANGED": {
+            "patterns": [
+                "**/*.yml",
+                "**/*.yaml"
+            ],
+            "commands": [
+                "./bin/proxy/composer lint:yaml"
+            ],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "MAKEFILE_CHANGED": {
+            "patterns": [
+                "Makefile"
+            ],
+            "commands": [
+                "make -qp >/dev/null || test $? -eq 1"
+            ],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "DOCS_CHANGED": {
+            "patterns": [
+                "**/*.md"
+            ],
+            "commands": [],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "QA_CONFIG_CHANGED": {
+            "patterns": [
+                ".agents/qa-run.matrix.json",
+                ".agents/skills/qa-run/**"
+            ],
+            "commands": [
+                "node .agents/skills/qa-run/scripts/run-matrix.mjs --help"
+            ],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": true
+        },
+        "AGENT_SKILLS_CHANGED": {
+            "patterns": [
+                ".agents/skills/**"
+            ],
+            "commands": [],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        }
+    }
+}
