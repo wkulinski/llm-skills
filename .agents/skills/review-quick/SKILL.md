@@ -39,7 +39,7 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
 - Jeśli uruchamiasz komendy pomocnicze podczas weryfikacji:
   - użyj helpera `env-load.sh` wskazanego w `shared_files` (`resolve_tool_cmd`),
   - komendy wyznaczaj wyłącznie przez `resolve_tool_cmd`,
-  - nie wyprowadzaj ścieżek ręcznie z `BIN_PATH`; resolver ładuje `.env`/`.env.local` automatycznie.
+  - nie wyprowadzaj ścieżek ręcznie z `BIN_PATH`; resolver ładuje aktywne pliki env repo automatycznie.
 - Jeśli review dotyczy regresji runtime, logów, profilera albo DI:
   - możesz pomocniczo użyć `$dev-mate` (`<skills_root>/dev-mate/SKILL.md`),
   - ale findings nadal mają mapować się do kodu, konfiguracji lub zachowania aplikacji.
@@ -49,7 +49,7 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
 2. Potwierdź zgodność zmian z promptem i/lub planem.
 3. Zweryfikuj zgodność zmian z baseline:
    - `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
-4. Jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: zweryfikuj zgodność zmian z:
+4. Jeśli aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: zweryfikuj zgodność zmian z:
    - `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`
 5. Priorytetyzuj analizę:
    - najpierw pliki high-risk (security, persistence, entrypointy, config/tooling),

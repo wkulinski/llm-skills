@@ -85,7 +85,12 @@ Przeczytaj w całości (to jest minimalny “rdzeń” reguł i konwencji):
 1. `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`
 2. `<skills_root>/_shared/references/runtime-quality-procedures.md`
 3. `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
-4. Jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`
+4. Ustal aktywność `CQRS_MONOLITH_STANDARD_OVERRIDES` na podstawie aktywnych plików env repo:
+   - uwzględnij kolejność nadpisań zgodną z helperem `<skills_root>/_shared/scripts/env-load.sh`: `.env`, `.env.local` (poza `APP_ENV=test`), `.env.<APP_ENV>`, `.env.<APP_ENV>.local`,
+   - jeśli `APP_ENV` nie wynika z aktywnego env, przyjmij `dev`,
+   - `.env.dist` traktuj jako szablon/default dokumentacyjny, nie aktywne źródło runtime,
+   - jeśli końcowa aktywna wartość to `1`: przeczytaj `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`,
+   - w podsumowaniu odnotuj aktywną wartość i plik, który ją ustawił, jeśli override został załadowany.
 5. Odczytaj `MAIN_DOC`.
    - Jeśli mapy lub klucza `MAIN_DOC` brakuje: zatrzymaj się i dopytaj użytkownika.
 6. Odczytaj `AGENT_RULES_DOC` — jeśli zdefiniowano.

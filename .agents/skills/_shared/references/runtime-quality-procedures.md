@@ -13,7 +13,7 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
 3. Zweryfikuj entrypointy narzędzi projektu **wyłącznie** przez helper `.agents/skills/_shared/scripts/env-load.sh`:
    - wyznacz komendy przez `resolve_tool_cmd` (np. `composer`, `console`, `yarn`, `codecept`),
    - nie wyprowadzaj ścieżek ręcznie z `BIN_PATH` i nie stosuj dodatkowych heurystyk,
-   - `resolve_tool_cmd` ładuje `.env`/`.env.local` automatycznie.
+   - `resolve_tool_cmd` ładuje aktywne pliki env repo automatycznie.
    - wyjątek: `$qa-run` w trybie macierzy JSON uruchamia komendy 1:1 z `.agents/qa-run.matrix.json` (bez discovery entrypointów).
 4. Jeśli pracujesz jako agent LLM lub użytkownik prosi o odświeżenie kontekstu, uruchom `$context-refresh`.
 
