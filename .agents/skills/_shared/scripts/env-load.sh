@@ -13,6 +13,7 @@ load_repo_env() {
     local env_file=""
     local env_path=""
     local had_allexport=0
+    local app_env=""
 
     if [ -z "$repo_root" ]; then
         repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -22,7 +23,41 @@ load_repo_env() {
         return 0
     fi
 
-    for env_file in ".env" ".env.local"; do
+    for env_file in ".env"; do
+        env_path="${repo_root}/${env_file}"
+        if [ -f "$env_path" ]; then
+            case "$-" in
+                *a*) had_allexport=1 ;;
+                *) had_allexport=0 ;;
+            esac
+            set -a
+            # shellcheck disable=SC1090
+            . "$env_path"
+            if [ "$had_allexport" -eq 0 ]; then
+                set +a
+            fi
+        fi
+    done
+
+    app_env="${APP_ENV:-dev}"
+
+    if [ "$app_env" != "test" ]; then
+        env_path="${repo_root}/.env.local"
+        if [ -f "$env_path" ]; then
+            case "$-" in
+                *a*) had_allexport=1 ;;
+                *) had_allexport=0 ;;
+            esac
+            set -a
+            # shellcheck disable=SC1090
+            . "$env_path"
+            if [ "$had_allexport" -eq 0 ]; then
+                set +a
+            fi
+        fi
+    fi
+
+    for env_file in ".env.${app_env}" ".env.${app_env}.local"; do
         env_path="${repo_root}/${env_file}"
         if [ -f "$env_path" ]; then
             case "$-" in

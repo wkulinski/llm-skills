@@ -519,17 +519,9 @@ function globToRegExp(pattern) {
     for (let index = 0; index < pattern.length; index += 1) {
         const char = pattern[index];
         if (char === "*") {
-            if (pattern[index + 1] === "*") {
-                if (pattern[index + 2] === "/") {
-                    source += "(?:.*/)?";
-                    index += 2;
-                } else {
-                    source += ".*";
-                    index += 1;
-                }
-            } else {
-                source += "[^/]*";
-            }
+            const replacement = starGlobReplacement(pattern, index);
+            source += replacement.source;
+            index += replacement.consumed;
             continue;
         }
 
@@ -543,6 +535,18 @@ function globToRegExp(pattern) {
 
     source += "$";
     return new RegExp(source);
+}
+
+function starGlobReplacement(pattern, index) {
+    if (pattern[index + 1] !== "*") {
+        return {source: "[^/]*", consumed: 0};
+    }
+
+    if (pattern[index + 2] === "/") {
+        return {source: "(?:.*/)?", consumed: 2};
+    }
+
+    return {source: ".*", consumed: 1};
 }
 
 function escapeRegExp(char) {

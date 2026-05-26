@@ -63,7 +63,7 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
    - `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`
    - `<skills_root>/_shared/references/runtime-quality-procedures.md`
    - `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
-   - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`
+   - jeśli aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`
    oraz:
    - sprawdź `git status -sb`
    - odczytaj `docs_map` i klucz `COMMIT_MESSAGE_DIR`; jeśli mapy lub klucza brakuje — przerwij i dopytaj użytkownika

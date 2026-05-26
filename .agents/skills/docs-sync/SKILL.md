@@ -89,7 +89,7 @@ Jeśli zmiany w kodzie spełniają **którykolwiek** z warunków poniżej, trakt
    - sprawdź `git status -sb`,
    - zbierz listę zmienionych plików (`git diff --name-only`) i nowe pliki (`git ls-files --others --exclude-standard`),
    - określ, które moduły są dotknięte zmianami (`src/<Module>/...`) i czy spełniony jest threshold kompletności (sekcja wyżej).
-   - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`: uwzględnij `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` jako aktywne zasady architektoniczne.
+   - jeśli aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: uwzględnij `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` jako aktywne zasady architektoniczne.
 2. (Faza domenowa) Odczytaj wymagane klucze mapy `docs_map`: `MAIN_DOC`, `MODULE_INDEX_DOC`, `MODULE_DOCS_GLOB`.
    - Jeśli mapy lub któregoś wymaganego klucza brakuje: zatrzymaj się i dopytaj użytkownika.
    - Odczytaj też `AGENT_RULES_DOC` i `QUALITY_PROCEDURES_DOC`, jeśli te klucze są zdefiniowane (będą użyte obowiązkowo w fazie proceduralnej).

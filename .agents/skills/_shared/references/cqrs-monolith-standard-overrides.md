@@ -3,9 +3,11 @@
 Ten dokument opisuje **świadome odstępstwa** od baseline'u `php-symfony-postgres-standards.md` dla projektu opartego o architekturę modularnego monolitu z modułami w architekturze heksagonalnej i CQRS.
 
 ## 1. Aktywacja i pierwszeństwo
-Stosuj ten dokument tylko, gdy w `.env` / `.env.local` ustawiono:
+Stosuj ten dokument tylko, gdy aktywne pliki env repo ustawiają końcową wartość:
 
 `CQRS_MONOLITH_STANDARD_OVERRIDES=1`
+
+Aktywne pliki env są ładowane w kolejności nadpisań zgodnej z `<skills_root>/_shared/scripts/env-load.sh`: `.env`, `.env.local` (poza `APP_ENV=test`), `.env.<APP_ENV>`, `.env.<APP_ENV>.local`. `.env.dist` jest szablonem/defaultem dokumentacyjnym, nie aktywnym źródłem runtime.
 
 Gdy flaga ma wartość `0`, traktuj ten dokument jako nieaktywny.
 W razie konfliktu z baseline: ten dokument ma pierwszeństwo.

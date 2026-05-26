@@ -65,7 +65,7 @@ Mechanizmy:
 - zasady współpracy/runtime: `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`
 - checklisty jakości: `<skills_root>/_shared/references/runtime-quality-procedures.md`
 - baseline techniczny stacka: `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
-- override architektoniczny (warunkowy): `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` — tylko gdy `CQRS_MONOLITH_STANDARD_OVERRIDES=1` w `.env` / `.env.local`
+- override architektoniczny (warunkowy): `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` — tylko gdy aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`
 - kontekst repo: `$context-refresh` (`<skills_root>/context-refresh/SKILL.md`)
 - diagnostyka runtime/introspekcja: `$dev-mate` (`<skills_root>/dev-mate/SKILL.md`) — użyj, gdy problem dotyczy logów, profilera albo DI i potrzebujesz ustrukturyzowanych dowodów z AI Mate
 - szybkie review: `$review-quick` (`<skills_root>/review-quick/SKILL.md`)
@@ -89,7 +89,7 @@ Nie używaj zamiast:
 
 ### Stałe ścieżek (z env)
 - `CACHE_PATH`:
-  - wartość z `.env` / `.env.local`,
+  - wartość z aktywnych plików env repo ładowanych przez `<skills_root>/_shared/scripts/env-load.sh`,
   - domyślnie `var/agent/cache`.
 - `STATE_PATH`:
   - `${CACHE_PATH:-var/agent/cache}/code-implement/state.md`
@@ -280,7 +280,7 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
 3. Zrób preflight entrypointów narzędzi:
    - załaduj helper `env-load.sh` wskazany w `shared_files`,
    - ustal komendy narzędziowe dla repo (co najmniej `composer`, `console`, `yarn`, `codecept`) wyłącznie przez `resolve_tool_cmd`,
-   - `resolve_tool_cmd` traktuj jako jedyne źródło prawdy; `.env`/`.env.local` są ładowane automatycznie w resolverze,
+   - `resolve_tool_cmd` traktuj jako jedyne źródło prawdy; aktywne pliki env repo są ładowane automatycznie w resolverze,
    - nie mieszaj wielu wariantów entrypointów w ramach jednego zadania.
 4. Przed zmianą krytycznego pliku **lub** przed edycją pliku, który jest już zmieniony w repo (tracked/untracked):
    - przeczytaj diff (`git diff -- <plik>`) i aktualną treść (relewantne sekcje),
