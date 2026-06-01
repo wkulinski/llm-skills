@@ -61,36 +61,42 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
    - nowych nazw/typów/DTO, które nie niosą nowej semantyki względem istniejących pojęć,
    - rozjazdu między nazwą metody/klasy a faktyczną odpowiedzialnością,
    - obsługi błędów rozproszonej po kilku warstwach zamiast zamkniętej na właściwej granicy,
-   - logiki domenowej ukrytej w warstwie technicznej, konfiguracji, mapperze albo helperze.
+   - logiki domenowej ukrytej w warstwie technicznej, konfiguracji, mapperze albo helperze,
+   - niezaplanowanych ścieżek kompatybilności wstecznej lub obsługi legacy danych, które nie wynikają z prompta, planu migracji ani istniejącego kontraktu,
+   - cichego obchodzenia, naprawiania, normalizowania lub pomijania niespójnych danych zamiast potraktowania ich jako błędu,
+   - fallbacków, wartości domyślnych, nullable/optional rozszerzeń albo `catch`/guardów, które ukrywają naruszenie inwariantu domenowego,
+   - równoległej obsługi starego i nowego formatu/modelu bez jasnej decyzji o migracji, okresie przejściowym lub usunięciu starej ścieżki.
+
+   Jeśli zmiana trafia na niespójne dane, brak wymaganej relacji, niepoprawny stan domenowy albo stary format danych, nie zakładaj automatycznie potrzeby kompatybilności wstecznej. Oceń, czy prompt lub istniejący kontrakt wymaga tolerowania takiego stanu. Jeśli nie, preferuj wykrycie błędu i jawne zgłoszenie ryzyka zamiast cichego fallbacku, naprawy w locie lub rozszerzania kontraktu.
 
    Raportuj tylko ustalenia, dla których da się wskazać konkretny koszt utrzymaniowy, ryzyko błędu, niejasność kontraktu albo istniejący wzorzec w repo, z którym zmiana powinna być spójna.
 4. Zweryfikuj zgodność zmian z baseline:
    - `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
-4. Jeśli aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: zweryfikuj zgodność zmian z:
+5. Jeśli aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: zweryfikuj zgodność zmian z:
    - `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`
 6. Priorytetyzuj analizę:
    - najpierw pliki high-risk (security, persistence, entrypointy, config/tooling),
    - następnie obszar wskazany w prompt,
    - na końcu pozostałe pliki w zakresie quick-check.
-6. Jeśli diff dotyka treści widocznych użytkownikowi, wykonaj check UTF-8/diakrytyków:
+7. Jeśli diff dotyka treści widocznych użytkownikowi, wykonaj check UTF-8/diakrytyków:
    - obejmuje to w szczególności migracje seedujące słowniki, klasy `*Dictionary*`, translacje `messages.*.yaml`, Twig, formularze, komunikaty walidacyjne oraz pola/wartości typu `name`, `label`, `title`, `description`, `placeholder`;
    - porównaj wartości user-facing z promptem, issue lub dokumentacją domenową;
    - zgłoś jako finding każdą nieuzasadnioną transliterację, np. `Spółka` -> `Spolka`, `działalność` -> `dzialalnosc`;
    - nie traktuj starszych danych ASCII jako automatycznego wzorca, jeśli bieżąca specyfikacja podaje tekst z polskimi znakami;
    - jeśli repo zawiera sprzeczne przykłady albo nie wiadomo, czy ASCII jest wymaganiem kontraktu, dodaj Open Question zamiast zakładać normalizację.
-7. Każde istotne ustalenie musi mieć dowód:
+8. Każde istotne ustalenie musi mieć dowód:
    - referencję do pliku/sekcji, albo
    - wynik komendy użytej w tej sesji.
-8. Nie uruchamiaj pełnego QA z automatu.
-9. Jeśli quick-check ujawnia problemy przekraczające zakres szybkiej weryfikacji, zwróć rekomendację uruchomienia `$qa-run`.
+9. Nie uruchamiaj pełnego QA z automatu.
+10. Jeśli quick-check ujawnia problemy przekraczające zakres szybkiej weryfikacji, zwróć rekomendację uruchomienia `$qa-run`.
 
 ## Zakres
 - W zakresie: szybka weryfikacja zmian bez pełnej procedury commit.
 - Poza zakresem: uruchamianie pełnych lintów/testów.
 
 ## Poziomy ustaleń
-- `HIGH`: realny bug, regresja, naruszenie bezpieczeństwa, ryzyko danych.
-- `MEDIUM`: ryzyko utrzymaniowe, brak ważnego testu, słabe pokrycie edge-case, niepotrzebna komplikacja, dublowanie odpowiedzialności/logiki, niejasny lub niesemantyczny kontrakt, rozproszenie obsługi błędów między warstwami.
+- `HIGH`: realny bug, regresja, naruszenie bezpieczeństwa, ryzyko danych, ciche zaakceptowanie lub modyfikacja niespójnych danych tam, gdzie powinien wystąpić błąd.
+- `MEDIUM`: ryzyko utrzymaniowe, brak ważnego testu, słabe pokrycie edge-case, niepotrzebna komplikacja, dublowanie odpowiedzialności/logiki, niejasny lub niesemantyczny kontrakt, rozproszenie obsługi błędów między warstwami, niezaplanowana kompatybilność wsteczna lub fallback legacy bez decyzji projektowej.
 - `LOW`: drobne niespójności, kosmetyka, sugestie usprawnień, lokalna niespójność z istniejącym wzorcem, możliwa unifikacja bez istotnego ryzyka.
 
 ## Format odpowiedzi (findings-first)
