@@ -1,0 +1,67 @@
+{
+    "sectionOrder": [
+        "ALWAYS_FULL",
+        "ALWAYS_ON_RERUN",
+        "SHELL_SCRIPTS_CHANGED",
+        "MARKDOWN_CHANGED",
+        "QA_CONFIG_CHANGED"
+    ],
+    "sections": {
+        "ALWAYS_FULL": {
+            "patterns": [],
+            "commands": [],
+            "runOn": [
+                "full"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "ALWAYS_ON_RERUN": {
+            "patterns": [],
+            "commands": [],
+            "runOn": [
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "SHELL_SCRIPTS_CHANGED": {
+            "patterns": [
+                ".agents/skills/**/scripts/*.sh"
+            ],
+            "commands": [
+                "find .agents/skills -type f -path '*/scripts/*.sh' -print0 | xargs -0 -r -n1 bash -n"
+            ],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "MARKDOWN_CHANGED": {
+            "patterns": [
+                "**/*.md"
+            ],
+            "commands": [
+                "git diff --check"
+            ],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "QA_CONFIG_CHANGED": {
+            "patterns": [
+                ".agents/qa-run.matrix.json",
+                ".agents/skills/qa-run/**"
+            ],
+            "commands": [
+                "node .agents/skills/qa-run/scripts/run-matrix.mjs --help"
+            ],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        }
+    }
+}
