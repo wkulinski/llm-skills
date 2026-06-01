@@ -47,11 +47,28 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
 ## Kontrakt wykonania (quick-check)
 1. Zidentyfikuj zakres przeglądu na podstawie prompta i zmienionych plików.
 2. Potwierdź zgodność zmian z promptem i/lub planem.
-3. Zweryfikuj zgodność zmian z baseline:
+3. Wykonaj przegląd semantyczno-utrzymaniowy zmian:
+   - szukaj rozwiązań trudniejszych niż problem wymaga,
+   - kodu wprowadzonego „dla samej struktury”, bez realnej potrzeby,
+   - nieintuicyjnych przejść między warstwami, helperami lub modelami,
+   - duplikacji logiki, pól, konfiguracji lub kontraktów,
+   - nakładania się odpowiedzialności między klasami/modułami,
+   - rozwiązań równoległych do istniejącego mechanizmu, które powinny być zunifikowane,
+   - miejsc, gdzie prostszy kontrakt lepiej oddaje semantykę domeny,
+   - niejawnych konwersji lub mapowań między prawie tymi samymi strukturami danych,
+   - placeholderów, ślepych ścieżek i domyślnych zachowań ukrywających brak implementacji,
+   - warunków, flag lub parametrów sterujących, które sugerują zbyt szeroką odpowiedzialność jednej metody,
+   - nowych nazw/typów/DTO, które nie niosą nowej semantyki względem istniejących pojęć,
+   - rozjazdu między nazwą metody/klasy a faktyczną odpowiedzialnością,
+   - obsługi błędów rozproszonej po kilku warstwach zamiast zamkniętej na właściwej granicy,
+   - logiki domenowej ukrytej w warstwie technicznej, konfiguracji, mapperze albo helperze.
+
+   Raportuj tylko ustalenia, dla których da się wskazać konkretny koszt utrzymaniowy, ryzyko błędu, niejasność kontraktu albo istniejący wzorzec w repo, z którym zmiana powinna być spójna.
+4. Zweryfikuj zgodność zmian z baseline:
    - `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
 4. Jeśli aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: zweryfikuj zgodność zmian z:
    - `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`
-5. Priorytetyzuj analizę:
+6. Priorytetyzuj analizę:
    - najpierw pliki high-risk (security, persistence, entrypointy, config/tooling),
    - następnie obszar wskazany w prompt,
    - na końcu pozostałe pliki w zakresie quick-check.
@@ -73,8 +90,8 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
 
 ## Poziomy ustaleń
 - `HIGH`: realny bug, regresja, naruszenie bezpieczeństwa, ryzyko danych.
-- `MEDIUM`: ryzyko utrzymaniowe, brak ważnego testu, słabe pokrycie edge-case, nieuzasadniona utrata znaków diakrytycznych albo rozjazd user-facing label względem issue/specyfikacji.
-- `LOW`: drobne niespójności, kosmetyka, sugestie usprawnień.
+- `MEDIUM`: ryzyko utrzymaniowe, brak ważnego testu, słabe pokrycie edge-case, niepotrzebna komplikacja, dublowanie odpowiedzialności/logiki, niejasny lub niesemantyczny kontrakt, rozproszenie obsługi błędów między warstwami.
+- `LOW`: drobne niespójności, kosmetyka, sugestie usprawnień, lokalna niespójność z istniejącym wzorcem, możliwa unifikacja bez istotnego ryzyka.
 
 ## Format odpowiedzi (findings-first)
 - Findings:
