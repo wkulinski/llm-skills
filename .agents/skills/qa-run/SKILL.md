@@ -24,6 +24,8 @@ Uruchomić QA w sposób deterministyczny:
 - wykryć zmienione pliki na podstawie Git,
 - przypisać je do jawnie skonfigurowanych sekcji QA przez patterny ścieżek,
 - uruchomić tylko komendy przypisane do aktywnych sekcji,
+- zapisywać pełny stdout/stderr komend jako artefakty na dysku,
+- raportować do kontekstu tylko statusy komend oraz konkretne skróty błędów,
 - włączyć `$review-quick` jako fazę QA, a nie osobny krok commita,
 - po poprawkach uruchamiać reruny delta względem snapshotów,
 - odkładać finalny pełny przebieg do końca sesji QA i wykonywać go najwyżej raz.
@@ -50,6 +52,13 @@ Podstawowy runner:
 
 Opcjonalnie przekazuj sesję:
 - `--session <ścieżka>` zapisuje ledger QA: hash matrixa, ostatni przebieg, ostatni full pass i `pendingFinalFullPass`.
+
+Każdy przebieg zapisuje artefakty w `CACHE_PATH/qa-run/<run-id>/` (domyślnie `var/agent/cache/qa-run/<run-id>/`):
+- `summary.json`: maszynowy wynik przebiegu, status komend, ścieżki logów i skróty błędów,
+- `summary.txt`: zwięzłe streszczenie dla człowieka,
+- `commands/*.stdout.log` i `commands/*.stderr.log`: pełne logi komend.
+
+Pełne stdout/stderr komend QA jest artefaktem diagnostycznym, nie treścią raportu dla użytkownika. Agent otwiera pełny log tylko wtedy, gdy `summary.json` lub skrót błędu nie wystarcza do diagnozy.
 
 Dozwolone `--rerun-reason`:
 - `initial`:
@@ -78,6 +87,14 @@ Brak template jest twardym błędem procedury. Runner nie ma zakodowanego defaul
 Wymagany format:
 ```json
 {
+    "outputDefaults": {
+        "outputMode": "quiet-on-pass",
+        "failTailLines": 120,
+        "maxOutputBytes": 20000,
+        "stripAnsi": true,
+        "parserInputBytes": 5242880,
+        "parser": "generic-tail"
+    },
     "sectionOrder": [
         "ALWAYS_FULL",
         "ALWAYS_ON_RERUN",
@@ -98,7 +115,17 @@ Wymagany format:
         },
         "PHP_CHANGED": {
             "patterns": ["**/*.php"],
-            "commands": ["..."],
+            "output": {
+                "failTailLines": 160
+            },
+            "commands": [
+                "...",
+                {
+                    "cmd": "...",
+                    "parser": "phpstan-json",
+                    "failTailLines": 80
+                }
+            ],
             "runOn": ["full", "rerun"],
             "requiresFinalFullPass": false
         }
@@ -109,11 +136,44 @@ Wymagany format:
 Znaczenie pól:
 - `sectionOrder`: jawna kolejność wykonywania wszystkich sekcji; musi zawierać każdą sekcję z `sections` dokładnie raz.
 - `patterns`: jawne globy ścieżek repo, które aktywują sekcje.
-- `commands`: pełne komendy do wykonania 1:1.
+- `commands`: pełne komendy do wykonania 1:1; wpis może być stringiem albo obiektem z polem `cmd`.
 - `runOn`: `full`, `rerun` albo oba.
 - `requiresFinalFullPass`: jeśli `true`, udany rerun delta nie odpala od razu pełnej macierzy, tylko ustawia `pendingFinalFullPass`.
+- `outputDefaults`: opcjonalne domyślne ustawienia raportowania outputu dla wszystkich komend.
+- `output`: opcjonalne ustawienia outputu dla sekcji.
 
 Każda sekcja musi jawnie deklarować `patterns`, `commands`, `runOn` i `requiresFinalFullPass`.
+
+### Kontrakt outputu komend
+Domyślny tryb outputu to `quiet-on-pass`:
+- pełny stdout/stderr zawsze trafia do plików logów w artefaktach QA,
+- udana komenda wypisuje tylko status, czas trwania i ścieżki logów,
+- błędna komenda wypisuje status, exit code, ścieżki logów i ograniczony skrót błędu,
+- pełnego outputu udanych komend nie wklejaj do odpowiedzi użytkownikowi.
+
+Priorytet ustawień outputu:
+1. ustawienia bezpośrednio przy komendzie,
+2. `section.output`,
+3. `outputDefaults`,
+4. domyślne wartości runnera.
+
+Obsługiwane pola outputu:
+- `outputMode`: `quiet-on-pass` albo `silent`;
+- `failTailLines`: ile końcowych linii może trafić do skrótu błędu;
+- `maxOutputBytes`: maksymalny rozmiar skrótu błędu;
+- `parserInputBytes`: maksymalny rozmiar wejścia przechowywanego dla parsera maszynowego;
+- `stripAnsi`: czy usuwać kody ANSI ze skrótu;
+- `parser`: `generic-tail`, `phpstan-json` albo `eslint-json`.
+
+Parsery maszynowe są preferowane tam, gdzie narzędzie stabilnie je wspiera:
+- PHPStan: preferuj `--error-format=json` i `parser: "phpstan-json"`;
+- ESLint: preferuj `--format json` i `parser: "eslint-json"`;
+- pozostałe narzędzia zaczynają od `parser: "generic-tail"`.
+
+Komendy w matrixie konfiguruj pod output dla agenta:
+- preferuj flagi `--no-progress`, `--no-interaction`, `--ansi=never`, `--colors=never` albo odpowiedniki, jeśli narzędzie je obsługuje;
+- nie stosuj `--quiet`, jeśli narzędzie ukrywa wtedy przyczynę błędu;
+- nie dodawaj flag automatycznie w runnerze, bo obsługa flag jest zależna od narzędzia.
 
 Sekcje specjalne:
 - `ALWAYS_FULL`: uruchamia się przy pełnym przebiegu.
@@ -193,13 +253,17 @@ Niedozwolone bez decyzji użytkownika:
 
 ## Raport
 Raport końcowy zawiera:
-- wykonane komendy i sekcje,
-- sekcje pominięte z powodem,
+- status `PASS` albo `BLOCKED`/`FAIL`,
+- liczbę wykonanych komend i aktywnych sekcji,
+- ścieżkę do katalogu artefaktów i `summary.json`,
+- sekcje pominięte z powodem w formie zwięzłej,
 - przebieg iteracji (`full`, `post-fix-delta`, `review-fix-delta`, `$review-quick`, `full-final-pass`),
 - informacje o sesji: `pending_final_full_pass` i powody,
 - `Wykonano iteracji: X/20`,
-- status: `PASS` albo `BLOCKED`,
+- konkretne błędy z `summary.json`, jeśli wystąpiły,
 - blokery, jeśli wystąpiły.
+
+Udane komendy raportuj zbiorczo. Nie wklejaj outputu udanych lintów/testów. Przy błędzie pokaż tylko skrót błędu i ścieżki do logów; pełne logi otwieraj selektywnie dopiero do diagnozy.
 
 ## Warunki przerwania
 - Niepoprawny JSON w konfiguracji.

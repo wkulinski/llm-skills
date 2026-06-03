@@ -123,6 +123,18 @@ Configuration boundary:
 
 ## Runtime Setup for Consumer Projects
 
+## Development in This Repository
+
+### Tests
+This repository uses Vitest for executable tests around skill helper scripts.
+
+Run the test suite with:
+```bash
+npm test
+```
+
+The local QA matrix (`.agents/qa-run.matrix.json`) runs `npm test` when Node scripts, test files, or package metadata change.
+
 ### Environment contract
 Minimal `.env.local` or `.env.dist` variables used by this repository:
 - `GH_TOKEN` (optional): token for GitHub CLI/MCP work.

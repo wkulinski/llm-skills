@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
-import {spawnSync} from "node:child_process";
+import {spawn, spawnSync} from "node:child_process";
 import {createHash} from "node:crypto";
-import {copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
+import {copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import path from "node:path";
+import {performance} from "node:perf_hooks";
 import process from "node:process";
 import {fileURLToPath} from "node:url";
 
@@ -12,6 +13,16 @@ const DEFAULT_CONFIG_TEMPLATE_REL_PATH = "../templates/qa-run.matrix.dist.json";
 const SNAPSHOT_VERSION = 1;
 const SESSION_VERSION = 1;
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_OUTPUT_CONFIG = {
+    failTailLines: 120,
+    maxOutputBytes: 20000,
+    outputMode: "quiet-on-pass",
+    parser: "generic-tail",
+    parserInputBytes: 5 * 1024 * 1024,
+    stripAnsi: true,
+};
+const OUTPUT_MODES = new Set(["quiet-on-pass", "silent"]);
+const PARSERS = new Set(["generic-tail", "phpstan-json", "eslint-json"]);
 
 const RERUN_REASONS = new Set([
     "initial",
@@ -245,24 +256,26 @@ function parseJsonConfig(raw, configAbsPath) {
 }
 
 function normalizeConfig(config) {
-    const sections = normalizeSections(config);
+    const outputDefaults = normalizeOutputConfig("root outputDefaults", config.outputDefaults ?? {});
+    const sections = normalizeSections(config, outputDefaults);
     const sectionOrder = normalizeSectionOrder(config, sections);
 
     return {
+        outputDefaults,
         raw: config,
         sectionOrder,
         sections,
     };
 }
 
-function normalizeSections(config) {
+function normalizeSections(config, outputDefaults) {
     if (!config.sections || typeof config.sections !== "object" || Array.isArray(config.sections)) {
         throw new Error('Config field "sections" must be an object.');
     }
 
     const sections = {};
     for (const [sectionName, sectionConfig] of Object.entries(config.sections)) {
-        sections[sectionName] = normalizeSectionConfig(sectionName, sectionConfig);
+        sections[sectionName] = normalizeSectionConfig(sectionName, sectionConfig, outputDefaults);
     }
 
     return sections;
@@ -290,7 +303,7 @@ function normalizeSectionOrder(config, sections) {
     return uniqueSectionOrder;
 }
 
-function normalizeSectionConfig(sectionName, value) {
+function normalizeSectionConfig(sectionName, value, outputDefaults) {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         throw new Error(`Config section "${sectionName}" must be an object.`);
     }
@@ -300,9 +313,16 @@ function normalizeSectionConfig(sectionName, value) {
     assertRequiredSectionField(sectionName, value, "runOn");
     assertRequiredSectionField(sectionName, value, "requiresFinalFullPass");
 
+    const sectionOutput = {
+        ...DEFAULT_OUTPUT_CONFIG,
+        ...outputDefaults,
+        ...normalizeOutputConfig(`section "${sectionName}" output`, value.output ?? {}),
+    };
+
     return {
         name: sectionName,
-        commands: normalizeSectionCommandList(sectionName, value.commands),
+        commands: normalizeSectionCommandList(sectionName, value.commands, sectionOutput),
+        output: sectionOutput,
         patterns: normalizeStringList(sectionName, "patterns", value.patterns),
         requiresFinalFullPass: normalizeBoolean(sectionName, "requiresFinalFullPass", value.requiresFinalFullPass),
         runOn: normalizeRunOn(sectionName, value.runOn),
@@ -381,24 +401,115 @@ function normalizeCommands(config, sectionName) {
     return section.commands;
 }
 
-function normalizeSectionCommandList(sectionName, value) {
+function normalizeSectionCommandList(sectionName, value, sectionOutput) {
     if (!Array.isArray(value)) {
-        throw new Error(`Config section "${sectionName}" must be an array of command strings.`);
+        throw new Error(`Config section "${sectionName}" must be an array of command strings/objects.`);
     }
 
     const commands = [];
     for (const entry of value) {
-        if (typeof entry !== "string") {
-            throw new Error(
-                `Config section "${sectionName}" must contain only strings (invalid entry type).`
-            );
+        if (typeof entry === "string") {
+            const trimmed = entry.trim();
+            if (trimmed.length > 0) {
+                commands.push(normalizeCommandObject(sectionName, {cmd: trimmed}, sectionOutput));
+            }
+            continue;
         }
-        const trimmed = entry.trim();
-        if (trimmed.length > 0) {
-            commands.push(trimmed);
-        }
+
+        commands.push(normalizeCommandObject(sectionName, entry, sectionOutput));
     }
     return commands;
+}
+
+function normalizeCommandObject(sectionName, entry, sectionOutput) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        throw new Error(`Config section "${sectionName}" command must be a string or object.`);
+    }
+
+    const command = typeof entry.cmd === "string" ? entry.cmd.trim() : "";
+
+    if (command.length === 0) {
+        throw new Error(`Config section "${sectionName}" command object requires non-empty "cmd".`);
+    }
+
+    const commandOutput = normalizeOutputConfig(`section "${sectionName}" command output`, entry.output ?? {});
+    const inlineOutput = normalizeOutputConfig(`section "${sectionName}" command inline output`, {
+        failTailLines: entry.failTailLines,
+        maxOutputBytes: entry.maxOutputBytes,
+        outputMode: entry.outputMode,
+        parser: entry.parser,
+        parserInputBytes: entry.parserInputBytes,
+        stripAnsi: entry.stripAnsi,
+    });
+
+    return {
+        cmd: command,
+        output: {
+            ...sectionOutput,
+            ...commandOutput,
+            ...inlineOutput,
+        },
+    };
+}
+
+function normalizeOutputConfig(context, value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error(`Config ${context} must be an object.`);
+    }
+
+    const normalized = {};
+    if (value.outputMode !== undefined) {
+        if (typeof value.outputMode !== "string" || !OUTPUT_MODES.has(value.outputMode)) {
+            throw new Error(
+                `Config ${context} outputMode must be one of: ${[...OUTPUT_MODES].join(", ")}.`
+            );
+        }
+        normalized.outputMode = value.outputMode;
+    }
+
+    if (value.failTailLines !== undefined) {
+        normalized.failTailLines = normalizePositiveInteger(context, "failTailLines", value.failTailLines);
+    }
+
+    if (value.maxOutputBytes !== undefined) {
+        normalized.maxOutputBytes = normalizePositiveInteger(context, "maxOutputBytes", value.maxOutputBytes);
+    }
+
+    if (value.stripAnsi !== undefined) {
+        if (typeof value.stripAnsi !== "boolean") {
+            throw new Error(`Config ${context} stripAnsi must be a boolean.`);
+        }
+        normalized.stripAnsi = value.stripAnsi;
+    }
+
+    if (value.parser !== undefined) {
+        normalized.parser = normalizeParser(context, value.parser);
+    }
+
+    if (value.parserInputBytes !== undefined) {
+        normalized.parserInputBytes = normalizePositiveInteger(context, "parserInputBytes", value.parserInputBytes);
+    }
+
+    return normalized;
+}
+
+function normalizePositiveInteger(context, fieldName, value) {
+    if (!Number.isInteger(value) || value < 1) {
+        throw new Error(`Config ${context} ${fieldName} must be a positive integer.`);
+    }
+
+    return value;
+}
+
+function normalizeParser(context, value) {
+    if (typeof value === "string") {
+        if (!PARSERS.has(value)) {
+            throw new Error(`Config ${context} parser must be one of: ${[...PARSERS].join(", ")}.`);
+        }
+        return value;
+    }
+
+    throw new Error(`Config ${context} parser must be a string.`);
 }
 
 function writeSnapshot(snapshotAbsPath, workingTreeState) {
@@ -598,35 +709,327 @@ function includeSessionRiskForFullFinalPass(riskAssessment, session, config, mod
     };
 }
 
-function runSectionCommands(repoRoot, section, commands) {
+async function runSectionCommands(repoRoot, section, commands, artifacts, commandCounter) {
     const executed = [];
     for (const command of commands) {
-        const exitCode = executeCommand(repoRoot, section, command);
-        if (exitCode !== 0) {
-            return {ok: false, exitCode, executed};
+        const commandIndex = commandCounter.next();
+        const commandResult = await executeCommand(repoRoot, section, command, artifacts, commandIndex);
+        executed.push(commandResult);
+        if (commandResult.status !== "PASS") {
+            return {ok: false, exitCode: commandResult.exitCode, executed, failure: commandResult};
         }
-        executed.push({section, command});
     }
 
-    return {ok: true, exitCode: 0, executed};
+    return {ok: true, exitCode: 0, executed, failure: null};
 }
 
-function executeCommand(repoRoot, section, command) {
-    console.log(`RUN [${section}] ${command}`);
-    const result = spawnSync("bash", ["-lc", command], {
-        cwd: repoRoot,
-        stdio: "inherit",
-    });
+async function executeCommand(repoRoot, section, command, artifacts, commandIndex) {
+    console.log(`RUN [${section}] ${command.cmd}`);
+    const startedAt = performance.now();
+    const logs = createCommandLogs(repoRoot, artifacts.commandsDir, commandIndex, section, command.cmd);
+    const stdoutCollector = createOutputCollector(command.output.maxOutputBytes, command.output.parserInputBytes);
+    const stderrCollector = createOutputCollector(command.output.maxOutputBytes, command.output.parserInputBytes);
+    const result = await spawnCommandToLogs(repoRoot, command.cmd, logs, stdoutCollector, stderrCollector);
+    const durationMs = Math.max(0, Math.round(performance.now() - startedAt));
+    const stdoutTail = stdoutCollector.tailContent();
+    const stderrTail = stderrCollector.tailContent();
+    const stdoutParserInput = stdoutCollector.parserContent();
+    const stderrParserInput = stderrCollector.parserContent();
+    const exitCode = result.error ? 1 : result.exitCode;
+    const status = result.error ? "ERROR" : exitCode === 0 ? "PASS" : "FAIL";
+    const failureSummary = status === "PASS"
+        ? []
+        : buildFailureSummary(
+            command.output,
+            stdoutTail,
+            stderrTail,
+            result.error?.message ?? "",
+            stdoutParserInput,
+            stderrParserInput
+        );
+
+    const commandResult = {
+        command: command.cmd,
+        commandHash: hashJson(command.cmd),
+        durationMs,
+        exitCode,
+        parser: command.output.parser,
+        section,
+        status,
+        stderrLog: logs.stderrLog,
+        stdoutLog: logs.stdoutLog,
+        summary: failureSummary,
+    };
+
     if (result.error) {
-        console.error(`ERROR [${section}] ${command}`);
-        console.error(result.error.message);
-        return 1;
+        commandResult.error = result.error.message;
     }
-    if ((result.status ?? 1) !== 0) {
-        console.error(`FAIL [${section}] ${command}`);
-        return result.status ?? 1;
+
+    printCommandResult(commandResult, command.output);
+    return commandResult;
+}
+
+function createCommandLogs(repoRoot, commandsDir, commandIndex, section, command) {
+    mkdirSync(commandsDir, {recursive: true});
+    const commandHash = createHash("sha256").update(command).digest("hex").slice(0, 12);
+    const prefix = `${String(commandIndex).padStart(3, "0")}-${sanitizePathPart(section)}-${commandHash}`;
+    const stdoutPath = path.join(commandsDir, `${prefix}.stdout.log`);
+    const stderrPath = path.join(commandsDir, `${prefix}.stderr.log`);
+
+    return {
+        stderrAbsPath: stderrPath,
+        stderrLog: toRepoRelativePath(repoRoot, stderrPath),
+        stdoutAbsPath: stdoutPath,
+        stdoutLog: toRepoRelativePath(repoRoot, stdoutPath),
+    };
+}
+
+function spawnCommandToLogs(repoRoot, command, logs, stdoutCollector, stderrCollector) {
+    return new Promise((resolve) => {
+        const stdoutStream = createWriteStream(logs.stdoutAbsPath);
+        const stderrStream = createWriteStream(logs.stderrAbsPath);
+        const child = spawn("bash", ["-c", command], {
+            cwd: repoRoot,
+            stdio: ["ignore", "pipe", "pipe"],
+        });
+        let spawnError = null;
+
+        child.stdout.on("data", (chunk) => {
+            stdoutStream.write(chunk);
+            stdoutCollector.append(chunk);
+        });
+        child.stderr.on("data", (chunk) => {
+            stderrStream.write(chunk);
+            stderrCollector.append(chunk);
+        });
+        child.on("error", (error) => {
+            spawnError = error;
+        });
+        child.on("close", (exitCode) => {
+            stdoutStream.end(() => {
+                stderrStream.end(() => {
+                    resolve({
+                        error: spawnError,
+                        exitCode: exitCode ?? 1,
+                    });
+                });
+            });
+        });
+    });
+}
+
+function createOutputCollector(maxTailBytes, maxParserBytes) {
+    const parserChunks = [];
+    const tailChunks = [];
+    let parserBytes = 0;
+    let tailBytes = 0;
+
+    return {
+        append(chunk) {
+            const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            if (parserBytes < maxParserBytes) {
+                const remainingParserBytes = maxParserBytes - parserBytes;
+                const parserChunk = buffer.length <= remainingParserBytes
+                    ? buffer
+                    : buffer.subarray(0, remainingParserBytes);
+                parserChunks.push(parserChunk);
+                parserBytes += parserChunk.length;
+            }
+
+            tailChunks.push(buffer);
+            tailBytes += buffer.length;
+
+            while (tailBytes > maxTailBytes && tailChunks.length > 0) {
+                const first = tailChunks[0];
+                const overflow = tailBytes - maxTailBytes;
+                if (first.length <= overflow) {
+                    tailChunks.shift();
+                    tailBytes -= first.length;
+                    continue;
+                }
+
+                tailChunks[0] = first.subarray(overflow);
+                tailBytes -= overflow;
+            }
+        },
+        parserContent() {
+            return Buffer.concat(parserChunks).toString("utf-8");
+        },
+        tailContent() {
+            return Buffer.concat(tailChunks).toString("utf-8");
+        },
+    };
+}
+
+function printCommandResult(commandResult, outputConfig) {
+    const durationSeconds = (commandResult.durationMs / 1000).toFixed(1);
+    const logInfo = `stdout=${commandResult.stdoutLog} stderr=${commandResult.stderrLog}`;
+    if (commandResult.status === "PASS") {
+        console.log(`PASS [${commandResult.section}] ${commandResult.command} duration=${durationSeconds}s ${logInfo}`);
+        return;
     }
-    return 0;
+
+    console.error(
+        `${commandResult.status} [${commandResult.section}] ${commandResult.command} exit=${commandResult.exitCode} duration=${durationSeconds}s ${logInfo}`
+    );
+
+    if (commandResult.error) {
+        console.error(`Error: ${commandResult.error}`);
+    }
+
+    if (outputConfig.outputMode !== "silent" && commandResult.summary.length > 0) {
+        console.error("Failure summary:");
+        for (const line of commandResult.summary) {
+            console.error(`- ${line}`);
+        }
+    }
+}
+
+function buildFailureSummary(outputConfig, stdoutTail, stderrTail, errorMessage, stdoutParserInput, stderrParserInput) {
+    const textParts = [stdoutTail, stderrTail, errorMessage].filter((part) => part && part.length > 0);
+    const combinedTail = textParts.join("\n");
+    const summary = parseFailureSummary(
+        outputConfig.parser,
+        stdoutParserInput,
+        stderrParserInput,
+        combinedTail
+    );
+    return limitSummaryLines(summary, outputConfig);
+}
+
+function parseFailureSummary(parser, stdout, stderr, combined) {
+    if (parser === "phpstan-json") {
+        const parsed = parsePhpStanJson(stdout) ?? parsePhpStanJson(stderr);
+        if (parsed && parsed.length > 0) {
+            return parsed;
+        }
+    }
+
+    if (parser === "eslint-json") {
+        const parsed = parseEslintJson(stdout) ?? parseEslintJson(stderr);
+        if (parsed && parsed.length > 0) {
+            return parsed;
+        }
+    }
+
+    return genericTail(combined);
+}
+
+function parsePhpStanJson(text) {
+    const parsed = parseJsonOrNull(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return null;
+    }
+
+    const lines = [];
+    if (Array.isArray(parsed.errors)) {
+        for (const error of parsed.errors) {
+            if (typeof error === "string") {
+                lines.push(error);
+            }
+        }
+    }
+
+    if (parsed.files && typeof parsed.files === "object" && !Array.isArray(parsed.files)) {
+        for (const [filePath, fileReport] of Object.entries(parsed.files)) {
+            const messages = Array.isArray(fileReport?.messages) ? fileReport.messages : [];
+            for (const message of messages) {
+                const line = Number.isInteger(message?.line) ? `:${message.line}` : "";
+                const textMessage = typeof message?.message === "string" ? message.message : JSON.stringify(message);
+                lines.push(`${filePath}${line} ${textMessage}`);
+            }
+        }
+    }
+
+    return lines;
+}
+
+function parseEslintJson(text) {
+    const parsed = parseJsonOrNull(text);
+    if (!Array.isArray(parsed)) {
+        return null;
+    }
+
+    const lines = [];
+    for (const fileReport of parsed) {
+        const filePath = typeof fileReport?.filePath === "string" ? fileReport.filePath : "unknown-file";
+        const messages = Array.isArray(fileReport?.messages) ? fileReport.messages : [];
+        for (const message of messages) {
+            const line = Number.isInteger(message?.line) ? `:${message.line}` : "";
+            const column = Number.isInteger(message?.column) ? `:${message.column}` : "";
+            const rule = typeof message?.ruleId === "string" && message.ruleId.length > 0
+                ? ` [${message.ruleId}]`
+                : "";
+            const textMessage = typeof message?.message === "string" ? message.message : JSON.stringify(message);
+            lines.push(`${filePath}${line}${column}${rule} ${textMessage}`);
+        }
+    }
+
+    return lines;
+}
+
+function parseJsonOrNull(text) {
+    if (!text || text.trim().length === 0) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(text);
+    } catch (error) {
+        return null;
+    }
+}
+
+function genericTail(text) {
+    return text
+        .split("\n")
+        .map((line) => line.trimEnd())
+        .filter((line) => line.trim().length > 0);
+}
+
+function limitSummaryLines(lines, outputConfig) {
+    const normalized = lines.map((line) => outputConfig.stripAnsi ? stripAnsi(line) : line);
+    const maxBytes = outputConfig.maxOutputBytes;
+    const tailLines = normalized.slice(-outputConfig.failTailLines);
+    const limited = [];
+    let usedBytes = 0;
+
+    for (const line of tailLines.reverse()) {
+        const lineBytes = Buffer.byteLength(line, "utf-8");
+        if (usedBytes + lineBytes > maxBytes && limited.length > 0) {
+            break;
+        }
+        limited.push(truncateLineToBytes(line, maxBytes));
+        usedBytes += Math.min(lineBytes, maxBytes);
+    }
+
+    return limited.reverse();
+}
+
+function truncateLineToBytes(line, maxBytes) {
+    if (Buffer.byteLength(line, "utf-8") <= maxBytes) {
+        return line;
+    }
+
+    const suffix = " ...[truncated]";
+    const suffixBytes = Buffer.byteLength(suffix, "utf-8");
+    const buffer = Buffer.from(line, "utf-8").subarray(0, Math.max(0, maxBytes - suffixBytes));
+    return `${buffer.toString("utf-8")}${suffix}`;
+}
+
+function stripAnsi(text) {
+    return text.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
+function sanitizePathPart(value) {
+    return value
+        .replace(/[^a-zA-Z0-9._-]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 80) || "command";
+}
+
+function toRepoRelativePath(repoRoot, absPath) {
+    return path.relative(repoRoot, absPath).split(path.sep).join("/");
 }
 
 function enforceRerunReasonConsistency(cli) {
@@ -661,10 +1064,57 @@ function enforceRerunReasonConsistency(cli) {
     }
 }
 
-function printDetectedChanges(mode, rerunReason, files, activeSections, config, snapshotAbsPath = null) {
+function createArtifacts(repoRoot, rerunReason) {
+    const cacheRoot = getCacheRoot(repoRoot);
+    const runId = `${formatDateForPath(new Date())}-${process.pid}-${sanitizePathPart(rerunReason)}`;
+    const artifactsDir = path.join(cacheRoot, "qa-run", runId);
+    const commandsDir = path.join(artifactsDir, "commands");
+    mkdirSync(commandsDir, {recursive: true});
+
+    return {
+        commandsDir,
+        dir: artifactsDir,
+        relativeDir: toRepoRelativePath(repoRoot, artifactsDir),
+        summaryJsonAbs: path.join(artifactsDir, "summary.json"),
+        summaryJson: toRepoRelativePath(repoRoot, path.join(artifactsDir, "summary.json")),
+        summaryTxtAbs: path.join(artifactsDir, "summary.txt"),
+        summaryTxt: toRepoRelativePath(repoRoot, path.join(artifactsDir, "summary.txt")),
+    };
+}
+
+function getCacheRoot(repoRoot) {
+    const rawCachePath = stripWrappingQuotes(process.env.CACHE_PATH ?? "var/agent/cache");
+    return path.isAbsolute(rawCachePath)
+        ? rawCachePath
+        : path.join(repoRoot, rawCachePath);
+}
+
+function stripWrappingQuotes(value) {
+    const trimmed = value.trim();
+    if (
+        (trimmed.startsWith('"') && trimmed.endsWith('"'))
+        || (trimmed.startsWith("'") && trimmed.endsWith("'"))
+    ) {
+        return trimmed.slice(1, -1);
+    }
+
+    return trimmed;
+}
+
+function formatDateForPath(date) {
+    return date.toISOString()
+        .replace(/[-:]/g, "")
+        .replace(/\..+$/, "")
+        .replace("T", "-");
+}
+
+function printDetectedChanges(mode, rerunReason, files, activeSections, config, snapshotAbsPath = null, artifacts = null) {
     console.log("Detected changes:");
     console.log(`- mode=${mode}`);
     console.log(`- rerun_reason=${rerunReason}`);
+    if (artifacts) {
+        console.log(`- artifacts=${artifacts.relativeDir}`);
+    }
     if (snapshotAbsPath) {
         console.log(`- delta_from_snapshot=${snapshotAbsPath}`);
     }
@@ -674,7 +1124,7 @@ function printDetectedChanges(mode, rerunReason, files, activeSections, config, 
     }
 }
 
-function printSummary(executed, skippedNoChanges, skippedNoCommands) {
+function printSummary(executed, skippedNoChanges, skippedNoCommands, artifacts) {
     console.log("\nSummary:");
     console.log(`- executed_commands=${executed.length}`);
     console.log(
@@ -689,6 +1139,8 @@ function printSummary(executed, skippedNoChanges, skippedNoCommands) {
     } else {
         console.log("Result: all executed commands passed.");
     }
+    console.log(`- artifacts=${artifacts.relativeDir}`);
+    console.log(`- summary_json=${artifacts.summaryJson}`);
 }
 
 function printRiskSummary(riskAssessment) {
@@ -806,8 +1258,90 @@ function printSessionSummary(session) {
     );
 }
 
+function createCommandCounter() {
+    let value = 0;
+    return {
+        next() {
+            value += 1;
+            return value;
+        },
+    };
+}
+
+function buildRunSummary({
+    activeSections,
+    artifacts,
+    cli,
+    commands,
+    config,
+    failures,
+    files,
+    mode,
+    riskAssessment,
+    session,
+    skippedNoChanges,
+    skippedNoCommands,
+    status,
+}) {
+    return {
+        activeSections: getActiveSectionNames(activeSections),
+        artifactsDir: artifacts.relativeDir,
+        changedFilesCount: files.length,
+        changedFilesHash: hashJson(files),
+        commands,
+        completedAt: new Date().toISOString(),
+        failures,
+        matrixHash: hashJson(config.raw),
+        mode,
+        pendingFinalFullPass: session.pendingFinalFullPass,
+        pendingFinalFullPassReasons: session.pendingReasons ?? [],
+        rerunReason: cli.rerunReason,
+        riskAssessment: riskAssessment
+            ? {
+                changedSections: riskAssessment.changedSections,
+                pendingFinalFullPass: riskAssessment.shouldRunFullFinalPass,
+                pendingFinalFullPassReasons: riskAssessment.reasons,
+            }
+            : null,
+        skippedNoChanges,
+        skippedNoCommands,
+        status,
+    };
+}
+
+function writeRunSummary(repoRoot, artifacts, summary) {
+    writeFileSync(artifacts.summaryJsonAbs, `${JSON.stringify(summary, null, 2)}\n`, "utf-8");
+    writeFileSync(artifacts.summaryTxtAbs, renderSummaryText(summary), "utf-8");
+}
+
+function renderSummaryText(summary) {
+    const lines = [
+        `QA: ${summary.status}`,
+        `Mode: ${summary.mode}`,
+        `Rerun reason: ${summary.rerunReason}`,
+        `Executed: ${summary.commands.length} commands / ${summary.activeSections.length} active sections`,
+        `Artifacts: ${summary.artifactsDir}`,
+        `Pending final full pass: ${summary.pendingFinalFullPass ? "yes" : "no"}`,
+    ];
+
+    if (summary.failures.length === 0) {
+        lines.push("Failures: none");
+    } else {
+        lines.push("Failures:");
+        for (const failure of summary.failures) {
+            lines.push(`- [${failure.section}] ${failure.command} exit=${failure.exitCode}`);
+            for (const detail of failure.summary) {
+                lines.push(`  - ${detail}`);
+            }
+        }
+    }
+
+    lines.push("");
+    return `${lines.join("\n")}\n`;
+}
+
 // eslint-disable-next-line complexity
-function main() {
+async function main() {
     let cli;
     try {
         cli = parseArgs(process.argv.slice(2));
@@ -920,12 +1454,20 @@ function main() {
         process.exit(2);
     }
 
+    const artifacts = createArtifacts(repoRoot, cli.rerunReason);
     const activeSections = detectActiveSections(files, config, mode);
-    printDetectedChanges(mode, cli.rerunReason, files, activeSections, config, deltaFromSnapshotAbsPath);
+    printDetectedChanges(mode, cli.rerunReason, files, activeSections, config, deltaFromSnapshotAbsPath, artifacts);
 
     const executed = [];
     const skippedNoCommands = [];
     const skippedNoChanges = [];
+    const commandCounter = createCommandCounter();
+    const riskAssessment = includeSessionRiskForFullFinalPass(
+        assessRiskForFullFinalPass(activeSections, config),
+        session,
+        config,
+        mode
+    );
 
     for (const sectionName of config.sectionOrder) {
         if (!activeSections[sectionName]) {
@@ -949,21 +1491,33 @@ function main() {
             continue;
         }
 
-        const sectionResult = runSectionCommands(repoRoot, sectionName, commands);
+        const sectionResult = await runSectionCommands(repoRoot, sectionName, commands, artifacts, commandCounter);
+        sectionResult.executed.forEach((entry) => executed.push(entry));
         if (!sectionResult.ok) {
+            const failureSession = updateSession(session, cli, mode, currentState, config, riskAssessment);
+            const failureSummary = buildRunSummary({
+                activeSections,
+                artifacts,
+                cli,
+                commands: executed,
+                config,
+                failures: [sectionResult.failure],
+                files,
+                mode,
+                riskAssessment,
+                session: failureSession,
+                skippedNoChanges,
+                skippedNoCommands,
+                status: "FAIL",
+            });
+            writeRunSummary(repoRoot, artifacts, failureSummary);
+            console.error(`INFO: QA summary written: ${artifacts.summaryJson}`);
             process.exit(sectionResult.exitCode);
         }
-        sectionResult.executed.forEach((entry) => executed.push(entry));
     }
 
-    printSummary(executed, skippedNoChanges, skippedNoCommands);
+    printSummary(executed, skippedNoChanges, skippedNoCommands, artifacts);
 
-    const riskAssessment = includeSessionRiskForFullFinalPass(
-        assessRiskForFullFinalPass(activeSections, config),
-        session,
-        config,
-        mode
-    );
     if (mode === "delta") {
         printRiskSummary(riskAssessment);
     }
@@ -971,6 +1525,26 @@ function main() {
     const nextSession = updateSession(session, cli, mode, currentState, config, riskAssessment);
     printSessionSummary(nextSession);
     saveSession(sessionAbsPath, nextSession);
+    const passSummary = buildRunSummary({
+        activeSections,
+        artifacts,
+        cli,
+        commands: executed,
+        config,
+        failures: [],
+        files,
+        mode,
+        riskAssessment,
+        session: nextSession,
+        skippedNoChanges,
+        skippedNoCommands,
+        status: "PASS",
+    });
+    writeRunSummary(repoRoot, artifacts, passSummary);
+    console.log(`INFO: QA summary written: ${artifacts.summaryJson}`);
 }
 
-main();
+main().catch((error) => {
+    console.error(`ERROR: ${error.message}`);
+    process.exit(3);
+});
