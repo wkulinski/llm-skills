@@ -1,8 +1,17 @@
 {
+    "outputDefaults": {
+        "outputMode": "quiet-on-pass",
+        "failTailLines": 120,
+        "maxOutputBytes": 20000,
+        "stripAnsi": true,
+        "parserInputBytes": 5242880,
+        "parser": "generic-tail"
+    },
     "sectionOrder": [
         "ALWAYS_FULL",
         "ALWAYS_ON_RERUN",
         "SHELL_SCRIPTS_CHANGED",
+        "NODE_TESTS_CHANGED",
         "MARKDOWN_CHANGED",
         "QA_CONFIG_CHANGED"
     ],
@@ -29,6 +38,22 @@
             ],
             "commands": [
                 "find .agents/skills -type f -path '*/scripts/*.sh' -print0 | xargs -0 -r -n1 bash -n"
+            ],
+            "runOn": [
+                "full",
+                "rerun"
+            ],
+            "requiresFinalFullPass": false
+        },
+        "NODE_TESTS_CHANGED": {
+            "patterns": [
+                "package.json",
+                "package-lock.json",
+                ".agents/skills/**/*.mjs",
+                "tests/**/*.mjs"
+            ],
+            "commands": [
+                "npm test"
             ],
             "runOn": [
                 "full",

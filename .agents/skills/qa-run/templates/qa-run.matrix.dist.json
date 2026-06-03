@@ -1,4 +1,12 @@
 {
+    "outputDefaults": {
+        "outputMode": "quiet-on-pass",
+        "failTailLines": 120,
+        "maxOutputBytes": 20000,
+        "stripAnsi": true,
+        "parserInputBytes": 5242880,
+        "parser": "generic-tail"
+    },
     "sectionOrder": [
         "ALWAYS_FULL",
         "ALWAYS_ON_RERUN",
@@ -57,6 +65,9 @@
             "patterns": [
                 "**/*.php"
             ],
+            "output": {
+                "failTailLines": 160
+            },
             "commands": [
                 "./bin/proxy/composer dump-autoload",
                 "./bin/proxy/console lint:container",
