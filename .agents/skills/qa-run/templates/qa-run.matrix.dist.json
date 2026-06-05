@@ -7,6 +7,14 @@
         "parserInputBytes": 5242880,
         "parser": "generic-tail"
     },
+    "patternSets": {
+        "project-php-checks": [
+            "@php-safe"
+        ],
+        "project-js-ts-checks": [
+            "@js-ts-safe"
+        ]
+    },
     "sectionOrder": [
         "ALWAYS_FULL",
         "ALWAYS_ON_RERUN",
@@ -63,8 +71,11 @@
         },
         "PHP_CHANGED": {
             "patterns": [
-                "**/*.php"
+                "@project-php-checks"
             ],
+            "cache": {
+                "enabled": true
+            },
             "output": {
                 "failTailLines": 160
             },
@@ -73,7 +84,10 @@
                 "./bin/proxy/console lint:container",
                 "./bin/proxy/console app:deptrac-config:generate",
                 "./bin/proxy/composer lint:deptrac",
-                "./bin/proxy/composer lint:phpstan",
+                {
+                    "cmd": "./bin/proxy/composer lint:phpstan -- --error-format=json",
+                    "parser": "phpstan-json"
+                },
                 "./bin/proxy/composer lint:php:fix",
                 "./bin/proxy/composer test"
             ],
@@ -99,12 +113,11 @@
         },
         "JS_TS_CHANGED": {
             "patterns": [
-                "**/*.js",
-                "**/*.jsx",
-                "**/*.ts",
-                "**/*.tsx",
-                "**/*.mjs"
+                "@project-js-ts-checks"
             ],
+            "cache": {
+                "enabled": true
+            },
             "commands": [
                 "./bin/proxy/yarn lint:js:fix",
                 "./bin/proxy/yarn lint:js",

@@ -6,10 +6,11 @@ import {copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, wr
 import path from "node:path";
 import {performance} from "node:perf_hooks";
 import process from "node:process";
-import {fileURLToPath} from "node:url";
+import {fileURLToPath, pathToFileURL} from "node:url";
 
 const DEFAULT_CONFIG_REL_PATH = ".agents/qa-run.matrix.json";
 const DEFAULT_CONFIG_TEMPLATE_REL_PATH = "../templates/qa-run.matrix.dist.json";
+const CACHE_VERSION = 1;
 const SNAPSHOT_VERSION = 1;
 const SESSION_VERSION = 1;
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -23,6 +24,115 @@ const DEFAULT_OUTPUT_CONFIG = {
 };
 const OUTPUT_MODES = new Set(["quiet-on-pass", "silent"]);
 const PARSERS = new Set(["generic-tail", "phpstan-json", "eslint-json"]);
+const MACHINE_PARSER_HINTS = [
+    {
+        commandPattern: /(?:^|[^a-z0-9_-])phpstan(?:[^a-z0-9_-]|$)/i,
+        flagPattern: /--error-format(?:=|\s+)json/i,
+        flagSuggestion: "--error-format=json",
+        parser: "phpstan-json",
+        tool: "PHPStan",
+    },
+    {
+        commandPattern: /(?:^|[^a-z0-9_-])eslint(?:[^a-z0-9_-]|$)/i,
+        flagPattern: /(?:--format(?:=|\s+)json|(?:^|\s)-f(?:=|\s+)json)/i,
+        flagSuggestion: "--format json",
+        parser: "eslint-json",
+        tool: "ESLint",
+    },
+];
+const GIT_VISIBLE_PATTERN_SET = "git-visible";
+const BUILT_IN_PATTERN_SETS = {
+    "php-source": [
+        "**/*.php",
+    ],
+    "php-tooling": [
+        "composer.json",
+        "composer.lock",
+        "phpstan*.neon",
+        "phpstan*.neon.dist",
+        "phpstan-baseline*.neon",
+        "psalm*.xml",
+        "psalm*.xml.dist",
+        "phpunit*.xml",
+        "phpunit*.xml.dist",
+        "rector*.php",
+        "ecs*.php",
+        "pint.json",
+        ".php-cs-fixer*.php",
+        "deptrac*.yaml",
+        "deptrac*.yml",
+        "config/**/*.php",
+        "config/**/*.yaml",
+        "config/**/*.yml",
+        "config/**/*.xml",
+        "bin/**",
+        "migrations/**/*.php",
+        "stubs/**/*.php",
+    ],
+    "php-safe": [
+        "@php-source",
+        "@php-tooling",
+    ],
+    "js-ts-source": [
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.mjs",
+        "**/*.cjs",
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.mts",
+        "**/*.cts",
+        "**/*.vue",
+        "**/*.svelte",
+    ],
+    "js-ts-tooling": [
+        "package.json",
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "bun.lock",
+        "bun.lockb",
+        "tsconfig*.json",
+        "jsconfig*.json",
+        "eslint.config.*",
+        ".eslintrc",
+        ".eslintrc.*",
+        "prettier.config.*",
+        ".prettierrc",
+        ".prettierrc.*",
+        "vitest.config.*",
+        "vite.config.*",
+        "jest.config.*",
+        "babel.config.*",
+        "postcss.config.*",
+        "tailwind.config.*",
+    ],
+    "js-ts-tests": [
+        "**/*.test.js",
+        "**/*.test.jsx",
+        "**/*.test.mjs",
+        "**/*.test.cjs",
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*.spec.js",
+        "**/*.spec.jsx",
+        "**/*.spec.mjs",
+        "**/*.spec.cjs",
+        "**/*.spec.ts",
+        "**/*.spec.tsx",
+        "tests/**/*.js",
+        "tests/**/*.jsx",
+        "tests/**/*.mjs",
+        "tests/**/*.cjs",
+        "tests/**/*.ts",
+        "tests/**/*.tsx",
+    ],
+    "js-ts-safe": [
+        "@js-ts-source",
+        "@js-ts-tooling",
+        "@js-ts-tests",
+    ],
+};
 
 const RERUN_REASONS = new Set([
     "initial",
@@ -37,6 +147,7 @@ function parseArgs(argv) {
         configPath: DEFAULT_CONFIG_REL_PATH,
         deltaFromSnapshotPath: null,
         help: false,
+        noCache: false,
         rerunReason: "initial",
         sessionPath: null,
         snapshotOnly: false,
@@ -62,6 +173,11 @@ function parseArgs(argv) {
 
         if (arg === "--snapshot-only") {
             result.snapshotOnly = true;
+            continue;
+        }
+
+        if (arg === "--no-cache") {
+            result.noCache = true;
             continue;
         }
 
@@ -115,6 +231,7 @@ Options:
   --snapshot-write <path>        Write current dirty working-tree snapshot to JSON.
   --snapshot-only                Write snapshot and exit without running commands.
   --delta-from-snapshot <path>   Run only sections affected by changes since snapshot.
+  --no-cache                     Ignore configured cache and execute commands normally.
   --help, -h                     Show this help.
 
 Deterministic QA runner for $qa-run:
@@ -257,25 +374,27 @@ function parseJsonConfig(raw, configAbsPath) {
 
 function normalizeConfig(config) {
     const outputDefaults = normalizeOutputConfig("root outputDefaults", config.outputDefaults ?? {});
-    const sections = normalizeSections(config, outputDefaults);
+    const patternSets = normalizePatternSets(config.patternSets ?? {});
+    const sections = normalizeSections(config, outputDefaults, patternSets);
     const sectionOrder = normalizeSectionOrder(config, sections);
 
     return {
         outputDefaults,
+        patternSets,
         raw: config,
         sectionOrder,
         sections,
     };
 }
 
-function normalizeSections(config, outputDefaults) {
+function normalizeSections(config, outputDefaults, patternSets) {
     if (!config.sections || typeof config.sections !== "object" || Array.isArray(config.sections)) {
         throw new Error('Config field "sections" must be an object.');
     }
 
     const sections = {};
     for (const [sectionName, sectionConfig] of Object.entries(config.sections)) {
-        sections[sectionName] = normalizeSectionConfig(sectionName, sectionConfig, outputDefaults);
+        sections[sectionName] = normalizeSectionConfig(sectionName, sectionConfig, outputDefaults, patternSets);
     }
 
     return sections;
@@ -303,7 +422,7 @@ function normalizeSectionOrder(config, sections) {
     return uniqueSectionOrder;
 }
 
-function normalizeSectionConfig(sectionName, value, outputDefaults) {
+function normalizeSectionConfig(sectionName, value, outputDefaults, patternSets) {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         throw new Error(`Config section "${sectionName}" must be an object.`);
     }
@@ -318,14 +437,92 @@ function normalizeSectionConfig(sectionName, value, outputDefaults) {
         ...outputDefaults,
         ...normalizeOutputConfig(`section "${sectionName}" output`, value.output ?? {}),
     };
+    const patterns = normalizeStringList(sectionName, "patterns", value.patterns);
+    const resolvedPatterns = resolvePatternEntries(patterns, patternSets);
 
     return {
+        cache: normalizeSectionCacheConfig(sectionName, value.cache, resolvedPatterns),
         name: sectionName,
         commands: normalizeSectionCommandList(sectionName, value.commands, sectionOutput),
         output: sectionOutput,
-        patterns: normalizeStringList(sectionName, "patterns", value.patterns),
+        patterns,
         requiresFinalFullPass: normalizeBoolean(sectionName, "requiresFinalFullPass", value.requiresFinalFullPass),
+        resolvedPatterns,
         runOn: normalizeRunOn(sectionName, value.runOn),
+    };
+}
+
+function normalizePatternSets(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error('Config field "patternSets" must be an object.');
+    }
+
+    const result = {};
+    for (const [name, entries] of Object.entries(value)) {
+        const normalizedName = normalizePatternSetName(name);
+        if (normalizedName === GIT_VISIBLE_PATTERN_SET || Object.hasOwn(BUILT_IN_PATTERN_SETS, normalizedName)) {
+            throw new Error(`Config patternSets cannot override built-in pattern set "@${normalizedName}".`);
+        }
+        result[normalizedName] = normalizeRootStringList(`patternSets.${name}`, entries);
+        if (result[normalizedName].length === 0) {
+            throw new Error(`Config patternSets.${name} must contain at least one entry.`);
+        }
+    }
+
+    for (const [name, entries] of Object.entries(result)) {
+        validatePatternReferences(`patternSets.${name}`, entries, result);
+    }
+    for (const name of Object.keys(result)) {
+        resolvePatternEntries([`@${name}`], result);
+    }
+
+    return result;
+}
+
+function normalizePatternSetName(name) {
+    if (typeof name !== "string" || name.trim().length === 0) {
+        throw new Error("Config patternSets names must be non-empty strings.");
+    }
+
+    return name.trim().replace(/^@/, "");
+}
+
+function normalizeSectionCacheConfig(sectionName, value, resolvedPatterns) {
+    if (value === undefined) {
+        return {enabled: false, envKeys: []};
+    }
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error(`Config section "${sectionName}" cache must be an object.`);
+    }
+
+    const allowedKeys = new Set(["enabled", "envKeys"]);
+    const unknownKeys = Object.keys(value).filter((key) => !allowedKeys.has(key));
+    if (unknownKeys.length > 0) {
+        throw new Error(
+            `Config section "${sectionName}" cache supports only "enabled" and "envKeys"; unknown keys: ${unknownKeys.join(", ")}.`
+        );
+    }
+
+    if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
+        throw new Error(`Config section "${sectionName}" cache enabled must be a boolean.`);
+    }
+
+    const envKeys = value.envKeys === undefined
+        ? []
+        : normalizeCacheStringList(`section "${sectionName}" cache`, "envKeys", value.envKeys);
+
+    if (value.enabled !== true) {
+        return {enabled: false, envKeys: [...new Set(envKeys)].sort()};
+    }
+
+    if (!resolvedPatterns.includeGitVisible && resolvedPatterns.patterns.length === 0) {
+        return {enabled: false, envKeys: [...new Set(envKeys)].sort()};
+    }
+
+    return {
+        enabled: true,
+        envKeys: [...new Set(envKeys)].sort(),
     };
 }
 
@@ -442,6 +639,10 @@ function normalizeCommandObject(sectionName, entry, sectionOutput) {
         stripAnsi: entry.stripAnsi,
     });
 
+    if (entry.cache !== undefined) {
+        throw new Error(`Config section "${sectionName}" command cache is not supported. Configure cache at section level.`);
+    }
+
     return {
         cmd: command,
         output: {
@@ -450,6 +651,95 @@ function normalizeCommandObject(sectionName, entry, sectionOutput) {
             ...inlineOutput,
         },
     };
+}
+
+function collectConfigNotices(config, activeSections) {
+    const notices = [];
+    for (const sectionName of config.sectionOrder) {
+        if (!activeSections[sectionName]) {
+            continue;
+        }
+
+        for (const command of normalizeCommands(config, sectionName)) {
+            notices.push(...collectCommandConfigNotices(sectionName, command));
+        }
+    }
+
+    return notices;
+}
+
+function collectCommandConfigNotices(sectionName, command) {
+    const notices = [];
+    for (const hint of MACHINE_PARSER_HINTS) {
+        if (!hint.commandPattern.test(command.cmd)) {
+            continue;
+        }
+
+        if (command.output.parser !== hint.parser) {
+            notices.push({
+                code: "machine-parser-available",
+                command: command.cmd,
+                message: `${hint.tool} command uses parser=${command.output.parser}; consider parser=${hint.parser} and ${hint.flagSuggestion}.`,
+                parser: command.output.parser,
+                recommendedParser: hint.parser,
+                section: sectionName,
+                severity: "NOTICE",
+                tool: hint.tool,
+            });
+            continue;
+        }
+
+        if (!hint.flagPattern.test(command.cmd)) {
+            notices.push({
+                code: "machine-parser-flag-not-visible",
+                command: command.cmd,
+                message: `${hint.tool} command uses parser=${hint.parser}, but ${hint.flagSuggestion} is not visible in cmd; ensure the wrapper emits JSON.`,
+                parser: command.output.parser,
+                recommendedFlag: hint.flagSuggestion,
+                section: sectionName,
+                severity: "NOTICE",
+                tool: hint.tool,
+            });
+        }
+    }
+
+    return notices;
+}
+
+function normalizeCacheStringList(context, fieldName, value) {
+    if (!Array.isArray(value)) {
+        throw new Error(`Config ${context} ${fieldName} must be an array of strings.`);
+    }
+
+    const strings = [];
+    for (const entry of value) {
+        if (typeof entry !== "string") {
+            throw new Error(`Config ${context} ${fieldName} must contain only strings.`);
+        }
+        const trimmed = entry.trim();
+        if (trimmed.length > 0) {
+            strings.push(trimmed);
+        }
+    }
+
+    return strings;
+}
+
+function validatePatternReferences(context, patterns, patternSets) {
+    for (const entry of patterns) {
+        if (!entry.startsWith("@")) {
+            continue;
+        }
+
+        const name = normalizePatternSetName(entry);
+        if (name === GIT_VISIBLE_PATTERN_SET) {
+            continue;
+        }
+
+        if (!Object.hasOwn(BUILT_IN_PATTERN_SETS, name) && !Object.hasOwn(patternSets, name)) {
+            throw new Error(`Config ${context} references unknown pattern set "@${name}".`);
+        }
+    }
 }
 
 function normalizeOutputConfig(context, value) {
@@ -617,7 +907,15 @@ function isSectionActive(section, files, runKind) {
         return runKind === "rerun" && files.length > 0;
     }
 
-    return section.patterns.some((pattern) => files.some((file) => matchGlob(pattern, file)));
+    return files.some((file) => matchesResolvedPatterns(section.resolvedPatterns, file));
+}
+
+function matchesResolvedPatterns(resolvedPatterns, filePath) {
+    if (resolvedPatterns.includeGitVisible) {
+        return true;
+    }
+
+    return resolvedPatterns.patterns.some((pattern) => matchGlob(pattern, filePath));
 }
 
 function matchGlob(pattern, filePath) {
@@ -709,13 +1007,13 @@ function includeSessionRiskForFullFinalPass(riskAssessment, session, config, mod
     };
 }
 
-async function runSectionCommands(repoRoot, section, commands, artifacts, commandCounter) {
+async function runSectionCommands(repoRoot, section, commands, artifacts, commandCounter, config, cli) {
     const executed = [];
     for (const command of commands) {
         const commandIndex = commandCounter.next();
-        const commandResult = await executeCommand(repoRoot, section, command, artifacts, commandIndex);
+        const commandResult = await executeCommand(repoRoot, section, command, artifacts, commandIndex, config, cli);
         executed.push(commandResult);
-        if (commandResult.status !== "PASS") {
+        if (!isSuccessfulCommandStatus(commandResult.status)) {
             return {ok: false, exitCode: commandResult.exitCode, executed, failure: commandResult};
         }
     }
@@ -723,10 +1021,22 @@ async function runSectionCommands(repoRoot, section, commands, artifacts, comman
     return {ok: true, exitCode: 0, executed, failure: null};
 }
 
-async function executeCommand(repoRoot, section, command, artifacts, commandIndex) {
-    console.log(`RUN [${section}] ${command.cmd}`);
+async function executeCommand(repoRoot, section, command, artifacts, commandIndex, config, cli) {
+    const commandCache = prepareCommandCache(repoRoot, section, command, config, cli);
+    if (commandCache.enabled) {
+        const cacheHit = readCommandCache(commandCache);
+        if (cacheHit) {
+            const logs = createCommandLogs(repoRoot, artifacts.commandsDir, commandIndex, section.name, command.cmd);
+            writeCachedCommandLogs(logs, cacheHit);
+            const cachedResult = buildCachedCommandResult(section.name, command, cacheHit, logs);
+            printCommandResult(cachedResult, command.output);
+            return cachedResult;
+        }
+    }
+
+    console.log(`RUN [${section.name}] ${command.cmd}`);
     const startedAt = performance.now();
-    const logs = createCommandLogs(repoRoot, artifacts.commandsDir, commandIndex, section, command.cmd);
+    const logs = createCommandLogs(repoRoot, artifacts.commandsDir, commandIndex, section.name, command.cmd);
     const stdoutCollector = createOutputCollector(command.output.maxOutputBytes, command.output.parserInputBytes);
     const stderrCollector = createOutputCollector(command.output.maxOutputBytes, command.output.parserInputBytes);
     const result = await spawnCommandToLogs(repoRoot, command.cmd, logs, stdoutCollector, stderrCollector);
@@ -754,7 +1064,7 @@ async function executeCommand(repoRoot, section, command, artifacts, commandInde
         durationMs,
         exitCode,
         parser: command.output.parser,
-        section,
+        section: section.name,
         status,
         stderrLog: logs.stderrLog,
         stdoutLog: logs.stdoutLog,
@@ -766,7 +1076,235 @@ async function executeCommand(repoRoot, section, command, artifacts, commandInde
     }
 
     printCommandResult(commandResult, command.output);
+    if (commandCache.enabled && commandResult.status === "PASS") {
+        const completedCache = prepareCompletedCommandCache(repoRoot, section, command, config, commandCache);
+        writeCommandCache(completedCache, commandResult, artifacts);
+    }
     return commandResult;
+}
+
+function isSuccessfulCommandStatus(status) {
+    return status === "PASS" || status === "SKIP-CACHED";
+}
+
+function prepareCommandCache(repoRoot, section, command, config, cli) {
+    if (cli.noCache || cli.rerunReason !== "post-fix-delta" && cli.rerunReason !== "review-fix-delta") {
+        return {enabled: false};
+    }
+
+    if (!section.cache.enabled) {
+        return {enabled: false};
+    }
+
+    return createCommandCache(repoRoot, buildCommandCacheFingerprint(repoRoot, section, command, config));
+}
+
+function prepareCompletedCommandCache(repoRoot, section, command, config, startedCache) {
+    const completedCache = createCommandCache(
+        repoRoot,
+        buildCommandCacheFingerprint(repoRoot, section, command, config)
+    );
+
+    return {
+        ...completedCache,
+        beforeFingerprint: startedCache.fingerprint,
+        mutatedInputs: startedCache.fingerprint.cacheKey !== completedCache.fingerprint.cacheKey,
+    };
+}
+
+function createCommandCache(repoRoot, fingerprint) {
+    const cacheRoot = path.join(getCacheRoot(repoRoot), "qa-run", "cache", `v${CACHE_VERSION}`);
+    return {
+        enabled: true,
+        fingerprint,
+        path: path.join(cacheRoot, `${fingerprint.cacheKey}.json`),
+    };
+}
+
+function buildCommandCacheFingerprint(repoRoot, section, command, config) {
+    const inputFiles = collectPatternFiles(repoRoot, section.resolvedPatterns);
+    const inputFingerprints = {};
+    for (const filePath of inputFiles) {
+        inputFingerprints[filePath] = fingerprintDirtyFile(repoRoot, filePath);
+    }
+    const env = {};
+    for (const key of section.cache.envKeys) {
+        env[key] = process.env[key] ?? null;
+    }
+
+    const material = {
+        cacheVersion: CACHE_VERSION,
+        command: command.cmd,
+        env,
+        inputFingerprints,
+        patternSets: section.resolvedPatterns.patternSets,
+        patterns: section.resolvedPatterns.patterns,
+        matrixHash: hashJson(config.raw),
+        section: section.name,
+    };
+
+    return {
+        cacheKey: hashJson(material),
+        envHash: hashJson(env),
+        inputFilesHash: hashJson(inputFingerprints),
+        patternSets: section.resolvedPatterns.patternSets,
+        patterns: section.resolvedPatterns.patterns,
+        materialHash: hashJson(material),
+    };
+}
+
+function resolvePatternEntries(entries, patternSets) {
+    const state = {
+        includeGitVisible: false,
+        patternSets: [],
+        patterns: [],
+    };
+
+    for (const entry of entries) {
+        resolvePatternEntry(entry, patternSets, state, []);
+    }
+
+    return {
+        includeGitVisible: state.includeGitVisible,
+        patternSets: [...new Set(state.patternSets)].sort(),
+        patterns: [...new Set(state.patterns)].sort(),
+    };
+}
+
+function resolvePatternEntry(entry, patternSets, state, stack) {
+    if (!entry.startsWith("@")) {
+        state.patterns.push(entry);
+        return;
+    }
+
+    const name = normalizePatternSetName(entry);
+    if (name === GIT_VISIBLE_PATTERN_SET) {
+        state.includeGitVisible = true;
+        state.patternSets.push(`@${name}`);
+        return;
+    }
+
+    if (stack.includes(name)) {
+        throw new Error(`Circular pattern set reference: ${[...stack, name].map((item) => `@${item}`).join(" -> ")}.`);
+    }
+
+    const entries = Object.hasOwn(BUILT_IN_PATTERN_SETS, name)
+        ? BUILT_IN_PATTERN_SETS[name]
+        : patternSets[name];
+    if (!entries) {
+        throw new Error(`Unknown pattern set "@${name}".`);
+    }
+
+    state.patternSets.push(`@${name}`);
+    for (const nestedEntry of entries) {
+        resolvePatternEntry(nestedEntry, patternSets, state, [...stack, name]);
+    }
+}
+
+function collectPatternFiles(repoRoot, resolvedPatterns) {
+    const visibleFiles = listGitVisibleFiles(repoRoot);
+    if (resolvedPatterns.includeGitVisible) {
+        return visibleFiles;
+    }
+
+    return visibleFiles
+        .filter((filePath) => resolvedPatterns.patterns.some((pattern) => matchGlob(pattern, filePath)))
+        .sort();
+}
+
+function listGitVisibleFiles(repoRoot) {
+    const tracked = gitLines(repoRoot, ["ls-files"]);
+    const untracked = gitLines(repoRoot, ["ls-files", "--others", "--exclude-standard"]);
+    return [...new Set([...tracked, ...untracked])].sort();
+}
+
+function readCommandCache(commandCache) {
+    if (!existsSync(commandCache.path)) {
+        return null;
+    }
+
+    let parsed;
+    try {
+        parsed = JSON.parse(readFileSync(commandCache.path, "utf-8"));
+    } catch (error) {
+        return null;
+    }
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return null;
+    }
+
+    if (
+        parsed.version !== CACHE_VERSION
+        || parsed.status !== "PASS"
+        || parsed.fingerprint?.cacheKey !== commandCache.fingerprint.cacheKey
+    ) {
+        return null;
+    }
+
+    return parsed;
+}
+
+function buildCachedCommandResult(section, command, cacheHit, logs) {
+    return {
+        cache: {
+            beforeCacheKey: cacheHit.beforeFingerprint?.cacheKey ?? cacheHit.fingerprint.cacheKey,
+            cacheKey: cacheHit.fingerprint.cacheKey,
+            hit: true,
+            mutatedInputs: cacheHit.mutatedInputs === true,
+            previousArtifactsDir: cacheHit.artifactsDir,
+            previousPassedAt: cacheHit.completedAt,
+            previousStderrLog: cacheHit.stderrLog,
+            previousStdoutLog: cacheHit.stdoutLog,
+        },
+        cached: true,
+        command: command.cmd,
+        commandHash: hashJson(command.cmd),
+        durationMs: 0,
+        exitCode: 0,
+        parser: command.output.parser,
+        section,
+        status: "SKIP-CACHED",
+        stderrLog: logs.stderrLog,
+        stdoutLog: logs.stdoutLog,
+        summary: [],
+    };
+}
+
+function writeCachedCommandLogs(logs, cacheHit) {
+    const lines = [
+        "SKIP-CACHED",
+        `previous_pass=${cacheHit.completedAt}`,
+        `previous_artifacts=${cacheHit.artifactsDir}`,
+        `previous_stdout=${cacheHit.stdoutLog}`,
+        `previous_stderr=${cacheHit.stderrLog}`,
+        `cache_key=${cacheHit.fingerprint.cacheKey}`,
+        `mutated_inputs=${cacheHit.mutatedInputs === true ? "1" : "0"}`,
+    ];
+    writeFileSync(logs.stdoutAbsPath, `${lines.join("\n")}\n`, "utf-8");
+    writeFileSync(logs.stderrAbsPath, "", "utf-8");
+}
+
+function writeCommandCache(commandCache, commandResult, artifacts) {
+    mkdirSync(path.dirname(commandCache.path), {recursive: true});
+    const entry = {
+        artifactsDir: artifacts.relativeDir,
+        command: commandResult.command,
+        commandHash: commandResult.commandHash,
+        completedAt: new Date().toISOString(),
+        durationMs: commandResult.durationMs,
+        exitCode: commandResult.exitCode,
+        beforeFingerprint: commandCache.beforeFingerprint ?? commandCache.fingerprint,
+        fingerprint: commandCache.fingerprint,
+        mutatedInputs: commandCache.mutatedInputs === true,
+        parser: commandResult.parser,
+        section: commandResult.section,
+        status: "PASS",
+        stderrLog: commandResult.stderrLog,
+        stdoutLog: commandResult.stdoutLog,
+        version: CACHE_VERSION,
+    };
+    writeFileSync(commandCache.path, `${JSON.stringify(entry, null, 2)}\n`, "utf-8");
 }
 
 function createCommandLogs(repoRoot, commandsDir, commandIndex, section, command) {
@@ -864,6 +1402,13 @@ function createOutputCollector(maxTailBytes, maxParserBytes) {
 function printCommandResult(commandResult, outputConfig) {
     const durationSeconds = (commandResult.durationMs / 1000).toFixed(1);
     const logInfo = `stdout=${commandResult.stdoutLog} stderr=${commandResult.stderrLog}`;
+    if (commandResult.status === "SKIP-CACHED") {
+        console.log(
+            `SKIP-CACHED [${commandResult.section}] ${commandResult.command} previous_pass=${commandResult.cache.previousPassedAt} ${logInfo}`
+        );
+        return;
+    }
+
     if (commandResult.status === "PASS") {
         console.log(`PASS [${commandResult.section}] ${commandResult.command} duration=${durationSeconds}s ${logInfo}`);
         return;
@@ -1124,9 +1669,24 @@ function printDetectedChanges(mode, rerunReason, files, activeSections, config, 
     }
 }
 
+function printConfigNotices(configNotices) {
+    if (configNotices.length === 0) {
+        return;
+    }
+
+    console.log("\nConfig notices:");
+    for (const notice of configNotices) {
+        console.log(`NOTICE [${notice.section}] ${notice.message}`);
+    }
+}
+
 function printSummary(executed, skippedNoChanges, skippedNoCommands, artifacts) {
+    const cachedCommands = executed.filter((command) => command.status === "SKIP-CACHED").length;
+    const executedCommands = executed.length - cachedCommands;
     console.log("\nSummary:");
-    console.log(`- executed_commands=${executed.length}`);
+    console.log(`- commands_total=${executed.length}`);
+    console.log(`- executed_commands=${executedCommands}`);
+    console.log(`- cached_commands=${cachedCommands}`);
     console.log(
         `- skipped_no_changes=${skippedNoChanges.length > 0 ? skippedNoChanges.join(", ") : "none"}`
     );
@@ -1137,7 +1697,7 @@ function printSummary(executed, skippedNoChanges, skippedNoCommands, artifacts) 
     if (executed.length === 0) {
         console.log("Result: no commands executed.");
     } else {
-        console.log("Result: all executed commands passed.");
+        console.log("Result: all commands passed or were skipped by cache.");
     }
     console.log(`- artifacts=${artifacts.relativeDir}`);
     console.log(`- summary_json=${artifacts.summaryJson}`);
@@ -1274,6 +1834,7 @@ function buildRunSummary({
     cli,
     commands,
     config,
+    configNotices,
     failures,
     files,
     mode,
@@ -1290,6 +1851,7 @@ function buildRunSummary({
         changedFilesHash: hashJson(files),
         commands,
         completedAt: new Date().toISOString(),
+        configNotices,
         failures,
         matrixHash: hashJson(config.raw),
         mode,
@@ -1315,11 +1877,14 @@ function writeRunSummary(repoRoot, artifacts, summary) {
 }
 
 function renderSummaryText(summary) {
+    const cachedCommands = summary.commands.filter((command) => command.status === "SKIP-CACHED").length;
+    const executedCommands = summary.commands.length - cachedCommands;
     const lines = [
         `QA: ${summary.status}`,
         `Mode: ${summary.mode}`,
         `Rerun reason: ${summary.rerunReason}`,
-        `Executed: ${summary.commands.length} commands / ${summary.activeSections.length} active sections`,
+        `Commands: ${summary.commands.length} total / ${executedCommands} executed / ${cachedCommands} cached`,
+        `Active sections: ${summary.activeSections.length}`,
         `Artifacts: ${summary.artifactsDir}`,
         `Pending final full pass: ${summary.pendingFinalFullPass ? "yes" : "no"}`,
     ];
@@ -1333,6 +1898,13 @@ function renderSummaryText(summary) {
             for (const detail of failure.summary) {
                 lines.push(`  - ${detail}`);
             }
+        }
+    }
+
+    if (summary.configNotices.length > 0) {
+        lines.push("Config notices:");
+        for (const notice of summary.configNotices) {
+            lines.push(`- [${notice.section}] ${notice.message}`);
         }
     }
 
@@ -1457,6 +2029,8 @@ async function main() {
     const artifacts = createArtifacts(repoRoot, cli.rerunReason);
     const activeSections = detectActiveSections(files, config, mode);
     printDetectedChanges(mode, cli.rerunReason, files, activeSections, config, deltaFromSnapshotAbsPath, artifacts);
+    const configNotices = collectConfigNotices(config, activeSections);
+    printConfigNotices(configNotices);
 
     const executed = [];
     const skippedNoCommands = [];
@@ -1491,7 +2065,7 @@ async function main() {
             continue;
         }
 
-        const sectionResult = await runSectionCommands(repoRoot, sectionName, commands, artifacts, commandCounter);
+        const sectionResult = await runSectionCommands(repoRoot, config.sections[sectionName], commands, artifacts, commandCounter, config, cli);
         sectionResult.executed.forEach((entry) => executed.push(entry));
         if (!sectionResult.ok) {
             const failureSession = updateSession(session, cli, mode, currentState, config, riskAssessment);
@@ -1501,6 +2075,7 @@ async function main() {
                 cli,
                 commands: executed,
                 config,
+                configNotices,
                 failures: [sectionResult.failure],
                 files,
                 mode,
@@ -1531,6 +2106,7 @@ async function main() {
         cli,
         commands: executed,
         config,
+        configNotices,
         failures: [],
         files,
         mode,
@@ -1544,7 +2120,13 @@ async function main() {
     console.log(`INFO: QA summary written: ${artifacts.summaryJson}`);
 }
 
-main().catch((error) => {
-    console.error(`ERROR: ${error.message}`);
-    process.exit(3);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+    main().catch((error) => {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(3);
+    });
+}
+
+export {
+    parseConfig,
+};

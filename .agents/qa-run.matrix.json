@@ -7,6 +7,14 @@
         "parserInputBytes": 5242880,
         "parser": "generic-tail"
     },
+    "patternSets": {
+        "qa-run-node-tests": [
+            "package.json",
+            "package-lock.json",
+            ".agents/skills/qa-run/scripts/**/*.mjs",
+            "tests/skills/qa-run/**/*.mjs"
+        ]
+    },
     "sectionOrder": [
         "ALWAYS_FULL",
         "ALWAYS_ON_RERUN",
@@ -47,11 +55,11 @@
         },
         "NODE_TESTS_CHANGED": {
             "patterns": [
-                "package.json",
-                "package-lock.json",
-                ".agents/skills/**/*.mjs",
-                "tests/**/*.mjs"
+                "@qa-run-node-tests"
             ],
+            "cache": {
+                "enabled": true
+            },
             "commands": [
                 "npm test"
             ],
