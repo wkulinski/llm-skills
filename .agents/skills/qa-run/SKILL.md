@@ -26,6 +26,7 @@ Uruchomić QA w sposób deterministyczny:
 - uruchomić tylko komendy przypisane do aktywnych sekcji,
 - zapisywać pełny stdout/stderr komend jako artefakty na dysku,
 - raportować do kontekstu tylko statusy komend oraz konkretne skróty błędów,
+- pomijać komendy w cache'owalnych sekcjach, jeśli poprzedni `PASS` ma identyczny fingerprint resolved `section.patterns`,
 - włączyć `$review-quick` jako fazę QA, a nie osobny krok commita,
 - po poprawkach uruchamiać reruny delta względem snapshotów,
 - odkładać finalny pełny przebieg do końca sesji QA i wykonywać go najwyżej raz.
@@ -49,6 +50,7 @@ Podstawowy runner:
 - `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason post-fix-delta --delta-from-snapshot <ścieżka>`
 - `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason review-fix-delta --delta-from-snapshot <ścieżka>`
 - `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason full-final-pass`
+- `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason post-fix-delta --delta-from-snapshot <ścieżka> --no-cache`
 
 Opcjonalnie przekazuj sesję:
 - `--session <ścieżka>` zapisuje ledger QA: hash matrixa, ostatni przebieg, ostatni full pass i `pendingFinalFullPass`.
@@ -95,6 +97,12 @@ Wymagany format:
         "parserInputBytes": 5242880,
         "parser": "generic-tail"
     },
+    "patternSets": {
+        "project-js-tests": [
+            "@js-ts-safe",
+            "tests/**/*.mjs"
+        ]
+    },
     "sectionOrder": [
         "ALWAYS_FULL",
         "ALWAYS_ON_RERUN",
@@ -114,7 +122,10 @@ Wymagany format:
             "requiresFinalFullPass": false
         },
         "PHP_CHANGED": {
-            "patterns": ["**/*.php"],
+            "patterns": ["@php-safe"],
+            "cache": {
+                "enabled": true
+            },
             "output": {
                 "failTailLines": 160
             },
@@ -141,6 +152,8 @@ Znaczenie pól:
 - `requiresFinalFullPass`: jeśli `true`, udany rerun delta nie odpala od razu pełnej macierzy, tylko ustawia `pendingFinalFullPass`.
 - `outputDefaults`: opcjonalne domyślne ustawienia raportowania outputu dla wszystkich komend.
 - `output`: opcjonalne ustawienia outputu dla sekcji.
+- `patternSets`: opcjonalne projektowe aliasy patternów; wartości mogą zawierać globy oraz referencje do innych setów przez `@nazwa`.
+- `cache`: opcjonalne ustawienia cache sekcji; cache działa tylko przy `cache.enabled: true` i niepustych resolved `patterns`.
 
 Każda sekcja musi jawnie deklarować `patterns`, `commands`, `runOn` i `requiresFinalFullPass`.
 
@@ -170,10 +183,77 @@ Parsery maszynowe są preferowane tam, gdzie narzędzie stabilnie je wspiera:
 - ESLint: preferuj `--format json` i `parser: "eslint-json"`;
 - pozostałe narzędzia zaczynają od `parser: "generic-tail"`.
 
+Runner raportuje `NOTICE` dla aktywnych komend, które wyglądają na narzędzie z dedykowanym parserem, ale używają `generic-tail`, albo mają parser maszynowy bez widocznej flagi JSON w `cmd`. To jest sugestia konfiguracji, nie błąd: wrapper projektowy może emitować JSON wewnętrznie.
+
 Komendy w matrixie konfiguruj pod output dla agenta:
 - preferuj flagi `--no-progress`, `--no-interaction`, `--ansi=never`, `--colors=never` albo odpowiedniki, jeśli narzędzie je obsługuje;
 - nie stosuj `--quiet`, jeśli narzędzie ukrywa wtedy przyczynę błędu;
 - nie dodawaj flag automatycznie w runnerze, bo obsługa flag jest zależna od narzędzia.
+
+### Cache poprzednich PASS
+Cache jest opt-in per sekcja. Cache działa tylko wtedy, gdy sekcja ma `cache.enabled: true` oraz jej resolved `patterns` nie są puste. Brak `cache`, `cache.enabled: false` albo puste `patterns` oznaczają cache wyłączony dla sekcji.
+
+Runner zapisuje wyłącznie poprzednie wyniki `PASS`. Wyniki `FAIL` i `ERROR` nigdy nie są podstawą do pominięcia kolejnego uruchomienia.
+
+Cache hit jest sprawdzany względem aktualnego fingerprintu resolved `section.patterns`. Po udanym wykonaniu komendy runner przelicza fingerprint ponownie i zapisuje `PASS` pod stanem po komendzie. Jeśli komenda zmieniła pliki objęte resolved `section.patterns`, wpis cache dostaje metadane `mutatedInputs: true`, ale kolejne pominięcie komendy jest możliwe dopiero dla stanu po tej zmianie.
+
+Przykład:
+```json
+{
+    "patterns": ["@js-ts-safe"],
+    "cache": {
+        "enabled": true,
+        "envKeys": ["NODE_ENV"]
+    },
+    "commands": ["npm test"]
+}
+```
+
+Semantyka pól:
+- `enabled`: `true` włącza cache sekcji, o ile resolved `patterns` nie są puste.
+- `envKeys`: opcjonalna lista zmiennych środowiskowych włączanych do fingerprintu.
+
+Cache działa tylko dla rerunów delta:
+- `post-fix-delta`,
+- `review-fix-delta`.
+
+Pierwszy `initial` oraz `full-final-pass` są zawsze uruchamiane na czysto. Jeśli użytkownik poprosi o sprawdzenie bez cache albo wynik wygląda podejrzanie, użyj `--no-cache`.
+
+Fingerprint cache obejmuje:
+- wersję kontraktu cache,
+- nazwę sekcji i komendę `cmd`,
+- hash pełnej macierzy QA,
+- resolved `section.patterns` po rozwinięciu pattern setów,
+- hashe plików widocznych dla Git (`tracked` + `untracked` nieignorowane), które pasują do resolved `section.patterns`,
+- wartości zmiennych z `envKeys`.
+
+Wbudowane pattern sety:
+- `@git-visible`: wszystkie pliki widoczne dla Git (`tracked` + `untracked` nieignorowane); najbezpieczniejszy, ale najczęściej invalidowany preset.
+- `@php-safe`: szeroki preset dla PHP/static analysis/testów; zawiera m.in. `**/*.php`, Composer lockfile/configi, PHPStan/Psalm/PHPUnit/Rector/ECS/Pint/Deptrac configi, `config/**`, `bin/**`, `migrations/**/*.php`, `stubs/**/*.php`.
+- `@js-ts-safe`: szeroki preset dla JS/TS lintów/testów/typechecków; zawiera źródła JS/TS/Vue/Svelte, testy, package lockfile i typowe configi ESLint/Prettier/Vitest/Vite/Jest/Babel/PostCSS/Tailwind/TS.
+- Dostępne są też mniejsze presety: `@php-source`, `@php-tooling`, `@js-ts-source`, `@js-ts-tooling`, `@js-ts-tests`.
+
+Projektowe `patternSets` mogą składać się z globów i presetów:
+```json
+{
+    "patternSets": {
+        "project-phpstan": [
+            "@php-safe",
+            "templates/**/*.twig",
+            "translations/**/*.yaml"
+        ]
+    }
+}
+```
+
+Nie nadpisuj wbudowanych nazw presetów w `patternSets`. Jeśli sekcja ma trudny do opisania zakres, użyj konserwatywnego `@git-visible` albo zostaw cache wyłączony.
+
+Przy trafieniu cache runner raportuje:
+```text
+SKIP-CACHED [PHP_CHANGED] composer lint:phpstan previous_pass=...
+```
+
+W `summary.json` komenda ma status `SKIP-CACHED`, `cached: true` i metadane poprzedniego `PASS`.
 
 Sekcje specjalne:
 - `ALWAYS_FULL`: uruchamia się przy pełnym przebiegu.
@@ -254,7 +334,7 @@ Niedozwolone bez decyzji użytkownika:
 ## Raport
 Raport końcowy zawiera:
 - status `PASS` albo `BLOCKED`/`FAIL`,
-- liczbę wykonanych komend i aktywnych sekcji,
+- liczbę komend łącznie, faktycznie wykonanych, pominiętych przez cache i aktywnych sekcji,
 - ścieżkę do katalogu artefaktów i `summary.json`,
 - sekcje pominięte z powodem w formie zwięzłej,
 - przebieg iteracji (`full`, `post-fix-delta`, `review-fix-delta`, `$review-quick`, `full-final-pass`),

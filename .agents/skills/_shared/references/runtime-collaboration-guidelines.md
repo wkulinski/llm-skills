@@ -83,11 +83,15 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
   - komendami obecnymi 1:1 w `.agents/qa-run.matrix.json`,
   - dla sekcji odpowiadającej rzeczywiście wykrytym zmianom (`*_CHANGED`),
   - jako lekki zakres (1-2 komendy), bez rozszerzania na pełny zestaw.
+- Ad-hoc quick-check nie może być pełnym test suite ani pełną macierzą QA „dla pewności”; taki zakres wymaga `$qa-run`, `$git-commit` albo wyraźnego polecenia użytkownika.
+- Ad-hoc quick-check w pętli implementacyjnej jest przyrostowy: po kolejnym kroku sprawdza ostatni przyrost (pliki/funkcje/sekcję/błąd zmienione w tym kroku), nie cały narosły dirty diff ani całe rozwiązanie.
+- Jeśli repo ma wiele bieżących zmian, nie rozszerzaj przez to zakresu punktowego checka; pełniejsza walidacja całego rozwiązania należy do `$qa-run`, `$git-commit` albo jawnej decyzji użytkownika.
 - W ad-hoc quick-check domyślnie używaj komend niemutujących (bez `:fix`).
 - Komendy mutujące (`*:fix`) uruchamiaj wyłącznie:
   - na wyraźne polecenie użytkownika, albo
   - w ramach pełnej procedury `$qa-run`.
 - Pełne QA (pełna sekwencja komend i iteracje naprawcze) uruchamiaj wyłącznie przez `$qa-run`.
+- W zwykłej pętli implementacyjnej pełne QA uruchamiaj tylko dla zmian rozległych/high-risk albo na wyraźne polecenie. Dla małych zmian preferuj `$review-quick` i ewentualnie zawężony quick-check zgodny z matrixem.
 - Jeśli potrzebna komenda QA nie ma odpowiednika w macierzy, agent zgłasza brak i nie uruchamia alternatywnej komendy ad-hoc.
 
 ## 6. Dokumentacja i spójność

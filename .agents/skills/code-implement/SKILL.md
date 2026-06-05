@@ -348,17 +348,30 @@ Gdy użytkownik zgłasza błąd/uwagę po Twojej implementacji:
 ### 6) Końcowa weryfikacja (lekka)
 1. Ustal, czy w ogóle jest co weryfikować:
    - jeśli brak zmian w repo: zakończ “Brak zmian”.
-2. Jeśli zmiany obejmują którekolwiek z typów:
+2. Po pojedynczym kroku implementacji stosuj weryfikację przyrostową:
+   - sprawdzaj ostatni przyrost, nie cały narosły dirty diff,
+   - jeśli w repo jest już dużo zmian, zawężaj punktowe checki do plików, funkcji, sekcji matrixa albo błędu zmienionych w ostatnim kroku,
+   - nie rozszerzaj automatycznie zakresu na całe rozwiązanie tylko dlatego, że repo ma wiele niecommitowanych zmian.
+3. Jeśli zmiany obejmują którekolwiek z typów:
    - PHP (`.php`), Twig (`.twig`), JS/TS (`.js/.jsx/.ts/.tsx`), CSS/SCSS (`.css/.scss`), YAML (`.yml/.yaml`), tłumaczenia (`translations/**` lub `src/*/UI/Translation/**`)
    to wykonaj `$review-quick`.
-3. `$qa-run` uruchom automatycznie **tylko**, gdy zmiana jest rozległa (definicja wyżej).
+4. `$qa-run` uruchom automatycznie **tylko**, gdy zmiana jest rozległa (definicja wyżej).
    - dla zmiany rozległej uruchomienie `$qa-run` jest obowiązkowe,
    - w przeciwnym razie: nie uruchamiaj `$qa-run` na koniec z automatu (i tak będzie wymagane przed commitem przez `$git-commit`).
-4. Jeśli `$code-implement` uruchamia `$qa-run`, dziedziczy kontrakt pętli naprawczej z `qa-run`:
+5. Nie uruchamiaj pełnych testów ani pełnego QA „dla pewności” w zwykłej pętli implementacyjnej.
+   - dla małej zmiany wystarcza `$review-quick` oraz ewentualny zawężony quick-check 1:1 z komend matrixa i dotkniętą sekcją,
+   - po kolejnym kroku większego zadania punktowy quick-check ma dotyczyć ostatniego przyrostu, a nie całego rozwiązania,
+   - po poprawce konkretnego błędu QA preferuj rerun tej samej komendy albo tej samej sekcji, która zgłosiła błąd,
+   - jeśli potrzebujesz szerszego zakresu niż dotknięta sekcja, potraktuj to jako sygnał zmiany rozległej albo zapytaj użytkownika,
+   - finalne pełniejsze sprawdzenie należy do `$git-commit` albo jawnego polecenia użytkownika.
+6. Jeśli punktowy check nie istnieje albo nie da się go jednoznacznie powiązać z ostatnim krokiem, nie wymyślaj szerokiego zamiennika.
+   - zaraportuj `$review-quick` oraz brak sensownego punktowego checka,
+   - pełniejsze sprawdzenie zostaw do `$qa-run`, `$git-commit` albo decyzji użytkownika.
+7. Jeśli `$code-implement` uruchamia `$qa-run`, dziedziczy kontrakt pętli naprawczej z `qa-run`:
    - nie kończ po pierwszym `FAIL`,
    - przechodź przez iteracje naprawcze do `PASS` albo `BLOCKED`,
    - raportuj liczbę iteracji QA i status końcowy.
-5. Jeśli Rejestr wymagań lub Dziennik odczytów nie odzwierciedlają aktualnych zmian, uzupełnij je przed zakończeniem.
+8. Jeśli Rejestr wymagań lub Dziennik odczytów nie odzwierciedlają aktualnych zmian, uzupełnij je przed zakończeniem.
 
 Opcjonalnie (zalecane): do szybkiej klasyfikacji zmian użyj
 `<skill_dir>/scripts/change-inspect.sh`.
