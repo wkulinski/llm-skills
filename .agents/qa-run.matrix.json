@@ -9,6 +9,7 @@
     },
     "patternSets": {
         "qa-run-node-tests": [
+            "eslint.config.mjs",
             "package.json",
             "package-lock.json",
             ".agents/skills/qa-run/scripts/**/*.mjs",
@@ -61,6 +62,7 @@
                 "enabled": true
             },
             "commands": [
+                "npm run lint:js",
                 "npm test"
             ],
             "runOn": [

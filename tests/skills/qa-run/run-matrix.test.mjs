@@ -5,9 +5,12 @@ import {spawnSync} from "node:child_process";
 import {pathToFileURL} from "node:url";
 import {afterEach, describe, expect, it} from "vitest";
 
+import {parseConfig as parseConfigFromNormalizer} from "../../../.agents/skills/qa-run/scripts/run-matrix/config/normalizer.mjs";
+
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const runnerPath = path.join(repoRoot, ".agents/skills/qa-run/scripts/run-matrix.mjs");
-const {parseConfig} = await import(pathToFileURL(runnerPath).href);
+const runnerModule = await import(pathToFileURL(runnerPath).href);
+const {parseConfig} = runnerModule;
 const tempRoots = [];
 
 afterEach(() => {
@@ -18,6 +21,10 @@ afterEach(() => {
 });
 
 describe("run-matrix output contract", () => {
+    it("keeps parseConfig re-exported from the CLI entrypoint", () => {
+        expect(runnerModule).toHaveProperty("parseConfig", parseConfigFromNormalizer);
+    });
+
     it("stores successful command output in artifacts and reports a compact pass summary", () => {
         const result = runMatrix({
             outputDefaults: outputDefaults(),
@@ -43,6 +50,12 @@ describe("run-matrix output contract", () => {
 
         const stdoutLog = readArtifact(summary.commands[0].stdoutLog);
         expect(stdoutLog).toContain("full output stays in log");
+
+        const summaryText = readArtifact(`${summary.artifactsDir}/summary.txt`);
+        expect(summaryText).toContain("QA: PASS");
+        expect(summaryText).toContain("Mode: full");
+        expect(summaryText).toContain("Commands: 1 total / 1 executed / 0 cached");
+        expect(summaryText).toContain("Failures: none");
     });
 
     it("reports only the configured generic failure tail while keeping full logs", () => {
@@ -411,6 +424,49 @@ describe("run-matrix output contract", () => {
         }
     });
 
+    it("rejects invalid JSON snapshots during delta rerun", () => {
+        const {configPath, tempRoot} = writeMatrixConfig(deltaSnapshotConfig());
+        const snapshotPath = path.join(tempRoot, "invalid-json-snapshot.json");
+        writeFileSync(snapshotPath, "{not-json\n", "utf-8");
+
+        const result = runMatrixConfig(configPath, tempRoot, deltaArgs(snapshotPath));
+
+        expect(result.status).toBe(2);
+        expect(result.stderr).toContain("Invalid JSON snapshot");
+    });
+
+    it("rejects unsupported snapshot versions during delta rerun", () => {
+        const {configPath, tempRoot} = writeMatrixConfig(deltaSnapshotConfig());
+        const snapshotPath = path.join(tempRoot, "unsupported-version-snapshot.json");
+        writeFileSync(snapshotPath, JSON.stringify({
+            version: 999,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            files: {},
+            repoRoot,
+        }), "utf-8");
+
+        const result = runMatrixConfig(configPath, tempRoot, deltaArgs(snapshotPath));
+
+        expect(result.status).toBe(2);
+        expect(result.stderr).toContain("Unsupported snapshot version");
+    });
+
+    it("rejects snapshots from a different repo root during delta rerun", () => {
+        const {configPath, tempRoot} = writeMatrixConfig(deltaSnapshotConfig());
+        const snapshotPath = path.join(tempRoot, "repo-root-mismatch-snapshot.json");
+        writeFileSync(snapshotPath, JSON.stringify({
+            version: 1,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            files: {},
+            repoRoot: "/definitely/not/current/repo",
+        }), "utf-8");
+
+        const result = runMatrixConfig(configPath, tempRoot, deltaArgs(snapshotPath));
+
+        expect(result.status).toBe(2);
+        expect(result.stderr).toContain("Snapshot repo root mismatch");
+    });
+
     it("runs only sections affected by changes since snapshot during delta rerun", () => {
         const repoTempRoot = mkdtempSync(path.join(repoRoot, "qa-run-delta-vitest-"));
         tempRoots.push(repoTempRoot);
@@ -465,6 +521,42 @@ describe("run-matrix output contract", () => {
         expect(summary.commands).toHaveLength(1);
         expect(summary.commands[0].section).toBe("MARKDOWN_CHANGED");
         expect(summary.skippedNoChanges).toEqual(["JS_CHANGED"]);
+    });
+
+    it("rejects invalid JSON session files", () => {
+        const {configPath, tempRoot} = writeMatrixConfig(sessionConfig());
+        const sessionPath = path.join(tempRoot, "invalid-json-session.json");
+        writeFileSync(sessionPath, "{not-json\n", "utf-8");
+
+        const result = runMatrixConfig(configPath, tempRoot, [
+            "--session",
+            sessionPath,
+            "--rerun-reason",
+            "initial",
+        ]);
+
+        expect(result.status).toBe(2);
+        expect(result.stderr).toContain("Invalid JSON session");
+    });
+
+    it("rejects unsupported session versions", () => {
+        const {configPath, tempRoot} = writeMatrixConfig(sessionConfig());
+        const sessionPath = path.join(tempRoot, "unsupported-version-session.json");
+        writeFileSync(sessionPath, JSON.stringify({
+            version: 999,
+            pendingFinalFullPass: false,
+            pendingReasons: [],
+        }), "utf-8");
+
+        const result = runMatrixConfig(configPath, tempRoot, [
+            "--session",
+            sessionPath,
+            "--rerun-reason",
+            "initial",
+        ]);
+
+        expect(result.status).toBe(2);
+        expect(result.stderr).toContain("Unsupported session version");
     });
 
     it("tracks pending final full pass through delta and clears it on full-final-pass", () => {
@@ -858,6 +950,36 @@ function readJson(jsonPath) {
 
 function parseTestConfig(config) {
     return parseConfig(JSON.stringify(config), "test-matrix.json");
+}
+
+function deltaSnapshotConfig() {
+    return {
+        outputDefaults: outputDefaults(),
+        sectionOrder: ["FILES_CHANGED"],
+        sections: {
+            FILES_CHANGED: {
+                patterns: ["**/*.mjs"],
+                commands: ["node -e \"console.log('not reached')\""],
+                runOn: ["rerun"],
+                requiresFinalFullPass: false,
+            },
+        },
+    };
+}
+
+function sessionConfig() {
+    return {
+        outputDefaults: outputDefaults(),
+        sectionOrder: ["ALWAYS_FULL"],
+        sections: {
+            ALWAYS_FULL: {
+                patterns: [],
+                commands: ["node -e \"console.log('not reached')\""],
+                runOn: ["full"],
+                requiresFinalFullPass: false,
+            },
+        },
+    };
 }
 
 function createCacheConfig(inputFileName) {

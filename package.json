@@ -2,9 +2,14 @@
     "private": true,
     "type": "module",
     "scripts": {
+        "lint:js": "eslint",
         "test": "vitest run"
     },
     "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "@stylistic/eslint-plugin": "^5.10.0",
+        "eslint": "^10.4.1",
+        "globals": "^17.6.0",
         "vitest": "^4.1.8"
     }
 }
