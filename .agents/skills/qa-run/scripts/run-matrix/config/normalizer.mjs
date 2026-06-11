@@ -141,7 +141,7 @@ function normalizePatternSets(value) {
 }
 
 function normalizeSectionCacheConfig(sectionName, value, resolvedPatterns) {
-    if (value === undefined) {
+    if (value === void 0) {
         return {enabled: false, envKeys: []};
     }
 
@@ -157,11 +157,11 @@ function normalizeSectionCacheConfig(sectionName, value, resolvedPatterns) {
         );
     }
 
-    if (value.enabled !== undefined && typeof value.enabled !== "boolean") {
+    if (value.enabled !== void 0 && typeof value.enabled !== "boolean") {
         throw new Error(`Config section "${sectionName}" cache enabled must be a boolean.`);
     }
 
-    const envKeys = value.envKeys === undefined
+    const envKeys = value.envKeys === void 0
         ? []
         : normalizeCacheStringList(`section "${sectionName}" cache`, "envKeys", value.envKeys);
 
@@ -260,15 +260,21 @@ function normalizeSectionCommandList(sectionName, value, sectionOutput) {
     for (const entry of value) {
         if (typeof entry === "string") {
             const trimmed = entry.trim();
-            if (trimmed.length > 0) {
-                commands.push(normalizeCommandObject(sectionName, {cmd: trimmed}, sectionOutput));
-            }
+            pushNonEmptyCommand(commands, sectionName, trimmed, sectionOutput);
             continue;
         }
 
         commands.push(normalizeCommandObject(sectionName, entry, sectionOutput));
     }
     return commands;
+}
+
+function pushNonEmptyCommand(commands, sectionName, command, sectionOutput) {
+    if (command.length === 0) {
+        return;
+    }
+
+    commands.push(normalizeCommandObject(sectionName, {cmd: command}, sectionOutput));
 }
 
 function normalizeCommandObject(sectionName, entry, sectionOutput) {
@@ -292,7 +298,7 @@ function normalizeCommandObject(sectionName, entry, sectionOutput) {
         stripAnsi: entry.stripAnsi,
     });
 
-    if (entry.cache !== undefined) {
+    if (entry.cache !== void 0) {
         throw new Error(`Config section "${sectionName}" command cache is not supported. Configure cache at section level.`);
     }
 
@@ -348,7 +354,7 @@ function normalizeOutputConfig(context, value) {
     }
 
     const normalized = {};
-    if (value.outputMode !== undefined) {
+    if (value.outputMode !== void 0) {
         if (typeof value.outputMode !== "string" || !OUTPUT_MODES.has(value.outputMode)) {
             throw new Error(
                 `Config ${context} outputMode must be one of: ${[...OUTPUT_MODES].join(", ")}.`
@@ -357,26 +363,26 @@ function normalizeOutputConfig(context, value) {
         normalized.outputMode = value.outputMode;
     }
 
-    if (value.failTailLines !== undefined) {
+    if (value.failTailLines !== void 0) {
         normalized.failTailLines = normalizePositiveInteger(context, "failTailLines", value.failTailLines);
     }
 
-    if (value.maxOutputBytes !== undefined) {
+    if (value.maxOutputBytes !== void 0) {
         normalized.maxOutputBytes = normalizePositiveInteger(context, "maxOutputBytes", value.maxOutputBytes);
     }
 
-    if (value.stripAnsi !== undefined) {
+    if (value.stripAnsi !== void 0) {
         if (typeof value.stripAnsi !== "boolean") {
             throw new Error(`Config ${context} stripAnsi must be a boolean.`);
         }
         normalized.stripAnsi = value.stripAnsi;
     }
 
-    if (value.parser !== undefined) {
+    if (value.parser !== void 0) {
         normalized.parser = normalizeParser(context, value.parser);
     }
 
-    if (value.parserInputBytes !== undefined) {
+    if (value.parserInputBytes !== void 0) {
         normalized.parserInputBytes = normalizePositiveInteger(context, "parserInputBytes", value.parserInputBytes);
     }
 

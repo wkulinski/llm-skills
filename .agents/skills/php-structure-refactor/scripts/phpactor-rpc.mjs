@@ -1,62 +1,62 @@
 #!/usr/bin/env node
 
-import {spawnSync} from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {spawnSync} from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import {fileURLToPath} from "node:url";
 
-const skillDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const skillsRoot = path.resolve(skillDir, '..');
+const skillDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const skillsRoot = path.resolve(skillDir, "..");
 const repoRoot = findRepoRoot();
 const args = parseOptions(process.argv.slice(2));
-const phpactor = resolveTool('phpactor');
-const request = rewriteRequestPaths(buildRequest(args), phpactor);
-const result = spawnSync(phpactor[0], [...phpactor.slice(1), 'rpc'], {
+const phpactor = resolveTool("phpactor");
+const rpcRequest = rewriteRequestPaths(buildRequest(args), phpactor);
+const rpcResult = spawnSync(phpactor[0], [...phpactor.slice(1), "rpc"], {
     cwd: repoRoot,
-    input: JSON.stringify(request),
-    encoding: 'utf8',
+    input: JSON.stringify(rpcRequest),
+    encoding: "utf8",
     maxBuffer: 20 * 1024 * 1024,
 });
 
-if (result.status !== 0) {
+if (rpcResult.status !== 0) {
     writeJson({
         ok: false,
-        tool: 'phpactor',
-        mode: 'rpc',
-        status: result.status,
-        stderr: result.stderr.trim(),
-        stdout: result.stdout.trim(),
+        tool: "phpactor",
+        mode: "rpc",
+        status: rpcResult.status,
+        stderr: rpcResult.stderr.trim(),
+        stdout: rpcResult.stdout.trim(),
     });
-    process.exit(result.status ?? 1);
+    process.exit(rpcResult.status ?? 1);
 }
 
 let payload;
 try {
-    payload = JSON.parse(result.stdout);
+    payload = JSON.parse(rpcResult.stdout);
 } catch (error) {
     writeJson({
         ok: false,
-        tool: 'phpactor',
-        mode: 'rpc',
+        tool: "phpactor",
+        mode: "rpc",
         error: `Unable to parse phpactor JSON: ${error.message}`,
-        stdoutPreview: result.stdout.slice(0, 2000),
-        stderr: debugStderr(result.stderr),
+        stdoutPreview: rpcResult.stdout.slice(0, 2000),
+        stderr: debugStderr(rpcResult.stderr),
     });
     process.exit(1);
 }
 
-const summary = summarizeAction(payload, parsePositiveInt(args.limit, 12));
+const rpcSummary = summarizeAction(payload, parsePositiveInt(args.limit, 12));
 writeJson({
     ok: true,
-    tool: 'phpactor',
-    mode: 'rpc',
+    tool: "phpactor",
+    mode: "rpc",
     request: {
-        action: request.action,
-        parameterKeys: Object.keys(request.parameters ?? {}),
+        action: rpcRequest.action,
+        parameterKeys: Object.keys(rpcRequest.parameters ?? {}),
     },
-    effects: collectEffects(summary),
-    summary,
-    stderr: debugStderr(result.stderr),
+    effects: collectEffects(rpcSummary),
+    summary: rpcSummary,
+    stderr: debugStderr(rpcResult.stderr),
 });
 
 function usage() {
@@ -68,12 +68,12 @@ function usage() {
 }
 
 function buildRequest(opts) {
-    if (opts['request-json'] || opts['request-file']) {
-        const request = readJsonOption(opts, 'request');
-        if (!request || typeof request !== 'object' || !request.action) {
-            throw new Error('RPC request must be an object with an action field');
+    if (opts["request-json"] || opts["request-file"]) {
+        const requestValue = readJsonOption(opts, "request");
+        if (!requestValue || typeof requestValue !== "object" || !requestValue.action) {
+            throw new Error("RPC request must be an object with an action field");
         }
-        return request;
+        return requestValue;
     }
 
     const action = opts.action;
@@ -81,12 +81,12 @@ function buildRequest(opts) {
         usage();
     }
 
-    const parameters = opts['params-json'] || opts['params-file']
-        ? readJsonOption(opts, 'params')
+    const parameters = opts["params-json"] || opts["params-file"]
+        ? readJsonOption(opts, "params")
         : {};
 
-    if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) {
-        throw new Error('RPC parameters must be a JSON object');
+    if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) {
+        throw new Error("RPC parameters must be a JSON object");
     }
 
     return {action, parameters};
@@ -102,7 +102,7 @@ function readJsonOption(opts, prefix) {
         usage();
     }
 
-    const raw = jsonValue ?? fs.readFileSync(absolutePath(fileValue), 'utf8');
+    const raw = jsonValue ?? fs.readFileSync(absolutePath(fileValue), "utf8");
     return JSON.parse(raw);
 }
 
@@ -124,14 +124,10 @@ function rewritePathObject(value, rewritePath) {
         return value.map((item) => rewritePathObject(item, rewritePath));
     }
 
-    if (value && typeof value === 'object') {
+    if (value && typeof value === "object") {
         const output = {};
         for (const [key, item] of Object.entries(value)) {
-            if (typeof item === 'string' && isPathKey(key)) {
-                output[key] = rewritePath(item);
-            } else {
-                output[key] = rewritePathObject(item, rewritePath);
-            }
+            output[key] = rewritePathEntry(key, item, rewritePath);
         }
         return output;
     }
@@ -139,20 +135,28 @@ function rewritePathObject(value, rewritePath) {
     return value;
 }
 
+function rewritePathEntry(key, item, rewritePath) {
+    if (typeof item === "string" && isPathKey(key)) {
+        return rewritePath(item);
+    }
+
+    return rewritePathObject(item, rewritePath);
+}
+
 function repoRelativePathCandidate(value) {
-    if (!value || value.startsWith('{') || value.startsWith('[')) {
+    if (!value || value.startsWith("{") || value.startsWith("[")) {
         return null;
     }
 
     if (path.isAbsolute(value)) {
         const relative = path.relative(repoRoot, value);
-        if (!relative.startsWith('..') && relative !== '') {
+        if (!relative.startsWith("..") && relative !== "") {
             return relative;
         }
         return null;
     }
 
-    if (!value.includes('/') && !value.startsWith('.')) {
+    if (!value.includes("/") && !value.startsWith(".")) {
         return null;
     }
 
@@ -170,13 +174,13 @@ function findToolWorkingDir(toolCommand) {
         return process.env.PHP_STRUCTURE_TOOL_REPO_ROOT;
     }
 
-    const result = spawnSync(toolCommand[0], [...toolCommand.slice(1), 'status', '--no-interaction', '--no-ansi'], {
+    const statusResult = spawnSync(toolCommand[0], [...toolCommand.slice(1), "status", "--no-interaction", "--no-ansi"], {
         cwd: repoRoot,
-        encoding: 'utf8',
+        encoding: "utf8",
         maxBuffer: 1024 * 1024,
     });
-    const match = result.stdout.match(/^Working directory:\s*(.+)$/m);
-    if (result.status === 0 && match) {
+    const match = statusResult.stdout.match(/^Working directory:\s*(.+)$/m);
+    if (statusResult.status === 0 && match) {
         return match[1].trim();
     }
 
@@ -187,7 +191,12 @@ function summarizeAction(action, limit) {
     const actionName = action.action ?? action.name;
     const parameters = action.parameters ?? {};
 
-    if (actionName === 'collection') {
+    const simpleSummary = summarizeSimpleAction(actionName, parameters);
+    if (simpleSummary) {
+        return simpleSummary;
+    }
+
+    if (actionName === "collection") {
         const actions = parameters.actions ?? [];
         return {
             action: actionName,
@@ -197,7 +206,7 @@ function summarizeAction(action, limit) {
         };
     }
 
-    if (actionName === 'file_references') {
+    if (actionName === "file_references") {
         const references = parameters.references ?? parameters.file_references ?? [];
         const limitedReferences = references.slice(0, limit);
         const totalReferences = references.reduce((sum, entry) => sum + (entry.references ?? []).length, 0);
@@ -208,7 +217,7 @@ function summarizeAction(action, limit) {
             shownFiles: limitedReferences.length,
             omittedFiles: Math.max(0, references.length - limitedReferences.length),
             files: limitedReferences.map((entry) => ({
-                file: relativePath(entry.file ?? entry.path ?? ''),
+                file: relativePath(entry.file ?? entry.path ?? ""),
                 count: (entry.references ?? []).length,
                 firstReferences: (entry.references ?? []).slice(0, 5).map((ref) => ({
                     line: ref.line_no ?? ref.line ?? null,
@@ -218,39 +227,7 @@ function summarizeAction(action, limit) {
         };
     }
 
-    if (actionName === 'open_file') {
-        return {
-            action: actionName,
-            file: relativePath(parameters.path ?? ''),
-            offset: parameters.offset ?? null,
-        };
-    }
-
-    if (actionName === 'replace_file_source') {
-        return {
-            action: actionName,
-            path: relativePath(parameters.path ?? ''),
-            sourceLength: typeof parameters.source === 'string' ? parameters.source.length : null,
-        };
-    }
-
-    if (actionName === 'input_callback') {
-        return {
-            action: actionName,
-            callback: parameters.callback ?? parameters.name ?? null,
-            label: parameters.label ?? parameters.title ?? null,
-            parameters: compact(normalizePaths(parameters)),
-        };
-    }
-
-    if (actionName === 'return') {
-        return {
-            action: actionName,
-            value: compact(normalizePaths(parameters.value)),
-        };
-    }
-
-    if (actionName === 'information') {
+    if (actionName === "information") {
         const information = parseJsonString(parameters.information);
         if (information !== null) {
             return {
@@ -261,21 +238,7 @@ function summarizeAction(action, limit) {
 
         return {
             action: actionName,
-            preview: String(parameters.information ?? '').slice(0, 1200),
-        };
-    }
-
-    if (actionName === 'echo') {
-        return {
-            action: actionName,
-            preview: String(parameters.message ?? '').slice(0, 1200),
-        };
-    }
-
-    if (actionName === 'error') {
-        return {
-            action: actionName,
-            message: String(parameters.message ?? '').slice(0, 1200),
+            preview: String(parameters.information ?? "").slice(0, 1200),
         };
     }
 
@@ -285,17 +248,46 @@ function summarizeAction(action, limit) {
     };
 }
 
-function collectEffects(summary) {
+function summarizeSimpleAction(actionName, parameters) {
+    const handlers = {
+        echo: () => ({action: actionName, preview: String(parameters.message ?? "").slice(0, 1200)}),
+        error: () => ({action: actionName, message: String(parameters.message ?? "").slice(0, 1200)}),
+        "input_callback": () => ({
+            action: actionName,
+            callback: parameters.callback ?? parameters.name ?? null,
+            label: parameters.label ?? parameters.title ?? null,
+            parameters: compact(normalizePaths(parameters)),
+        }),
+        "open_file": () => ({
+            action: actionName,
+            file: relativePath(parameters.path ?? ""),
+            offset: parameters.offset ?? null,
+        }),
+        "replace_file_source": () => ({
+            action: actionName,
+            path: relativePath(parameters.path ?? ""),
+            sourceLength: typeof parameters.source === "string" ? parameters.source.length : null,
+        }),
+        return: () => ({
+            action: actionName,
+            value: compact(normalizePaths(parameters.value)),
+        }),
+    };
+
+    return handlers[actionName]?.() ?? null;
+}
+
+function collectEffects(actionSummary) {
     const effects = {
         hasInputCallback: false,
         hasReplaceFileSource: false,
     };
 
-    visitSummary(summary, (item) => {
-        if (item.action === 'input_callback') {
+    visitSummary(actionSummary, (item) => {
+        if (item.action === "input_callback") {
             effects.hasInputCallback = true;
         }
-        if (item.action === 'replace_file_source') {
+        if (item.action === "replace_file_source") {
             effects.hasReplaceFileSource = true;
         }
     });
@@ -311,7 +303,7 @@ function visitSummary(value, visitor) {
         return;
     }
 
-    if (value && typeof value === 'object') {
+    if (value && typeof value === "object") {
         visitor(value);
         for (const item of Object.values(value)) {
             visitSummary(item, visitor);
@@ -324,14 +316,10 @@ function compact(value) {
         return value.slice(0, 50).map(compact);
     }
 
-    if (value && typeof value === 'object') {
+    if (value && typeof value === "object") {
         const output = {};
         for (const [key, item] of Object.entries(value)) {
-            if (typeof item === 'string' && item.length > 500) {
-                output[key] = `${item.slice(0, 500)}...`;
-            } else {
-                output[key] = compact(item);
-            }
+            output[key] = compactEntry(item, 500);
         }
         return output;
     }
@@ -339,22 +327,30 @@ function compact(value) {
     return value;
 }
 
+function compactEntry(item, limit) {
+    if (typeof item === "string" && item.length > limit) {
+        return `${item.slice(0, limit)}...`;
+    }
+
+    return compact(item);
+}
+
 function parseOptions(rawArgs) {
     const parsed = {};
     for (let index = 0; index < rawArgs.length; index += 1) {
         const rawKey = rawArgs[index];
-        if (!rawKey.startsWith('--')) {
+        if (!rawKey.startsWith("--")) {
             usage();
         }
 
-        const equalsIndex = rawKey.indexOf('=');
+        const equalsIndex = rawKey.indexOf("=");
         if (equalsIndex > 0) {
             parsed[rawKey.slice(2, equalsIndex)] = rawKey.slice(equalsIndex + 1);
             continue;
         }
 
         const value = rawArgs[index + 1];
-        if (value === undefined || value.startsWith('--')) {
+        if (value === void 0 || value.startsWith("--")) {
             usage();
         }
 
@@ -365,7 +361,7 @@ function parseOptions(rawArgs) {
 }
 
 function parsePositiveInt(value, fallback) {
-    if (value === undefined) {
+    if (value === void 0) {
         return fallback;
     }
 
@@ -378,11 +374,11 @@ function parsePositiveInt(value, fallback) {
 }
 
 function resolveTool(tool) {
-    const envLoadPath = path.join(skillsRoot, '_shared/scripts/env-load.sh');
+    const envLoadPath = path.join(skillsRoot, "_shared/scripts/env-load.sh");
     const script = `source ${shellQuote(envLoadPath)}; resolve_tool_cmd ${shellQuote(tool)}`;
-    const resolved = spawnSync('bash', ['-lc', script], {
+    const resolved = spawnSync("bash", ["-lc", script], {
         cwd: repoRoot,
-        encoding: 'utf8',
+        encoding: "utf8",
     });
     if (resolved.status !== 0 || !resolved.stdout.trim()) {
         throw new Error(`Unable to resolve tool: ${tool}`);
@@ -391,13 +387,13 @@ function resolveTool(tool) {
 }
 
 function findRepoRoot() {
-    const result = spawnSync('git', ['-C', skillDir, 'rev-parse', '--show-toplevel'], {
-        encoding: 'utf8',
+    const gitResult = spawnSync("git", ["-C", skillDir, "rev-parse", "--show-toplevel"], {
+        encoding: "utf8",
     });
-    if (result.status !== 0) {
-        throw new Error('Not inside a git repository');
+    if (gitResult.status !== 0) {
+        throw new Error("Not inside a git repository");
     }
-    return result.stdout.trim();
+    return gitResult.stdout.trim();
 }
 
 function absolutePath(filePath) {
@@ -408,7 +404,7 @@ function relativePath(filePath) {
     if (!filePath) {
         return filePath;
     }
-    return path.relative(repoRoot, normalizeToolPath(filePath)) || '.';
+    return path.relative(repoRoot, normalizeToolPath(filePath)) || ".";
 }
 
 function normalizeToolPath(filePath) {
@@ -432,14 +428,10 @@ function normalizePaths(value) {
         return value.map(normalizePaths);
     }
 
-    if (value && typeof value === 'object') {
+    if (value && typeof value === "object") {
         const output = {};
         for (const [key, item] of Object.entries(value)) {
-            if (typeof item === 'string' && isPathKey(key)) {
-                output[key] = relativePath(item);
-            } else {
-                output[key] = normalizePaths(item);
-            }
+            output[key] = normalizePathEntry(key, item);
         }
         return output;
     }
@@ -447,17 +439,25 @@ function normalizePaths(value) {
     return value;
 }
 
+function normalizePathEntry(key, item) {
+    if (typeof item === "string" && isPathKey(key)) {
+        return relativePath(item);
+    }
+
+    return normalizePaths(item);
+}
+
 function isPathKey(key) {
-    return key === 'path' || key === 'file' || key.endsWith('_path') || key.endsWith('Path');
+    return key === "path" || key === "file" || key.endsWith("_path") || key.endsWith("Path");
 }
 
 function parseJsonString(value) {
-    if (typeof value !== 'string') {
+    if (typeof value !== "string") {
         return null;
     }
 
     const trimmed = value.trim();
-    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
         return null;
     }
 
@@ -477,9 +477,9 @@ function writeJson(value) {
 }
 
 function debugStderr(stderr) {
-    if (process.env.PHP_STRUCTURE_DEBUG !== '1') {
-        return undefined;
+    if (process.env.PHP_STRUCTURE_DEBUG !== "1") {
+        return void 0;
     }
 
-    return stderr.trim() || undefined;
+    return stderr.trim() || void 0;
 }

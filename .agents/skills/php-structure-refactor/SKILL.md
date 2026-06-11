@@ -1,12 +1,14 @@
 ---
 name: php-structure-refactor
 description: >-
-  Strukturalna nawigacja i refaktoryzacja kodu PHP z użyciem phpactor, Rectora
-  oraz opcjonalnego formatowania php-cs-fixer po transformacji. Użyj, gdy Codex
-  ma sprawdzić definicje lub referencje symboli PHP, przenieść albo zmienić
-  nazwy klas lub memberów, wykonać powtarzalne transformacje AST, streścić dry-run
-  Rectora albo poruszać się po drzewie zależności PHP precyzyjniej niż przez
-  wyszukiwanie tekstowe.
+  Strukturalna nawigacja, analiza i refaktoryzacja kodu PHP z użyciem Phpactora,
+  Rectora oraz opcjonalnego php-cs-fixer po transformacji. Użyj przy pracy na
+  symbolach PHP, FQN, namespace/importach, typach pod offsetem, definicjach,
+  strukturze klas, referencjach klas lub memberów, tworzeniu, kopiowaniu,
+  przenoszeniu, rename albo transformacji klas/memberów, akcjach edytorowych
+  Phpactora, powtarzalnych transformacjach AST przez Rectora, albo gdy trzeba
+  poruszać się po drzewie zależności PHP precyzyjniej niż przez wyszukiwanie
+  tekstowe.
 shared_files:
   - _shared/scripts/env-load.sh
 ---
@@ -78,7 +80,8 @@ Nie używaj samego `rg` jako rozstrzygnięcia, gdy trzeba odróżnić symbole o 
 ### Przenoszenie lub Tworzenie Klas
 1. Sprawdź opcje przez `<skill_dir>/scripts/phpactor-cli.mjs help class:move --format=json`, `<skill_dir>/scripts/phpactor-cli.mjs help class:new --format=json` albo `<skill_dir>/scripts/phpactor-cli.mjs help class:copy --format=json`.
 2. Dla przeniesienia użyj `<skill_dir>/scripts/phpactor-cli.mjs class:move <src> <dest> --type=auto|class|file`.
-3. Po wykonaniu obejrzyj diff dotkniętych plików i raportuj zakres zmian.
+3. Dla tworzenia lub kopiowania klasy użyj `class:new` albo `class:copy` zgodnie z lokalnym `help`.
+4. Po wykonaniu obejrzyj diff dotkniętych plików i raportuj zakres zmian.
 
 ### Transformacje Wieloplikowe
 1. Użyj Rectora, gdy zmiana ma regułę powtarzalną i nie jest prostym przeniesieniem albo referencją symbolu.

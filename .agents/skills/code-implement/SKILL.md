@@ -72,6 +72,26 @@ Mechanizmy:
 - pełne QA: `$qa-run` (`<skills_root>/qa-run/SKILL.md`)
 - commit: wyłącznie `$git-commit` (`<skills_root>/git-commit/SKILL.md`)
 
+## Delegacja do skilli specjalistycznych
+Podczas implementacji nie wykonuj ręcznie operacji, które są już opisane przez
+wyspecjalizowany skill, jeśli ten skill może wykonać je precyzyjniej, szybciej
+albo z mniejszym ryzykiem pomyłki.
+
+Dla kodu PHP przed ręczną zmianą strukturalną sprawdź, czy zadanie podpada pod
+`$php-structure-refactor`. Użyj go w szczególności dla operacji na symbolach PHP,
+namespace/importach, definicjach, referencjach klas lub memberów, tworzeniu,
+kopiowaniu, przenoszeniu albo transformacji klas, rename oraz powtarzalnych
+transformacjach AST przez Rectora.
+
+Jeśli operacja pasuje do mapy operacji `$php-structure-refactor`, ten skill jest
+źródłem prawdy dla wyboru narzędzia i sposobu wykonania. Wróć do zwykłej
+implementacji dopiero wtedy, gdy `$php-structure-refactor` sam wskazuje, że
+prosty patch jest tańszy albo narzędzie nie potrafi rozstrzygnąć symbolu.
+
+Bramka praktyczna: użyj `$php-structure-refactor`, gdy operacja jest strukturalna
+albo symboliczna; zostań przy zwykłym patchu, gdy zmiana jest lokalna,
+jednoznaczna i prostsza ręcznie.
+
 ## Kiedy użyć
 Użyj, gdy użytkownik prosi o zmianę w kodzie (feature/bugfix/refactor), np.:
 - “dodaj funkcjonalność…”

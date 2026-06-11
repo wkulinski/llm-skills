@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
-import {spawnSync} from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {spawnSync} from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import {fileURLToPath} from "node:url";
 
-const skillDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const skillsRoot = path.resolve(skillDir, '..');
+const skillDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const skillsRoot = path.resolve(skillDir, "..");
 const repoRoot = findRepoRoot();
 const rawArgs = process.argv.slice(2);
 
@@ -14,32 +14,32 @@ if (rawArgs.length === 0) {
     usage();
 }
 
-const phpactor = resolveTool('phpactor');
+const phpactor = resolveTool("phpactor");
 let toolWorkingDirForOutput = null;
-const args = normalizeArgs(rewritePathArgs(rawArgs, phpactor));
-const result = spawnSync(phpactor[0], [...phpactor.slice(1), ...args], {
+const phpactorArgs = normalizeArgs(rewritePathArgs(rawArgs, phpactor));
+const phpactorResult = spawnSync(phpactor[0], [...phpactor.slice(1), ...phpactorArgs], {
     cwd: repoRoot,
-    encoding: 'utf8',
+    encoding: "utf8",
     maxBuffer: 50 * 1024 * 1024,
 });
 
-const command = detectCommand(rawArgs);
-const parsedJson = parseJsonOutput(result.stdout);
-const ok = result.status === 0;
+const phpactorCommand = detectCommand(rawArgs);
+const parsedJson = parseJsonOutput(phpactorResult.stdout);
+const ok = phpactorResult.status === 0;
 
 writeJson({
     ok,
-    tool: 'phpactor',
-    mode: 'cli',
-    command,
-    args: args.map(normalizeArgForOutput),
-    status: result.status,
-    json: parsedJson ? summarizeJson(parsedJson) : undefined,
-    stdout: parsedJson ? undefined : summarizeText(result.stdout),
-    stderr: debugStderr(result.stderr),
+    tool: "phpactor",
+    mode: "cli",
+    command: phpactorCommand,
+    args: phpactorArgs.map(normalizeArgForOutput),
+    status: phpactorResult.status,
+    json: parsedJson ? summarizeJson(parsedJson) : void 0,
+    stdout: parsedJson ? void 0 : summarizeText(phpactorResult.stdout),
+    stderr: debugStderr(phpactorResult.stderr),
 });
 
-process.exit(ok ? 0 : (result.status ?? 1));
+process.exit(ok ? 0 : (phpactorResult.status ?? 1));
 
 function usage() {
     console.error(`Usage:
@@ -53,21 +53,21 @@ Examples:
     process.exit(2);
 }
 
-function normalizeArgs(args) {
-    const normalized = [...args];
-    if (!hasOption(normalized, 'no-interaction') && !normalized.includes('-n')) {
-        normalized.push('--no-interaction');
+function normalizeArgs(inputArgs) {
+    const normalized = [...inputArgs];
+    if (!hasOption(normalized, "no-interaction") && !normalized.includes("-n")) {
+        normalized.push("--no-interaction");
     }
-    if (!hasOption(normalized, 'no-ansi')) {
-        normalized.push('--no-ansi');
+    if (!hasOption(normalized, "no-ansi")) {
+        normalized.push("--no-ansi");
     }
     return normalized;
 }
 
-function rewritePathArgs(args, toolCommand) {
+function rewritePathArgs(inputArgs, toolCommand) {
     let toolRoot = null;
 
-    return args.map((arg) => {
+    return inputArgs.map((arg) => {
         const rewritten = rewritePathValue(arg, () => {
             toolRoot ??= findToolWorkingDir(toolCommand);
             return toolRoot;
@@ -77,12 +77,12 @@ function rewritePathArgs(args, toolCommand) {
 }
 
 function rewritePathValue(value, toolRootResolver) {
-    if (!value || value.startsWith('-') && !value.includes('=')) {
+    if (!value || value.startsWith("-") && !value.includes("=")) {
         return value;
     }
 
-    const equalsIndex = value.indexOf('=');
-    if (value.startsWith('--') && equalsIndex > 0) {
+    const equalsIndex = value.indexOf("=");
+    if (value.startsWith("--") && equalsIndex > 0) {
         const option = value.slice(0, equalsIndex + 1);
         const optionValue = value.slice(equalsIndex + 1);
         return `${option}${rewritePathValue(optionValue, toolRootResolver)}`;
@@ -97,19 +97,19 @@ function rewritePathValue(value, toolRootResolver) {
 }
 
 function repoRelativePathCandidate(value) {
-    if (value.startsWith('{') || value.startsWith('[')) {
+    if (value.startsWith("{") || value.startsWith("[")) {
         return null;
     }
 
     if (path.isAbsolute(value)) {
         const relative = path.relative(repoRoot, value);
-        if (!relative.startsWith('..') && relative !== '') {
+        if (!relative.startsWith("..") && relative !== "") {
             return relative;
         }
         return null;
     }
 
-    if (!value.includes('/') && !value.startsWith('.')) {
+    if (!value.includes("/") && !value.startsWith(".")) {
         return null;
     }
 
@@ -127,13 +127,13 @@ function findToolWorkingDir(toolCommand) {
         return process.env.PHP_STRUCTURE_TOOL_REPO_ROOT;
     }
 
-    const result = spawnSync(toolCommand[0], [...toolCommand.slice(1), 'status', '--no-interaction', '--no-ansi'], {
+    const statusResult = spawnSync(toolCommand[0], [...toolCommand.slice(1), "status", "--no-interaction", "--no-ansi"], {
         cwd: repoRoot,
-        encoding: 'utf8',
+        encoding: "utf8",
         maxBuffer: 1024 * 1024,
     });
-    const match = result.stdout.match(/^Working directory:\s*(.+)$/m);
-    if (result.status === 0 && match) {
+    const match = statusResult.stdout.match(/^Working directory:\s*(.+)$/m);
+    if (statusResult.status === 0 && match) {
         toolWorkingDirForOutput = match[1].trim();
         return toolWorkingDirForOutput;
     }
@@ -141,17 +141,17 @@ function findToolWorkingDir(toolCommand) {
     return repoRoot;
 }
 
-function hasOption(args, name) {
-    return args.some((arg) => arg === `--${name}` || arg.startsWith(`--${name}=`));
+function hasOption(inputArgs, name) {
+    return inputArgs.some((arg) => arg === `--${name}` || arg.startsWith(`--${name}=`));
 }
 
-function detectCommand(args) {
-    for (let index = 0; index < args.length; index += 1) {
-        const arg = args[index];
-        if (!arg.startsWith('-')) {
+function detectCommand(inputArgs) {
+    for (let index = 0; index < inputArgs.length; index += 1) {
+        const arg = inputArgs[index];
+        if (!arg.startsWith("-")) {
             return arg;
         }
-        if (optionConsumesNextValue(arg) && !arg.includes('=')) {
+        if (optionConsumesNextValue(arg) && !arg.includes("=")) {
             index += 1;
         }
     }
@@ -160,11 +160,11 @@ function detectCommand(args) {
 
 function optionConsumesNextValue(option) {
     return [
-        '--working-dir',
-        '-d',
-        '--config-extra',
-        '--format',
-        '--output-format',
+        "--working-dir",
+        "-d",
+        "--config-extra",
+        "--format",
+        "--output-format",
     ].includes(option);
 }
 
@@ -183,12 +183,12 @@ function parseJsonOutput(stdout) {
 
 function extractJson(stdout) {
     const trimmed = stdout.trimStart();
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
         return trimmed;
     }
 
-    const objectIndex = trimmed.indexOf('{');
-    const arrayIndex = trimmed.indexOf('[');
+    const objectIndex = trimmed.indexOf("{");
+    const arrayIndex = trimmed.indexOf("[");
     const indexes = [objectIndex, arrayIndex].filter((index) => index >= 0);
     if (indexes.length === 0) {
         return null;
@@ -198,11 +198,11 @@ function extractJson(stdout) {
 }
 
 function summarizeJson(payload) {
-    if (payload && typeof payload === 'object' && Array.isArray(payload.commands)) {
+    if (payload && typeof payload === "object" && Array.isArray(payload.commands)) {
         return summarizeCommandList(payload);
     }
 
-    if (payload && typeof payload === 'object' && payload.name && payload.definition) {
+    if (payload && typeof payload === "object" && payload.name && payload.definition) {
         return summarizeCommandHelp(payload);
     }
 
@@ -210,10 +210,10 @@ function summarizeJson(payload) {
 }
 
 function summarizeCommandList(payload) {
-    const commands = payload.commands.map((command) => ({
-        name: command.name,
-        description: command.description,
-        hidden: command.hidden || undefined,
+    const commands = payload.commands.map((entry) => ({
+        name: entry.name,
+        description: entry.description,
+        hidden: entry.hidden || void 0,
     }));
 
     return {
@@ -225,14 +225,14 @@ function summarizeCommandList(payload) {
                 id: namespace.id,
                 commands: namespace.commands,
             }))
-            : undefined,
+            : void 0,
     };
 }
 
 function summarizeCommandHelp(payload) {
     const options = Object.values(payload.definition.options ?? {}).map((option) => ({
         name: option.name,
-        shortcut: option.shortcut || undefined,
+        shortcut: option.shortcut || void 0,
         acceptsValue: option.accept_value,
         requiredValue: option.is_value_required,
         multiple: option.is_multiple,
@@ -253,10 +253,10 @@ function summarizeCommandHelp(payload) {
         })),
         options,
         flags: {
-            hasDryRun: options.some((option) => option.name === '--dry-run'),
-            hasFormat: options.some((option) => option.name === '--format' || option.name === '--output-format'),
-            hasFilesystem: options.some((option) => option.name === '--filesystem'),
-            hasNoInteraction: options.some((option) => option.name === '--no-interaction'),
+            hasDryRun: options.some((option) => option.name === "--dry-run"),
+            hasFormat: options.some((option) => option.name === "--format" || option.name === "--output-format"),
+            hasFilesystem: options.some((option) => option.name === "--filesystem"),
+            hasNoInteraction: options.some((option) => option.name === "--no-interaction"),
         },
     };
 }
@@ -266,14 +266,10 @@ function compact(value) {
         return value.slice(0, 80).map(compact);
     }
 
-    if (value && typeof value === 'object') {
+    if (value && typeof value === "object") {
         const output = {};
         for (const [key, item] of Object.entries(value)) {
-            if (typeof item === 'string' && item.length > 800) {
-                output[key] = `${item.slice(0, 800)}...`;
-            } else {
-                output[key] = compact(item);
-            }
+            output[key] = compactEntry(item, 800);
         }
         return output;
     }
@@ -281,16 +277,24 @@ function compact(value) {
     return value;
 }
 
+function compactEntry(item, limit) {
+    if (typeof item === "string" && item.length > limit) {
+        return `${item.slice(0, limit)}...`;
+    }
+
+    return compact(item);
+}
+
 function summarizeText(stdout) {
     const text = normalizeToolText(stdout.trim());
     if (!text) {
-        return undefined;
+        return void 0;
     }
 
-    const lines = text.split('\n');
+    const lines = text.split("\n");
     return {
         lineCount: lines.length,
-        preview: lines.slice(0, 80).join('\n'),
+        preview: lines.slice(0, 80).join("\n"),
         omittedLines: Math.max(0, lines.length - 80),
     };
 }
@@ -311,14 +315,14 @@ function normalizeToolText(text) {
 
     let normalized = text;
     for (const root of toolRoots) {
-        normalized = normalized.split(root).join('.');
+        normalized = normalized.split(root).join(".");
     }
     return normalized;
 }
 
 function normalizeArgForOutput(arg) {
-    const equalsIndex = arg.indexOf('=');
-    if (arg.startsWith('--') && equalsIndex > 0) {
+    const equalsIndex = arg.indexOf("=");
+    if (arg.startsWith("--") && equalsIndex > 0) {
         return `${arg.slice(0, equalsIndex + 1)}${normalizeArgForOutput(arg.slice(equalsIndex + 1))}`;
     }
 
@@ -330,11 +334,11 @@ function normalizeArgForOutput(arg) {
 }
 
 function resolveTool(tool) {
-    const envLoadPath = path.join(skillsRoot, '_shared/scripts/env-load.sh');
+    const envLoadPath = path.join(skillsRoot, "_shared/scripts/env-load.sh");
     const script = `source ${shellQuote(envLoadPath)}; resolve_tool_cmd ${shellQuote(tool)}`;
-    const resolved = spawnSync('bash', ['-lc', script], {
+    const resolved = spawnSync("bash", ["-lc", script], {
         cwd: repoRoot,
-        encoding: 'utf8',
+        encoding: "utf8",
     });
     if (resolved.status !== 0 || !resolved.stdout.trim()) {
         throw new Error(`Unable to resolve tool: ${tool}`);
@@ -343,20 +347,20 @@ function resolveTool(tool) {
 }
 
 function findRepoRoot() {
-    const result = spawnSync('git', ['-C', skillDir, 'rev-parse', '--show-toplevel'], {
-        encoding: 'utf8',
+    const gitResult = spawnSync("git", ["-C", skillDir, "rev-parse", "--show-toplevel"], {
+        encoding: "utf8",
     });
-    if (result.status !== 0) {
-        throw new Error('Not inside a git repository');
+    if (gitResult.status !== 0) {
+        throw new Error("Not inside a git repository");
     }
-    return result.stdout.trim();
+    return gitResult.stdout.trim();
 }
 
 function relativePath(filePath) {
     if (!filePath) {
         return filePath;
     }
-    return path.relative(repoRoot, normalizeToolPath(filePath)) || '.';
+    return path.relative(repoRoot, normalizeToolPath(filePath)) || ".";
 }
 
 function normalizeToolPath(filePath) {
@@ -380,14 +384,10 @@ function normalizePaths(value) {
         return value.map(normalizePaths);
     }
 
-    if (value && typeof value === 'object') {
+    if (value && typeof value === "object") {
         const output = {};
         for (const [key, item] of Object.entries(value)) {
-            if (typeof item === 'string' && isPathKey(key)) {
-                output[key] = relativePath(item);
-            } else {
-                output[key] = normalizePaths(item);
-            }
+            output[key] = normalizePathEntry(key, item);
         }
         return output;
     }
@@ -395,8 +395,16 @@ function normalizePaths(value) {
     return value;
 }
 
+function normalizePathEntry(key, item) {
+    if (typeof item === "string" && isPathKey(key)) {
+        return relativePath(item);
+    }
+
+    return normalizePaths(item);
+}
+
 function isPathKey(key) {
-    return key === 'path' || key.endsWith('_path') || key.endsWith('Path') || key === 'file';
+    return key === "path" || key.endsWith("_path") || key.endsWith("Path") || key === "file";
 }
 
 function shellQuote(value) {
@@ -408,9 +416,9 @@ function writeJson(value) {
 }
 
 function debugStderr(stderr) {
-    if (process.env.PHP_STRUCTURE_DEBUG !== '1') {
-        return undefined;
+    if (process.env.PHP_STRUCTURE_DEBUG !== "1") {
+        return void 0;
     }
 
-    return stderr.trim() || undefined;
+    return stderr.trim() || void 0;
 }

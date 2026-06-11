@@ -55,121 +55,36 @@ const RERUN_REASONS = new Set([
 
 export class RunMatrixApp {
     async run(argv = process.argv.slice(2)) {
-        let cli;
-        try {
-            cli = parseArgs(argv);
-        } catch (error) {
-            console.error(`ERROR: ${error.message}`);
-            printHelp();
-            process.exit(2);
-        }
+        const cli = parseCliOrExit(argv);
 
         if (cli.help) {
             printHelp();
             process.exit(0);
         }
 
-        try {
-            enforceRerunReasonConsistency(cli);
-        } catch (error) {
-            console.error(`ERROR: ${error.message}`);
-            process.exit(2);
-        }
+        enforceRerunReasonOrExit(cli);
 
-        let repoRoot = "";
-        try {
-            repoRoot = getRepoRoot();
-        } catch (error) {
-            console.error(`ERROR: ${error.message}`);
-            process.exit(3);
-        }
-
-        const snapshotWriteAbsPath = cli.snapshotWritePath
-            ? resolveRepoPath(repoRoot, cli.snapshotWritePath)
-            : null;
-        const deltaFromSnapshotAbsPath = cli.deltaFromSnapshotPath
-            ? resolveRepoPath(repoRoot, cli.deltaFromSnapshotPath)
-            : null;
-
-        let currentState;
-        try {
-            currentState = collectWorkingTreeState(repoRoot);
-        } catch (error) {
-            console.error(`ERROR: ${error.message}`);
-            process.exit(3);
-        }
-
-        if (snapshotWriteAbsPath) {
-            writeSnapshot(snapshotWriteAbsPath, currentState);
-            console.log(`INFO: Snapshot written: ${snapshotWriteAbsPath}`);
-        }
+        const repoRoot = getRepoRootOrExit();
+        const currentState = collectWorkingTreeStateOrExit(repoRoot);
+        const snapshotPaths = resolveSnapshotPaths(repoRoot, cli);
+        writeSnapshotIfRequested(snapshotPaths.snapshotWriteAbsPath, currentState);
 
         if (cli.snapshotOnly) {
             console.log("Result: snapshot created.");
             process.exit(0);
         }
 
-        let files = Object.keys(currentState.files).sort();
-        let mode = "full";
-
-        if (deltaFromSnapshotAbsPath) {
-            let snapshot;
-            try {
-                snapshot = loadSnapshot(deltaFromSnapshotAbsPath);
-            } catch (error) {
-                console.error(`ERROR: ${error.message}`);
-                process.exit(2);
-            }
-
-            try {
-                assertSnapshotRepoRoot(snapshot, repoRoot);
-            } catch (error) {
-                console.error(`ERROR: ${error.message}`);
-                process.exit(2);
-            }
-
-            files = detectChangedFilesFromSnapshot(currentState, snapshot);
-            mode = "delta";
-        }
-
-        const configAbsPath = path.isAbsolute(cli.configPath)
-            ? cli.configPath
-            : path.join(repoRoot, cli.configPath);
-
-        let wasCreated = false;
-        try {
-            wasCreated = ensureConfig(configAbsPath);
-        } catch (error) {
-            console.error(`ERROR: ${error.message}`);
-            process.exit(2);
-        }
-        if (wasCreated) {
-            console.log(`INFO: Config file not found. Copied default config template to: ${configAbsPath}`);
-        }
-
-        let config;
-        try {
-            config = loadConfig(configAbsPath);
-        } catch (error) {
-            console.error(`ERROR: ${error.message}`);
-            process.exit(2);
-        }
+        const {files, mode} = resolveRunScopeOrExit(repoRoot, currentState, snapshotPaths.deltaFromSnapshotAbsPath);
+        const config = loadConfigOrExit(resolveConfigPath(repoRoot, cli.configPath));
 
         const sessionAbsPath = cli.sessionPath
             ? resolveRepoPath(repoRoot, cli.sessionPath)
             : null;
-
-        let session;
-        try {
-            session = loadSession(sessionAbsPath);
-        } catch (error) {
-            console.error(`ERROR: ${error.message}`);
-            process.exit(2);
-        }
+        const session = loadSessionOrExit(sessionAbsPath);
 
         const artifacts = createArtifacts(repoRoot, cli.rerunReason);
         const activeSections = detectActiveSections(files, config, mode);
-        printDetectedChanges(mode, cli.rerunReason, files, activeSections, config, deltaFromSnapshotAbsPath, artifacts);
+        printDetectedChanges(mode, cli.rerunReason, files, activeSections, config, snapshotPaths.deltaFromSnapshotAbsPath, artifacts);
         const configNotices = collectConfigNotices(config, activeSections);
         printConfigNotices(configNotices);
 
@@ -259,6 +174,133 @@ export class RunMatrixApp {
         });
         writeRunSummary(artifacts, passSummary);
         console.log(`INFO: QA summary written: ${artifacts.summaryJson}`);
+    }
+}
+
+function parseCliOrExit(argv) {
+    try {
+        return parseArgs(argv);
+    } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        printHelp();
+        process.exit(2);
+        throw error;
+    }
+}
+
+function enforceRerunReasonOrExit(cli) {
+    try {
+        enforceRerunReasonConsistency(cli);
+    } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(2);
+        throw error;
+    }
+}
+
+function getRepoRootOrExit() {
+    try {
+        return getRepoRoot();
+    } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(3);
+        throw error;
+    }
+}
+
+function collectWorkingTreeStateOrExit(repoRoot) {
+    try {
+        return collectWorkingTreeState(repoRoot);
+    } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(3);
+        throw error;
+    }
+}
+
+function resolveSnapshotPaths(repoRoot, cli) {
+    return {
+        deltaFromSnapshotAbsPath: cli.deltaFromSnapshotPath
+            ? resolveRepoPath(repoRoot, cli.deltaFromSnapshotPath)
+            : null,
+        snapshotWriteAbsPath: cli.snapshotWritePath
+            ? resolveRepoPath(repoRoot, cli.snapshotWritePath)
+            : null,
+    };
+}
+
+function writeSnapshotIfRequested(snapshotWriteAbsPath, currentState) {
+    if (!snapshotWriteAbsPath) {
+        return;
+    }
+
+    writeSnapshot(snapshotWriteAbsPath, currentState);
+    console.log(`INFO: Snapshot written: ${snapshotWriteAbsPath}`);
+}
+
+function resolveRunScopeOrExit(repoRoot, currentState, deltaFromSnapshotAbsPath) {
+    if (!deltaFromSnapshotAbsPath) {
+        return {
+            files: Object.keys(currentState.files).sort(),
+            mode: "full",
+        };
+    }
+
+    const snapshot = loadSnapshotOrExit(deltaFromSnapshotAbsPath);
+    assertSnapshotRepoRootOrExit(snapshot, repoRoot);
+    return {
+        files: detectChangedFilesFromSnapshot(currentState, snapshot),
+        mode: "delta",
+    };
+}
+
+function loadSnapshotOrExit(deltaFromSnapshotAbsPath) {
+    try {
+        return loadSnapshot(deltaFromSnapshotAbsPath);
+    } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(2);
+        throw error;
+    }
+}
+
+function assertSnapshotRepoRootOrExit(snapshot, repoRoot) {
+    try {
+        assertSnapshotRepoRoot(snapshot, repoRoot);
+    } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(2);
+        throw error;
+    }
+}
+
+function resolveConfigPath(repoRoot, configPath) {
+    return path.isAbsolute(configPath)
+        ? configPath
+        : path.join(repoRoot, configPath);
+}
+
+function loadConfigOrExit(configAbsPath) {
+    try {
+        const wasCreated = ensureConfig(configAbsPath);
+        if (wasCreated) {
+            console.log(`INFO: Config file not found. Copied default config template to: ${configAbsPath}`);
+        }
+        return loadConfig(configAbsPath);
+    } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(2);
+        throw error;
+    }
+}
+
+function loadSessionOrExit(sessionAbsPath) {
+    try {
+        return loadSession(sessionAbsPath);
+    } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(2);
+        throw error;
     }
 }
 

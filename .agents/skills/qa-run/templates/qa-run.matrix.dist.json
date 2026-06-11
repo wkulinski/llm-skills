@@ -34,10 +34,10 @@
         "ALWAYS_FULL": {
             "patterns": [],
             "commands": [
-                "./bin/proxy/yarn lint:yarn:dedupe:fix",
-                "./bin/proxy/yarn lint:yarn:dedupe",
-                "./bin/proxy/composer lint:composer:security",
-                "./bin/proxy/yarn lint:yarn:security"
+                "./bin/proxy/yarn --proxy-quiet lint:yarn:dedupe:fix",
+                "./bin/proxy/yarn --proxy-quiet lint:yarn:dedupe",
+                "./bin/proxy/composer --proxy-quiet lint:composer:security",
+                "./bin/proxy/yarn --proxy-quiet lint:yarn:security"
             ],
             "runOn": [
                 "full"
@@ -60,8 +60,8 @@
                 "yarn.lock"
             ],
             "commands": [
-                "./bin/proxy/composer lint:composer:dependency",
-                "./bin/proxy/composer lint:composer:normalize:fix"
+                "./bin/proxy/composer --proxy-quiet lint:composer:dependency",
+                "./bin/proxy/composer --proxy-quiet lint:composer:normalize:fix"
             ],
             "runOn": [
                 "full",
@@ -80,16 +80,16 @@
                 "failTailLines": 160
             },
             "commands": [
-                "./bin/proxy/composer dump-autoload",
-                "./bin/proxy/console lint:container",
-                "./bin/proxy/console app:deptrac-config:generate",
-                "./bin/proxy/composer lint:deptrac",
+                "./bin/proxy/composer --proxy-quiet dump-autoload",
+                "./bin/proxy/console --proxy-quiet lint:container",
+                "./bin/proxy/console --proxy-quiet app:deptrac-config:generate",
+                "./bin/proxy/composer --proxy-quiet lint:deptrac",
                 {
-                    "cmd": "./bin/proxy/composer lint:phpstan -- --error-format=json",
+                    "cmd": "./bin/proxy/composer --proxy-quiet lint:phpstan -- --error-format=json",
                     "parser": "phpstan-json"
                 },
-                "./bin/proxy/composer lint:php:fix",
-                "./bin/proxy/composer test"
+                "./bin/proxy/composer --proxy-quiet lint:php:fix",
+                "./bin/proxy/composer --proxy-quiet test"
             ],
             "runOn": [
                 "full",
@@ -102,8 +102,8 @@
                 "**/*.twig"
             ],
             "commands": [
-                "./bin/proxy/composer lint:twig:fix",
-                "./bin/proxy/composer lint:twig"
+                "./bin/proxy/composer --proxy-quiet lint:twig:fix",
+                "./bin/proxy/composer --proxy-quiet lint:twig"
             ],
             "runOn": [
                 "full",
@@ -119,9 +119,15 @@
                 "enabled": true
             },
             "commands": [
-                "./bin/proxy/yarn lint:js:fix",
-                "./bin/proxy/yarn lint:js",
-                "./bin/proxy/yarn lint:ts:typecheck"
+                {
+                    "cmd": "./bin/proxy/yarn --proxy-quiet lint:js:fix --format json",
+                    "parser": "eslint-json"
+                },
+                {
+                    "cmd": "./bin/proxy/yarn --proxy-quiet lint:js --format json",
+                    "parser": "eslint-json"
+                },
+                "./bin/proxy/yarn --proxy-quiet lint:ts:typecheck"
             ],
             "runOn": [
                 "full",
@@ -135,8 +141,8 @@
                 "**/*.scss"
             ],
             "commands": [
-                "./bin/proxy/yarn lint:style:fix",
-                "./bin/proxy/yarn lint:style"
+                "./bin/proxy/yarn --proxy-quiet lint:style:fix",
+                "./bin/proxy/yarn --proxy-quiet lint:style"
             ],
             "runOn": [
                 "full",
@@ -150,7 +156,7 @@
                 "src/*/UI/Translation/**"
             ],
             "commands": [
-                "./bin/proxy/composer lint:translations"
+                "./bin/proxy/composer --proxy-quiet lint:translations"
             ],
             "runOn": [
                 "full",
@@ -164,7 +170,7 @@
                 "**/*.yaml"
             ],
             "commands": [
-                "./bin/proxy/composer lint:yaml"
+                "./bin/proxy/composer --proxy-quiet lint:yaml"
             ],
             "runOn": [
                 "full",

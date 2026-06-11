@@ -18,25 +18,25 @@ function parsePhpStanJson(text) {
 
     const lines = [];
     if (Array.isArray(parsed.errors)) {
-        for (const error of parsed.errors) {
-            if (typeof error === "string") {
-                lines.push(error);
-            }
-        }
+        lines.push(...parsed.errors.filter((error) => typeof error === "string"));
     }
 
     if (parsed.files && typeof parsed.files === "object" && !Array.isArray(parsed.files)) {
         for (const [filePath, fileReport] of Object.entries(parsed.files)) {
-            const messages = Array.isArray(fileReport?.messages) ? fileReport.messages : [];
-            for (const message of messages) {
-                const line = Number.isInteger(message?.line) ? `:${message.line}` : "";
-                const textMessage = typeof message?.message === "string" ? message.message : JSON.stringify(message);
-                lines.push(`${filePath}${line} ${textMessage}`);
-            }
+            lines.push(...formatFileMessages(filePath, fileReport));
         }
     }
 
     return lines;
+}
+
+function formatFileMessages(filePath, fileReport) {
+    const messages = Array.isArray(fileReport?.messages) ? fileReport.messages : [];
+    return messages.map((message) => {
+        const line = Number.isInteger(message?.line) ? `:${message.line}` : "";
+        const textMessage = typeof message?.message === "string" ? message.message : JSON.stringify(message);
+        return `${filePath}${line} ${textMessage}`;
+    });
 }
 
 export {
