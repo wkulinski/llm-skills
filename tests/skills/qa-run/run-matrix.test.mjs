@@ -337,7 +337,57 @@ describe("run-matrix output contract", () => {
 
             expect(config.sectionOrder.length, matrixPath).toBeGreaterThan(0);
             expect(Object.keys(config.sections).sort(), matrixPath).toEqual([...config.sectionOrder].sort());
+            expect(config.sectionOrder, matrixPath).toContain("JS_TS_CHANGED");
+            expect(config.patternSets["project-js-ts-checks"], matrixPath).toEqual(["@js-ts-safe"]);
+            expect(config.sections.JS_TS_CHANGED.patterns, matrixPath).toEqual(["@project-js-ts-checks"]);
+            expect(config.sections.JS_TS_CHANGED.resolvedPatterns.patternSets, matrixPath).toEqual(expect.arrayContaining([
+                "@js-ts-safe",
+                "@project-js-ts-checks",
+            ]));
+            expect(config.sections.JS_TS_CHANGED.resolvedPatterns.patterns, matrixPath).toEqual(expect.arrayContaining([
+                "**/*.mjs",
+                "eslint.config.*",
+                "tests/**/*.mjs",
+            ]));
+            expect(config.sections.JS_TS_CHANGED.commands, matrixPath).toEqual(expect.arrayContaining([
+                expect.objectContaining({
+                    cmd: expect.stringContaining("--format json"),
+                    output: expect.objectContaining({
+                        parser: "eslint-json",
+                    }),
+                }),
+            ]));
         }
+    });
+
+    it("keeps bundled dist machine-output commands aligned with current proxy contract", () => {
+        const config = parseConfig(
+            readFileSync(path.join(repoRoot, ".agents/skills/qa-run/templates/qa-run.matrix.dist.json"), "utf-8"),
+            ".agents/skills/qa-run/templates/qa-run.matrix.dist.json"
+        );
+
+        expect(config.sections.PHP_CHANGED.commands).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                cmd: "./bin/proxy/composer --proxy-quiet lint:phpstan -- --error-format=json",
+                output: expect.objectContaining({
+                    parser: "phpstan-json",
+                }),
+            }),
+        ]));
+        expect(config.sections.JS_TS_CHANGED.commands).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                cmd: "./bin/proxy/yarn --proxy-quiet lint:js:fix --format json",
+                output: expect.objectContaining({
+                    parser: "eslint-json",
+                }),
+            }),
+            expect.objectContaining({
+                cmd: "./bin/proxy/yarn --proxy-quiet lint:js --format json",
+                output: expect.objectContaining({
+                    parser: "eslint-json",
+                }),
+            }),
+        ]));
     });
 
     it("rejects unknown parser names in command output config", () => {

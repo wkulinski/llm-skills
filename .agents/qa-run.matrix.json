@@ -8,19 +8,15 @@
         "parser": "generic-tail"
     },
     "patternSets": {
-        "qa-run-node-tests": [
-            "eslint.config.mjs",
-            "package.json",
-            "package-lock.json",
-            ".agents/skills/qa-run/scripts/**/*.mjs",
-            "tests/skills/qa-run/**/*.mjs"
+        "project-js-ts-checks": [
+            "@js-ts-safe"
         ]
     },
     "sectionOrder": [
         "ALWAYS_FULL",
         "ALWAYS_ON_RERUN",
         "SHELL_SCRIPTS_CHANGED",
-        "NODE_TESTS_CHANGED",
+        "JS_TS_CHANGED",
         "MARKDOWN_CHANGED",
         "QA_CONFIG_CHANGED"
     ],
@@ -54,15 +50,18 @@
             ],
             "requiresFinalFullPass": false
         },
-        "NODE_TESTS_CHANGED": {
+        "JS_TS_CHANGED": {
             "patterns": [
-                "@qa-run-node-tests"
+                "@project-js-ts-checks"
             ],
             "cache": {
                 "enabled": true
             },
             "commands": [
-                "npm run lint:js",
+                {
+                    "cmd": "npm --silent run lint:js -- --format json",
+                    "parser": "eslint-json"
+                },
                 "npm test"
             ],
             "runOn": [

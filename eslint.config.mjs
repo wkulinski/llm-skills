@@ -3,12 +3,6 @@ import eslint from "@eslint/js";
 import globals from "globals";
 import stylistic from "@stylistic/eslint-plugin";
 
-const jsFiles = [
-    "eslint.config.mjs",
-    ".agents/skills/qa-run/scripts/**/*.mjs",
-    "tests/skills/qa-run/**/*.mjs",
-];
-
 // https://eslint.style/rules
 // https://eslint.org/docs/latest/rules/
 const additionalRules = {
@@ -21,6 +15,7 @@ const additionalRules = {
     "require-atomic-updates": "error",
     "block-scoped-var": "error",
     "camelcase": "error",
+    "complexity": "error",
     "consistent-return": "error",
     "curly": "error",
     "default-case-last": "error",
@@ -29,6 +24,7 @@ const additionalRules = {
     "eqeqeq": "error",
     "guard-for-in": "error",
     "max-classes-per-file": "error",
+    "max-depth": ["error", {"max": 2}],
     "no-alert": "error",
     "no-else-return": "error",
     "no-empty": "error",
@@ -47,6 +43,7 @@ const additionalRules = {
     "no-sequences": "error",
     "no-shadow": "error",
     "no-throw-literal": "error",
+    "no-undefined": "error",
     "no-unneeded-ternary": "error",
     "no-unused-expressions": "error",
     "no-useless-constructor": "error",
@@ -87,7 +84,7 @@ export default defineConfig([
     {
         ...eslint.configs.recommended,
         ...stylistic.configs.recommended,
-        files: jsFiles,
+        files: ["**/*.{js,mjs,cjs}"],
         languageOptions: {
             ecmaVersion: "latest",
             sourceType: "module",

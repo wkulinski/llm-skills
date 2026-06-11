@@ -12,6 +12,7 @@
 - `$gh-issue-status-set`
 - `$git-commit`
 - `$handoff-refresh`
+- `$php-structure-refactor`
 - `$qa-run`
 - `$review-quick`
 - `$rules-sync`

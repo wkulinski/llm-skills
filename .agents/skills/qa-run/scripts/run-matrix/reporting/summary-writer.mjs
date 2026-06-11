@@ -69,10 +69,7 @@ export function renderSummaryText(summary) {
     } else {
         lines.push("Failures:");
         for (const failure of summary.failures) {
-            lines.push(`- [${failure.section}] ${failure.command} exit=${failure.exitCode}`);
-            for (const detail of failure.summary) {
-                lines.push(`  - ${detail}`);
-            }
+            appendFailureLines(lines, failure);
         }
     }
 
@@ -85,4 +82,9 @@ export function renderSummaryText(summary) {
 
     lines.push("");
     return `${lines.join("\n")}\n`;
+}
+
+function appendFailureLines(lines, failure) {
+    lines.push(`- [${failure.section}] ${failure.command} exit=${failure.exitCode}`);
+    lines.push(...failure.summary.map((detail) => `  - ${detail}`));
 }

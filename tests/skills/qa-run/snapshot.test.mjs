@@ -23,7 +23,7 @@ afterEach(() => {
 describe("snapshot change detection", () => {
     it("compares missing and present file fingerprints", () => {
         expect(fingerprintEquals(null, null)).toBe(true);
-        expect(fingerprintEquals(undefined, undefined)).toBe(true);
+        expect(fingerprintEquals(void 0, void 0)).toBe(true);
         expect(fingerprintEquals(null, {exists: true, hash: "abc"})).toBe(false);
         expect(fingerprintEquals({exists: false, hash: null}, {exists: false, hash: null})).toBe(true);
         expect(fingerprintEquals({exists: true, hash: "abc"}, {exists: true, hash: "abc"})).toBe(true);
