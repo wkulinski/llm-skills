@@ -176,11 +176,12 @@ Obsługiwane pola outputu:
 - `maxOutputBytes`: maksymalny rozmiar skrótu błędu;
 - `parserInputBytes`: maksymalny rozmiar wejścia przechowywanego dla parsera maszynowego;
 - `stripAnsi`: czy usuwać kody ANSI ze skrótu;
-- `parser`: `generic-tail`, `phpstan-json` albo `eslint-json`.
+- `parser`: `generic-tail`, `phpstan-json`, `eslint-json` albo `codeception-junit`.
 
 Parsery maszynowe są preferowane tam, gdzie narzędzie stabilnie je wspiera:
 - PHPStan: preferuj `--error-format=json` i `parser: "phpstan-json"`;
 - ESLint: preferuj `--format json` i `parser: "eslint-json"`;
+- Codeception: preferuj JUnit XML z `--xml` i `parser: "codeception-junit"`;
 - pozostałe narzędzia zaczynają od `parser: "generic-tail"`.
 
 Runner raportuje `NOTICE` dla aktywnych komend, które wyglądają na narzędzie z dedykowanym parserem, ale używają `generic-tail`, albo mają parser maszynowy bez widocznej flagi JSON w `cmd`. To jest sugestia konfiguracji, nie błąd: wrapper projektowy może emitować JSON wewnętrznie.
