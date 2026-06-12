@@ -89,7 +89,10 @@
                     "parser": "phpstan-json"
                 },
                 "./bin/proxy/composer --proxy-quiet lint:php:fix",
-                "./bin/proxy/composer --proxy-quiet test"
+                {
+                    "cmd": "./bin/proxy/composer --proxy-quiet test",
+                    "parser": "codeception-junit"
+                }
             ],
             "runOn": [
                 "full",

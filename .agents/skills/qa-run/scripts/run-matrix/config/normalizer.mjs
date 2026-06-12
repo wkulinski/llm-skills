@@ -14,7 +14,7 @@ const DEFAULT_OUTPUT_CONFIG = {
     stripAnsi: true,
 };
 const OUTPUT_MODES = new Set(["quiet-on-pass", "silent"]);
-const PARSERS = new Set(["generic-tail", "phpstan-json", "eslint-json"]);
+const PARSERS = new Set(["generic-tail", "phpstan-json", "eslint-json", "codeception-junit"]);
 
 function parseConfig(raw, configAbsPath) {
     const parsed = parseJsonConfig(raw, configAbsPath);

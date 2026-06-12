@@ -1,3 +1,4 @@
+import {parseCodeceptionJunit} from "./codeception-junit.mjs";
 import {parseEslintJson} from "./eslint-json.mjs";
 import {parsePhpStanJson} from "./phpstan-json.mjs";
 
@@ -23,6 +24,13 @@ function parseFailureSummary(parser, stdout, stderr, combined) {
 
     if (parser === "eslint-json") {
         const parsed = parseEslintJson(stdout) ?? parseEslintJson(stderr);
+        if (parsed && parsed.length > 0) {
+            return parsed;
+        }
+    }
+
+    if (parser === "codeception-junit") {
+        const parsed = parseCodeceptionJunit(stdout) ?? parseCodeceptionJunit(stderr);
         if (parsed && parsed.length > 0) {
             return parsed;
         }
