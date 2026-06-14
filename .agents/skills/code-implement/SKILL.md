@@ -3,7 +3,8 @@ name: code-implement
 description: >-
   Orkiestrator implementacji zmian w kodzie: intake prompta,
   dopytania/stop-conditions, doczytanie kontekstu repo, zasady kodowania, lekkie
-  checki na końcu (`$review-quick` + opcjonalnie `$qa-run`), oraz standard
+  checki na końcu (`$review-quick` + punktowy test/lint), bez pełnego `$qa-run`
+  poza jednoznacznym poleceniem użytkownika, oraz standard
   raportowania. Użyj, gdy użytkownik zleca dodanie funkcjonalności, naprawę
   błędu lub refaktor.
 shared_files:
@@ -30,7 +31,8 @@ Poprowadzić implementację zmian w kodzie end-to-end w sposób powtarzalny i be
 - doprecyzować zlecenie (pytania, kryteria akceptacji),
 - doczytać właściwy kontekst z repo (tylko to, co potrzebne),
 - wdrożyć zmianę zgodnie z zasadami projektu,
-- wykonać lekką weryfikację na końcu (`$review-quick`, a `$qa-run` tylko gdy zmiana jest rozległa),
+- wykonać lekką weryfikację na końcu wyłącznie przez `review-quick` i punktowy test/lint bezpośrednio związany z ostatnim przyrostem,
+- nie uruchamiać pełnego `$qa-run` poza wyraźnym, jednoznacznym poleceniem użytkownika,
 - zaraportować wynik w stałym formacie.
 
 ## Tryb domyślny i autonomia
@@ -257,14 +259,6 @@ Twarde reguły statusów:
 - Kiedy zwracać: wyczerpany limit iteracji i nadal `FAIL`.
 - Kiedy nie zwracać: limit nie został osiągnięty albo QA zakończone `PASS`.
 
-### “Rozległa zmiana”
-Traktuj zmianę jako rozległą, jeśli zachodzi co najmniej jeden warunek:
-- liczba plików zmienionych + untracked jest duża (domyślnie: `>= 15`), lub
-- zmiany obejmują więcej niż 2 moduły, lub
-- zmiany obejmują krytyczne entrypointy, persistence, security lub tooling, lub
-- użytkownik wprost mówi, że to duża zmiana, lub
-- po implementacji widać, że zakres “uciekł” poza pierwotne założenia.
-
 ## Kroki
 
 ### 0) Inicjalizacja stanu zadania (obowiązkowo)
@@ -356,41 +350,35 @@ Gdy użytkownik zgłasza błąd/uwagę po Twojej implementacji:
    - “Cel iteracji: …” (1 zdanie),
    - “Kryterium gotowe: …” (1 zdanie).
 3. Poprawiaj tylko to, co wynika z celu iteracji + Rejestru wymagań; nie “uciekaj” w poboczne zmiany.
-4. Jeśli nie zgadzasz się z feedbackiem: nie “upieraj się” — zweryfikuj w kodzie/komendą i dopiero wtedy argumentuj wynikiem.
-5. Na koniec iteracji zaktualizuj statusy R# + Dowody, dopisz wpis do Dziennika odczytów (jeśli coś czytałeś/uruchamiałeś) oraz wpis do Dziennika iteracji używając odpowiednich skryptów.
-6. Szybka checklista zamknięcia iteracji:
+4. Jeśli po poprawce trzeba ponownie sprawdzić wynik, wolno powtórzyć wyłącznie pojedynczy, celowany test Codeception; ponowne uruchamianie lintów w ramach `$code-implement` jest zabronione.
+5. Jeśli nie zgadzasz się z feedbackiem: nie “upieraj się” — zweryfikuj w kodzie/komendą i dopiero wtedy argumentuj wynikiem.
+6. Na koniec iteracji zaktualizuj statusy R# + Dowody, dopisz wpis do Dziennika odczytów (jeśli coś czytałeś/uruchamiałeś) oraz wpis do Dziennika iteracji używając odpowiednich skryptów.
+7. Szybka checklista zamknięcia iteracji:
    - zaktualizowane statusy R# + Dowody,
    - uzupełnione Dotknięte obszary,
    - wpis w Dzienniku odczytów (jeśli dotyczy),
    - wpis w Dzienniku iteracji.
-7. Jeśli z jakiegokolwiek powodu Rejestr wymagań nie został zaktualizowany w tej iteracji, musisz to jawnie zaznaczyć w odpowiedzi.
+8. Jeśli z jakiegokolwiek powodu Rejestr wymagań nie został zaktualizowany w tej iteracji, musisz to jawnie zaznaczyć w odpowiedzi.
 
 ### 6) Końcowa weryfikacja (lekka)
 1. Ustal, czy w ogóle jest co weryfikować:
    - jeśli brak zmian w repo: zakończ “Brak zmian”.
 2. Po pojedynczym kroku implementacji stosuj weryfikację przyrostową:
    - sprawdzaj ostatni przyrost, nie cały narosły dirty diff,
-   - jeśli w repo jest już dużo zmian, zawężaj punktowe checki do plików, funkcji, sekcji matrixa albo błędu zmienionych w ostatnim kroku,
+   - zawężaj punktowe checki do plików, funkcji, sekcji matrixa albo błędu zmienionych w ostatnim kroku,
    - nie rozszerzaj automatycznie zakresu na całe rozwiązanie tylko dlatego, że repo ma wiele niecommitowanych zmian.
 3. Jeśli zmiany obejmują którekolwiek z typów:
    - PHP (`.php`), Twig (`.twig`), JS/TS (`.js/.jsx/.ts/.tsx`), CSS/SCSS (`.css/.scss`), YAML (`.yml/.yaml`), tłumaczenia (`translations/**` lub `src/*/UI/Translation/**`)
    to wykonaj `$review-quick`.
-4. `$qa-run` uruchom automatycznie **tylko**, gdy zmiana jest rozległa (definicja wyżej).
-   - dla zmiany rozległej uruchomienie `$qa-run` jest obowiązkowe,
-   - w przeciwnym razie: nie uruchamiaj `$qa-run` na koniec z automatu (i tak będzie wymagane przed commitem przez `$git-commit`).
-5. Nie uruchamiaj pełnych testów ani pełnego QA „dla pewności” w zwykłej pętli implementacyjnej.
-   - dla małej zmiany wystarcza `$review-quick` oraz ewentualny zawężony quick-check 1:1 z komend matrixa i dotkniętą sekcją,
-   - po kolejnym kroku większego zadania punktowy quick-check ma dotyczyć ostatniego przyrostu, a nie całego rozwiązania,
-   - po poprawce konkretnego błędu QA preferuj rerun tej samej komendy albo tej samej sekcji, która zgłosiła błąd,
-   - jeśli potrzebujesz szerszego zakresu niż dotknięta sekcja, potraktuj to jako sygnał zmiany rozległej albo zapytaj użytkownika,
-   - finalne pełniejsze sprawdzenie należy do `$git-commit` albo jawnego polecenia użytkownika.
-6. Jeśli punktowy check nie istnieje albo nie da się go jednoznacznie powiązać z ostatnim krokiem, nie wymyślaj szerokiego zamiennika.
-   - zaraportuj `$review-quick` oraz brak sensownego punktowego checka,
-   - pełniejsze sprawdzenie zostaw do `$qa-run`, `$git-commit` albo decyzji użytkownika.
-7. Jeśli `$code-implement` uruchamia `$qa-run`, dziedziczy kontrakt pętli naprawczej z `qa-run`:
-   - nie kończ po pierwszym `FAIL`,
-   - przechodź przez iteracje naprawcze do `PASS` albo `BLOCKED`,
-   - raportuj liczbę iteracji QA i status końcowy.
+4. Jeśli trzeba wykonać test/lint, użyj wyłącznie punktowej komendy 1:1 z matrixa, bezpośrednio powiązanej z ostatnim przyrostem.
+   - nie uruchamiaj pełnego `$qa-run` ani jako kroku końcowego, ani jako fallbacku,
+   - nie zastępuj punktowego checka szerszym runem "na wszelki wypadek",
+   - jeśli punktowy check nie istnieje albo nie da się go jednoznacznie powiązać z ostatnim krokiem, zaraportuj `$review-quick` oraz brak sensownego punktowego checka.
+5. Po poprawce konkretnego błędu:
+   - wolno powtórzyć wyłącznie pojedynczy, celowany test Codeception, jeśli to on zgłosił błąd,
+   - nie wolno ponownie uruchamiać lintów w ramach `$code-implement`.
+6. Pełne `$qa-run` uruchamiaj tylko wtedy, gdy użytkownik wyraźnie i jednoznacznie o to poprosi.
+7. Jeśli użytkownik nie zażądał pełnego QA, finalne sprawdzenie kończy się na `review-quick` i punktowym checku albo na samym `review-quick`, jeśli checku punktowego nie ma.
 8. Jeśli Rejestr wymagań lub Dziennik odczytów nie odzwierciedlają aktualnych zmian, uzupełnij je przed zakończeniem.
 
 Opcjonalnie (zalecane): do szybkiej klasyfikacji zmian użyj
@@ -404,8 +392,9 @@ Zakończ odpowiedź w stałej strukturze:
 - Pliki/obszary: gdzie dotknięto (moduły / kluczowe pliki).
 - Weryfikacja:
   - `$review-quick` — wykonano / pominięto (dlaczego),
-  - `$qa-run` — wykonano / pominięto (dlaczego).
-- Iteracje QA: jeśli uruchomiono `$qa-run`, podaj `Wykonano iteracji: X/20` i `Status końcowy: PASS | BLOCKED`.
+  - punktowy test/lint — wykonano / pominięto (dlaczego),
+  - `$qa-run` — wykonano tylko na wyraźne polecenie użytkownika / pominięto (dlaczego).
+- Iteracje QA: jeśli użytkownik wyraźnie zlecił `$qa-run`, podaj `Wykonano iteracji: X/20` i `Status końcowy: PASS | BLOCKED`.
 - Ryzyka/Błędy: co wymaga uwagi (jeśli dotyczy).
 - Testy: sugerowane scenariusze lub testy do dodania (jeśli dotyczy).
 - Blokery: jeśli wystąpiły, podaj `STOP_CODE` + przyczynę.
@@ -429,9 +418,9 @@ Zakończ odpowiedź w stałej strukturze:
   - status każdego R# (skrót),
   - dowody dla `DONE`,
   - listę blockerów (jeśli są),
-  - informację czy wykonano `$review-quick` i/lub `$qa-run`.
+  - informację czy wykonano `$review-quick`, punktowy test/lint i/lub `$qa-run`.
 
 ## Przypadki brzegowe
 - Jeśli użytkownik prosi “zakomituj” → użyj `$git-commit`, nie `$code-implement`.
-- Jeśli zmiany są tylko w docs/skillach → pomiń `$review-quick` i `$qa-run`, chyba że użytkownik prosi inaczej.
+- Jeśli zmiany są tylko w docs/skillach → pomiń `$review-quick`, punktowy test/lint i `$qa-run`, chyba że użytkownik prosi inaczej.
 - Jeśli użytkownik wyraźnie każe wyczyścić stan: uruchom `<skill_dir>/scripts/state-clear.sh` i zakończ bez dalszych zmian.

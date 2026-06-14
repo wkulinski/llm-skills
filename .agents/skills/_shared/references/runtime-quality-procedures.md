@@ -25,7 +25,8 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
 ## 3. W trakcie implementacji
 1. Implementuj zgodnie z `./runtime-collaboration-guidelines.md` oraz aktywnym baseline/override.
 2. Utrzymuj zasadę evidence-based: decyzje i raportowanie opieraj na realnych odczytach/komendach.
-3. Nie rozszerzaj zakresu bez decyzji użytkownika, zwłaszcza dla zmian high-risk.
+3. Domyślna weryfikacja po implementacji jest punktowa i dotyczy ostatniego przyrostu; pełne QA uruchamiaj wyłącznie z jawnego polecenia użytkownika albo przez skill, który explicite to definiuje.
+4. Nie rozszerzaj zakresu bez decyzji użytkownika, zwłaszcza dla zmian high-risk.
 
 ## 4. Przed zakończeniem zadania
 1. Jeśli to zadanie implementacyjne: zastosuj `$code-implement` jako orkiestrator.
