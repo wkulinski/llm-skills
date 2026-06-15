@@ -6,6 +6,7 @@ description: >-
 shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh
+  - _shared/scripts/issue-branch.sh
 ---
 
 # $gh-issue-status-set
@@ -50,7 +51,7 @@ Ustawić status issue w GitHub Projects v2 na podstawie bieżącego brancha, num
 
 ## Heurystyka ustalania issue (w skrypcie)
 Skrypt próbuje kolejno:
-1. Numer z nazwy brancha: `issue/<ID>-*` lub `issue-<ID>-*`.
+1. Numer z bieżącego brancha przez wspólny helper `<skills_root>/_shared/scripts/issue-branch.sh` (schemat `issue/<ID>-*` lub `issue-<ID>-*`).
 2. Numer z tytułu ostatniego commita (np. `#123` w subject).
 3. Wyszukanie po tytule: słowa kluczowe z subject (max 7 słów), `gh search issues ...`.
    - Gdy wynik jest jeden → używa go.

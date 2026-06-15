@@ -11,6 +11,8 @@ repo_root="$(git -C "$script_dir" rev-parse --show-toplevel)"
 # shellcheck disable=SC1091
 . "$repo_root/.agents/skills/_shared/scripts/env-load.sh"
 load_repo_env "$repo_root"
+# shellcheck disable=SC1091
+. "$repo_root/.agents/skills/_shared/scripts/issue-branch.sh"
 
 reviewers_file="${script_dir}/../default-reviewers.txt"
 template_override=""
@@ -87,18 +89,6 @@ if [ -z "$base_branch" ]; then
   fi
 fi
 
-find_issue_from_branch() {
-  local branch="$1"
-  if [[ "$branch" =~ issue/([0-9]+) ]]; then
-    echo "${BASH_REMATCH[1]}"
-    return 0
-  elif [[ "$branch" =~ issue-([0-9]+) ]]; then
-    echo "${BASH_REMATCH[1]}"
-    return 0
-  fi
-  return 1
-}
-
 find_issue_from_subject() {
   local subject="$1"
   if [[ "$subject" =~ \#([0-9]+) ]]; then
@@ -123,7 +113,7 @@ branch="$(git rev-parse --abbrev-ref HEAD)"
 subject="$(git log -1 --pretty=%s 2>/dev/null || true)"
 
 if [ -z "$issue_number" ]; then
-  issue_number="$(find_issue_from_branch "$branch" || true)"
+  issue_number="$(issue_branch_parse "$branch" || true)"
 fi
 
 if [ -z "$issue_number" ]; then

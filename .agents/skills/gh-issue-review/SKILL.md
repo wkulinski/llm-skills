@@ -6,6 +6,7 @@ description: >-
 shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh
+  - _shared/scripts/issue-branch.sh
 ---
 
 # $gh-issue-review
@@ -43,7 +44,7 @@ Zautomatyzować zlecenie review: push brancha na origin, utworzenie PR do domyś
 4. Po powodzeniu skryptu uruchom **osobno** `$gh-issue-status-set`, aby ustawić status **In review**:
    - Preferuj przekazanie numeru issue:
      - jeśli użyto `--issue-number`, przekaż ten numer,
-     - w przeciwnym razie użyj numeru ustalonego przez skrypt (heurystyka branch/subject).
+     - w przeciwnym razie użyj numeru ustalonego przez skrypt (branch z wspólnego helpera, potem subject).
    - Jeśli nie da się jednoznacznie ustalić numeru issue, pozwól `$gh-issue-status-set` użyć własnych heurystyk i ewentualnie dopytać.
    - Jeśli ustawienie statusu się nie powiedzie: nie ukrywaj błędu, zwróć użytkownikowi jawny komunikat (status nieustawiony + przyczyna), ale pozostaw informację, że push/PR zostały wykonane.
 

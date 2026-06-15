@@ -9,6 +9,7 @@ shared_files:
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
   - _shared/references/cqrs-monolith-standard-overrides.md
+  - _shared/scripts/issue-branch.sh
 ---
 
 # $commit-message-write
@@ -48,6 +49,25 @@ Ten skill działa dwuetapowo:
 - Format Conventional Commits nie narzuca języka całej treści commita.
 - Techniczny prefiks `<type>` (`feat`, `fix`, `chore`, itd.) pozostaje zgodny z Conventional Commits, ale część po `:` oraz body muszą być w języku wynikającym z powyższej reguły.
 
+## Kontrakt issue z brancha
+- Ustal numer issue z bieżącego brancha przez wspólny helper `<skills_root>/_shared/scripts/issue-branch.sh`.
+- Jeśli branch pasuje do `issue/<ID>-*` albo `issue-<ID>-*`, dołącz `(#<ID>)` na końcu subjectu.
+- Nie zgaduj numeru issue na podstawie commitów, diffu ani innych liczb w branchu.
+- Jeśli branch nie pasuje do wzorca issue, nie dopisuj numeru.
+
+## Sekcjonowanie body
+- Body dziel na sekcje:
+  - `Zmiany ogólne`
+  - `Zmiany wpływające na strukturę bazy danych`
+  - `Zmiany API poleceń CLI`
+- Każdy punkt body przypisz do dokładnie jednej sekcji.
+- `Zmiany ogólne` obejmują tylko punkty, których nie da się przypisać do dwóch pozostałych sekcji.
+- `Zmiany wpływające na strukturę bazy danych` obejmują zmiany skutkujące migracjami zmieniającymi schemat, relacje, indeksy, constraints lub słowniki.
+- `Zmiany API poleceń CLI` obejmują dodanie lub usunięcie poleceń CLI, zmianę parametrów, opcji, exit code oraz zewnętrznego kontraktu poleceń: stdout, stderr i typu zwracanych wartości.
+- Jeśli zmiana pasuje do kilku sekcji, przypisz ją do najbardziej specyficznej sekcji.
+- Klasyfikację stosuj w kolejności: najpierw `Zmiany API poleceń CLI`, potem `Zmiany wpływające na strukturę bazy danych`, a wszystko co nie pasuje do tych dwóch sekcji trafia do `Zmiany ogólne`; sekcje zapisuj potem zawsze w kolejności zdefiniowanej niżej.
+- Puste sekcje pomiń.
+
 ## Kroki
 1. Otwórz `AGENTS.md` i odczytaj mapę `docs_map`.
 2. Odczytaj klucz `COMMIT_MESSAGE_DIR`.
@@ -77,7 +97,7 @@ Ten skill działa dwuetapowo:
 7. Przygotuj draft treści commit message (etap `Draft`) w formacie:
    - linia 1: subject w konwencji Conventional Commits, bez kropki na końcu,
    - linia 2: pusta,
-   - kolejne linie: lista punktów (`- ...`) opisująca pełen zakres bieżących zmian.
+   - kolejne linie: body z sekcjami i punktami (`## ...` + `- ...`) opisujące pełen zakres bieżących zmian.
    - subject i body twórz w języku wynikającym z `COMMIT_LANGUAGE`.
 8. Wykonaj etap `Prune` (obowiązkowy) i przytnij draft wyłącznie do `COMMIT_SCOPE`:
    - każdy punkt body musi mapować się do co najmniej jednego pliku z `COMMIT_SCOPE`,
@@ -88,14 +108,19 @@ Ten skill działa dwuetapowo:
    - format: `<type>: <Krótki tytuł>`
    - `<type>` dobierz zgodnie z Conventional Commits (`feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `build`, `ci`, `style`, `perf`, `revert`),
    - `Krótki tytuł` adekwatny do zmian i zapisany w języku wynikającym z `COMMIT_LANGUAGE`,
+   - `Krótki tytuł` formułuj bezosobowo i w aspekcie dokonanym, opisując stan po zmianie, a nie czynność autora,
+   - jeśli wykryto issue w branchu, `Krótki tytuł` ma zawierać sufiks `(#<ID>)`,
    - `<type>` pozostaje technicznym prefiksem Conventional Commits i nie zmienia języka reszty subjectu ani body,
-   - zakazane są formy rozkazujące (np. `Dodaj`, `Ustaw`, `Zrób`) i kalka językowa.
+   - zakazane są formy rozkazujące (np. `Dodaj`, `Ustaw`, `Zrób`), formy osobowe w czasie teraźniejszym (np. `dodaje`, `ustawia`) i kalka językowa.
 10. Zasady tworzenia body:
    - body ma odzwierciedlać realnie wykryte i zrozumiane zmiany,
    - body ma opisywać wyłącznie zmiany z `COMMIT_SCOPE`,
    - body ma być zgodne z `COMMIT_LANGUAGE`,
+   - body formułuj bezosobowo i w aspekcie dokonanym,
    - każdy punkt ma być krótki, konkretny i bez duplikatów,
-   - kolejność punktów powinna iść od zmian najbardziej istotnych do pomocniczych.
+   - kolejność sekcji ma być zawsze taka: `Zmiany ogólne`, `Zmiany wpływające na strukturę bazy danych`, `Zmiany API poleceń CLI`,
+   - kolejność punktów w obrębie sekcji powinna iść od zmian najbardziej istotnych do pomocniczych,
+   - jeśli dana sekcja jest pusta, pomiń ją całkowicie.
 11. Przed zapisem wykonaj końcowy check języka:
    - potwierdź, że subject i body są zgodne z `COMMIT_LANGUAGE`,
    - jeśli commit jest w złym języku, popraw go przed zapisem.
