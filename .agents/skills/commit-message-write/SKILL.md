@@ -9,6 +9,7 @@ shared_files:
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
   - _shared/references/cqrs-monolith-standard-overrides.md
+  - _shared/scripts/commit-message-render.sh
   - _shared/scripts/issue-branch.sh
 ---
 
@@ -27,12 +28,12 @@ shared_files:
 Celem jest przygotowanie kompletnej treści commita (subject + body) na podstawie bieżących zmian i zapisanie jej do jednego pliku roboczego:
 `<COMMIT_MESSAGE_DIR>/commit-message.txt`.
 
-## Model tworzenia treści (draft -> prune)
+## Model tworzenia treści (draft strukturalny -> prune -> render)
 Ten skill działa dwuetapowo:
 1. `Draft` (szeroki kontekst):
-   - można użyć pełnego kontekstu sesji (odczyty, diffy, wcześniejsze decyzje), aby dobrze uchwycić sens zmian.
-   - jeśli wcześniej użyto `$dev-mate` do diagnozy runtime (logi/profiler/DI), te ustalenia mogą pomóc w `Draft`, ale tylko jako kontekst pomocniczy do zrozumienia zmian.
-   - draft może być bogatszy opisowo niż finalna lista commitowalnych plików.
+   - można użyć pełnego kontekstu sesji (odczyty, diffy, wcześniejsze decyzje), aby dobrze uchwycić sens zmian,
+   - jeśli wcześniej użyto `$dev-mate` do diagnozy runtime (logi/profiler/DI), te ustalenia mogą pomóc w `Draft`, ale tylko jako kontekst pomocniczy do zrozumienia zmian,
+   - draft ma być strukturalny i kompaktowy: `Subject:` + trzy koszyki punktów `general` / `db` / `cli`, a nie wolny tekst do późniejszego przepisywania.
 2. `Prune` (twarde przycięcie do commitowalności):
    - przed zapisem finalnego pliku treść musi zostać przycięta wyłącznie do zmian commitowalnych w repo,
    - commitowalne = `tracked` + `staged` + `untracked` nieignorowane przez git,
@@ -67,6 +68,7 @@ Ten skill działa dwuetapowo:
 - Jeśli zmiana pasuje do kilku sekcji, przypisz ją do najbardziej specyficznej sekcji.
 - Klasyfikację stosuj w kolejności: najpierw `Zmiany API poleceń CLI`, potem `Zmiany wpływające na strukturę bazy danych`, a wszystko co nie pasuje do tych dwóch sekcji trafia do `Zmiany ogólne`; sekcje zapisuj potem zawsze w kolejności zdefiniowanej niżej.
 - Puste sekcje pomiń.
+- Finalny zapis body wykonuj przez `<skills_root>/_shared/scripts/commit-message-render.sh`; helper renderuje sekcje bezpośrednio do `<COMMIT_MESSAGE_DIR>/commit-message.txt` i odrzuca fillery typu `Brak zmian`.
 
 ## Kroki
 1. Otwórz `AGENTS.md` i odczytaj mapę `docs_map`.
@@ -94,10 +96,9 @@ Ten skill działa dwuetapowo:
    - jeśli tak: ustaw `COMMIT_LANGUAGE` na język wymagany przez dokumentację projektu,
    - jeśli nie: ustaw `COMMIT_LANGUAGE` na język bieżącej komunikacji z użytkownikiem,
    - nie przełączaj języka domyślnie na angielski tylko dlatego, że commit ma format Conventional Commits.
-7. Przygotuj draft treści commit message (etap `Draft`) w formacie:
-   - linia 1: subject w konwencji Conventional Commits, bez kropki na końcu,
-   - linia 2: pusta,
-   - kolejne linie: body z sekcjami i punktami (`## ...` + `- ...`) opisujące pełen zakres bieżących zmian.
+7. Przygotuj strukturalny draft treści commit message:
+   - subject w konwencji Conventional Commits, bez kropki na końcu,
+   - trzy koszyki punktów body oznaczone jako `general`, `db` i `cli`,
    - subject i body twórz w języku wynikającym z `COMMIT_LANGUAGE`.
 8. Wykonaj etap `Prune` (obowiązkowy) i przytnij draft wyłącznie do `COMMIT_SCOPE`:
    - każdy punkt body musi mapować się do co najmniej jednego pliku z `COMMIT_SCOPE`,
@@ -121,17 +122,28 @@ Ten skill działa dwuetapowo:
    - kolejność sekcji ma być zawsze taka: `Zmiany ogólne`, `Zmiany wpływające na strukturę bazy danych`, `Zmiany API poleceń CLI`,
    - kolejność punktów w obrębie sekcji powinna iść od zmian najbardziej istotnych do pomocniczych,
    - jeśli dana sekcja jest pusta, pomiń ją całkowicie.
-11. Przed zapisem wykonaj końcowy check języka:
+9. Wygeneruj finalny plik przez helper `<skills_root>/_shared/scripts/commit-message-render.sh`:
+   - przekaż helperowi strukturalny draft przez stdin w formacie:
+     - `Subject: ...`
+     - `general:`
+     - `- ...`
+     - `db:`
+     - `- ...`
+     - `cli:`
+     - `- ...`
+   - wskaż `--output <COMMIT_MESSAGE_DIR>/commit-message.txt`,
+   - helper ma zapisać commit message bezpośrednio do pliku docelowego, bez plików pośrednich,
+   - helper ma pominąć puste sekcje i odrzucić fillery typu `Brak zmian`.
+   - nie używaj starszych nagłówków sekcji ani innych alternatywnych formatów wejścia.
+10. Przed zapisem wykonaj końcowy check języka:
    - potwierdź, że subject i body są zgodne z `COMMIT_LANGUAGE`,
-   - jeśli commit jest w złym języku, popraw go przed zapisem.
-12. Zapisz treść do `<COMMIT_MESSAGE_DIR>/commit-message.txt`.
-   - Zapis traktuj jako obowiązkowy.
-   - Jeśli zapis się nie powiedzie (brak uprawnień, brak miejsca, błąd I/O): przerwij z błędem i nie stosuj obejść/fallbacków.
-13. Po zapisie zweryfikuj, że plik istnieje, jest czytelny i nie jest pusty.
+   - jeśli commit jest w złym języku, popraw go przed renderem.
+11. Po renderze zweryfikuj, że plik istnieje, jest czytelny i nie jest pusty.
     - Jeśli walidacja nie przejdzie: przerwij z błędem.
 
 ## Zakres
 - W zakresie: przygotowanie treści commita i zapis do `commit-message.txt`.
+- Helper renderujący jest częścią zakresu tego skilla i odpowiada za strukturalny zapis bez plików pośrednich.
 - Poza zakresem: staging i `git commit`.
 
 ## Format odpowiedzi
