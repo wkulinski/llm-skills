@@ -6,6 +6,8 @@ repo_root="$(git -C "$script_dir" rev-parse --show-toplevel)"
 # shellcheck disable=SC1091
 . "$repo_root/.agents/skills/_shared/scripts/env-load.sh"
 load_repo_env "$repo_root"
+# shellcheck disable=SC1091
+. "$repo_root/.agents/skills/_shared/scripts/issue-branch.sh"
 
 issue_number=""
 title=""
@@ -116,18 +118,6 @@ search_issue_by_title() {
   return 2
 }
 
-slugify() {
-  local input="$1"
-  local ascii
-
-  ascii="$(printf '%s' "$input" | LC_ALL=C tr -cd '[:alnum:] -')"
-  ascii="$(printf '%s' "$ascii" | tr '[:upper:]' '[:lower:]')"
-  ascii="$(printf '%s' "$ascii" | tr ' ' '-' | tr -s '-')"
-  ascii="$(printf '%s' "$ascii" | sed -E 's/[^a-z0-9-]+//g; s/^-+//; s/-+$//')"
-
-  printf '%s' "$ascii"
-}
-
 if [ -z "$issue_number" ] && { [ -n "$description" ] || [ -n "$title" ]; }; then
   search_input="$description"
   if [ -z "$search_input" ]; then
@@ -186,7 +176,7 @@ if [ -z "$slug" ]; then
   slug="issue"
 fi
 
-branch_name="issue/${issue_number}-${slug}"
+branch_name="$(issue_branch_make "$issue_number" "$issue_title")"
 
 remote="origin"
 base_branch="$base_ref"

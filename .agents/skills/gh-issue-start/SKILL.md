@@ -6,6 +6,7 @@ description: >-
 shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh
+  - _shared/scripts/issue-branch.sh
 ---
 
 # $gh-issue-start
@@ -34,6 +35,7 @@ Zautomatyzować start pracy nad issue: ustalenie numeru issue, utworzenie/checko
      - `--title "<Tytuł>"` (używane, gdy trzeba utworzyć nowe issue)
      - `--desc "<Opis>"` (krótki opis do utworzenia issue i nazwy brancha)
      - `--base <remote/branch|branch>` (opcjonalnie; domyślnie domyślna gałąź repo)
+   - Nazwa brancha jest wyprowadzana przez wspólny helper `<skills_root>/_shared/scripts/issue-branch.sh` i ma postać `issue/<ID>-<slug>`.
    - Skrypt przed utworzeniem nowego brancha wykonuje `git fetch` dla base ref, aby mieć aktualną bazę.
    - Skrypt zawsze tworzy lub checkoutuje branch dla wskazanego issue (jeśli branch nie istnieje, zostanie utworzony).
 3. Po powodzeniu skryptu uruchom **osobno** `$gh-issue-status-set`, aby ustawić status **In progress**:
@@ -64,6 +66,7 @@ Jeśli użytkownik podał `--issue-number`, a issue nie istnieje lub jest zamkni
 ## Branch naming
 - Schemat: `issue/<ID>-<slug>`.
 - Slug: lowercase, spacje → myślniki, usuwa znaki spoza ASCII.
+- Źródłem prawdy dla generowania nazwy brancha jest `<skills_root>/_shared/scripts/issue-branch.sh`.
 
 ## Kody wyjścia skryptu
 - `10` brak tytułu do utworzenia issue → dopytaj użytkownika o tytuł i uruchom ponownie z `--title`.
