@@ -49,6 +49,7 @@ Ten skill ma dwa tryby wykonania. Domyślny jest **Quick**, a **Full** uruchamia
 ### Tryb Quick (domyślny)
 Cel: szybko uzyskać bezpieczny kontekst do pracy bez ładowania całej dokumentacji.
 - Czyta “rdzeń” dokumentacji (procedury/zasady/indeksy) zawsze.
+- Jeśli zdefiniowano `MODULE_INDEX_DOC`, czyta go jako lekki atlas modułów i ich ról.
 - Dokumentację modułów (jeśli zdefiniowano `MODULE_DOCS_GLOB`) czyta tylko dla modułów dotkniętych zmianami lub wskazanych w prompt.
 - README testów (jeśli zdefiniowano `TESTS_README`) czyta tylko, jeśli zmiany dotyczą testów lub ich uruchamiania.
 - Analizę zmian w repo robi “skalowalnie” i **doczytuje szczegóły dopiero wtedy, gdy są potrzebne do zadania** (on-demand).
@@ -100,8 +101,20 @@ Przeczytaj w całości (to jest minimalny “rdzeń” reguł i konwencji):
 10. Odczytaj `HANDOFF_DOC` — jeśli zdefiniowano.
 
 ### 3) Dokumentacja modułowa (lazy, ale bezpiecznie)
-1. Jeśli zdefiniowano `MODULE_DOCS_GLOB` i `git diff --name-only` zawiera zmiany w modułach, przeczytaj README dokumentacji dla każdego dotkniętego modułu.
-2. Jeśli tryb to **Full** i zdefiniowano `MODULE_DOCS_GLOB`, przeczytaj README dokumentacji dla wszystkich modułów; jeśli zdefiniowano `MODULE_INDEX_DOC`, użyj go jako indeksu.
+1. Jeśli zdefiniowano `MODULE_INDEX_DOC`, przeczytaj go jako mapę orientacyjną przed doczytywaniem szczegółów.
+2. Jeśli zdefiniowano `MODULE_DOCS_GLOB` i `git diff --name-only` zawiera zmiany w modułach, przeczytaj README dokumentacji tylko dla dotkniętych modułów.
+3. Jeśli aktualny moduł ma użyć funkcjonalności z innego modułu albo prompt wymaga decyzji między modułami, doczytaj też dokumentację tego drugiego modułu.
+4. Jeśli tryb to **Full** i zdefiniowano `MODULE_DOCS_GLOB`, doczytuj szerzej, ale nadal zaczynaj od atlasu (`MODULE_INDEX_DOC`) i rozszerzaj zakres tylko wtedy, gdy jest to potrzebne do zadania.
+
+### 3a) Jak interpretować `MODULE_INDEX_DOC`
+Jeśli atlas modułów istnieje, traktuj go jako warstwę decyzyjną:
+1. Z każdego wpisu wyciągnij tylko cztery rzeczy: rolę modułu, punkty wejścia, powiązania i sygnały `Czytać, gdy` / `Nie czytać, gdy`.
+2. Na tej podstawie wybierz:
+   - moduł główny, który jest bezpośrednio dotknięty zadaniem,
+   - maksymalnie 0-2 moduły pomocnicze, jeśli atlas wskazuje zależność albo współużycie funkcjonalności.
+3. Doczytaj pełne README tylko dla wybranych modułów, a nie dla całego atlasu.
+4. Jeśli atlas mówi `Nie czytać, gdy`, nie ładuj pełnej dokumentacji danego modułu bez dodatkowego triggera z promptu, diffu albo decyzji architektonicznej.
+5. Jeśli wpis atlasu jest zbyt ogólny albo sprzeczny z innymi źródłami, zanotuj to w uwagach i oprzyj decyzję na pełnej dokumentacji modułu oraz `MAIN_DOC`.
 
 ### 4) Testy (lazy)
 Jeśli zdefiniowano `TESTS_README` i zmiany dotyczą testów lub sposobu ich uruchamiania (np. `tests/`, `codeception`, `make test.*`, wrapper `codecept` z `BIN_PATH`), przeczytaj README testów.
@@ -122,6 +135,7 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
    - prompt wprost wymienia ścieżkę pliku (np. `src/.../Foo.php`) → przeczytaj ten plik i jego diff (jeśli ma),
    - prompt wprost wymienia symbol (klasa/metoda/komenda/route) → znajdź definicję (`rg`) i przeczytaj definicję + kontekst,
    - masz zmienić plik, który już jest zmieniony w repo (czyli “modyfikujesz cudze/bieżące zmiany”) → przeczytaj jego diff i aktualną treść przed edycją,
+   - aktualny moduł ma użyć funkcjonalności z innego modułu → doczytaj dokumentację obu modułów, zaczynając od `MODULE_INDEX_DOC`, jeśli istnieje,
    - masz przygotować treść commita (`$commit-message-write`) → upewnij się, że rozumiesz “co” i “dlaczego” (diff/kluczowe fragmenty),
    - QA/testy zwróciły błąd w pliku, którego nie analizowałeś → doczytaj od razu ten plik i sąsiedni kontekst,
    - pojawia się decyzja architektoniczna/domenowa, a nie czytałeś dokumentacji modułu/domeny dotkniętej zmianą → doczytaj README modułu (z `MODULE_DOCS_GLOB`) i relewantny fragment `MAIN_DOC`.

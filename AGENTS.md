@@ -77,6 +77,20 @@ Use this block in project `AGENTS.md`:
 docs_map:
     MAIN_DOC: docs/README.md
     AGENT_RULES_DOC: AGENTS.md
+    MODULE_INDEX_DOC: docs/modules/README.md
+    MODULE_DOCS_GLOB: docs/modules/*/README.md
+    COMMIT_MESSAGE_DIR: /tmp/
+    HANDOFF_DOC: var/agent/HANDOFF.md
+    SKILLS_INDEX_DOC: docs/SKILLS.md
+```
+
+## Active docs_map
+```yaml
+docs_map:
+    MAIN_DOC: docs/README.md
+    AGENT_RULES_DOC: AGENTS.md
+    MODULE_INDEX_DOC: docs/modules/README.md
+    MODULE_DOCS_GLOB: docs/modules/*/README.md
     COMMIT_MESSAGE_DIR: /tmp/
     HANDOFF_DOC: var/agent/HANDOFF.md
     SKILLS_INDEX_DOC: docs/SKILLS.md

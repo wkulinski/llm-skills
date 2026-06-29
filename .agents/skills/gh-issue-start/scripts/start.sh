@@ -171,11 +171,6 @@ if [ -z "$issue_number" ]; then
   issue_title="$title"
 fi
 
-slug="$(slugify "$issue_title")"
-if [ -z "$slug" ]; then
-  slug="issue"
-fi
-
 branch_name="$(issue_branch_make "$issue_number" "$issue_title")"
 
 remote="origin"
