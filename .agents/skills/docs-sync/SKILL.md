@@ -9,6 +9,7 @@ shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/cqrs-monolith-standard-overrides.md
+  - _shared/references/symbolic-navigation-and-editing-policy.md
 ---
 
 # $docs-sync

@@ -1,24 +1,28 @@
 ---
 name: php-structure-refactor
 description: >-
-  Strukturalna nawigacja, analiza i refaktoryzacja kodu PHP z użyciem Phpactora,
-  Rectora oraz opcjonalnego php-cs-fixer po transformacji. Użyj przy pracy na
-  symbolach PHP, FQN, namespace/importach, typach pod offsetem, definicjach,
-  strukturze klas, referencjach klas lub memberów, tworzeniu, kopiowaniu,
-  przenoszeniu, rename albo transformacji klas/memberów, akcjach edytorowych
-  Phpactora, powtarzalnych transformacjach AST przez Rectora, albo gdy trzeba
-  poruszać się po drzewie zależności PHP precyzyjniej niż przez wyszukiwanie
-  tekstowe.
+  Wykonawcze operacje strukturalne i refaktoryzacje kodu PHP z użyciem
+  Phpactora, Rectora oraz opcjonalnego php-cs-fixer po transformacji. Użyj,
+  gdy po zawężeniu zakresu potrzebne są operacje typu move/copy/new class,
+  rename z aktualizacją referencji, transformacje klas/memberów, akcje
+  edytorowe Phpactora albo powtarzalne transformacje AST przez Rectora.
 shared_files:
   - _shared/scripts/env-load.sh
+  - _shared/references/symbolic-navigation-and-editing-policy.md
 ---
 
 # $php-structure-refactor
 
 ## Cel
-Używaj tego skilla do pracy na strukturze kodu PHP: symbole, referencje, przenoszenie klas, rename, powtarzalne transformacje AST i zwięzłe podsumowania zmian narzędziowych.
+Używaj tego skilla do pracy na strukturze kodu PHP wtedy, gdy potrzebna jest
+**narzędziowa operacja wykonawcza**: referencje, przenoszenie klas, rename,
+tworzenie/kopiowanie klas, powtarzalne transformacje AST i zwięzłe podsumowania
+zmian narzędziowych.
 
 Ten skill nie zastępuje procedur jakości. Nie opisuj zewnętrznych walidacji jako części tego workflow.
+Nie jest też domyślnym read-path dla PHP, jeśli aktywne środowisko ma tańszą
+warstwę symboliczną do orientacji w kodzie i lokalnych zmian. Jeśli dostępna
+jest Serena, oznacza to w praktyce podejście `Serena-first`.
 
 ## Źródło komend
 1. Załaduj `<skills_root>/_shared/scripts/env-load.sh`.
@@ -30,7 +34,9 @@ Ten skill nie zastępuje procedur jakości. Nie opisuj zewnętrznych walidacji j
 
 ## Szybki Wybór
 - Użyj `rg`, gdy szukasz tekstu, konfiguracji, YAML, Twig, nazw plików, prostych literalnych wywołań albo chcesz tylko zawęzić zakres przed narzędziem strukturalnym.
-- Użyj Phpactora CLI, gdy wynik zależy od symbolu PHP: FQN, namespace, importów, definicji, typu pod offsetem, referencji klasy/membera, przenoszenia, kopiowania, tworzenia lub transformacji klasy.
+- Jeśli aktywne środowisko ma Serenę dla PHP, użyj Sereny najpierw do orientacji w kodzie i lokalnych zmian symbolicznych zgodnie z `<skills_root>/_shared/references/symbolic-navigation-and-editing-policy.md`.
+- Jeśli Serena nie jest dostępna, ale działa inna warstwa symboliczna dla PHP, użyj jej według tej samej logiki.
+- Użyj Phpactora CLI, gdy potrzebna jest operacja wykonawcza zależna od symbolu PHP: FQN, namespace, importów, typu pod offsetem, referencji klasy/membera, przenoszenia, kopiowania, tworzenia lub transformacji klasy.
 - Użyj Rectora, gdy zmiana jest powtarzalnym wzorcem AST, migracją API, zmianą sygnatur, atrybutów, typów albo namespace stosowaną do wielu plików według reguły.
 - Użyj `php-cs-fixer` tylko po automatycznej transformacji, gdy trzeba sformatować dotknięte pliki lub importy. Nie traktuj tego jako walidacji jakości.
 - Użyj `$dev-mate`, gdy potrzebujesz runtime: logi, profiler, kontener DI, autowiring, środowisko Symfony.
@@ -38,32 +44,33 @@ Ten skill nie zastępuje procedur jakości. Nie opisuj zewnętrznych walidacji j
 Nie używaj samego `rg` jako rozstrzygnięcia, gdy trzeba odróżnić symbole o tej samej nazwie, zrozumieć importy, znaleźć referencje PHP, przenieść klasę albo zmienić referencje. `rg` może wtedy jedynie wskazać kandydatów.
 
 ## Mapa Operacji
-| Zadanie | Narzędzie |
-| --- | --- |
-| sprawdzić dostępne komendy Phpactora | `<skill_dir>/scripts/phpactor-cli.mjs list --format=json` |
-| sprawdzić opcje komendy Phpactora | `<skill_dir>/scripts/phpactor-cli.mjs help <command> --format=json` |
-| znaleźć klasę/FQN po nazwie | `<skill_dir>/scripts/phpactor-cli.mjs class:search <name> --format=json` |
-| sprawdzić strukturę klasy | `<skill_dir>/scripts/phpactor-cli.mjs class:reflect <class-or-path> --format=json` |
-| sprawdzić typ/symbol pod offsetem | `<skill_dir>/scripts/phpactor-cli.mjs offset:info <path> <offset> --format=json` |
-| znaleźć albo zmienić referencje klasy | `<skill_dir>/scripts/phpactor-cli.mjs references:class <class-or-path> --format=json [--replace <FQN>]` |
-| znaleźć albo zmienić referencje membera | `<skill_dir>/scripts/phpactor-cli.mjs references:member <class> <member> --format=json [--replace <name>]` |
-| przenieść klasę i referencje | `<skill_dir>/scripts/phpactor-cli.mjs class:move <src> <dest> --type=auto|class|file` |
-| utworzyć albo skopiować klasę | `<skill_dir>/scripts/phpactor-cli.mjs class:new ...` albo `<skill_dir>/scripts/phpactor-cli.mjs class:copy ...` po sprawdzeniu `help` |
-| wykonać transformację klasy oferowaną przez Phpactor | `<skill_dir>/scripts/phpactor-cli.mjs class:transform ...`; najpierw sprawdź `help` |
-| wykonać regułę na wielu plikach | `<skill_dir>/scripts/rector-json-summary.mjs <path> --config <config>` |
-| użyć akcji edytorowej bez odpowiednika CLI | `<skill_dir>/scripts/phpactor-rpc.mjs --action <rpc_action> --params-file <file>` |
+| Zadanie                                              | Narzędzie                                                                                                                             |
+|------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|
+| sprawdzić dostępne komendy Phpactora                 | `<skill_dir>/scripts/phpactor-cli.mjs list --format=json`                                                                             |
+| sprawdzić opcje komendy Phpactora                    | `<skill_dir>/scripts/phpactor-cli.mjs help <command> --format=json`                                                                   |
+| znaleźć klasę/FQN po nazwie                          | `<skill_dir>/scripts/phpactor-cli.mjs class:search <name> --format=json`                                                              |
+| sprawdzić strukturę klasy                            | `<skill_dir>/scripts/phpactor-cli.mjs class:reflect <class-or-path> --format=json`                                                    |
+| sprawdzić typ/symbol pod offsetem                    | `<skill_dir>/scripts/phpactor-cli.mjs offset:info <path> <offset> --format=json`                                                      |
+| znaleźć albo zmienić referencje klasy                | `<skill_dir>/scripts/phpactor-cli.mjs references:class <class-or-path> --format=json [--replace <FQN>]`                               |
+| znaleźć albo zmienić referencje membera              | `<skill_dir>/scripts/phpactor-cli.mjs references:member <class> <member> --format=json [--replace <name>]`                            |
+| przenieść klasę i referencje                         | `<skill_dir>/scripts/phpactor-cli.mjs class:move <src> <dest> --type=auto\|class\|file`                                               |
+| utworzyć albo skopiować klasę                        | `<skill_dir>/scripts/phpactor-cli.mjs class:new ...` albo `<skill_dir>/scripts/phpactor-cli.mjs class:copy ...` po sprawdzeniu `help` |
+| wykonać transformację klasy oferowaną przez Phpactor | `<skill_dir>/scripts/phpactor-cli.mjs class:transform ...`; najpierw sprawdź `help`                                                   |
+| wykonać regułę na wielu plikach                      | `<skill_dir>/scripts/rector-json-summary.mjs <path> --config <config>`                                                                |
+| użyć akcji edytorowej bez odpowiednika CLI           | `<skill_dir>/scripts/phpactor-rpc.mjs --action <rpc_action> --params-file <file>`                                                     |
 
 ## Workflow
-1. Zawęź zakres przez `rg` tylko do ustalenia symbolu, pliku lub wzorca.
-2. Skataloguj lokalne API CLI Phpactora przez `<skill_dir>/scripts/phpactor-cli.mjs list --format=json` albo `<skill_dir>/scripts/phpactor-cli.mjs help <command> --format=json`.
-3. Jeśli zadanie pasuje do pozycji z mapy operacji, użyj wskazanego narzędzia. Nie twórz własnych aliasów operacji Phpactora.
-4. Komendy Phpactora uruchamiaj zgodnie z lokalnym `help <command> --format=json`; wrapper nie blokuje operacji zapisujących pliki.
-5. Użyj RPC przez `<skill_dir>/scripts/phpactor-rpc.mjs` dopiero wtedy, gdy CLI nie pokrywa operacji. RPC traktuj jako protokół edytorowy: może zwracać nawigację, dane albo akcje modyfikujące.
-6. Jeśli RPC zwróci `input_callback`, oznacza to niedostarczone dane interaktywne; uzupełnij parametry żądania albo użyj równoważnego CLI.
-7. Dla transformacji powtarzalnej najpierw uruchom Rectora w dry-run przez `<skill_dir>/scripts/rector-json-summary.mjs`.
-8. Jeśli dry-run jest zgodny z intencją, dopiero wtedy uruchom właściwą transformację Rectora albo przygotuj minimalną regułę.
-9. Po automatycznej transformacji możesz użyć `php-cs-fixer` wyłącznie do formatowania dotkniętych plików.
-10. Na koniec raportuj, jakiego narzędzia użyto i dlaczego; nie rozszerzaj raportu o zewnętrzne procedury jakości.
+1. Najpierw oceń przez `<skills_root>/_shared/references/symbolic-navigation-and-editing-policy.md`, czy orientację i lokalną zmianę taniej obsłuży Serena; jeśli Serena nie jest dostępna, oceń to samo dla innej dostępnej warstwy symbolicznej.
+2. Jeśli potrzebna jest operacja wykonawcza tego skilla, zawęź zakres przez warstwę symboliczną albo `rg` tylko do ustalenia symbolu, pliku lub wzorca.
+3. Skataloguj lokalne API CLI Phpactora przez `<skill_dir>/scripts/phpactor-cli.mjs list --format=json` albo `<skill_dir>/scripts/phpactor-cli.mjs help <command> --format=json`.
+4. Jeśli zadanie pasuje do pozycji z mapy operacji, użyj wskazanego narzędzia. Nie twórz własnych aliasów operacji Phpactora.
+5. Komendy Phpactora uruchamiaj zgodnie z lokalnym `help <command> --format=json`; wrapper nie blokuje operacji zapisujących pliki.
+6. Użyj RPC przez `<skill_dir>/scripts/phpactor-rpc.mjs` dopiero wtedy, gdy CLI nie pokrywa operacji. RPC traktuj jako protokół edytorowy: może zwracać nawigację, dane albo akcje modyfikujące.
+7. Jeśli RPC zwróci `input_callback`, oznacza to niedostarczone dane interaktywne; uzupełnij parametry żądania albo użyj równoważnego CLI.
+8. Dla transformacji powtarzalnej najpierw uruchom Rectora w dry-run przez `<skill_dir>/scripts/rector-json-summary.mjs`.
+9. Jeśli dry-run jest zgodny z intencją, dopiero wtedy uruchom właściwą transformację Rectora albo przygotuj minimalną regułę.
+10. Po automatycznej transformacji możesz użyć `php-cs-fixer` wyłącznie do formatowania dotkniętych plików.
+11. Na koniec raportuj, jakiego narzędzia użyto i dlaczego; nie rozszerzaj raportu o zewnętrzne procedury jakości.
 
 ## Recepty
 ### Znalezienie Symbolu

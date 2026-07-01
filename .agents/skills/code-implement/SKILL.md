@@ -12,6 +12,7 @@ shared_files:
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
   - _shared/references/cqrs-monolith-standard-overrides.md
+  - _shared/references/symbolic-navigation-and-editing-policy.md
   - _shared/scripts/env-load.sh
 ---
 
@@ -68,6 +69,7 @@ Mechanizmy:
 - checklisty jakości: `<skills_root>/_shared/references/runtime-quality-procedures.md`
 - baseline techniczny stacka: `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
 - override architektoniczny (warunkowy): `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` — tylko gdy aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`
+- polityka wyboru nawigacji symbolicznej, zwykłego patcha i narzędzi refactor: `<skills_root>/_shared/references/symbolic-navigation-and-editing-policy.md`
 - kontekst repo: `$context-refresh` (`<skills_root>/context-refresh/SKILL.md`)
 - diagnostyka runtime/introspekcja: `$dev-mate` (`<skills_root>/dev-mate/SKILL.md`) — użyj, gdy problem dotyczy logów, profilera albo DI i potrzebujesz ustrukturyzowanych dowodów z AI Mate
 - szybkie review: `$review-quick` (`<skills_root>/review-quick/SKILL.md`)
@@ -79,20 +81,32 @@ Podczas implementacji nie wykonuj ręcznie operacji, które są już opisane prz
 wyspecjalizowany skill, jeśli ten skill może wykonać je precyzyjniej, szybciej
 albo z mniejszym ryzykiem pomyłki.
 
-Dla kodu PHP przed ręczną zmianą strukturalną sprawdź, czy zadanie podpada pod
-`$php-structure-refactor`. Użyj go w szczególności dla operacji na symbolach PHP,
-namespace/importach, definicjach, referencjach klas lub memberów, tworzeniu,
-kopiowaniu, przenoszeniu albo transformacji klas, rename oraz powtarzalnych
-transformacjach AST przez Rectora.
+Wybór narzędzia do odczytu i edycji kodu prowadź według
+`<skills_root>/_shared/references/symbolic-navigation-and-editing-policy.md`.
 
-Jeśli operacja pasuje do mapy operacji `$php-structure-refactor`, ten skill jest
-źródłem prawdy dla wyboru narzędzia i sposobu wykonania. Wróć do zwykłej
-implementacji dopiero wtedy, gdy `$php-structure-refactor` sam wskazuje, że
-prosty patch jest tańszy albo narzędzie nie potrafi rozstrzygnąć symbolu.
+Reguła praktyczna:
+- jeśli środowisko udostępnia **Serenę** dla języka dotkniętego zadaniem,
+  użyj Sereny najpierw do zawężenia zakresu,
+- jeśli Serena wspiera stabilny zapis lokalnej zmiany symbolicznej,
+  preferuj Serenę także do wykonania zmiany,
+- jeśli Serena nie jest dostępna, ale działa inna warstwa symboliczna dla
+  języka, użyj jej według tej samej logiki,
+- jeśli zadanie dotyczy runtime, autowiringu, DI, logów albo profilera,
+  najpierw użyj `$dev-mate`,
+- jeśli zadanie jest czysto tekstowe albo banalnie lokalne, użyj zwykłego patcha.
 
-Bramka praktyczna: użyj `$php-structure-refactor`, gdy operacja jest strukturalna
-albo symboliczna; zostań przy zwykłym patchu, gdy zmiana jest lokalna,
-jednoznaczna i prostsza ręcznie.
+Dla PHP użyj `$php-structure-refactor` dopiero wtedy, gdy po zawężeniu zakresu
+wychodzi, że potrzebna jest operacja narzędziowa lepiej obsłużona przez
+Phpactora albo Rectora, np.:
+- `class:move`, `class:copy`, `class:new`,
+- rename albo aktualizacja wielu referencji,
+- transformacja klasy lub AST na wielu plikach,
+- fallback, gdy warstwa symboliczna nie ma stabilnej operacji wykonawczej.
+
+Nie używaj `$php-structure-refactor` jako domyślnego read-path dla PHP, jeśli
+Serena potrafi taniej znaleźć definicje, referencje i punkty wejścia. Jeśli
+Serena nie jest dostępna, zastosuj ten sam warunek do innej aktywnej warstwy
+symbolicznej.
 
 ## Kiedy użyć
 Użyj, gdy użytkownik prosi o zmianę w kodzie (feature/bugfix/refactor), np.:
