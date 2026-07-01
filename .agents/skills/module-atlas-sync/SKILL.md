@@ -9,6 +9,7 @@ description: >-
   świadomie zaktualizować atlas.
 shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/references/symbolic-navigation-and-editing-policy.md
   - _shared/scripts/env-load.sh
 ---
 

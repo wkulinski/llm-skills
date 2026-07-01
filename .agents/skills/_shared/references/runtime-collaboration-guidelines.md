@@ -8,6 +8,7 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
 - Procedura jakości (kolejność kroków): `./runtime-quality-procedures.md`.
 - Baseline techniczny stacka: `./php-symfony-postgres-standards.md`.
 - Odstępstwa architektoniczne (warunkowe): `./cqrs-monolith-standard-overrides.md`.
+- Polityka wyboru nawigacji symbolicznej i zwykłego patcha, w tym preferencji `Serena-first` gdy Serena jest dostępna: `./symbolic-navigation-and-editing-policy.md`.
 - Procedury operacyjne (QA/commit/commit-message/review): właściwe skille (`$qa-run`, `$git-commit`, `$commit-message-write`, `$review-quick`, ...).
 
 ## 1a. Reguły ścieżek i priorytetu dla skilli

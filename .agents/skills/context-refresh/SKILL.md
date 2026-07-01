@@ -9,6 +9,7 @@ shared_files:
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
   - _shared/references/cqrs-monolith-standard-overrides.md
+  - _shared/references/symbolic-navigation-and-editing-policy.md
 ---
 
 # $context-refresh
@@ -133,12 +134,14 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
 
    Uruchom doczytanie on-demand, jeśli zachodzi którekolwiek:
    - prompt wprost wymienia ścieżkę pliku (np. `src/.../Foo.php`) → przeczytaj ten plik i jego diff (jeśli ma),
-   - prompt wprost wymienia symbol (klasa/metoda/komenda/route) → znajdź definicję (`rg`) i przeczytaj definicję + kontekst,
+   - prompt wprost wymienia symbol (klasa/metoda/komenda/route) → jeśli Serena dla języka jest dostępna, znajdź definicję przez Serenę; w przeciwnym razie użyj `rg`; następnie przeczytaj definicję + kontekst,
    - masz zmienić plik, który już jest zmieniony w repo (czyli “modyfikujesz cudze/bieżące zmiany”) → przeczytaj jego diff i aktualną treść przed edycją,
    - aktualny moduł ma użyć funkcjonalności z innego modułu → doczytaj dokumentację obu modułów, zaczynając od `MODULE_INDEX_DOC`, jeśli istnieje,
    - masz przygotować treść commita (`$commit-message-write`) → upewnij się, że rozumiesz “co” i “dlaczego” (diff/kluczowe fragmenty),
    - QA/testy zwróciły błąd w pliku, którego nie analizowałeś → doczytaj od razu ten plik i sąsiedni kontekst,
    - pojawia się decyzja architektoniczna/domenowa, a nie czytałeś dokumentacji modułu/domeny dotkniętej zmianą → doczytaj README modułu (z `MODULE_DOCS_GLOB`) i relewantny fragment `MAIN_DOC`.
+   - zadanie dotyczy kodu w języku wspieranym przez Serenę → zawęź zakres przez Serenę zgodnie z `<skills_root>/_shared/references/symbolic-navigation-and-editing-policy.md` zamiast czytać pełne pliki bez potrzeby.
+   - jeśli Serena nie jest dostępna, ale dostępna jest inna warstwa symboliczna dla języka → użyj jej według tej samej polityki.
 
 4. Procedura doczytania on-demand:
    - Ustal “target” doczytania: plik / moduł / symbol.
@@ -146,7 +149,9 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
      - jeśli plik jest zmieniony: przeczytaj `git diff -- <plik>` i aktualną treść pliku (przynajmniej relewantne sekcje),
      - jeśli plik nie jest zmieniony: przeczytaj aktualną treść pliku (relewantne sekcje).
    - Jeśli target to symbol:
-     - wyszukaj definicję (`rg`) i przeczytaj fragment definicji + najbliższy kontekst użycia,
+     - jeśli Serena dla języka jest dostępna, użyj Sereny najpierw do znalezienia definicji, overview i referencji,
+     - jeśli Serena nie jest dostępna, ale działa inna warstwa symboliczna dla języka, użyj jej; w przeciwnym razie użyj `rg`,
+     - przeczytaj fragment definicji + najbliższy kontekst użycia,
      - jeśli symbol należy do modułu: doczytaj README modułu dla kontekstu domenowego.
    - Jeśli target to moduł:
      - przeczytaj README modułu i (jeśli istnieje) sprawdź, czy indeks modułów nie odsyła do dodatkowych konwencji.
@@ -156,6 +161,7 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
    - zanim zmodyfikujesz plik, którego zmian nie rozumiesz (bo np. był już zmieniony przed Twoją pracą), doczytaj jego diff/treść w tym momencie,
    - analogicznie: zanim przygotujesz `commit-message.txt`, upewnij się, że rozumiesz „co” i “dlaczego” (w praktyce robi to też `$commit-message-write`).
    - jeśli zadanie jest wyraźnie runtime/debuggingowe i AI Mate jest dostępny, możesz pomocniczo użyć `$dev-mate` do zebrania logów/profilera/DI; nie zastępuje to odczytu kodu ani dokumentacji.
+   - jeśli zadanie dotyczy kodu w języku wspieranym przez Serenę, preferuj zawężenie przez Serenę zamiast szerokiego odczytu całych plików; jeśli Serena nie jest dostępna, zastosuj tę samą zasadę do innej warstwy symbolicznej; dla Twig/YAML/docs zwykle pozostań przy `rg` i zwykłym odczycie, a dla SCSS użyj zwykłego patcha tylko wtedy, gdy zmiana jest banalna i lokalna.
 6. Uwaga: jeśli kolejnym krokiem ma być `$commit-message-write`, to ten skill ma własną procedurę analizy zmian przed zapisaniem `commit-message.txt` — `$context-refresh` nie musi “wiedzieć wszystkiego” o każdej zmianie, ale musi wiedzieć, co jest zmienione i gdzie.
 
 ### 6) Weryfikacja spójności procedur (jeśli dotyczy)
