@@ -9,8 +9,8 @@ shared_files:
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
   - _shared/references/cqrs-monolith-standard-overrides.md
-  - _shared/scripts/commit-message-render.sh
-  - _shared/scripts/issue-branch.sh
+  - _shared/scripts/commit-message-render.mjs
+  - _shared/scripts/issue-branch.mjs
 ---
 
 # $commit-message-write
@@ -51,7 +51,7 @@ Ten skill działa dwuetapowo:
 - Techniczny prefiks `<type>` (`feat`, `fix`, `chore`, itd.) pozostaje zgodny z Conventional Commits, ale część po `:` oraz body muszą być w języku wynikającym z powyższej reguły.
 
 ## Kontrakt issue z brancha
-- Ustal numer issue z bieżącego brancha przez wspólny helper `<skills_root>/_shared/scripts/issue-branch.sh`.
+- Ustal numer issue z bieżącego brancha przez wspólny helper `node <skills_root>/_shared/scripts/issue-branch.mjs`.
 - Jeśli branch pasuje do `issue/<ID>-*` albo `issue-<ID>-*`, dołącz `(#<ID>)` na końcu subjectu.
 - Nie zgaduj numeru issue na podstawie commitów, diffu ani innych liczb w branchu.
 - Jeśli branch nie pasuje do wzorca issue, nie dopisuj numeru.
@@ -68,7 +68,7 @@ Ten skill działa dwuetapowo:
 - Jeśli zmiana pasuje do kilku sekcji, przypisz ją do najbardziej specyficznej sekcji.
 - Klasyfikację stosuj w kolejności: najpierw `Zmiany API poleceń CLI`, potem `Zmiany wpływające na strukturę bazy danych`, a wszystko co nie pasuje do tych dwóch sekcji trafia do `Zmiany ogólne`; sekcje zapisuj potem zawsze w kolejności zdefiniowanej niżej.
 - Puste sekcje pomiń.
-- Finalny zapis body wykonuj przez `<skills_root>/_shared/scripts/commit-message-render.sh`; helper renderuje sekcje bezpośrednio do `<COMMIT_MESSAGE_DIR>/commit-message.txt` i odrzuca fillery typu `Brak zmian`.
+- Finalny zapis body wykonuj przez `node <skills_root>/_shared/scripts/commit-message-render.mjs`; helper renderuje sekcje bezpośrednio do `<COMMIT_MESSAGE_DIR>/commit-message.txt` i odrzuca fillery typu `Brak zmian`.
 
 ## Kroki
 1. Otwórz `AGENTS.md` i odczytaj mapę `docs_map`.
@@ -122,7 +122,7 @@ Ten skill działa dwuetapowo:
    - kolejność sekcji ma być zawsze taka: `Zmiany ogólne`, `Zmiany wpływające na strukturę bazy danych`, `Zmiany API poleceń CLI`,
    - kolejność punktów w obrębie sekcji powinna iść od zmian najbardziej istotnych do pomocniczych,
    - jeśli dana sekcja jest pusta, pomiń ją całkowicie.
-9. Wygeneruj finalny plik przez helper `<skills_root>/_shared/scripts/commit-message-render.sh`:
+9. Wygeneruj finalny plik przez `node <skills_root>/_shared/scripts/commit-message-render.mjs`:
    - przekaż helperowi strukturalny draft przez stdin w formacie:
      - `Subject: ...`
      - `general:`

@@ -1,7 +1,7 @@
 import {mkdtempSync, readFileSync, rmSync} from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {afterEach, describe, expect, it} from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 
 import {
     CommandExecutor,
@@ -9,12 +9,19 @@ import {
 } from "../../../.agents/skills/qa-run/scripts/run-matrix/execution/command-executor.mjs";
 
 const tempRoots = [];
+let consoleLogSpy;
 
 afterEach(() => {
     while (tempRoots.length > 0) {
         const tempRoot = tempRoots.pop();
         rmSync(tempRoot, {force: true, recursive: true});
     }
+    consoleLogSpy?.mockRestore();
+    consoleLogSpy = undefined;
+});
+
+beforeEach(() => {
+    consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 });
 
 describe("run-matrix command executor", () => {

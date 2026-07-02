@@ -6,7 +6,7 @@ description: >-
 shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh
-  - _shared/scripts/issue-branch.sh
+  - _shared/scripts/issue-branch.mjs
 ---
 
 # $gh-issue-start
@@ -29,13 +29,13 @@ Zautomatyzować start pracy nad issue: ustalenie numeru issue, utworzenie/checko
    - Jeśli używasz `GH_TOKEN`: upewnij się, że token ma scope `project` i `read:org` (Projects v2 w org); `gh auth refresh` nie zadziała przy ustawionym `GH_TOKEN`.
    - Jeśli nie używasz `GH_TOKEN` i brakuje `project` lub `read:org`: `gh auth refresh -h github.com -s project,read:org`
 2. Uruchom skrypt startowy (automatyzuje wykrycie issue, tworzenie/checkout brancha oraz przypisanie aktualnego użytkownika do issue):
-   - `<skill_dir>/scripts/start.sh`
+   - `<skill_dir>/scripts/start.mjs`
    - Opcje:
      - `--issue-number <NUMER>`
      - `--title "<Tytuł>"` (używane, gdy trzeba utworzyć nowe issue)
      - `--desc "<Opis>"` (krótki opis do utworzenia issue i nazwy brancha)
      - `--base <remote/branch|branch>` (opcjonalnie; domyślnie domyślna gałąź repo)
-   - Nazwa brancha jest wyprowadzana przez wspólny helper `<skills_root>/_shared/scripts/issue-branch.sh` i ma postać `issue/<ID>-<slug>`.
+   - Nazwa brancha jest wyprowadzana przez wspólny helper `node <skills_root>/_shared/scripts/issue-branch.mjs` i ma postać `issue/<ID>-<slug>`.
    - Skrypt przed utworzeniem nowego brancha wykonuje `git fetch` dla base ref, aby mieć aktualną bazę.
    - Skrypt zawsze tworzy lub checkoutuje branch dla wskazanego issue (jeśli branch nie istnieje, zostanie utworzony).
 3. Po powodzeniu skryptu uruchom **osobno** `$gh-issue-status-set`, aby ustawić status **In progress**:
@@ -66,7 +66,7 @@ Jeśli użytkownik podał `--issue-number`, a issue nie istnieje lub jest zamkni
 ## Branch naming
 - Schemat: `issue/<ID>-<slug>`.
 - Slug: lowercase, spacje → myślniki, usuwa znaki spoza ASCII.
-- Źródłem prawdy dla generowania nazwy brancha jest `<skills_root>/_shared/scripts/issue-branch.sh`.
+- Źródłem prawdy dla generowania nazwy brancha jest `node <skills_root>/_shared/scripts/issue-branch.mjs`.
 
 ## Kody wyjścia skryptu
 - `10` brak tytułu do utworzenia issue → dopytaj użytkownika o tytuł i uruchom ponownie z `--title`.
