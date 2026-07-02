@@ -135,6 +135,27 @@ npm test
 
 The local QA matrix (`.agents/qa-run.matrix.json`) runs `npm test` when Node scripts, test files, or package metadata change.
 
+### Shell Script Standard
+Keep a script as `sh` when it is mostly glue:
+- env loading,
+- path wiring,
+- `git` or filesystem orchestration,
+- traps and cleanup,
+- simple argument dispatch.
+
+Move logic to `mjs` when the script starts to contain real behavior:
+- parsing and normalization,
+- branching with non-trivial rules,
+- JSON or structured output,
+- transformations that are easier to unit test.
+
+Preferred testing split:
+- `sh`: `bash -n`, then a focused smoke test for the real entrypoint and exit code.
+- `sh` with non-trivial logic: keep a thin shell wrapper and move the logic into `mjs`.
+- `mjs`: test with Vitest, using temp directories and fixture files instead of the real repo state.
+
+Rule of thumb: do not rewrite a shell helper to `mjs` just because Vitest exists. Rewrite only when the shell is becoming hard to reason about or hard to test without fragile integration setup.
+
 ### Environment contract
 Minimal `.env.local` or `.env.dist` variables used by this repository:
 - `GH_TOKEN` (optional): token for GitHub CLI/MCP work.

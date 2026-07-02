@@ -1,0 +1,249 @@
+#!/usr/bin/env node
+import {spawnSync} from "node:child_process";
+import {fileURLToPath} from "node:url";
+import {pathToFileURL} from "node:url";
+
+import {makeIssueBranch} from "../../_shared/scripts/issue-branch.mjs";
+
+const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+
+export function createExecutor({cwd = repoRoot} = {}) {
+    return (command, args, options = {}) => spawnSync(command, args, {
+        cwd,
+        encoding: "utf-8",
+        shell: false,
+        ...options,
+    });
+}
+
+function run(command, args, execCommand) {
+    const result = execCommand(command, args);
+    return {
+        code: result.status ?? 1,
+        stderr: String(result.stderr ?? ""),
+        stdout: String(result.stdout ?? ""),
+    };
+}
+
+export function extractSubjectKeywords(subject) {
+    return String(subject ?? "")
+        .replace(/^.*?:/, "")
+        .replace(/[\[\]]/g, " ")
+        .replace(/[\t\n\r]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .split(" ")
+        .filter(Boolean)
+        .slice(0, 7)
+        .join(" ");
+}
+
+export function parseArgs(argv) {
+    const args = [...argv];
+    const parsed = {
+        baseRef: "",
+        description: "",
+        issueNumber: "",
+        owner: "",
+        repo: "",
+        title: "",
+    };
+
+    while (args.length > 0) {
+        const arg = args.shift();
+        switch (arg) {
+            case "--issue-number":
+                parsed.issueNumber = args.shift() ?? "";
+                break;
+            case "--title":
+                parsed.title = args.shift() ?? "";
+                break;
+            case "--desc":
+                parsed.description = args.shift() ?? "";
+                break;
+            case "--owner":
+                parsed.owner = args.shift() ?? "";
+                break;
+            case "--repo":
+                parsed.repo = args.shift() ?? "";
+                break;
+            case "--base":
+                parsed.baseRef = args.shift() ?? "";
+                break;
+            case "-h":
+            case "--help":
+                parsed.help = true;
+                break;
+            default:
+                parsed.error = `Unknown argument: ${arg}`;
+                return parsed;
+        }
+    }
+
+    return parsed;
+}
+
+function searchIssueByTitle({execCommand, keywords, owner, repo}) {
+    if (!keywords) {
+        return null;
+    }
+
+    const search = run("gh", [
+        "search",
+        "issues",
+        keywords,
+        "--repo",
+        `${owner}/${repo}`,
+        "--state",
+        "open",
+        "--match",
+        "title",
+        "--json",
+        "number,title",
+        "-q",
+        '.[] | "\(.number)\t\(.title)"',
+    ], execCommand);
+
+    const result = search.stdout.trim();
+    if (!result) {
+        return null;
+    }
+
+    const rows = result.split(/\r?\n/).filter(Boolean);
+    if (rows.length === 1) {
+        return rows[0].split("\t")[0] ?? "";
+    }
+
+    return {
+        code: 21,
+        stderr: `Multiple issues match title keywords:\n${rows.map((row) => {
+            const [number, title] = row.split("\t");
+            return `- #${number} ${title ?? ""}`;
+        }).join("\n")}\n`,
+    };
+}
+
+export function runIssueStart(argv, {execCommand = createExecutor()} = {}) {
+    const parsed = parseArgs(argv);
+    if (parsed.error) {
+        return {code: 2, stderr: `${parsed.error}\nUsage: issue-start.mjs [--issue-number <number>] [--title <title>] [--desc <description>] [--owner <owner>] [--repo <repo>] [--base <ref>]\n`};
+    }
+    if (parsed.help) {
+        return {code: 0, stdout: "Usage: issue-start.mjs [--issue-number <number>] [--title <title>] [--desc <description>] [--owner <owner>] [--repo <repo>] [--base <ref>]\n"};
+    }
+
+    let {baseRef, description, issueNumber, owner, repo, title} = parsed;
+
+    if (!owner || !repo) {
+        const repoView = run("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], execCommand);
+        if (repoView.code !== 0) {
+            return {code: repoView.code, stderr: repoView.stderr};
+        }
+        const repoFull = repoView.stdout.trim();
+        [owner, repo] = repoFull.split("/");
+    }
+
+    if (!baseRef) {
+        const defaultBranch = run("gh", ["repo", "view", `${owner}/${repo}`, "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"], execCommand);
+        baseRef = defaultBranch.code === 0 && defaultBranch.stdout.trim() ? `origin/${defaultBranch.stdout.trim()}` : "origin/main";
+    }
+
+    if (!issueNumber && (description || title)) {
+        const keywords = extractSubjectKeywords(description || title);
+        const searchResult = searchIssueByTitle({
+            execCommand,
+            keywords,
+            owner,
+            repo,
+        });
+
+        if (typeof searchResult === "string") {
+            issueNumber = searchResult;
+        } else if (searchResult && searchResult.code === 21) {
+            return searchResult;
+        }
+    }
+
+    let issueTitle = "";
+    if (issueNumber) {
+        const issueView = run("gh", ["issue", "view", issueNumber, "--json", "state,title", "-q", ".state + \"\t\" + .title"], execCommand);
+        if (!issueView.stdout.trim()) {
+            return {code: 13, stderr: `Issue #${issueNumber} not found or inaccessible. Check if it was closed.\n`};
+        }
+
+        const [state, titleValue] = issueView.stdout.trim().split("\t");
+        if (state !== "OPEN") {
+            return {code: 13, stderr: `Issue #${issueNumber} is not open. Check if it was closed.\n`};
+        }
+        issueTitle = titleValue ?? "";
+    }
+
+    if (!issueNumber) {
+        if (!title && description) {
+            title = description;
+        }
+        if (!title) {
+            return {code: 10, stderr: "Cannot create issue: missing issue number and no title/description found. Provide --issue-number, --title, or --desc.\n"};
+        }
+
+        const created = run("gh", ["issue", "create", "--repo", `${owner}/${repo}`, "--title", title, "--body", ""], execCommand);
+        if (created.code !== 0) {
+            return {code: created.code, stderr: created.stderr};
+        }
+
+        const match = created.stdout.match(/\/issues\/([0-9]+)$/m);
+        if (!match) {
+            return {code: 11, stderr: "Failed to create issue.\n"};
+        }
+
+        issueNumber = match[1];
+        issueTitle = title;
+    }
+
+    const branchName = makeIssueBranch(issueNumber, issueTitle);
+    const [remote, baseBranch] = baseRef.includes("/")
+        ? [baseRef.split("/")[0], baseRef.split("/").slice(1).join("/")]
+        : ["origin", baseRef];
+
+    let result = run("git", ["fetch", remote, baseBranch, "--quiet"], execCommand);
+    if (result.code !== 0) {
+        return {code: result.code, stderr: result.stderr};
+    }
+
+    result = run("git", ["show-ref", "--verify", "--quiet", `refs/remotes/${baseRef}`], execCommand);
+    if (result.code !== 0) {
+        return {code: 12, stderr: `Missing base ref ${baseRef}.\n`};
+    }
+
+    if (run("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`], execCommand).code === 0) {
+        run("git", ["checkout", branchName], execCommand);
+    } else if (run("git", ["show-ref", "--verify", "--quiet", `refs/remotes/origin/${branchName}`], execCommand).code === 0) {
+        run("git", ["checkout", "-b", branchName, "--track", `origin/${branchName}`], execCommand);
+    } else {
+        run("git", ["checkout", "-b", branchName, baseRef], execCommand);
+    }
+
+    const currentUser = run("gh", ["api", "user", "-q", ".login"], execCommand).stdout.trim();
+    const assignees = run("gh", ["issue", "view", issueNumber, "--json", "assignees", "-q", ".assignees[].login"], execCommand).stdout.trim().split(/\r?\n/).filter(Boolean);
+    if (!assignees.includes(currentUser)) {
+        run("gh", ["issue", "edit", issueNumber, "--add-assignee", currentUser], execCommand);
+    }
+
+    return {code: 0, stdout: `Issue #${issueNumber} ready on branch ${branchName}.\n`};
+}
+
+async function main(argv) {
+    const result = runIssueStart(argv);
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    return result.code;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+    main(process.argv.slice(2)).then((code) => {
+        process.exitCode = code;
+    }).catch((error) => {
+        process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        process.exitCode = 1;
+    });
+}
