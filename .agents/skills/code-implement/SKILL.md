@@ -81,6 +81,24 @@ Podczas implementacji nie wykonuj ręcznie operacji, które są już opisane prz
 wyspecjalizowany skill, jeśli ten skill może wykonać je precyzyjniej, szybciej
 albo z mniejszym ryzykiem pomyłki.
 
+### Delegowane capability (opcjonalne)
+Jeśli środowisko udostępnia subagenta dla capability wymaganego przez krok,
+delegacja jest równoważna bezpośredniemu wykonaniu skilla tylko wtedy, gdy:
+- lokalna konfiguracja mapuje capability na dostępnego subagenta; ten skill nie zna nazw agentów,
+- raport subagenta zawiera minimalne dowody wskazane dla capability,
+- agent główny zapisze w `STATE_PATH` zwięzłe podsumowanie raportu oraz źródła dowodów,
+- nie wykona drugi raz tego samego skilla dla tego samego kroku.
+
+Dopuszczone capability:
+- `repository-context` zastępuje `$context-refresh`; raport zawiera zakres zadania, istotne pliki/moduły/symbole, obowiązujące reguły, ryzyka i następny krok,
+- `runtime-diagnostics` zastępuje `$dev-mate`; raport zawiera użyte narzędzia i parametry, wynik, dowody, wskazane pliki/symbole oraz następny krok.
+
+Jeśli capability nie jest skonfigurowane, subagent jest niedostępny, raport nie
+zawiera wymaganych dowodów albo użytkownik wyraźnie żąda bezpośredniego
+wykonania skilla, użyj właściwego skilla bezpośrednio. Nie deleguj automatycznie
+`$review-quick` ani `$qa-run`; ich procedury już ograniczają output i stanowią
+część głównego workflow jakości.
+
 Wybór narzędzia do odczytu i edycji kodu prowadź według
 `<skills_root>/_shared/references/symbolic-navigation-and-editing-policy.md`.
 
@@ -92,7 +110,8 @@ Reguła praktyczna:
 - jeśli Serena nie jest dostępna, ale działa inna warstwa symboliczna dla
   języka, użyj jej według tej samej logiki,
 - jeśli zadanie dotyczy runtime, autowiringu, DI, logów albo profilera,
-  najpierw użyj `$dev-mate`,
+  najpierw użyj `runtime-diagnostics`, gdy capability jest skonfigurowane i
+  spełnia warunki delegacji; w przeciwnym razie użyj `$dev-mate`,
 - jeśli zadanie jest czysto tekstowe albo banalnie lokalne, użyj zwykłego patcha.
 
 Dla PHP użyj `$php-structure-refactor` dopiero wtedy, gdy po zawężeniu zakresu
@@ -298,23 +317,27 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
    - jeśli ocena <10: zaproponuj doprecyzowania (lista pytań) + opcja “zostaw bez zmian” i wstrzymaj implementację do decyzji.
 
 ### 2) Kontekst repo (skalowalnie)
-1. Uruchom `$context-refresh` w trybie **Quick**, jeśli:
+1. Dla zadania przekrojowego, nieznanego modułu albo dużego dirty diffu użyj
+   capability `repository-context`, jeśli jest skonfigurowane. Raport spełniający
+   kontrakt delegacji zastępuje bezpośrednie `$context-refresh`.
+2. Jeśli capability `repository-context` nie zostało użyte, uruchom
+   `$context-refresh` w trybie **Quick**, jeśli:
    - to początek pracy w tej sesji, lub
    - zadanie dotyka obszaru, którego nie masz “w głowie”.
-2. Ustal obszar zmian:
+3. Ustal obszar zmian:
    - znajdź docelowe moduły/pliki (np. przez `rg` po symbolach),
    - doczytaj README dokumentacji dla dotkniętych modułów (zgodnie z `docs_map` z `AGENTS.md`).
    - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: doczytaj `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` przed decyzjami architektonicznymi (warstwy/CQRS/Doctrine/FCF).
-3. Zrób preflight entrypointów narzędzi:
+4. Zrób preflight entrypointów narzędzi:
    - załaduj helper `env-load.sh` wskazany w `shared_files`,
    - ustal komendy narzędziowe dla repo (co najmniej `composer`, `console`, `yarn`, `codecept`) wyłącznie przez `resolve_tool_cmd`,
    - `resolve_tool_cmd` traktuj jako jedyne źródło prawdy; aktywne pliki env repo są ładowane automatycznie w resolverze,
    - nie mieszaj wielu wariantów entrypointów w ramach jednego zadania.
-4. Przed zmianą krytycznego pliku **lub** przed edycją pliku, który jest już zmieniony w repo (tracked/untracked):
+5. Przed zmianą krytycznego pliku **lub** przed edycją pliku, który jest już zmieniony w repo (tracked/untracked):
    - przeczytaj diff (`git diff -- <plik>`) i aktualną treść (relewantne sekcje),
    - dopiero potem edytuj.
-5. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) dopisz wpis do Dziennika odczytów przez `<skill_dir>/scripts/state-readlog.mjs "<msg>"` (możesz grupować kilka odczytów w jeden wpis).
-6. Jeśli w trakcie implementacji wychodzi, że trzeba zmodyfikować plik, który nie wynika wprost z zadania:
+6. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) albo po otrzymaniu raportu delegowanego capability dopisz wpis do Dziennika odczytów przez `<skill_dir>/scripts/state-readlog.mjs "<msg>"` (możesz grupować kilka odczytów w jeden wpis).
+7. Jeśli w trakcie implementacji wychodzi, że trzeba zmodyfikować plik, który nie wynika wprost z zadania:
    - jeśli to **krytyczny plik**: zatrzymaj się i dopytaj użytkownika, czy taki scope jest akceptowalny,
    - jeśli to **nie jest krytyczny plik**: nie “zasypuj pytaniami” — spróbuj znaleźć rozwiązanie w obrębie ustalonego zakresu; jeśli to niemożliwe, wykonaj minimalną zmianę konieczną technicznie i jawnie zaraportuj to w podsumowaniu.
 
