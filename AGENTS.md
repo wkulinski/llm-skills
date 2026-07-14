@@ -95,3 +95,16 @@ docs_map:
     HANDOFF_DOC: var/agent/HANDOFF.md
     SKILLS_INDEX_DOC: docs/SKILLS.md
 ```
+
+## Role agentów i lifecycle kontekstu
+
+Agent główny odpowiada za rozmowę z użytkownikiem, interpretację issue, kryteria
+akceptacji i lifecycle kontekstu projektu. Przy rozpoczęciu sesji agenta
+głównego uruchom `$context-refresh`, chyba że aktywny workflow jawnie deleguje
+capability i zapisuje ważny manifest kontekstu.
+
+Delegowane subagenty **nie** uruchamiają automatycznie `$context-refresh`.
+Stosują kontrakt swojej capability i otrzymują zwarty handoff/manifest zamiast
+kopii treści issue lub pełnej dokumentacji. Jedyną delegowaną rolą, która może
+wykonać pełny refresh, jest `context-refresher`, gdy agent główny jawnie ją
+wybierze.

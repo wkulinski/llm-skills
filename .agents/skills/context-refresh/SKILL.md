@@ -10,6 +10,7 @@ shared_files:
   - _shared/references/php-symfony-postgres-standards.md
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/references/symbolic-navigation-and-editing-policy.md
+  - _shared/references/context-subagent-contract.md
 ---
 
 # $context-refresh
@@ -28,6 +29,14 @@ Celem jest załadowanie lub odświeżenie kontekstu projektu w sposób spójny i
 - aktualnych zasadach/procedurach (źródła w skillach + dokumentacja projektu),
 - bieżącym stanie repozytorium (zmiany tracked/untracked),
 - dokumentacji domenowej/modułowej dotyczącej realnie dotkniętych obszarów.
+
+## Role i lifecycle
+
+Ten skill jest procedurą dla agenta głównego oraz jawnie delegowanej capability
+`context-initialization` wykonywanej przez `context-refresher`. Delegowane role
+repozytoryjne, w szczególności `context-scout`, nie uruchamiają tego skilla
+automatycznie. Otrzymują od agenta głównego manifest i wykonują wyłącznie zakres
+opisany w kontrakcie `<skills_root>/_shared/references/context-subagent-contract.md`.
 
 W tym repozytorium źródłem prawdy dla “procedury startowej” jest ten skill (root `AGENTS.md` jest tylko entrypointem).
 
@@ -174,6 +183,12 @@ Podsumuj krótko:
 - jakie dokumenty zostały wczytane (rdzeń + moduły dotknięte zmianami),
 - jakie obszary kodu są zmienione,
 - czy widzisz potencjalne rozbieżności/duplikaty w dokumentacji lub procedurach.
+
+Po zakończeniu refreshu agent główny lub `context-refresher` powinien przygotować
+zwarty manifest kontekstu zawierający wyłącznie ścieżki, role dokumentów,
+override'y, ograniczenia i listę już przeczytanych źródeł. Manifest waliduj przez
+`<skills_root>/_shared/scripts/context-handoff.mjs`; nie umieszczaj w nim treści
+issue, komentarzy, pełnych dokumentów ani sekretów.
 
 ## Format odpowiedzi
 - Wynik: “Kontekst załadowany/odświeżony”.

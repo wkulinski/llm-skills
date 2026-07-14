@@ -13,6 +13,8 @@ shared_files:
   - _shared/references/php-symfony-postgres-standards.md
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/references/symbolic-navigation-and-editing-policy.md
+  - _shared/references/context-subagent-contract.md
+  - _shared/scripts/context-handoff.mjs
   - _shared/scripts/env-load.sh
 ---
 
@@ -70,6 +72,7 @@ Mechanizmy:
 - baseline techniczny stacka: `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
 - override architektoniczny (warunkowy): `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` — tylko gdy aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`
 - polityka wyboru nawigacji symbolicznej, zwykłego patcha i narzędzi refactor: `<skills_root>/_shared/references/symbolic-navigation-and-editing-policy.md`
+- kontrakt kontekstu między agentami: `<skills_root>/_shared/references/context-subagent-contract.md`
 - kontekst repo: `$context-refresh` (`<skills_root>/context-refresh/SKILL.md`)
 - diagnostyka runtime/introspekcja: `$dev-mate` (`<skills_root>/dev-mate/SKILL.md`) — użyj, gdy problem dotyczy logów, profilera albo DI i potrzebujesz ustrukturyzowanych dowodów z AI Mate
 - szybkie review: `$review-quick` (`<skills_root>/review-quick/SKILL.md`)
@@ -81,7 +84,7 @@ Podczas implementacji nie wykonuj ręcznie operacji, które są już opisane prz
 wyspecjalizowany skill, jeśli ten skill może wykonać je precyzyjniej, szybciej
 albo z mniejszym ryzykiem pomyłki.
 
-### Delegowane capability (opcjonalne)
+### Delegowane capability
 Jeśli środowisko udostępnia subagenta dla capability wymaganego przez krok,
 delegacja jest równoważna bezpośredniemu wykonaniu skilla tylko wtedy, gdy:
 - lokalna konfiguracja mapuje capability na dostępnego subagenta; ten skill nie zna nazw agentów,
@@ -90,7 +93,8 @@ delegacja jest równoważna bezpośredniemu wykonaniu skilla tylko wtedy, gdy:
 - nie wykona drugi raz tego samego skilla dla tego samego kroku.
 
 Dopuszczone capability:
-- `repository-context` zastępuje `$context-refresh`; raport zawiera zakres zadania, istotne pliki/moduły/symbole, obowiązujące reguły, ryzyka i następny krok,
+- `repository-context` mapuje się na read-only `context-scout`; nie uruchamia `$context-refresh`, nie czyta issue/komentarzy i działa na briefie oraz manifeście przekazanym przez agenta głównego. Raport zawiera zakres repozytoryjny, istotne pliki/moduły/symbole, testy, ryzyka i następny krok,
+- `context-initialization` mapuje się na `context-refresher`; jest jedyną delegowaną capability, która może wykonać pełny `$context-refresh` i zwrócić manifest kontekstu,
 - `runtime-diagnostics` zastępuje `$dev-mate`; raport zawiera użyte narzędzia i parametry, wynik, dowody, wskazane pliki/symbole oraz następny krok.
 
 Jeśli capability nie jest skonfigurowane, subagent jest niedostępny, raport nie
@@ -320,24 +324,27 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
 1. Dla zadania przekrojowego, nieznanego modułu albo dużego dirty diffu użyj
    capability `repository-context`, jeśli jest skonfigurowane. Raport spełniający
    kontrakt delegacji zastępuje bezpośrednie `$context-refresh`.
-2. Jeśli capability `repository-context` nie zostało użyte, uruchom
-   `$context-refresh` w trybie **Quick**, jeśli:
-   - to początek pracy w tej sesji, lub
-   - zadanie dotyka obszaru, którego nie masz “w głowie”.
-3. Ustal obszar zmian:
+2. Jeśli nie istnieje ważny manifest kontekstu dla bieżącej sesji, uruchom
+   `$context-refresh` bezpośrednio jako agent główny albo jawnie deleguj
+   `context-initialization` do `context-refresher`. Nie uruchamiaj pełnego refreshu
+   z `context-scout`.
+3. Dla zadania przekrojowego wyślij do `context-scout` zwięzły brief i manifest
+   przez kontrakt `<skills_root>/_shared/references/context-subagent-contract.md`.
+   Nie przekazuj pełnej treści issue, komentarzy, dokumentów ani plików.
+4. Ustal obszar zmian:
    - znajdź docelowe moduły/pliki (np. przez `rg` po symbolach),
    - doczytaj README dokumentacji dla dotkniętych modułów (zgodnie z `docs_map` z `AGENTS.md`).
    - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: doczytaj `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` przed decyzjami architektonicznymi (warstwy/CQRS/Doctrine/FCF).
-4. Zrób preflight entrypointów narzędzi:
+5. Zrób preflight entrypointów narzędzi:
    - załaduj helper `env-load.sh` wskazany w `shared_files`,
    - ustal komendy narzędziowe dla repo (co najmniej `composer`, `console`, `yarn`, `codecept`) wyłącznie przez `resolve_tool_cmd`,
    - `resolve_tool_cmd` traktuj jako jedyne źródło prawdy; aktywne pliki env repo są ładowane automatycznie w resolverze,
    - nie mieszaj wielu wariantów entrypointów w ramach jednego zadania.
-5. Przed zmianą krytycznego pliku **lub** przed edycją pliku, który jest już zmieniony w repo (tracked/untracked):
+6. Przed zmianą krytycznego pliku **lub** przed edycją pliku, który jest już zmieniony w repo (tracked/untracked):
    - przeczytaj diff (`git diff -- <plik>`) i aktualną treść (relewantne sekcje),
    - dopiero potem edytuj.
-6. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) albo po otrzymaniu raportu delegowanego capability dopisz wpis do Dziennika odczytów przez `<skill_dir>/scripts/state-readlog.mjs "<msg>"` (możesz grupować kilka odczytów w jeden wpis).
-7. Jeśli w trakcie implementacji wychodzi, że trzeba zmodyfikować plik, który nie wynika wprost z zadania:
+7. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) albo po otrzymaniu raportu delegowanego capability dopisz wpis do Dziennika odczytów przez `<skill_dir>/scripts/state-readlog.mjs "<msg>"` (możesz grupować kilka odczytów w jeden wpis).
+8. Jeśli w trakcie implementacji wychodzi, że trzeba zmodyfikować plik, który nie wynika wprost z zadania:
    - jeśli to **krytyczny plik**: zatrzymaj się i dopytaj użytkownika, czy taki scope jest akceptowalny,
    - jeśli to **nie jest krytyczny plik**: nie “zasypuj pytaniami” — spróbuj znaleźć rozwiązanie w obrębie ustalonego zakresu; jeśli to niemożliwe, wykonaj minimalną zmianę konieczną technicznie i jawnie zaraportuj to w podsumowaniu.
 
