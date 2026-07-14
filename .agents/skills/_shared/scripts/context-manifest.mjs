@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import {readFileSync, writeFileSync} from "node:fs";
+import {execFileSync} from "node:child_process";
 
 const REQUIRED_KEYS = [
     "version",
@@ -22,6 +23,33 @@ const SECRET_PATTERNS = [
     /-----BEGIN [A-Z ]+ PRIVATE KEY-----/,
     /(?:api[_-]?key|password|secret|token)\s*[:=]/i,
 ];
+
+function gitValue(args, execFile = execFileSync) {
+    try {
+        return String(execFile("git", args, {encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]})).trim();
+    } catch {
+        return "";
+    }
+}
+
+function normalizeRepository(value) {
+    return String(value ?? "")
+        .trim()
+        .replace(/^git@[^:]+:/, "")
+        .replace(/^https?:\/\/[^/]+\//, "")
+        .replace(/\.git$/, "");
+}
+
+export function enrichContextManifest(manifest, {execFile = execFileSync, now = new Date()} = {}) {
+    return {
+        ...manifest,
+        version: manifest.version ?? 1,
+        repository: manifest.repository || normalizeRepository(gitValue(["remote", "get-url", "origin"], execFile)),
+        branch: manifest.branch || gitValue(["branch", "--show-current"], execFile),
+        head: manifest.head || gitValue(["rev-parse", "HEAD"], execFile),
+        generated_at: manifest.generated_at || now.toISOString(),
+    };
+}
 
 function isStringArray(value) {
     return Array.isArray(value) && value.every((item) => typeof item === "string");
@@ -75,6 +103,7 @@ export function renderContextManifestSummary(manifest) {
     return [
         `context-manifest v${manifest.version} (${manifest.role})`,
         `repository=${manifest.repository} branch=${manifest.branch}`,
+        `head=${manifest.head ?? "unknown"}`,
         `rules=${manifest.rules.length} documentation=${manifest.documentation.length} already_read=${manifest.already_read.length}`,
         `overrides=${manifest.active_overrides.length} constraints=${manifest.constraints.length} omitted=${manifest.omitted.length}`,
     ].join("\n") + "\n";
@@ -84,8 +113,21 @@ function readJson(path) {
     return JSON.parse(readFileSync(path, "utf8"));
 }
 
+function parseOutputPath(args) {
+    const outputIndex = args.indexOf("--output");
+    return outputIndex >= 0 ? args[outputIndex + 1] : "";
+}
+
+function currentGitMetadata() {
+    return {
+        repository: normalizeRepository(gitValue(["remote", "get-url", "origin"])),
+        branch: gitValue(["branch", "--show-current"]),
+        head: gitValue(["rev-parse", "HEAD"]),
+    };
+}
+
 function main(argv) {
-    const [command, inputPath, outputFlag, outputPath] = argv;
+    const [command, inputPath] = argv;
     if (command === "validate" && inputPath) {
         const manifest = readJson(inputPath);
         const validation = validateContextManifest(manifest);
@@ -97,8 +139,13 @@ function main(argv) {
         return 0;
     }
 
-    if (command === "write" && outputFlag === "--output" && outputPath) {
-        const manifest = JSON.parse(readFileSync(0, "utf8"));
+    if (command === "write") {
+        const outputPath = parseOutputPath(argv.slice(1));
+        if (!outputPath) {
+            process.stderr.write("write wymaga --output <manifest.json>\n");
+            return 2;
+        }
+        const manifest = enrichContextManifest(JSON.parse(readFileSync(0, "utf8")));
         const validation = validateContextManifest(manifest);
         if (!validation.valid) {
             process.stderr.write(`${validation.errors.join("\n")}\n`);
@@ -109,7 +156,32 @@ function main(argv) {
         return 0;
     }
 
-    process.stderr.write("Usage: context-handoff.mjs validate <manifest.json> | write --output <manifest.json>\n");
+    if (command === "summary" && inputPath) {
+        process.stdout.write(renderContextManifestSummary(readJson(inputPath)));
+        return 0;
+    }
+
+    if (command === "verify" && inputPath) {
+        const manifest = readJson(inputPath);
+        const validation = validateContextManifest(manifest);
+        if (!validation.valid) {
+            process.stderr.write(`${validation.errors.join("\n")}\n`);
+            return 1;
+        }
+
+        const current = currentGitMetadata();
+        const mismatches = ["repository", "branch", "head"]
+            .filter((key) => manifest[key] && current[key] && manifest[key] !== current[key])
+            .map((key) => `${key}: manifest=${manifest[key]} current=${current[key]}`);
+        if (mismatches.length > 0) {
+            process.stderr.write(`${mismatches.join("\n")}\n`);
+            return 1;
+        }
+        process.stdout.write("context manifest: current\n");
+        return 0;
+    }
+
+    process.stderr.write("Usage: context-manifest.mjs validate <manifest.json> | write --output <manifest.json> | summary <manifest.json> | verify <manifest.json>\n");
     return 2;
 }
 

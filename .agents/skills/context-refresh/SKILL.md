@@ -187,7 +187,7 @@ Podsumuj krótko:
 Po zakończeniu refreshu agent główny lub `context-refresher` powinien przygotować
 zwarty manifest kontekstu zawierający wyłącznie ścieżki, role dokumentów,
 override'y, ograniczenia i listę już przeczytanych źródeł. Manifest waliduj przez
-`<skills_root>/_shared/scripts/context-handoff.mjs`; nie umieszczaj w nim treści
+`<skills_root>/_shared/scripts/context-manifest.mjs`; nie umieszczaj w nim treści
 issue, komentarzy, pełnych dokumentów ani sekretów.
 
 ## Format odpowiedzi
