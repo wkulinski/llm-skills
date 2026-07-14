@@ -7,7 +7,7 @@ import {runSnapshotClean} from "../../../.agents/skills/git-commit/scripts/snaps
 import {runStagingSanity} from "../../../.agents/skills/git-commit/scripts/staging-sanity.mjs";
 
 describe("git-commit scripts", () => {
-    it("flags only the intended suspicious staged paths", () => {
+    it("blocks only hard-risk staged paths", () => {
         const execCommand = (command, args) => {
             expect(command).toBe("git");
             expect(args).toEqual(["diff", "--cached", "--name-only"]);
@@ -25,14 +25,27 @@ describe("git-commit scripts", () => {
         const result = runStagingSanity({execCommand});
 
         expect(result.code).toBe(1);
-        expect(result.stdout).toContain("STAGING_SUSPECTS_PRESENT");
+        expect(result.stdout).toContain("STAGING_HARD_BLOCKS_PRESENT");
         expect(result.stdout).toContain("- .env.local");
         expect(result.stdout).toContain("- .env.dev.local");
         expect(result.stdout).toContain("- .env.loc");
         expect(result.stdout).toContain("- .env.qa.loc");
         expect(result.stdout).toContain("- var/cache/debug.log");
         expect(result.stdout).not.toContain(".env.production");
-        expect(result.stdout).toContain('git restore --staged -- ".env.local"');
+        expect(result.stdout).toContain("Do not unstage them automatically.");
+    });
+
+    it("allows ordinary project configuration in the default commit scope", () => {
+        const execCommand = () => ({
+            status: 0,
+            stdout: ".opencode/tui.json\n.idea/codeStyles.xml\nsrc/app.ts\n",
+            stderr: "",
+        });
+
+        expect(runStagingSanity({execCommand})).toEqual({
+            code: 0,
+            stdout: "STAGING_OK\n",
+        });
     });
 
     it("reports an empty staging area", () => {

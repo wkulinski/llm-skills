@@ -1,0 +1,1 @@
+Skill dirs use kebab-case. Shell helpers start with `#!/usr/bin/env bash` and `set -euo pipefail`; keep them small and repo-relative. Move non-trivial structured logic to `.mjs` and cover it with Vitest using temp directories/fixtures. Skill Markdown uses Polish, clear headings and actionable steps; path placeholders follow the global AGENTS contract.

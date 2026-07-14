@@ -44,7 +44,8 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
 ## Kroki
 1. Upewnij się, że użytkownik wyraził intencję wykonania commita
    (polecenie `$git-commit` lub równoważne polecenie językowe). Jeśli nie — przerwij (bez `git add`/`git commit`).
-   - Domyślny zakres commita: jeśli użytkownik nie ograniczył zakresu, commit obejmuje wszystkie zmiany w repo zgodnie z krokiem 11 (`git add .`).
+   - Domyślny zakres commita: jeśli użytkownik nie ograniczył zakresu, commit obejmuje wszystkie zmiany widoczne dla Git zgodnie z krokiem 11 (`git add .`), w tym nieignorowane pliki untracked.
+   - W trybie domyślnym nie przedstawiaj listy plików do akceptacji i nie wykluczaj plików jako „niepowiązanych” lub „lokalnych”. Ignorowane pliki nie trafiają do `git add .` zgodnie z regułami Git.
    - Selektywny commit wolno wykonać tylko przy jednoznacznym poleceniu użytkownika (np. „commit tylko te pliki: ...”).
 2. Wykonaj snapshot bazowy (punkt odniesienia do kroku akceptacji), zanim zaczniesz wprowadzać poprawki w repo:
    - Utwórz katalog snapshotu unikalny dla tego uruchomienia (np. `/tmp/agent-git-commit-snapshot-<timestamp>-<ulid>/`) i zapamiętaj jego ścieżkę.
@@ -91,12 +92,17 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
        - jeśli plik istniał i był zmieniony/nieśledzony w momencie snapshotu: porównaj z kopią w katalogu snapshotu,
        - jeśli plik był czysty w momencie snapshotu: porównaj z wersją z `HEAD` (hash zapisany w snapshotie).
      - dla plików binarnych lub nieczytelnych diffem (np. `.gz`) pokaż metadane: rozmiar i hash (bez próby prezentowania pełnego diffu).
-     - STOP: kontynuuj dopiero po zatwierdzeniu przez użytkownika; w razie poprawek wróć do kroku 3.
+      - STOP: kontynuuj dopiero po zatwierdzeniu przez użytkownika; w razie poprawek wróć do kroku 3.
+    - W domyślnym zakresie akceptacja delty nie zmienia późniejszego `git add .`; pokazuje wyłącznie poprawki wykonane po snapshotcie.
+    - Przy jednoznacznie zleconym commicie selektywnym przed stagingiem pokaż użytkownikowi i uzyskaj akceptację dokładnej listy plików. Stage’uj wyłącznie tę listę.
 9. Wykonaj skill `$commit-message-write` i odczytaj plik `<COMMIT_MESSAGE_DIR>/commit-message.txt` (gdzie `COMMIT_MESSAGE_DIR` pochodzi z `docs_map`).
     - Jeśli plik nie istnieje, nie jest czytelny albo jest pusty: przerwij i wróć do kroku 9.
-10. `git add .` (wszystkie pliki, w tym nowe/nieśledzone oraz zmiany z fixerów).
-11. Sprawdź staging (`git diff --cached --name-only`) i upewnij się, że nie ma plików śmieciowych/tymczasowych (np. `.env.local`, logi, cache); jeśli są — usuń je ze stagingu i wróć do kroku 3.
-    - Preferowana sanity-check: `<skill_dir>/scripts/staging-sanity.mjs` (exit 0 = OK; exit 1 = wykryto podejrzane pliki).
+10. W domyślnym zakresie uruchom `git add .` (wszystkie pliki widoczne dla Git, w tym nowe/nieśledzone oraz zmiany z fixerów). Przy commicie selektywnym stage’uj wyłącznie listę zaakceptowaną w kroku 8.
+11. Sprawdź staging (`git diff --cached --name-only`).
+    - Preferowana sanity-check: `<skill_dir>/scripts/staging-sanity.mjs` (exit 0 = OK; exit 1 = wykryto twardo blokowane ścieżki, np. sekrety lub cache).
+    - W domyślnym zakresie nie usuwaj ze stagingu zwykłych plików projektu tylko dlatego, że wyglądają na lokalne lub niezwiązane z bieżącym zadaniem.
+    - Jeśli sanity-check wykryje twardo blokowaną ścieżkę, wstrzymaj procedurę i poproś użytkownika o decyzję; nie usuwaj jej ze stagingu automatycznie.
+    - Przy commicie selektywnym porównaj staged paths z listą zaakceptowaną w kroku 8. Przy różnicy wstrzymaj procedurę i poproś o ponowną akceptację zakresu.
 12. Wykonaj `git commit -F <COMMIT_MESSAGE_DIR>/commit-message.txt`.
     - Treść commita ma pochodzić 1:1 z pliku wygenerowanego przez `$commit-message-write` (krok 9), bez dopisywania lub przepisywania przez `$git-commit`.
     - Jeśli odczyt pliku się nie powiedzie: przerwij i wróć do kroku 9.
@@ -124,7 +130,7 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
 - Uwagi: jeśli wstrzymana, podaj powód i krok powrotu.
 
 ## Format akceptacji zmian (krok 8)
-Cel: użytkownik ma zobaczyć i zaakceptować wyłącznie zmiany powstałe „delta od snapshotu” (krok 2), niepełną listę plików, które finalnie trafią do commita.
+Cel: użytkownik ma zobaczyć i zaakceptować wyłącznie zmiany powstałe „delta od snapshotu” (krok 2), niepełną listę plików, które finalnie trafią do commita. W domyślnym zakresie finalny commit nadal obejmuje wszystkie pliki widoczne dla Git przez `git add .`.
 
 Podsumowanie zmian do akceptacji (delta od snapshotu):
 - `ścieżka/pliku.ext` — Co: krótki opis zmiany. Dlaczego: krótki powód.

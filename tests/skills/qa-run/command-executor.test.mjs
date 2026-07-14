@@ -17,11 +17,11 @@ afterEach(() => {
         rmSync(tempRoot, {force: true, recursive: true});
     }
     consoleLogSpy?.mockRestore();
-    consoleLogSpy = undefined;
+    consoleLogSpy = void 0;
 });
 
 beforeEach(() => {
-    consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => null);
 });
 
 describe("run-matrix command executor", () => {

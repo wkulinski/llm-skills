@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import {spawnSync} from "node:child_process";
-import {fileURLToPath} from "node:url";
-import {pathToFileURL} from "node:url";
+import {fileURLToPath, pathToFileURL} from "node:url";
 
 import {makeIssueBranch} from "../../_shared/scripts/issue-branch.mjs";
 
@@ -132,7 +131,8 @@ export function runIssueStart(argv, {execCommand = createExecutor()} = {}) {
         return {code: 0, stdout: "Usage: issue-start.mjs [--issue-number <number>] [--title <title>] [--desc <description>] [--owner <owner>] [--repo <repo>] [--base <ref>]\n"};
     }
 
-    let {baseRef, description, issueNumber, owner, repo, title} = parsed;
+    let {baseRef, issueNumber, owner, repo, title} = parsed;
+    const {description} = parsed;
 
     if (!owner || !repo) {
         const repoView = run("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], execCommand);
@@ -234,8 +234,8 @@ export function runIssueStart(argv, {execCommand = createExecutor()} = {}) {
 
 async function main(argv) {
     const result = runIssueStart(argv);
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
+    if (result.stdout) { process.stdout.write(result.stdout); }
+    if (result.stderr) { process.stderr.write(result.stderr); }
     return result.code;
 }
 

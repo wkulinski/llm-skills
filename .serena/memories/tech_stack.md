@@ -1,0 +1,1 @@
+Node ESM project (`package.json` has `type: module`), Node helper scripts (`.mjs`) and Bash glue scripts. Tests use Vitest 4; ESLint 10. Skills target PHP/Symfony/PostgreSQL consumer repos but this catalog itself is Node-tested.

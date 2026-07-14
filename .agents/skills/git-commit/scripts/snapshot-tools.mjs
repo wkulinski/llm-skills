@@ -82,6 +82,23 @@ function writeLines(filePath, lines) {
     writeFileSync(filePath, `${lines.join("\n")}${lines.length > 0 ? "\n" : ""}`, "utf-8");
 }
 
+function copySnapshotFiles({filesToCopy, repoRoot, snapshotDir}) {
+    const missing = [];
+    for (const relativePath of filesToCopy) {
+        const sourcePath = join(repoRoot, relativePath);
+        const destinationPath = join(snapshotDir, "files", relativePath);
+        if (existsSync(sourcePath)) {
+            copyEntry(sourcePath, destinationPath);
+        } else {
+            missing.push(relativePath);
+        }
+    }
+
+    if (missing.length > 0) {
+        writeLines(join(snapshotDir, "missing-at-snapshot.txt"), missing);
+    }
+}
+
 export function createSnapshot({
     execCommand = runCommand,
     forceNew = false,
@@ -127,20 +144,7 @@ export function createSnapshot({
     const filesToCopy = uniqueSorted([...changedTracked, ...untracked]);
     writeLines(join(snapshotDir, "files-to-copy.txt"), filesToCopy);
 
-    const missing = [];
-    for (const relativePath of filesToCopy) {
-        const sourcePath = join(repoRoot, relativePath);
-        const destinationPath = join(snapshotDir, "files", relativePath);
-        if (existsSync(sourcePath)) {
-            copyEntry(sourcePath, destinationPath);
-        } else {
-            missing.push(relativePath);
-        }
-    }
-
-    if (missing.length > 0) {
-        writeLines(join(snapshotDir, "missing-at-snapshot.txt"), missing);
-    }
+    copySnapshotFiles({filesToCopy, repoRoot, snapshotDir});
 
     writeFileSync(join(snapshotDir, "SNAPSHOT_PATH.txt"), `${snapshotDir}\n`, "utf-8");
     writeFileSync(pointerFile, `repo_root=${repoRoot}\nsnapshot_dir=${snapshotDir}\ncreated_at=${now.toISOString()}\n`, "utf-8");
@@ -200,6 +204,12 @@ export function listSnapshotDelta({
     const current = listCurrentFiles({execCommand, repoRoot});
     const snapTracked = splitLines(readFileSync(join(context.snapshotDir, "changed-tracked.txt"), "utf-8"));
     const snapUntracked = splitLines(readFileSync(join(context.snapshotDir, "untracked.txt"), "utf-8"));
+    const missingAtSnapshotPath = join(context.snapshotDir, "missing-at-snapshot.txt");
+    const missingAtSnapshot = new Set(
+        existsSync(missingAtSnapshotPath)
+            ? splitLines(readFileSync(missingAtSnapshotPath, "utf-8"))
+            : [],
+    );
 
     const nowAll = uniqueSorted([...current.nowTracked, ...current.nowUntracked]);
     const snapAll = uniqueSorted([...snapTracked, ...snapUntracked]);
@@ -210,8 +220,11 @@ export function listSnapshotDelta({
 
     for (const relativePath of snapAll) {
         const currentPath = join(repoRoot, relativePath);
-        if (!existsSync(currentPath)) {
+        const existsNow = existsSync(currentPath);
+        if (!existsNow && !missingAtSnapshot.has(relativePath)) {
             deltaMissingNow.push(relativePath);
+        }
+        if (!existsNow) {
             continue;
         }
 

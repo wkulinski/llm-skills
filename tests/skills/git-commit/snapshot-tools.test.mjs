@@ -137,6 +137,94 @@ describe("snapshot tools", () => {
         }
     });
 
+    it("does not report a file deleted before the snapshot as a new delta", () => {
+        const tempRoot = mkdtempSync(path.join(os.tmpdir(), "snapshot-predeleted-vitest-"));
+        try {
+            const repoRoot = path.join(tempRoot, "repo");
+            mkdirSync(repoRoot);
+            const snapshotDir = path.join(tempRoot, "snapshot");
+            mkdirSync(snapshotDir, {recursive: true});
+            writeFileSync(path.join(snapshotDir, "base-head.txt"), "base-head\n", "utf-8");
+            writeFileSync(path.join(snapshotDir, "changed-tracked.txt"), "src/deleted.txt\n", "utf-8");
+            writeFileSync(path.join(snapshotDir, "untracked.txt"), "", "utf-8");
+            writeFileSync(path.join(snapshotDir, "missing-at-snapshot.txt"), "src/deleted.txt\n", "utf-8");
+
+            const execCommand = (command, args) => {
+                const key = args.join(" ");
+                if (key.includes("diff --name-only")) {
+                    return {status: 0, stdout: "src/deleted.txt\n", stderr: ""};
+                }
+                if (key.includes("ls-files --others --exclude-standard")) {
+                    return {status: 0, stdout: "", stderr: ""};
+                }
+                throw new Error(`Unexpected command: ${command} ${key}`);
+            };
+
+            expect(listSnapshotDelta({execCommand, repoRoot, snapshotDir})).toBe("DELTA_EMPTY\n");
+        } finally {
+            rmSync(tempRoot, {force: true, recursive: true});
+        }
+    });
+
+    it("reports a file restored after being deleted before the snapshot", () => {
+        const tempRoot = mkdtempSync(path.join(os.tmpdir(), "snapshot-restored-vitest-"));
+        try {
+            const repoRoot = path.join(tempRoot, "repo");
+            mkdirSync(path.join(repoRoot, "src"), {recursive: true});
+            writeFileSync(path.join(repoRoot, "src", "restored.txt"), "restored\n", "utf-8");
+            const snapshotDir = path.join(tempRoot, "snapshot");
+            mkdirSync(snapshotDir, {recursive: true});
+            writeFileSync(path.join(snapshotDir, "base-head.txt"), "base-head\n", "utf-8");
+            writeFileSync(path.join(snapshotDir, "changed-tracked.txt"), "src/restored.txt\n", "utf-8");
+            writeFileSync(path.join(snapshotDir, "untracked.txt"), "", "utf-8");
+            writeFileSync(path.join(snapshotDir, "missing-at-snapshot.txt"), "src/restored.txt\n", "utf-8");
+
+            const execCommand = (command, args) => {
+                const key = args.join(" ");
+                if (key.includes("diff --name-only")) {
+                    return {status: 0, stdout: "", stderr: ""};
+                }
+                if (key.includes("ls-files --others --exclude-standard")) {
+                    return {status: 0, stdout: "", stderr: ""};
+                }
+                throw new Error(`Unexpected command: ${command} ${key}`);
+            };
+
+            expect(listSnapshotDelta({execCommand, repoRoot, snapshotDir})).toBe("DELTA_PRESENT\n- src/restored.txt\n");
+        } finally {
+            rmSync(tempRoot, {force: true, recursive: true});
+        }
+    });
+
+    it("reports a file deleted after the snapshot", () => {
+        const tempRoot = mkdtempSync(path.join(os.tmpdir(), "snapshot-postdeleted-vitest-"));
+        try {
+            const repoRoot = path.join(tempRoot, "repo");
+            mkdirSync(repoRoot);
+            const snapshotDir = path.join(tempRoot, "snapshot");
+            mkdirSync(path.join(snapshotDir, "files", "src"), {recursive: true});
+            writeFileSync(path.join(snapshotDir, "base-head.txt"), "base-head\n", "utf-8");
+            writeFileSync(path.join(snapshotDir, "changed-tracked.txt"), "src/deleted.txt\n", "utf-8");
+            writeFileSync(path.join(snapshotDir, "untracked.txt"), "", "utf-8");
+            writeFileSync(path.join(snapshotDir, "files", "src", "deleted.txt"), "before\n", "utf-8");
+
+            const execCommand = (command, args) => {
+                const key = args.join(" ");
+                if (key.includes("diff --name-only")) {
+                    return {status: 0, stdout: "src/deleted.txt\n", stderr: ""};
+                }
+                if (key.includes("ls-files --others --exclude-standard")) {
+                    return {status: 0, stdout: "", stderr: ""};
+                }
+                throw new Error(`Unexpected command: ${command} ${key}`);
+            };
+
+            expect(listSnapshotDelta({execCommand, repoRoot, snapshotDir})).toBe("DELTA_PRESENT\n- src/deleted.txt\n");
+        } finally {
+            rmSync(tempRoot, {force: true, recursive: true});
+        }
+    });
+
     it("shows diffs for a listed file", () => {
         const tempRoot = mkdtempSync(path.join(os.tmpdir(), "snapshot-delta-show-vitest-"));
         try {

@@ -29,7 +29,7 @@ function splitLines(output) {
         .filter(Boolean);
 }
 
-function isSuspicious(path) {
+function isHardBlocked(path) {
     return (
         path === ".env.local"
         || /^\.env\.[^/]+\.local$/.test(path)
@@ -38,8 +38,6 @@ function isSuspicious(path) {
         || /^var\//.test(path)
         || /^\/var\//.test(path)
         || /^node_modules\//.test(path)
-        || /^\.idea\//.test(path)
-        || /^\.vscode\//.test(path)
         || /\.log$/.test(path)
         || /\.cache$/.test(path)
     );
@@ -53,16 +51,15 @@ export function runStagingSanity({execCommand = createExecutor()} = {}) {
         return {code: 0, stdout: "STAGING_EMPTY\n"};
     }
 
-    const suspects = [...new Set(staged.filter(isSuspicious))].sort();
-    if (suspects.length > 0) {
+    const blocked = [...new Set(staged.filter(isHardBlocked))].sort();
+    if (blocked.length > 0) {
         return {
             code: 1,
             stdout: [
-                "STAGING_SUSPECTS_PRESENT",
-                ...suspects.map((path) => `- ${path}`),
+                "STAGING_HARD_BLOCKS_PRESENT",
+                ...blocked.map((path) => `- ${path}`),
                 "",
-                "Suggested (manual) unstage commands:",
-                ...suspects.map((path) => `  git restore --staged -- \"${path}\"`),
+                "Resolve these paths explicitly before committing. Do not unstage them automatically.",
                 "",
             ].join("\n"),
         };
@@ -73,8 +70,12 @@ export function runStagingSanity({execCommand = createExecutor()} = {}) {
 
 async function main() {
     const result = runStagingSanity();
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
+    if (result.stdout) {
+        process.stdout.write(result.stdout);
+    }
+    if (result.stderr) {
+        process.stderr.write(result.stderr);
+    }
     process.exitCode = result.code;
 }
 

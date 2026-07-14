@@ -23,8 +23,8 @@ export function runStateReadLog(argv, {cachePath, now = new Date()} = {}) {
 
 async function main(argv) {
     const result = runStateReadLog(argv);
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
+    if (result.stdout) { process.stdout.write(result.stdout); }
+    if (result.stderr) { process.stderr.write(result.stderr); }
     process.exitCode = result.code;
 }
 

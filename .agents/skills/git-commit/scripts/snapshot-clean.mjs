@@ -60,8 +60,8 @@ export function runSnapshotClean(argv, {pointerFile = DEFAULT_POINTER_FILE, repo
 
 async function main(argv) {
     const result = runSnapshotClean(argv);
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
+    if (result.stdout) { process.stdout.write(result.stdout); }
+    if (result.stderr) { process.stderr.write(result.stderr); }
     process.exitCode = result.code;
 }
 

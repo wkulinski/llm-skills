@@ -17,8 +17,8 @@ export function runStateClear({cachePath} = {}) {
 
 async function main() {
     const result = runStateClear();
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
+    if (result.stdout) { process.stdout.write(result.stdout); }
+    if (result.stderr) { process.stderr.write(result.stderr); }
     process.exitCode = result.code;
 }
 
