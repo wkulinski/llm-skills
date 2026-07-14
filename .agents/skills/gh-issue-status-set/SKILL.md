@@ -32,14 +32,14 @@ Ustawić status issue w GitHub Projects v2 na podstawie bieżącego brancha, num
 3. Uruchom skrypt:
    - `<skill_dir>/scripts/set-status.mjs --status "<STATUS>"`
    - Opcjonalnie: `--issue <ID>`, `--project-number <NUM>`, `--field <NAZWA>`
-4. Jeśli skrypt zwraca błąd, zinterpretuj kod wyjścia i **zawsze** uruchom skrypt ponownie z uzupełnionymi danymi (bez ręcznego “rzeźbienia”).
+4. Jeśli skrypt zwraca błąd, zinterpretuj kod wyjścia i **zawsze** uruchom skrypt ponownie z uzupełnionymi danymi (bez ręcznego “rzeźbienia”). Skrypt rozpoznaje lokalne aliasy statusów, np. `In progress` → `W trakcie`, `Ready` → `Do wzięcia`, `Done` → `Ukończone`.
 
 ## Interpretacja kodów wyjścia i retry
 - `3` brak numeru issue: spróbuj ustalić issue przez MCP (`mcp__github__search_issues` w repo, użyj słów z ostatniego subject). Jeśli 1 wynik → uruchom skrypt z `--issue`. Jeśli wiele/brak → dopytaj użytkownika.
 - `4` issue nie jest w projekcie i brak `--project-number`: ustal projekt (MCP nie obsługuje Projects v2). Użyj `gh project list --owner <OWNER>` i jeśli jest jedna pozycja → wybierz ją, w przeciwnym razie dopytaj. Następnie uruchom skrypt z `--project-number`.
 - `5` issue jest w wielu projektach: poproś użytkownika o numer projektu i uruchom skrypt z `--project-number`.
 - `6` issue nie jest w wybranym projekcie i nie udało się dodać: dopytaj o właściwy numer projektu albo upewnij się, że issue istnieje w repo, po czym uruchom skrypt ponownie.
-- `7` brak pola/opcji statusu: sprawdź pola `gh project field-list <OWNER>/<PROJECT_NUMBER>` i uruchom skrypt z `--field <NAZWA>` oraz poprawnym `--status`, jeśli potrzeba. Gdy nadal niejasne → dopytaj użytkownika.
+- `7` brak pola/opcji statusu albo nieprawidłowy numer projektu: sprawdź pola `gh project field-list <PROJECT_NUMBER> --owner <OWNER>` i uruchom skrypt z `--field <NAZWA>` oraz poprawnym `--status`, jeśli potrzeba. Gdy nadal niejasne → dopytaj użytkownika.
 - `8` brak statusu: ustal oczekiwany status z kontekstu rozmowy albo dopytaj użytkownika i uruchom skrypt z `--status`.
 
 ## Dobór statusu (proste mapowanie)

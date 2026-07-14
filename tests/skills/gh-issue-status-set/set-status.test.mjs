@@ -20,6 +20,9 @@ describe("gh-issue-status-set", () => {
             if (command === "gh" && args[0] === "project" && args[1] === "item-edit" && args[2] === "--help") {
                 return {status: 0, stdout: "Usage: gh project item-edit\n", stderr: ""};
             }
+            if (command === "gh" && args[0] === "project" && args[1] === "field-list") {
+                return {status: 0, stdout: JSON.stringify({fields: [{name: "Status", options: [{name: "In review"}]}]}), stderr: ""};
+            }
             if (command === "gh" && args[0] === "project" && args[1] === "item-edit") {
                 return {status: 0, stdout: "", stderr: ""};
             }
@@ -33,7 +36,40 @@ describe("gh-issue-status-set", () => {
             code: 0,
             stdout: "Status 'In review' ustawiony dla issue #123 w projekcie acme/7 (element item-1).\n",
         });
+        expect(calls.some((call) => call.includes("\\(.project.number)"))).toBe(true);
         expect(calls).toContain("gh project item-edit --project acme/7 --id item-1 --field Status --single-select-option In review");
+    });
+
+    it("maps semantic status names to a localized project option", () => {
+        const calls = [];
+        const execCommand = (command, args) => {
+            calls.push([command, ...args].join(" "));
+            if (command === "gh" && args[0] === "repo" && args[1] === "view") {
+                return {status: 0, stdout: "acme/demo\n", stderr: ""};
+            }
+            if (command === "git" && args[0] === "rev-parse") {
+                return {status: 0, stdout: "issue/123-demo\n", stderr: ""};
+            }
+            if (command === "gh" && args[0] === "api" && args[1] === "graphql" && args.some((arg) => String(arg).includes("projectItems"))) {
+                return {status: 0, stdout: "item-1\tProject Alpha\t7\n", stderr: ""};
+            }
+            if (command === "gh" && args[0] === "project" && args[1] === "item-edit" && args[2] === "--help") {
+                return {status: 0, stdout: "Usage: gh project item-edit\n", stderr: ""};
+            }
+            if (command === "gh" && args[0] === "project" && args[1] === "field-list") {
+                return {status: 0, stdout: JSON.stringify({fields: [{name: "Status", options: [{name: "W trakcie"}]}]}), stderr: ""};
+            }
+            if (command === "gh" && args[0] === "project" && args[1] === "item-edit") {
+                return {status: 0, stdout: "", stderr: ""};
+            }
+
+            throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
+        };
+
+        const result = runIssueStatusSet(["--status", "In progress"], {execCommand});
+
+        expect(result.code).toBe(0);
+        expect(calls).toContain("gh project item-edit --project acme/7 --id item-1 --field Status --single-select-option W trakcie");
     });
 
     it("adds an issue to a project and uses the id-based item editor", () => {
@@ -80,5 +116,26 @@ describe("gh-issue-status-set", () => {
         });
         expect(calls).toContain("gh project item-add 9 --owner acme --url https://github.com/acme/demo/issues/45 --format json -q .id");
         expect(calls).toContain("gh project item-edit --project-id project-1 --id item-9 --field-id field-1 --single-select-option-id option-1");
+    });
+
+    it("rejects malformed project numbers instead of invoking another project", () => {
+        const execCommand = (command, args) => {
+            if (command === "gh" && args[0] === "repo" && args[1] === "view") {
+                return {status: 0, stdout: "acme/demo\n", stderr: ""};
+            }
+            if (command === "git" && args[0] === "rev-parse") {
+                return {status: 0, stdout: "issue/123-demo\n", stderr: ""};
+            }
+            if (command === "gh" && args[0] === "api" && args[1] === "graphql") {
+                return {status: 0, stdout: "item-1\tProject Alpha\t(.project.number)\n", stderr: ""};
+            }
+
+            throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
+        };
+
+        const result = runIssueStatusSet(["--status", "In progress"], {execCommand});
+
+        expect(result.code).toBe(7);
+        expect(result.stderr).toContain("Nieprawidłowy numer projektu");
     });
 });
