@@ -1,0 +1,1 @@
+For `.mjs` helper or test changes: run focused Vitest test, then `npm test` and `npm run lint:js`. For shell script changes: run `bash -n` and a focused smoke invocation. Verify referenced skill paths exist. Do not commit `.env.local`, secrets, or `var/`.

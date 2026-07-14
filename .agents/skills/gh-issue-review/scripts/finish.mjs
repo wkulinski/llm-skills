@@ -155,7 +155,8 @@ export function runIssueReview(argv, {cwd = repoRoot, execCommand = createExecut
         return {code: 0, stdout: "Usage: gh-issue-review.mjs [--issue-number <number>] [--reviewer <login>] [--template <path>] [--owner <owner>] [--repo <repo>] [--base <branch>]\n"};
     }
 
-    let {baseBranch, issueNumber, owner, repo, reviewer, template} = parsed;
+    let {baseBranch, issueNumber, owner, repo, reviewer} = parsed;
+    const {template} = parsed;
     let tmpDir = "";
     let prUrl = "";
     let prNumber = "";
@@ -308,8 +309,8 @@ export function runIssueReview(argv, {cwd = repoRoot, execCommand = createExecut
 
 async function main(argv) {
     const result = runIssueReview(argv);
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
+    if (result.stdout) { process.stdout.write(result.stdout); }
+    if (result.stderr) { process.stderr.write(result.stderr); }
     return result.code;
 }
 

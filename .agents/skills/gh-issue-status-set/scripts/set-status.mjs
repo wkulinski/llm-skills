@@ -172,7 +172,8 @@ export function runIssueStatusSet(argv, {execCommand = createExecutor()} = {}) {
         return {code: 8, stderr: "Status jest wymagany. Podaj --status \"<Status>\".\n"};
     }
 
-    let {fieldName, issueNumber, owner, projectNumber, repo, status} = parsed;
+    let {issueNumber, owner, projectNumber, repo} = parsed;
+    const {fieldName, status} = parsed;
     if (!owner || !repo) {
         const repoFull = run("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], execCommand).stdout.trim();
         [owner, repo] = repoFull.split("/");
@@ -204,7 +205,7 @@ export function runIssueStatusSet(argv, {execCommand = createExecutor()} = {}) {
 
     const addItemToProject = (projNum) => run("gh", ["project", "item-add", projNum, "--owner", owner, "--url", `https://github.com/${owner}/${repo}/issues/${issueNumber}`, "--format", "json", "-q", ".id"], execCommand).stdout.trim();
 
-    let itemId = "";
+    let itemId;
     if (!itemsRaw) {
         if (!projectNumber) {
             return {code: 4, stderr: `Issue #${issueNumber} nie jest w żadnym ProjectV2. Podaj --project-number, aby je dodać.\n`};
@@ -264,8 +265,8 @@ export function runIssueStatusSet(argv, {execCommand = createExecutor()} = {}) {
 
 async function main(argv) {
     const result = runIssueStatusSet(argv);
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
+    if (result.stdout) { process.stdout.write(result.stdout); }
+    if (result.stderr) { process.stderr.write(result.stderr); }
     return result.code;
 }
 

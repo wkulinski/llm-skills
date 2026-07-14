@@ -11,10 +11,10 @@ import {formatIsoSeconds, formatLocalDate, formatLocalTime, resolveStatePath} fr
 
 describe("code-implement state scripts", () => {
     it("initializes a state file once and keeps it stable on rerun", () => {
-            const tempRoot = mkdtempSync(path.join(os.tmpdir(), "code-implement-state-test-"));
-            try {
-                const cachePath = path.join(tempRoot, "cache");
-                const now = new Date("2026-07-02T10:11:12.000Z");
+        const tempRoot = mkdtempSync(path.join(os.tmpdir(), "code-implement-state-test-"));
+        try {
+            const cachePath = path.join(tempRoot, "cache");
+            const now = new Date("2026-07-02T10:11:12.000Z");
 
             const created = runStateInit({cachePath, now});
             const statePath = resolveStatePath(cachePath).absolute;
@@ -36,7 +36,7 @@ describe("code-implement state scripts", () => {
     });
 
     it("logs iterations and read entries in the expected sections", () => {
-            const tempRoot = mkdtempSync(path.join(os.tmpdir(), "code-implement-state-test-"));
+        const tempRoot = mkdtempSync(path.join(os.tmpdir(), "code-implement-state-test-"));
         try {
             const cachePath = path.join(tempRoot, "cache");
             const statePath = resolveStatePath(cachePath).absolute;

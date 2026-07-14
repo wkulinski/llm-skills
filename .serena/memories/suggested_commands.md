@@ -1,0 +1,1 @@
+Validation: `npm test`; `npm run lint:js`. Shell scripts: `find .agents/skills -type f -path '*/scripts/*.sh' -print0 | xargs -0 -n1 bash -n`; optional shellcheck equivalent. Skill scripts load consumer env through `.agents/skills/_shared/scripts/env-load.sh` and resolve tool entrypoints with `resolve_tool_cmd`.
