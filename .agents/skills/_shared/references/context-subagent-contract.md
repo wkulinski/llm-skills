@@ -90,13 +90,15 @@ already_read: [ścieżki repo-relative]
 omitted: [znane, celowo niezaładowane źródła]
 ```
 
-Manifest waliduj przez `<skills_root>/_shared/scripts/context-handoff.mjs`
+Manifest waliduj przez `<skills_root>/_shared/scripts/context-manifest.mjs`
 przed przekazaniem go capability. Manifesty są lokalnymi artefaktami pod
 `CACHE_PATH` i nigdy nie mogą zawierać sekretów.
 
 ## Raport scouta
 
-Scout zwraca maksymalnie osiem krótkich sekcji/punktów:
+Scout zwraca maksymalnie dwanaście krótkich sekcji/punktów (zwykle do około
+1500 tokenów). Może zakończyć wcześniej, gdy zakres jest kompletny; limit nie
+jest celem samym w sobie.
 
 1. zakres i istotne moduły,
 2. pliki i symbole,
@@ -105,7 +107,9 @@ Scout zwraca maksymalnie osiem krótkich sekcji/punktów:
 5. obowiązujące konwencje,
 6. ryzyka i niewiadome,
 7. pliki świadomie wyłączone z zakresu,
-8. rekomendowany następny krok.
+8. rekomendowany następny krok,
+9. stopień kompletności mapy,
+10. brakujące odczyty przy raporcie `INCOMPLETE`.
 
 Każde istotne twierdzenie musi zawierać ścieżkę repo-relative oraz, jeśli to
 możliwe, symbol lub zakres linii. Agent główny zapisuje raport i nie powtarza

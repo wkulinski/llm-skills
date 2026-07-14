@@ -1,9 +1,10 @@
 import {describe, expect, it} from "vitest";
 
 import {
+    enrichContextManifest,
     renderContextManifestSummary,
     validateContextManifest,
-} from "../../../.agents/skills/_shared/scripts/context-handoff.mjs";
+} from "../../../.agents/skills/_shared/scripts/context-manifest.mjs";
 
 const validManifest = {
     version: 1,
@@ -19,7 +20,7 @@ const validManifest = {
     omitted: ["docs/HANDOFF.md"],
 };
 
-describe("context handoff", () => {
+describe("context manifest", () => {
     it("validates and summarizes a compact manifest", () => {
         expect(validateContextManifest(validManifest)).toEqual({valid: true, errors: []});
         expect(renderContextManifestSummary(validManifest)).toContain("context-manifest v1 (primary)");
@@ -54,5 +55,31 @@ describe("context handoff", () => {
         expect(result.valid).toBe(false);
         expect(result.errors).toContain("rules must contain repo-relative paths");
         expect(result.errors).toContain("manifest appears to contain a secret");
+    });
+
+    it("enriches missing repository metadata from git", () => {
+        const calls = [];
+        const manifest = enrichContextManifest({
+            ...validManifest,
+            repository: "",
+            branch: "",
+            head: "",
+        }, {
+            execFile: (_command, args) => {
+                calls.push(args.join(" "));
+                if (args[0] === "remote") { return "git@github.com:acme/project.git\n"; }
+                if (args[0] === "branch") { return "feature/context-routing\n"; }
+                return "abc123\n";
+            },
+            now: new Date("2026-07-14T12:00:00.000Z"),
+        });
+
+        expect(manifest).toMatchObject({
+            repository: "acme/project",
+            branch: "feature/context-routing",
+            head: "abc123",
+            generated_at: "2026-07-14T12:00:00.000Z",
+        });
+        expect(calls).toHaveLength(3);
     });
 });
