@@ -38,6 +38,12 @@ Użyj tego skilla, gdy pojawia się potrzeba:
 2. Wyznacz `<MATE_CMD>` wyłącznie przez `resolve_tool_cmd mate`.
 3. Jeśli potrzebujesz wrócić do standardowych entrypointów repo, wyznacz je tak samo przez `resolve_tool_cmd` zamiast ręcznie składać ścieżki z `BIN_PATH`.
 
+## Granica MCP i CLI
+- Ten skill jest CLI-only: wszystkie narzędzia Mate wywołuj przez `<MATE_CMD> mcp:tools:*`; nie wymaga bezpośredniego serwera MCP Mate w kliencie agenta.
+- `mcp:tools:list`, `mcp:tools:inspect` i `mcp:tools:call` pokrywają każde narzędzie aktualnie udostępnione przez Mate, także nowe narzędzia niewymienione jeszcze w scenariuszach tego skilla.
+- Nie dodawaj `--quiet` do wywołań `mcp:tools:call`, ponieważ może stłumić również wynik narzędzia. Ograniczaj output przez parametry narzędzia (`limit`, `channel`, `level`, `route` itd.).
+- CLI Mate nie pokrywa ewentualnych MCP resources, np. URI szczegółowych collectorów profilera. Jeśli do rzetelnej diagnozy potrzebny jest resource niedostępny przez `mcp:tools:call`, zwróć `BLOCKED` i poproś o uruchomienie sesji z bezpośrednim MCP Mate.
+
 ## Zakres
 Skill obejmuje:
 - dobór właściwej komendy CLI AI Mate do potrzeby diagnostycznej,
