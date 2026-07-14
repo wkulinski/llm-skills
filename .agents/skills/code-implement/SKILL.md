@@ -14,7 +14,7 @@ shared_files:
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/references/symbolic-navigation-and-editing-policy.md
   - _shared/references/context-subagent-contract.md
-   - _shared/scripts/context-manifest.mjs
+  - _shared/scripts/context-manifest.mjs
   - _shared/scripts/env-load.sh
 ---
 
