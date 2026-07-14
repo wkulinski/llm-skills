@@ -3,6 +3,14 @@ import {spawnSync} from "node:child_process";
 import {fileURLToPath, pathToFileURL} from "node:url";
 
 import {makeIssueBranch} from "../../_shared/scripts/issue-branch.mjs";
+import {
+    applyDirtyTreeStrategy,
+    checkoutBranch,
+    getDirtyTreeStatus,
+    normalizeDirtyTreeStrategy,
+    promptDirtyTreeStrategy,
+    run,
+} from "../../_shared/scripts/worktree.mjs";
 
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -13,15 +21,6 @@ export function createExecutor({cwd = repoRoot} = {}) {
         shell: false,
         ...options,
     });
-}
-
-function run(command, args, execCommand) {
-    const result = execCommand(command, args);
-    return {
-        code: result.status ?? 1,
-        stderr: String(result.stderr ?? ""),
-        stdout: String(result.stdout ?? ""),
-    };
 }
 
 export function extractSubjectKeywords(subject) {
@@ -42,6 +41,8 @@ export function parseArgs(argv) {
     const parsed = {
         baseRef: "",
         description: "",
+        dirtyInstruction: "",
+        dirtyStrategy: "",
         issueNumber: "",
         owner: "",
         repo: "",
@@ -59,6 +60,12 @@ export function parseArgs(argv) {
                 break;
             case "--desc":
                 parsed.description = args.shift() ?? "";
+                break;
+            case "--dirty-strategy":
+                parsed.dirtyStrategy = args.shift() ?? "";
+                break;
+            case "--dirty-instruction":
+                parsed.dirtyInstruction = args.shift() ?? "";
                 break;
             case "--owner":
                 parsed.owner = args.shift() ?? "";
@@ -100,7 +107,7 @@ function searchIssueByTitle({execCommand, keywords, owner, repo}) {
         "--json",
         "number,title",
         "-q",
-        '.[] | "\(.number)\t\(.title)"',
+        String.raw`.[] | "\(.number)\t\(.title)"`,
     ], execCommand);
 
     const result = search.stdout.trim();
@@ -122,22 +129,85 @@ function searchIssueByTitle({execCommand, keywords, owner, repo}) {
     };
 }
 
+function prepareWorktree({baseRef, branchName, dirtyInstruction, dirtyStrategy, execCommand, issueNumber, remote}) {
+    const dirtyStatus = getDirtyTreeStatus(execCommand);
+    if (dirtyStatus.code !== 0) {
+        return dirtyStatus;
+    }
+
+    if (!dirtyStatus.dirty) {
+        return checkoutBranch({baseRef, branchName, execCommand, remote});
+    }
+
+    if (dirtyStrategy === "other") {
+        return dirtyInstruction
+            ? {code: 16, stdout: `Instrukcja użytkownika dla agenta: ${dirtyInstruction}\n`}
+            : {code: 14, stderr: "Strategia 'other' wymaga --dirty-instruction albo wyboru interaktywnego."};
+    }
+
+    const selection = dirtyStrategy
+        ? {code: 0, strategy: dirtyStrategy}
+        : promptDirtyTreeStrategy();
+    if (selection.code !== 0) {
+        return selection.code === 16
+            ? {code: 16, stdout: `Instrukcja użytkownika dla agenta: ${selection.instruction}\n`}
+            : selection;
+    }
+
+    return applyDirtyTreeStrategy({
+        baseRef,
+        branchName,
+        execCommand,
+        issueNumber,
+        remote,
+        strategy: selection.strategy,
+    });
+}
+
+function assignCurrentUser({execCommand, issueNumber}) {
+    const currentUserResult = run("gh", ["api", "user", "-q", ".login"], execCommand);
+    if (currentUserResult.code !== 0 || !currentUserResult.stdout.trim()) {
+        return {code: currentUserResult.code || 15, stderr: currentUserResult.stderr || "Nie udało się ustalić bieżącego użytkownika GitHub."};
+    }
+
+    const currentUser = currentUserResult.stdout.trim();
+    const assigneesResult = run("gh", ["issue", "view", issueNumber, "--json", "assignees", "-q", ".assignees[].login"], execCommand);
+    if (assigneesResult.code !== 0) {
+        return {code: assigneesResult.code, stderr: assigneesResult.stderr || "Nie udało się odczytać assignee issue."};
+    }
+
+    const assignees = assigneesResult.stdout.trim().split(/\r?\n/).filter(Boolean);
+    if (assignees.includes(currentUser)) {
+        return {code: 0};
+    }
+
+    const assign = run("gh", ["issue", "edit", issueNumber, "--add-assignee", currentUser], execCommand);
+    return assign.code === 0
+        ? {code: 0}
+        : {code: assign.code, stderr: assign.stderr || "Nie udało się przypisać bieżącego użytkownika do issue."};
+}
+
 export function runIssueStart(argv, {execCommand = createExecutor()} = {}) {
     const parsed = parseArgs(argv);
     if (parsed.error) {
-        return {code: 2, stderr: `${parsed.error}\nUsage: issue-start.mjs [--issue-number <number>] [--title <title>] [--desc <description>] [--owner <owner>] [--repo <repo>] [--base <ref>]\n`};
+        return {code: 2, stderr: `${parsed.error}\nUsage: issue-start.mjs [--issue-number <number>] [--title <title>] [--desc <description>] [--dirty-strategy <stash|commit-wip|move-to-new-branch|other>] [--dirty-instruction <tekst>] [--owner <owner>] [--repo <repo>] [--base <ref>]\n`};
     }
     if (parsed.help) {
-        return {code: 0, stdout: "Usage: issue-start.mjs [--issue-number <number>] [--title <title>] [--desc <description>] [--owner <owner>] [--repo <repo>] [--base <ref>]\n"};
+        return {code: 0, stdout: "Usage: issue-start.mjs [--issue-number <number>] [--title <title>] [--desc <description>] [--dirty-strategy <stash|commit-wip|move-to-new-branch|other>] [--dirty-instruction <tekst>] [--owner <owner>] [--repo <repo>] [--base <ref>]\n"};
     }
 
     let {baseRef, issueNumber, owner, repo, title} = parsed;
     const {description} = parsed;
+    const {dirtyInstruction, dirtyStrategy} = parsed;
+
+    if (dirtyStrategy && !normalizeDirtyTreeStrategy(dirtyStrategy)) {
+        return {code: 2, stderr: `Nieznana strategia dirty tree: ${dirtyStrategy}. Użyj stash, commit-wip, move-to-new-branch, other albo pomiń parametr dla wyboru strzałkami.\n`};
+    }
 
     if (!owner || !repo) {
         const repoView = run("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], execCommand);
-        if (repoView.code !== 0) {
-            return {code: repoView.code, stderr: repoView.stderr};
+        if (repoView.code !== 0 || !repoView.stdout.trim()) {
+            return {code: repoView.code || 7, stderr: repoView.stderr || "Nie udało się ustalić repozytorium GitHub."};
         }
         const repoFull = repoView.stdout.trim();
         [owner, repo] = repoFull.split("/");
@@ -145,7 +215,10 @@ export function runIssueStart(argv, {execCommand = createExecutor()} = {}) {
 
     if (!baseRef) {
         const defaultBranch = run("gh", ["repo", "view", `${owner}/${repo}`, "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"], execCommand);
-        baseRef = defaultBranch.code === 0 && defaultBranch.stdout.trim() ? `origin/${defaultBranch.stdout.trim()}` : "origin/main";
+        if (defaultBranch.code !== 0 || !defaultBranch.stdout.trim()) {
+            return {code: defaultBranch.code || 12, stderr: defaultBranch.stderr || "Nie udało się ustalić domyślnej gałęzi repozytorium."};
+        }
+        baseRef = `origin/${defaultBranch.stdout.trim()}`;
     }
 
     if (!issueNumber && (description || title)) {
@@ -210,23 +283,19 @@ export function runIssueStart(argv, {execCommand = createExecutor()} = {}) {
         return {code: result.code, stderr: result.stderr};
     }
 
-    result = run("git", ["show-ref", "--verify", "--quiet", `refs/remotes/${baseRef}`], execCommand);
+    result = run("git", ["show-ref", "--verify", "--quiet", `refs/remotes/${remote}/${baseBranch}`], execCommand);
     if (result.code !== 0) {
         return {code: 12, stderr: `Missing base ref ${baseRef}.\n`};
     }
 
-    if (run("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`], execCommand).code === 0) {
-        run("git", ["checkout", branchName], execCommand);
-    } else if (run("git", ["show-ref", "--verify", "--quiet", `refs/remotes/origin/${branchName}`], execCommand).code === 0) {
-        run("git", ["checkout", "-b", branchName, "--track", `origin/${branchName}`], execCommand);
-    } else {
-        run("git", ["checkout", "-b", branchName, baseRef], execCommand);
+    const worktree = prepareWorktree({baseRef, branchName, dirtyInstruction, dirtyStrategy, execCommand, issueNumber, remote});
+    if (worktree.code !== 0) {
+        return worktree;
     }
 
-    const currentUser = run("gh", ["api", "user", "-q", ".login"], execCommand).stdout.trim();
-    const assignees = run("gh", ["issue", "view", issueNumber, "--json", "assignees", "-q", ".assignees[].login"], execCommand).stdout.trim().split(/\r?\n/).filter(Boolean);
-    if (!assignees.includes(currentUser)) {
-        run("gh", ["issue", "edit", issueNumber, "--add-assignee", currentUser], execCommand);
+    const assignment = assignCurrentUser({execCommand, issueNumber});
+    if (assignment.code !== 0) {
+        return assignment;
     }
 
     return {code: 0, stdout: `Issue #${issueNumber} ready on branch ${branchName}.\n`};

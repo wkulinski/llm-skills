@@ -7,6 +7,7 @@ shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh
   - _shared/scripts/issue-branch.mjs
+  - _shared/scripts/worktree.mjs
 ---
 
 # $gh-issue-start
@@ -32,12 +33,18 @@ Zautomatyzować start pracy nad issue: ustalenie numeru issue, utworzenie/checko
    - `<skill_dir>/scripts/start.mjs`
    - Opcje:
      - `--issue-number <NUMER>`
-     - `--title "<Tytuł>"` (używane, gdy trzeba utworzyć nowe issue)
-     - `--desc "<Opis>"` (krótki opis do utworzenia issue i nazwy brancha)
+      - `--title "<Tytuł>"` (używane, gdy trzeba utworzyć nowe issue)
+      - `--desc "<Opis>"` (krótki opis do utworzenia issue i nazwy brancha)
+      - `--dirty-strategy <stash|commit-wip|move-to-new-branch|other>` (opcjonalnie; pomija interaktywny wybór)
+      - `--dirty-instruction "<tekst>"` (wymagane dla `other` bez TTY)
      - `--base <remote/branch|branch>` (opcjonalnie; domyślnie domyślna gałąź repo)
    - Nazwa brancha jest wyprowadzana przez wspólny helper `node <skills_root>/_shared/scripts/issue-branch.mjs` i ma postać `issue/<ID>-<slug>`.
-   - Skrypt przed utworzeniem nowego brancha wykonuje `git fetch` dla base ref, aby mieć aktualną bazę.
-   - Skrypt zawsze tworzy lub checkoutuje branch dla wskazanego issue (jeśli branch nie istnieje, zostanie utworzony).
+    - Skrypt przed utworzeniem nowego brancha wykonuje `git fetch` dla base ref, aby mieć aktualną bazę.
+    - Skrypt zawsze tworzy lub checkoutuje branch dla wskazanego issue (jeśli branch nie istnieje, zostanie utworzony).
+    - Każdy checkout jest sprawdzany przez helper `<skills_root>/_shared/scripts/worktree.mjs`; sukces jest raportowany dopiero po potwierdzeniu aktywnego brancha.
+    - Przed checkoutem skrypt sprawdza `git status --porcelain=v1 -uall`. Przy dirty tree, w terminalu interaktywnym pokazuje wybór strzałkami: `stash`, `commit-wip`, `move-to-new-branch` albo `other`.
+    - `stash` zachowuje zmiany w stashu i tworzy czysty branch z bazy; `commit-wip` tworzy jawnie wybrany commit WIP na bieżącym branchu; `move-to-new-branch` aplikuje zmiany na nowym branchu; `other` przekazuje instrukcję agentowi.
+    - Bez TTY i bez `--dirty-strategy` skrypt kończy się błędem zamiast podejmować decyzję za użytkownika. Skrypt nie wykonuje automatycznie stashowania ani commita.
 3. Po powodzeniu skryptu uruchom **osobno** `$gh-issue-status-set`, aby ustawić status **In progress**:
    - Preferuj przekazanie numeru issue:
      - jeśli użyto `--issue-number`, przekaż ten numer,
@@ -75,6 +82,11 @@ Jeśli użytkownik podał `--issue-number`, a issue nie istnieje lub jest zamkni
 - `21` wiele pasujących issue → poproś użytkownika o numer i uruchom ponownie z `--issue-number`.
 - `12` brak base ref (`origin/<default>` albo wartość z `--base`) → sprawdź zdalne branche lub wskaż poprawne `--base`.
 - Inne błędy → odczytaj komunikat skryptu i popraw dane wejściowe.
+
+## Dodatkowe kody wyjścia dirty tree
+- `14` dirty tree bez jawnej strategii albo brak instrukcji dla `other` → wybierz strategię interaktywnie lub podaj parametr.
+- `15` nieudany checkout, stash, commit WIP albo brak potwierdzenia aktywnego brancha → skrypt raportuje komendę i błąd.
+- `16` wybrano `other` → agent otrzymuje instrukcję użytkownika bez automatycznej operacji.
 
 ## Format odpowiedzi
 - Wynik: issue + branch utworzone/przełączone, status ustawiony.

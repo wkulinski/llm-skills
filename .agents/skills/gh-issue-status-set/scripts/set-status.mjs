@@ -87,6 +87,33 @@ function extractSubjectKeywords(subject) {
         .join(" ");
 }
 
+const STATUS_ALIASES = new Map([
+    ["in progress", ["W trakcie"]],
+    ["ready", ["Do wzięcia"]],
+    ["done", ["Ukończone"]],
+]);
+
+function normalizeStatus(status) {
+    return String(status ?? "").normalize("NFKD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+}
+
+export function statusCandidates(status) {
+    const requested = String(status ?? "").trim();
+    return [...new Set([requested, ...(STATUS_ALIASES.get(normalizeStatus(requested)) ?? [])].filter(Boolean))];
+}
+
+function escapeJqString(value) {
+    return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function statusOptionPredicate(status) {
+    return statusCandidates(status).map((candidate) => `.name=="${escapeJqString(candidate)}"`).join(" or ");
+}
+
+function isProjectNumber(value) {
+    return /^\d+$/.test(String(value ?? ""));
+}
+
 function searchIssueByTitle({execCommand, keywords, owner, repo}) {
     if (!keywords) {
         return "";
@@ -99,7 +126,7 @@ function searchIssueByTitle({execCommand, keywords, owner, repo}) {
         "--json",
         "number,title",
         "-q",
-        '.[] | "\(.number)\t\(.title)"',
+        String.raw`.[] | "\(.number)\t\(.title)"`,
     ], execCommand);
 
     const result = search.stdout.trim();
@@ -134,10 +161,10 @@ function setFieldValueById({execCommand, fieldName, itemId, owner, projectNumber
     }
 
     const escapedFieldName = fieldName.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-    const escapedStatus = status.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const optionPredicate = statusOptionPredicate(status);
 
     const fieldQuery = `((.data.organization.projectV2.fields.nodes // .data.user.projectV2.fields.nodes // []) | map(select(.name=="${escapedFieldName}")) | .[0].id) // empty`;
-    const optionQuery = `((.data.organization.projectV2.fields.nodes // .data.user.projectV2.fields.nodes // []) | map(select(.name=="${escapedFieldName}")) | .[0].options // [] | map(select(.name=="${escapedStatus}")) | .[0].id) // empty`;
+    const optionQuery = `((.data.organization.projectV2.fields.nodes // .data.user.projectV2.fields.nodes // []) | map(select(.name=="${escapedFieldName}")) | .[0].options // [] | map(select(${optionPredicate})) | .[0].id) // empty`;
 
     const fieldId = run("gh", ["api", "graphql", "-F", "owner=" + owner, "-F", "number=" + projectNumber, "-f", `query=${projectQuery}`, "--jq", fieldQuery], execCommand).stdout.trim();
     const optionId = run("gh", ["api", "graphql", "-F", "owner=" + owner, "-F", "number=" + projectNumber, "-f", `query=${projectQuery}`, "--jq", optionQuery], execCommand).stdout.trim();
@@ -160,6 +187,53 @@ function setFieldValueById({execCommand, fieldName, itemId, owner, projectNumber
     return {code: 0};
 }
 
+function resolveProjectItem({execCommand, issueNumber, owner, projectNumber, repo}) {
+    if (projectNumber && !isProjectNumber(projectNumber)) {
+        return {code: 7, stderr: `Nieprawidłowy numer projektu '${projectNumber}'. Podaj numeryczny --project-number.\n`};
+    }
+
+    const itemsResult = run("gh", ["api", "graphql", "-F", "owner=" + owner, "-F", "repo=" + repo, "-F", "number=" + issueNumber, "-f", "query=query($owner:String!, $repo:String!, $number:Int!) { repository(owner:$owner, name:$repo) { issue(number:$number) { projectItems(first: 20) { nodes { id project { id title number } } } } } }", "--jq", String.raw`.data.repository.issue.projectItems.nodes[] | "\(.id)\t\(.project.title)\t\(.project.number)"`], execCommand);
+    if (itemsResult.code !== 0) {
+        return {code: itemsResult.code || 7, stderr: itemsResult.stderr || "Nie udało się odczytać projektów przypisanych do issue."};
+    }
+
+    const itemsRaw = itemsResult.stdout.trim();
+    const addItemToProject = (project) => run("gh", ["project", "item-add", project, "--owner", owner, "--url", `https://github.com/${owner}/${repo}/issues/${issueNumber}`, "--format", "json", "-q", ".id"], execCommand);
+    if (!itemsRaw && !projectNumber) {
+        return {code: 4, stderr: `Issue #${issueNumber} nie jest w żadnym ProjectV2. Podaj --project-number, aby je dodać.\n`};
+    }
+
+    if (!itemsRaw) {
+        const addedItem = addItemToProject(projectNumber);
+        return addedItem.code === 0 && addedItem.stdout.trim()
+            ? {code: 0, itemId: addedItem.stdout.trim(), projectNumber}
+            : {code: 6, stderr: addedItem.stderr || `Nie udało się dodać issue #${issueNumber} do projektu o numerze ${projectNumber}.\n`};
+    }
+
+    const items = itemsRaw.split(/\r?\n/).filter(Boolean);
+    if (!projectNumber && items.length > 1) {
+        return {code: 5, stderr: `Issue #${issueNumber} znajduje się w wielu projektach:\n${items.map((line) => {
+            const [, title, number] = line.split("\t");
+            return `- ${title} (numer ${number}) element=${line.split("\t")[0]}`;
+        }).join("\n")}\nPodaj --project-number, aby wybrać.\n`};
+    }
+
+    const selectedProjectNumber = projectNumber || items[0].split("\t")[2] || "";
+    if (!isProjectNumber(selectedProjectNumber)) {
+        return {code: 7, stderr: `Nieprawidłowy numer projektu '${selectedProjectNumber}'. Podaj numeryczny --project-number.\n`};
+    }
+
+    const selectedItem = items.find((line) => line.split("\t")[2] === selectedProjectNumber)?.split("\t")[0] ?? "";
+    if (selectedItem) {
+        return {code: 0, itemId: selectedItem, projectNumber: selectedProjectNumber};
+    }
+
+    const addedItem = addItemToProject(selectedProjectNumber);
+    return addedItem.code === 0 && addedItem.stdout.trim()
+        ? {code: 0, itemId: addedItem.stdout.trim(), projectNumber: selectedProjectNumber}
+        : {code: 6, stderr: addedItem.stderr || `Issue #${issueNumber} nie należy do projektu o numerze ${selectedProjectNumber} i nie udało się go dodać.\n`};
+}
+
 export function runIssueStatusSet(argv, {execCommand = createExecutor()} = {}) {
     const parsed = parseArgs(argv);
     if (parsed.error) {
@@ -175,7 +249,11 @@ export function runIssueStatusSet(argv, {execCommand = createExecutor()} = {}) {
     let {issueNumber, owner, projectNumber, repo} = parsed;
     const {fieldName, status} = parsed;
     if (!owner || !repo) {
-        const repoFull = run("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], execCommand).stdout.trim();
+        const repoView = run("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], execCommand);
+        if (repoView.code !== 0 || !repoView.stdout.trim()) {
+            return {code: repoView.code || 7, stderr: repoView.stderr || "Nie udało się ustalić repozytorium GitHub."};
+        }
+        const repoFull = repoView.stdout.trim();
         [owner, repo] = repoFull.split("/");
     }
 
@@ -200,41 +278,12 @@ export function runIssueStatusSet(argv, {execCommand = createExecutor()} = {}) {
     if (!issueNumber) {
         return {code: 3, stderr: "Nie można ustalić numeru issue. Podaj --issue lub użyj nazwy brancha issue/<ID>-*.\n"};
     }
-
-    const itemsRaw = run("gh", ["api", "graphql", "-F", "owner=" + owner, "-F", "repo=" + repo, "-F", "number=" + issueNumber, "-f", "query=query($owner:String!, $repo:String!, $number:Int!) { repository(owner:$owner, name:$repo) { issue(number:$number) { projectItems(first: 20) { nodes { id project { id title number } } } } } }", "--jq", '.data.repository.issue.projectItems.nodes[] | "\(.id)\t\(.project.title)\t\(.project.number)"'], execCommand).stdout.trim();
-
-    const addItemToProject = (projNum) => run("gh", ["project", "item-add", projNum, "--owner", owner, "--url", `https://github.com/${owner}/${repo}/issues/${issueNumber}`, "--format", "json", "-q", ".id"], execCommand).stdout.trim();
-
-    let itemId;
-    if (!itemsRaw) {
-        if (!projectNumber) {
-            return {code: 4, stderr: `Issue #${issueNumber} nie jest w żadnym ProjectV2. Podaj --project-number, aby je dodać.\n`};
-        }
-
-        itemId = addItemToProject(projectNumber);
-        if (!itemId) {
-            return {code: 6, stderr: `Nie udało się dodać issue #${issueNumber} do projektu o numerze ${projectNumber}.\n`};
-        }
-    } else {
-        const items = itemsRaw.split(/\r?\n/).filter(Boolean);
-        if (!projectNumber) {
-            if (items.length > 1) {
-                return {code: 5, stderr: `Issue #${issueNumber} znajduje się w wielu projektach:\n${items.map((line) => {
-                    const [, title, number] = line.split("\t");
-                    return `- ${title} (numer ${number}) element=${line.split("\t")[0]}`;
-                }).join("\n")}\nPodaj --project-number, aby wybrać.\n`};
-            }
-            projectNumber = items[0].split("\t")[2] ?? "";
-        }
-
-        itemId = items.find((line) => line.split("\t")[2] === projectNumber)?.split("\t")[0] ?? "";
-        if (!itemId) {
-            itemId = addItemToProject(projectNumber);
-            if (!itemId) {
-                return {code: 6, stderr: `Issue #${issueNumber} nie należy do projektu o numerze ${projectNumber} i nie udało się go dodać.\n`};
-            }
-        }
+    const projectItem = resolveProjectItem({execCommand, issueNumber, owner, projectNumber, repo});
+    if (projectItem.code !== 0) {
+        return projectItem;
     }
+    const {itemId} = projectItem;
+    projectNumber = projectItem.projectNumber;
 
     const projectRef = `${owner}/${projectNumber}`;
     const itemEditHelp = run("gh", ["project", "item-edit", "--help"], execCommand).stdout;
@@ -254,7 +303,18 @@ export function runIssueStatusSet(argv, {execCommand = createExecutor()} = {}) {
             return outcome;
         }
     } else {
-        const edit = run("gh", ["project", "item-edit", "--project", projectRef, "--id", itemId, "--field", fieldName, "--single-select-option", status], execCommand);
+        const fields = run("gh", ["project", "field-list", projectNumber, "--owner", owner, "--format", "json"], execCommand);
+        let selectedStatus = status;
+        if (fields.code === 0) {
+            try {
+                const field = JSON.parse(fields.stdout).fields?.find((candidate) => candidate.name === fieldName);
+                const availableStatuses = field?.options?.map((option) => option.name) ?? [];
+                selectedStatus = statusCandidates(status).find((candidate) => availableStatuses.includes(candidate)) ?? status;
+            } catch {
+                selectedStatus = status;
+            }
+        }
+        const edit = run("gh", ["project", "item-edit", "--project", projectRef, "--id", itemId, "--field", fieldName, "--single-select-option", selectedStatus], execCommand);
         if (edit.code !== 0) {
             return {code: 7, stderr: `Nie udało się ustawić statusu '${status}' używając pola '${fieldName}' w projekcie ${projectRef}.\nSprawdź pola: gh project field-list ${projectRef}\n`};
         }
