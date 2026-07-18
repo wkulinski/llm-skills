@@ -7,6 +7,7 @@ const REQUIRED_KEYS = [
     "role",
     "repository",
     "branch",
+    "head",
     "rules",
     "documentation",
     "active_overrides",
@@ -45,7 +46,7 @@ export function enrichContextManifest(manifest, {execFile = execFileSync, now = 
         ...manifest,
         version: manifest.version ?? 1,
         repository: manifest.repository || normalizeRepository(gitValue(["remote", "get-url", "origin"], execFile)),
-        branch: manifest.branch || gitValue(["branch", "--show-current"], execFile),
+        branch: manifest.branch || gitValue(["branch", "--show-current"], execFile) || "detached",
         head: manifest.head || gitValue(["rev-parse", "HEAD"], execFile),
         generated_at: manifest.generated_at || now.toISOString(),
     };
@@ -66,7 +67,7 @@ export function validateContextManifest(manifest) {
 
     if (manifest.version !== 1) { errors.push("version must be 1"); }
     if (!ROLES.has(manifest.role)) { errors.push("role must be primary or context-refresher"); }
-    for (const key of ["repository", "branch"]) {
+    for (const key of ["repository", "branch", "head"]) {
         if (typeof manifest[key] !== "string" || manifest[key].trim() === "") {
             errors.push(`${key} must be a non-empty string`);
         }
@@ -121,7 +122,7 @@ function parseOutputPath(args) {
 function currentGitMetadata() {
     return {
         repository: normalizeRepository(gitValue(["remote", "get-url", "origin"])),
-        branch: gitValue(["branch", "--show-current"]),
+        branch: gitValue(["branch", "--show-current"]) || "detached",
         head: gitValue(["rev-parse", "HEAD"]),
     };
 }
@@ -170,6 +171,10 @@ function main(argv) {
         }
 
         const current = currentGitMetadata();
+        if (!current.head || !current.branch) {
+            process.stderr.write("cannot verify manifest: current git metadata is unavailable\n");
+            return 1;
+        }
         const mismatches = ["repository", "branch", "head"]
             .filter((key) => manifest[key] && current[key] && manifest[key] !== current[key])
             .map((key) => `${key}: manifest=${manifest[key]} current=${current[key]}`);

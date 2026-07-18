@@ -33,10 +33,14 @@ Celem jest załadowanie lub odświeżenie kontekstu projektu w sposób spójny i
 ## Role i lifecycle
 
 Ten skill jest procedurą dla agenta głównego oraz jawnie delegowanej capability
-`context-initialization` wykonywanej przez `context-refresher`. Delegowane role
-repozytoryjne, w szczególności `context-scout`, nie uruchamiają tego skilla
-automatycznie. Otrzymują od agenta głównego manifest i wykonują wyłącznie zakres
-opisany w kontrakcie `<skills_root>/_shared/references/context-subagent-contract.md`.
+`context-initialization` wykonywanej przez `context-refresher`. Przy rozpoczęciu
+nowej sesji lub jawnym odświeżeniu agent główny standardowo deleguje pełny refresh
+do `context-refresher` i korzysta z bezpośredniego wykonania skilla wyłącznie
+jako fallbacku po niedostępności delegacji, statusie `BLOCKED`/`INCOMPLETE` albo
+nieudanym `validate`/`verify` manifestu. Delegowane role repozytoryjne, w
+szczególności `context-scout`, nie uruchamiają tego skilla automatycznie.
+Otrzymują od agenta głównego manifest i wykonują wyłącznie zakres opisany w
+kontrakcie `<skills_root>/_shared/references/context-subagent-contract.md`.
 
 W tym repozytorium źródłem prawdy dla “procedury startowej” jest ten skill (root `AGENTS.md` jest tylko entrypointem).
 
