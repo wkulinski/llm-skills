@@ -14,7 +14,21 @@ shared_files:
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/references/symbolic-navigation-and-editing-policy.md
   - _shared/references/context-subagent-contract.md
+  - _shared/references/repository-context-hybrid.md
+  - _shared/references/repository-context-scout-playbook.md
+  - _shared/references/context-scout-report-protocol.md
+  - _shared/scripts/context-criteria.mjs
+  - _shared/scripts/context-criteria.test.mjs
+  - _shared/scripts/context-handoff.mjs
+  - _shared/scripts/context-handoff.test.mjs
   - _shared/scripts/context-manifest.mjs
+  - _shared/scripts/context-scout-agent-contract.test.mjs
+  - _shared/scripts/context-scout-hybrid-run.mjs
+  - _shared/scripts/context-scout-hybrid-run.test.mjs
+  - _shared/scripts/context-scout-opencode-integration.test.mjs
+  - _shared/scripts/context-scout-report-builder.mjs
+  - _shared/scripts/context-scout-report-builder.test.mjs
+  - _shared/scripts/context-scout-report.mjs
   - _shared/scripts/env-load.sh
 ---
 
@@ -93,7 +107,11 @@ delegacja jest równoważna bezpośredniemu wykonaniu skilla tylko wtedy, gdy:
 - nie wykona drugi raz tego samego skilla dla tego samego kroku.
 
 Dopuszczone capability:
-- `repository-context` mapuje się na read-only `context-scout`; nie uruchamia `$context-refresh`, nie czyta issue/komentarzy i działa na briefie oraz manifeście przekazanym przez agenta głównego. Raport zawiera zakres repozytoryjny, istotne pliki/moduły/symbole, testy, ryzyka i następny krok,
+- `repository-context` jest kontrolowany przez helper hybrydy
+  zgodnie z jedynym źródłem prawdy
+  `<skills_root>/_shared/references/repository-context-hybrid.md`. Raport zawiera
+  zakres repozytoryjny, istotne pliki/moduły/symbole, testy, ryzyka i następny
+  krok; po jego walidacji agent główny może wykonywać punktowe odczyty,
 - `context-initialization` mapuje się na `context-refresher`; jest jedyną delegowaną capability, która może wykonać pełny `$context-refresh` i zwrócić manifest kontekstu,
 - `runtime-diagnostics` zastępuje `$dev-mate`; raport zawiera użyte narzędzia i parametry, wynik, dowody, wskazane pliki/symbole oraz następny krok.
 
@@ -328,9 +346,11 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
    `$context-refresh` bezpośrednio jako agent główny albo jawnie deleguj
    `context-initialization` do `context-refresher`. Nie uruchamiaj pełnego refreshu
    z `context-scout`.
-3. Dla zadania przekrojowego wyślij do `context-scout` zwięzły brief i manifest
-   przez kontrakt `<skills_root>/_shared/references/context-subagent-contract.md`.
-   Nie przekazuj pełnej treści issue, komentarzy, dokumentów ani plików.
+3. Dla każdego zadania wymagającego `repository-context` przygotuj zwięzły brief,
+   handoff, manifest i criteria, a następnie uruchom helper hybrydy zgodnie z
+   `<skills_root>/_shared/references/context-subagent-contract.md`. Nie
+   przekazuj pełnej treści issue, komentarzy, dokumentów ani plików i nie omijaj
+   primary bezpośrednim wywołaniem scouta.
 4. Ustal obszar zmian:
    - znajdź docelowe moduły/pliki (np. przez `rg` po symbolach),
    - doczytaj README dokumentacji dla dotkniętych modułów (zgodnie z `docs_map` z `AGENTS.md`).
