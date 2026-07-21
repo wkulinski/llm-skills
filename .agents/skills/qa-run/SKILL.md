@@ -302,6 +302,8 @@ Algorytm:
 1. Utwórz ścieżkę sesji, np. `/tmp/qa-run-session-<timestamp>.json`.
 2. Uruchom pełny przebieg:
    - `node <skill_dir>/scripts/run-matrix.mjs --session <session> --rerun-reason initial`
+   - `initial` może zakończyć się sukcesem najwyżej raz w danej sesji. Jeśli sesja ma już `lastFullPass`, runner odrzuca kolejne `initial`; niezależny pełny przebieg wymaga nowej ścieżki `--session`.
+   - Przerwany lub nieudany pierwszy przebieg, który nie zapisał `lastFullPass`, można ponowić z tym samym `initial` i tą samą sesją.
 3. Jeśli matrix zwróci `FAIL`:
    - zapisz snapshot,
    - wykonaj dozwoloną naprawę,

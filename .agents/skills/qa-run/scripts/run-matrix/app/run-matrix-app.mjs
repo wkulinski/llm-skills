@@ -81,6 +81,7 @@ export class RunMatrixApp {
             ? resolveRepoPath(repoRoot, cli.sessionPath)
             : null;
         const session = loadSessionOrExit(sessionAbsPath);
+        enforceSessionLifecycleOrExit(cli, session, sessionAbsPath);
 
         const artifacts = createArtifacts(repoRoot, cli.rerunReason);
         const activeSections = detectActiveSections(files, config, mode);
@@ -302,6 +303,26 @@ function loadSessionOrExit(sessionAbsPath) {
         process.exit(2);
         throw error;
     }
+}
+
+function enforceSessionLifecycleOrExit(cli, session, sessionAbsPath) {
+    try {
+        enforceSessionLifecycle(cli, session, sessionAbsPath);
+    } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(2);
+        throw error;
+    }
+}
+
+export function enforceSessionLifecycle(cli, session, sessionAbsPath) {
+    if (cli.rerunReason !== "initial" || !session.lastFullPass) {
+        return;
+    }
+
+    throw new Error(
+        `QA session already has a successful full pass: ${sessionAbsPath}. Use a new --session path for an independent initial run.`
+    );
 }
 
 function parseArgs(argv) {
