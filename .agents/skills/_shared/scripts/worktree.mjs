@@ -40,6 +40,63 @@ export function commandFailure(command, args, result) {
     return `Nie udało się wykonać: ${command} ${args.join(" ")} (${details}).`;
 }
 
+function resolveAheadBehind({branchName, baseRef, execCommand}) {
+    const args = ["rev-list", "--left-right", "--count", `${branchName}...${baseRef}`];
+    const result = run("git", args, execCommand);
+    if (result.code !== 0) {
+        return {
+            code: 15,
+            stderr: commandFailure("git", args, result),
+        };
+    }
+
+    const values = result.stdout.trim().split(/\s+/).map(Number);
+    if (values.length !== 2 || values.some((value) => !Number.isInteger(value) || value < 0)) {
+        return {
+            code: 15,
+            stderr: `Nie udało się ustalić rozjazdu brancha '${branchName}' względem bazy '${baseRef}'. Oczekiwano dwóch liczników ahead/behind.`,
+        };
+    }
+
+    return {code: 0, ahead: values[0], behind: values[1]};
+}
+
+export function synchronizeBranchWithBase({branchName, baseRef, execCommand}) {
+    const divergence = resolveAheadBehind({branchName, baseRef, execCommand});
+    if (divergence.code !== 0) {
+        return divergence;
+    }
+
+    const {ahead, behind} = divergence;
+    if (behind === 0) {
+        return {code: 0, ahead, behind, synchronized: true};
+    }
+
+    if (ahead > 0) {
+        return {
+            code: 17,
+            ahead,
+            behind,
+            synchronized: false,
+            stderr: `Branch '${branchName}' jest rozjechany z bazą '${baseRef}' (ahead ${ahead}, behind ${behind}). Automatyczny fast-forward nie jest możliwy; wybierz rebase albo merge świadomie.`,
+        };
+    }
+
+    const args = ["merge", "--ff-only", baseRef];
+    const result = run("git", args, execCommand);
+    if (result.code !== 0) {
+        return {
+            code: 15,
+            ahead,
+            behind,
+            synchronized: false,
+            stderr: commandFailure("git", args, result),
+        };
+    }
+
+    return {code: 0, ahead: 0, behind, synchronized: true, fastForwarded: true};
+}
+
 export function getDirtyTreeStatus(execCommand) {
     const result = run("git", ["status", "--porcelain=v1", "-uall"], execCommand);
 
@@ -172,7 +229,15 @@ export function checkoutBranch({branchName, baseRef, remote, execCommand}) {
         };
     }
 
-    return {code: 0, branchName};
+    const synchronization = synchronizeBranchWithBase({branchName, baseRef, execCommand});
+    if (synchronization.code !== 0) {
+        return {
+            ...synchronization,
+            branchName,
+        };
+    }
+
+    return {code: 0, branchName, ...synchronization};
 }
 
 export function applyDirtyTreeStrategy({strategy, issueNumber, branchName, baseRef, remote, execCommand}) {

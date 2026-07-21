@@ -39,9 +39,10 @@ Zautomatyzować start pracy nad issue: ustalenie numeru issue, utworzenie/checko
       - `--dirty-instruction "<tekst>"` (wymagane dla `other` bez TTY)
      - `--base <remote/branch|branch>` (opcjonalnie; domyślnie domyślna gałąź repo)
    - Nazwa brancha jest wyprowadzana przez wspólny helper `node <skills_root>/_shared/scripts/issue-branch.mjs` i ma postać `issue/<ID>-<slug>`.
-    - Skrypt przed utworzeniem nowego brancha wykonuje `git fetch` dla base ref, aby mieć aktualną bazę.
+    - Skrypt zawsze wykonuje `git fetch` dla base ref przed utworzeniem lub checkoutem brancha, aby porównanie odbywało się ze świeżą bazą.
     - Skrypt zawsze tworzy lub checkoutuje branch dla wskazanego issue (jeśli branch nie istnieje, zostanie utworzony).
-    - Każdy checkout jest sprawdzany przez helper `<skills_root>/_shared/scripts/worktree.mjs`; sukces jest raportowany dopiero po potwierdzeniu aktywnego brancha.
+    - Po checkoutcie istniejącego brancha helper porównuje `ahead/behind` względem base ref: branch wyłącznie za bazą jest aktualizowany przez `git merge --ff-only <base>`, a branch rozjechany w obu kierunkach zatrzymuje procedurę.
+    - Każdy checkout i ewentualna synchronizacja są sprawdzane przez helper `<skills_root>/_shared/scripts/worktree.mjs`; sukces jest raportowany dopiero po potwierdzeniu aktywnego i zgodnego brancha.
     - Przed checkoutem skrypt sprawdza `git status --porcelain=v1 -uall`. Przy dirty tree, w terminalu interaktywnym pokazuje wybór strzałkami: `stash`, `commit-wip`, `move-to-new-branch` albo `other`.
     - `stash` zachowuje zmiany w stashu i tworzy czysty branch z bazy; `commit-wip` tworzy jawnie wybrany commit WIP na bieżącym branchu; `move-to-new-branch` aplikuje zmiany na nowym branchu; `other` przekazuje instrukcję agentowi.
     - Bez TTY i bez `--dirty-strategy` skrypt kończy się błędem zamiast podejmować decyzję za użytkownika. Skrypt nie wykonuje automatycznie stashowania ani commita.
@@ -81,6 +82,7 @@ Jeśli użytkownik podał `--issue-number`, a issue nie istnieje lub jest zamkni
 - `13` issue o podanym numerze nie istnieje lub jest zamknięte → poinformuj użytkownika i poproś o poprawny `--issue-number` (sprawdź, czy issue nie zostało zamknięte).
 - `21` wiele pasujących issue → poproś użytkownika o numer i uruchom ponownie z `--issue-number`.
 - `12` brak base ref (`origin/<default>` albo wartość z `--base`) → sprawdź zdalne branche lub wskaż poprawne `--base`.
+- `17` branch ma rozbieżną historię względem base (`ahead > 0` i `behind > 0`) → zatrzymaj się i uzgodnij rebase albo merge.
 - Inne błędy → odczytaj komunikat skryptu i popraw dane wejściowe.
 
 ## Dodatkowe kody wyjścia dirty tree
