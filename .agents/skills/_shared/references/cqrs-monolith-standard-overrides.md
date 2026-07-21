@@ -248,14 +248,22 @@ Przy dodawaniu nowej klasy przejdź przez poniższe pytania w kolejności:
 - Dozwolone cross-module:
   - zależność do `TargetModule/Application/UseCase/Command/**` oraz `TargetModule/Application/UseCase/Query/**` jako publicznych kontraktów messages w tym profilu,
   - zależność do `TargetModule/Application/Port/In/**` wyłącznie przy implementacji jawnie udokumentowanego kontraktu pluginowego modułu docelowego,
-  - uzgodnione kontrakty współdzielone z `Shared`.
+  - uzgodnione kontrakty współdzielone z `Shared`,
+  - kontrolowany, wyłącznie odczytowy read model SQL (`SELECT`, w tym `JOIN` / `UNION` / CTE) łączący tabele należące do kilku modułów, jeśli wszystkie poniższe warunki są spełnione:
+    - zapytanie działa na jednym połączeniu i w tej samej bazie danych; nie emuluje joinów między połączeniami,
+    - implementacja pozostaje w `Infrastructure/Repository/**` modułu będącego właścicielem przekrojowego use case'a i implementuje jego lokalny port z `Application/Port/Out/**` zakończony sufiksem `ReadRepositoryPort`,
+    - kod PHP nie importuje encji, repozytoriów, portów `Out`, klas `Domain` ani `Infrastructure` obcych modułów; zależność od obcych modułów istnieje wyłącznie na poziomie jawnie nazwanych tabel i kolumn SQL,
+    - zapytanie nie zapisuje, nie naprawia i nie usuwa danych w tabelach obcych modułów,
+    - read model respektuje tenant scope, soft-delete, uprawnienia do każdego źródła, stabilną paginację oraz semantykę danych właściciela tabeli,
+    - zależność od tabel obcych modułów jest jawnie opisana w dokumentacji modułu/read modelu i pokryta testami integracyjnymi wykrywającymi zmianę kontraktu tabel,
+    - wyjątek służy agregacji/reportingowi read-side, a nie obchodzeniu publicznego API modułu dla zwykłego odczytu CRUD.
 - Niedozwolone cross-module:
   - zależność do `TargetModule/Application/Port/In/**` jako alternatywy dla `CommandBus` / `QueryBus` w odczycie i zapisie danych biznesowych,
   - zależność do `TargetModule/Application/Port/Out/**`,
   - zależność do `TargetModule/Application/Port/*.php` (płaskie porty legacy poza wyjątkami technicznymi),
   - zależność do `TargetModule/Domain/**` i `TargetModule/Infrastructure/**` innego modułu.
 - Niedozwolone obejścia:
-  - bezpośredni odczyt tabel, encji Doctrine, repozytoriów lub innych szczegółów persystencji obcego modułu tylko po to, aby ominąć jego application layer,
+  - bezpośredni odczyt encji Doctrine, repozytoriów lub innych szczegółów persystencji obcego modułu; bezpośredni odczyt tabel jest dozwolony wyłącznie w kontrolowanym wyjątku read-side SQL opisanym powyżej,
   - „sprytne” odpowiedniki cross-module API budowane poza `CommandBus` / `QueryBus`.
 
 ## 9. Doctrine i model relacji (override)
