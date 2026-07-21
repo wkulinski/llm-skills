@@ -7,6 +7,7 @@
 - `$dev-mate`
 - `$docs-sync`
 - `$docs-todo`
+- `$frontend-ui-consistency`
 - `$gh-issue-review`
 - `$gh-issue-start`
 - `$gh-issue-status-set`
@@ -18,4 +19,3 @@
 - `$review-quick`
 - `$rules-sync`
 - `$skills-index-refresh`
-- `$skills-sync`

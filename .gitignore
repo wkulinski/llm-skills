@@ -20,3 +20,4 @@ default-reviewers.txt
 
 /docs/draft/
 /var/
+/.playwright-cli/
