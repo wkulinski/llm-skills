@@ -155,7 +155,7 @@ Poza zakresem:
   - Zachowano 6 lokalnych nadpisań i wpisano je do sekcji "Lokalne nadpisania względem skills/_shared".
   - Zachowano 9 reguł lokalnych unikalnych dla repo.
   Użyte klucze/fallbacki: MAIN_DOC=docs/README.md, AGENT_RULES_DOC=<auto:AGENTS.md z katalogu MAIN_DOC>, QUALITY_PROCEDURES_DOC=<auto: plik z "quality/procedure" z katalogu MAIN_DOC>.
-  Zmienione pliki: AGENTS.md, <agent_rules_doc_path>, <quality_procedures_doc_path>.
+  Zmienione pliki: AGENTS.md, `<agent_rules_doc_path>`, `<quality_procedures_doc_path>`.
   Uwagi: 1 reguła oznaczona jako niejednoznaczna (wymaga decyzji użytkownika).
   ```
 
