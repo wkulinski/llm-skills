@@ -30,6 +30,8 @@ shared_files:
   - _shared/scripts/context-scout-report-builder.test.mjs
   - _shared/scripts/context-scout-report.mjs
   - _shared/scripts/env-load.sh
+  - _shared/scripts/targeted-check-decision.mjs
+  - _shared/scripts/targeted-check-decision.test.mjs
 ---
 
 # $code-implement
@@ -306,8 +308,8 @@ Twarde reguły statusów:
 
 #### `env_blocker`
 - Znaczenie: środowisko blokuje weryfikację/implementację (narzędzia, kontenery, DB, uprawnienia).
-- Kiedy zwracać: błąd jest reprodukowalny i nieusuwalny w bieżącej sesji.
-- Kiedy nie zwracać: problem znika po poprawnym użyciu lokalnych entrypointów (`resolve_tool_cmd`) lub prostym retry.
+- Kiedy zwracać: dozwolona komenda została rzeczywiście uruchomiona, błąd środowiska jest reprodukowalny i nieusuwalny w bieżącej sesji, a `<skills_root>/_shared/scripts/targeted-check-decision.mjs` zwrócił `ENV_BLOCKER`.
+- Kiedy nie zwracać: komendy jeszcze nie próbowano uruchomić, brakuje punktowego wpisu w matrixie albo problem znika po poprawnym użyciu lokalnych entrypointów (`resolve_tool_cmd`) lub prostym retry. Brak punktowej komendy to `verification_gap`, nie `env_blocker`.
 
 #### `qa_iteration_limit_reached`
 - Znaczenie: `$qa-run` nie osiągnął `PASS` w limicie iteracji.
@@ -414,7 +416,7 @@ Gdy użytkownik zgłasza błąd/uwagę po Twojej implementacji:
    - “Cel iteracji: …” (1 zdanie),
    - “Kryterium gotowe: …” (1 zdanie).
 3. Poprawiaj tylko to, co wynika z celu iteracji + Rejestru wymagań; nie “uciekaj” w poboczne zmiany.
-4. Jeśli po poprawce trzeba ponownie sprawdzić wynik, wolno powtórzyć wyłącznie pojedynczy, celowany test Codeception; ponowne uruchamianie lintów w ramach `$code-implement` jest zabronione.
+4. Jeśli po poprawce trzeba ponownie sprawdzić wynik, wywołaj `<skills_root>/_shared/scripts/targeted-check-decision.mjs` z `--target-origin feedback`; gdy helper zwróci `RUN_TARGETED_TEST`, wolno powtórzyć wyłącznie pojedynczy plik testowy albo 1–3 wskazane metody. Ponowne uruchamianie lintów w ramach `$code-implement` jest zabronione.
 5. Jeśli nie zgadzasz się z feedbackiem: nie “upieraj się” — zweryfikuj w kodzie/komendą i dopiero wtedy argumentuj wynikiem.
 6. Na koniec iteracji zaktualizuj statusy R# + Dowody, dopisz wpis do Dziennika odczytów (jeśli coś czytałeś/uruchamiałeś) oraz wpis do Dziennika iteracji używając odpowiednich skryptów.
 7. Szybka checklista zamknięcia iteracji:
@@ -434,12 +436,18 @@ Gdy użytkownik zgłasza błąd/uwagę po Twojej implementacji:
 3. Jeśli zmiany obejmują którekolwiek z typów:
    - PHP (`.php`), Twig (`.twig`), JS/TS (`.js/.jsx/.ts/.tsx`), CSS/SCSS (`.css/.scss`), YAML (`.yml/.yaml`), tłumaczenia (`translations/**` lub `src/*/UI/Translation/**`)
    to wykonaj `$review-quick`.
-4. Jeśli trzeba wykonać test/lint, użyj wyłącznie punktowej komendy 1:1 z matrixa, bezpośrednio powiązanej z ostatnim przyrostem.
+4. Jeśli trzeba wykonać test/lint, najpierw uruchom `node <skills_root>/_shared/scripts/targeted-check-decision.mjs` z jawnymi danymi o źródle celu, zakresie i dostępnej komendzie matrixa. Zastosuj wynik bez reinterpretacji:
+   - `RUN_TARGETED_TEST`: uruchom bezpośrednio test wskazany przez kryterium akceptacji albo feedback, ograniczony do jednego pliku lub 1–3 metod; entrypoint (`codecept`, `phpunit`, `yarn` itp.) zawsze wyznacz przez `resolve_tool_cmd`,
+   - `RUN_MATRIX_CHECK`: uruchom punktową komendę 1:1 z matrixa, bezpośrednio powiązaną z ostatnim przyrostem,
+   - `REVIEW_ONLY`: zakończ na `$review-quick` i zaraportuj `verification_gap`, nie blocker,
+   - `ENV_BLOCKER`: użyj STOP_CODE dopiero po rzeczywistej próbie wykonania dozwolonej komendy i potwierdzonym błędzie środowiska.
+   Ograniczenia:
+   - bezpośredni wyjątek dotyczy testów, nie lintów,
    - nie uruchamiaj pełnego `$qa-run` ani jako kroku końcowego, ani jako fallbacku,
    - nie zastępuj punktowego checka szerszym runem "na wszelki wypadek",
-   - jeśli punktowy check nie istnieje albo nie da się go jednoznacznie powiązać z ostatnim krokiem, zaraportuj `$review-quick` oraz brak sensownego punktowego checka.
+   - pełny suite w matrixie nie jest punktowym fallbackiem i wymaga jawnego workflow użytkownika.
 5. Po poprawce konkretnego błędu:
-   - wolno powtórzyć wyłącznie pojedynczy, celowany test Codeception, jeśli to on zgłosił błąd,
+   - wolno powtórzyć test tylko przy decyzji `RUN_TARGETED_TEST`,
    - nie wolno ponownie uruchamiać lintów w ramach `$code-implement`.
 6. Pełne `$qa-run` uruchamiaj tylko wtedy, gdy użytkownik wyraźnie i jednoznacznie o to poprosi.
 7. Jeśli użytkownik nie zażądał pełnego QA, finalne sprawdzenie kończy się na `review-quick` i punktowym checku albo na samym `review-quick`, jeśli checku punktowego nie ma.

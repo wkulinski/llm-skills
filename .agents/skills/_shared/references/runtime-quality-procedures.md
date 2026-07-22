@@ -27,6 +27,11 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
 2. Utrzymuj zasadę evidence-based: decyzje i raportowanie opieraj na realnych odczytach/komendach.
 3. Domyślna weryfikacja po implementacji jest punktowa i dotyczy ostatniego przyrostu; pełne QA uruchamiaj wyłącznie z jawnego polecenia użytkownika albo przez skill, który explicite to definiuje.
 4. Nie rozszerzaj zakresu bez decyzji użytkownika, zwłaszcza dla zmian high-risk.
+5. Przed wyborem końcowego testu/lintu uruchom `node .agents/skills/_shared/scripts/targeted-check-decision.mjs` z parametrami wynikającymi z kryteriów, feedbacku i matrixa:
+   - `RUN_TARGETED_TEST`: jeden wskazany plik testowy albo 1–3 metody, przez entrypoint z `resolve_tool_cmd`,
+   - `RUN_MATRIX_CHECK`: punktowa komenda 1:1 z `.agents/qa-run.matrix.json`,
+   - `REVIEW_ONLY`: raportuj `verification_gap`; nie używaj pełnego suite jako fallbacku,
+   - `ENV_BLOCKER`: wyłącznie po rzeczywistej próbie wykonania dozwolonej komendy zakończonej błędem środowiska.
 
 ## 4. Przed zakończeniem zadania
 1. Jeśli to zadanie implementacyjne: zastosuj `$code-implement` jako orkiestrator.

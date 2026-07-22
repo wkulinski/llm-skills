@@ -79,7 +79,10 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
 
 ## 5. QA Command Policy (single source of truth)
 - Źródłem prawdy dla komend QA jest wyłącznie repozytorium: `.agents/qa-run.matrix.json`.
-- Agent nie uruchamia komend QA „z sufitu” (np. bezpośrednio `stylelint`, `eslint`, `phpstan`, `codecept`), jeśli nie występują one 1:1 w macierzy QA.
+- Decyzję o końcowym checku punktowym wyznaczaj deterministycznie przez `.agents/skills/_shared/scripts/targeted-check-decision.mjs`. Helper zwraca wyłącznie `RUN_TARGETED_TEST`, `RUN_MATRIX_CHECK`, `REVIEW_ONLY` albo `ENV_BLOCKER`.
+- Agent nie uruchamia komend QA „z sufitu” (np. bezpośrednio `stylelint`, `eslint`, `phpstan`, `codecept`), jeśli nie występują one 1:1 w macierzy QA, z jednym kontrolowanym wyjątkiem `RUN_TARGETED_TEST`.
+- `RUN_TARGETED_TEST` pozwala uruchomić bezpośrednio test wskazany przez kryterium akceptacji albo konkretny feedback użytkownika, jeżeli zakres obejmuje dokładnie jeden plik testowy lub 1–3 wskazane metody. Komenda musi używać entrypointu z `resolve_tool_cmd`.
+- Wyjątek `RUN_TARGETED_TEST` dotyczy testów, nie lintów. Nie pozwala uruchamiać całego suite ani pełnego QA.
 - Dopuszczalny jest ad-hoc quick-check, ale tylko:
   - komendami obecnymi 1:1 w `.agents/qa-run.matrix.json`,
   - dla sekcji odpowiadającej rzeczywiście wykrytym zmianom (`*_CHANGED`),
@@ -93,7 +96,7 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
   - w ramach pełnej procedury `$qa-run`.
 - Pełne QA (pełna sekwencja komend i iteracje naprawcze) uruchamiaj wyłącznie przez `$qa-run`.
 - W zwykłej pętli implementacyjnej pełne QA uruchamiaj tylko dla zmian rozległych/high-risk albo na wyraźne polecenie. Dla małych zmian preferuj `$review-quick` i ewentualnie zawężony quick-check zgodny z matrixem.
-- Jeśli potrzebna komenda QA nie ma odpowiednika w macierzy, agent zgłasza brak i nie uruchamia alternatywnej komendy ad-hoc.
+- `RUN_MATRIX_CHECK` oznacza lekki check 1:1 z macierzy. `REVIEW_ONLY` oznacza jawny `verification_gap`, a nie blocker techniczny; pełny suite nie jest fallbackiem. `ENV_BLOCKER` wolno zgłosić wyłącznie po rzeczywistej próbie wykonania dozwolonej komendy zakończonej błędem środowiska.
 
 ## 6. Dokumentacja i spójność
 - Aktualizuj dokumentację tylko tam, gdzie zmiana faktycznie wpływa na opis działania.
