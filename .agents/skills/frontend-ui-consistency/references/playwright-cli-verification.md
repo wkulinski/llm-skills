@@ -75,7 +75,20 @@ Preferuj istniejący katalog projektu. Jeśli go nie ma, użyj:
 
 Przed zapisem sprawdź, czy katalog jest ignorowany przez Git. Screenshoty, trace i video nie powinny trafiać do repozytorium, chyba że są świadomie utrzymywanym baseline'em.
 
+Jeżeli katalog artefaktów w repozytorium nie jest potwierdzony jako ignorowany,
+nie zmieniaj automatycznie `.gitignore`. Użyj zatwierdzonego katalogu
+tymczasowego poza repozytorium, np.
+`${TMPDIR:-/tmp}/opencode/frontend-ui/<zadanie>/`, po uprzednim sprawdzeniu jego
+rodzica. Uruchamiaj całą sesję `playwright-cli` z tym katalogiem jako katalogiem
+roboczym, aby także automatyczne snapshoty i logi konsoli pozostały poza repo.
+Nie pozostawiaj artefaktów jako nieśledzonych plików repo.
+
 Storage state i profile przechowuj pod ignorowanym `.playwright-cli/auth/`. Nie zapisuj sekretów, danych produkcyjnych ani PII w artefaktach.
+
+W `execution_mode: advisory` nie zapisuj storage state w repozytorium i nie
+wykonuj operacji zmieniających dane lub stan aplikacji. Dopuszczalne są
+niemutujące interakcje potrzebne do obejrzenia widoku, np. przełączenie zakładki,
+rozwinięcie panelu lub zmiana viewportu, o ile nie zapisują danych.
 
 ## Stabilny stan porównawczy
 
