@@ -13,16 +13,19 @@ produktu. Zmiana layoutu lub modelu informacji wymaga rozszerzenia zakresu.
 
 ## Doszlifowanie na żądanie
 
-Tryb doszlifowania uruchamiaj wyłącznie po prośbie użytkownika o polish,
+`task_mode: view-polish` ustawiaj wyłącznie po prośbie użytkownika o polish,
 wykończenie, dopracowanie lub podniesienie jakości widoku. Jego celem jest
 usunięcie wrażenia mechanicznego szablonu, nie zastąpienie istniejącego designu.
 
 Pracuj w krótkiej pętli:
 
-1. Obejrzyj baseline w docelowym stanie i zapisz maksymalnie 5 obserwacji.
-2. Wybierz maksymalnie 3 korekty o wysokim wpływie i wspólnej przyczynie.
-3. Wprowadź je bez nowych lokalnych wyjątków, jeżeli istniejący system wystarcza.
-4. Obejrzyj before/after w tych samych viewportach i odrzuć korekty czysto dekoracyjne.
+1. Obejrzyj stabilny stan i zapisz maksymalnie 5 obserwacji.
+2. W `advisory` wybierz maksymalnie 3 rekomendacje o wysokim wpływie i wspólnej
+   przyczynie; nie wprowadzaj ich i nie wykonuj porównania after.
+3. W `implementation` wybierz maksymalnie 3 korekty, wprowadź je bez nowych
+   lokalnych wyjątków, jeżeli istniejący system wystarcza, a następnie obejrzyj
+   before/after w tych samych viewportach.
+4. Odrzuć rekomendacje i korekty czysto dekoracyjne.
 
 Za oznakę dobrego wykończenia uznaj przede wszystkim:
 
@@ -40,7 +43,7 @@ element musi mieć funkcję, istniejący wzorzec lub jasno uzasadnioną rolę.
 
 ## Pakiet dowodów i selekcja
 
-Przed zmianą zapisz w notatkach roboczych:
+Przed rekomendacją lub zmianą zapisz w notatkach roboczych:
 
 - ekran, funkcję, główną akcję, viewport i stabilny stan,
 - screenshot before oraz dane użyte do renderowania,
@@ -65,7 +68,7 @@ układu tylko dlatego, że element wygląda podobnie.
 Oznacza właściwy poziom intencji, proporcji, powściągliwości i charakteru dla
 konkretnego produktu.
 
-### Przed edycją
+### Przed rekomendacją lub edycją
 
 Zapisz krótką tezę kompozycyjną:
 
@@ -84,7 +87,7 @@ Następnie wskaż:
 Jeżeli nie da się tego określić z funkcji ekranu, treści i wzorców, zatrzymaj się
 na odkryciu zamiast generować ogólną „estetykę”.
 
-### Po edycji
+### Po edycji — tylko `execution_mode: implementation`
 
 Oceń screenshot before/after bez patrzenia najpierw na kod:
 
@@ -183,14 +186,14 @@ Przed zakończeniem odpowiedz konkretnie:
 - Czy zachowano właściwą gęstość?
 - Czy ruch ma funkcję?
 
-W trybie doszlifowania odpowiedz także:
+W `task_mode: view-polish` odpowiedz także:
 
 - Jaki konkretny problem sprawiał, że widok wyglądał mechanicznie lub przeciętnie?
-- Które maksymalnie trzy korekty dały największą poprawę?
-- Jaki istniejący wzorzec, token lub zasada uzasadnia każdą korektę?
-- Czy po korekcie widok jest bardziej charakterystyczny dzięki klarowności i rytmowi,
-  a nie dzięki większej liczbie dekoracji?
+- Które maksymalnie trzy rekomendacje albo korekty mają największy wpływ?
+- Jaki istniejący wzorzec, token lub zasada uzasadnia każdą z nich?
+- W `implementation`: czy po korekcie widok jest bardziej charakterystyczny
+  dzięki klarowności i rytmowi, a nie dzięki większej liczbie dekoracji?
 
-Ocena musi opierać się na odczytanym jako obraz screenshotcie końcowym, nie tylko
-na snapshotcie DOM lub kodzie. Gdy korekta zmienia kod, wykonaj ponowną weryfikację
-adekwatną do profilu.
+Ocena musi opierać się na screenshotcie odczytanym jako obraz, nie tylko na
+snapshotcie DOM lub kodzie. W `implementation` musi to być screenshot końcowy;
+gdy korekta zmienia kod, wykonaj ponowną weryfikację adekwatną do profilu.
