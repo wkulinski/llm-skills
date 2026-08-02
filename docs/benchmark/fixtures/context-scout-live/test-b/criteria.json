@@ -1,0 +1,30 @@
+{
+  "criteria": [
+    {
+      "id": "C1",
+      "description": "Locate the context-scout-fast agent strategy and safety permissions.",
+      "forbid_negative_claims": true,
+      "required_evidence": [
+        {"path": ".opencode/agent/context-scout-fast.md", "anchors": ["permission:", "codebase-memory*"]}
+      ]
+    },
+    {
+      "id": "C2",
+      "description": "Locate the shared report and hybrid lifecycle implementation.",
+      "forbid_negative_claims": true,
+      "required_evidence": [
+        {"path": ".agents/skills/_shared/scripts/context-scout-hybrid-run.mjs", "anchors": ["prepareHybrid", "evaluateAttempt"]},
+        {"path": ".agents/skills/_shared/scripts/context-scout-report-builder.mjs", "anchors": ["batchRender"]}
+      ]
+    },
+    {
+      "id": "C3",
+      "description": "Locate tests that validate the scout contract and lifecycle.",
+      "forbid_negative_claims": true,
+      "required_evidence": [
+        {"path": "tests/skills/_shared/context-scout-agent-contract.test.mjs", "anchors": ["context scout agent contracts"]},
+        {"path": "tests/skills/_shared/context-scout-hybrid-run.test.mjs", "anchors": ["valid primary finalizes without fallback"]}
+      ]
+    }
+  ]
+}

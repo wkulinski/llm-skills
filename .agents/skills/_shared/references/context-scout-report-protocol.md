@@ -15,8 +15,11 @@ do not use shell command substitution or compound shell commands:
 
 ```text
 add-evidence "$LEDGER" --path "repo/file" --line-start 1 --line-end 2
-add-finding "$LEDGER" --criterion C1 --claim "..." --evidence E1,E2
+add-finding "$LEDGER" --criterion C1 --claim "..." --claim-type structural --confidence high --anchors "literal,terms" --evidence E1,E2
 set-coverage "$LEDGER" --criterion C1 --status covered --evidence E1,E2
+batch "$LEDGER" < report.json
+add-covered-path "$LEDGER" --path "repo/file" --line-start 1 --line-end 2 --locator "Symbol" --relation "defines"
+add-follow-up "$LEDGER" --path "repo/other-file" --reason "required only for implementation read-before-write"
 add-risk "$LEDGER" --text "..."
 add-omitted "$LEDGER" --text "..."
 set-next-step "$LEDGER" --text "..."
@@ -24,8 +27,16 @@ check "$LEDGER"
 render "$LEDGER" --status COMPLETE --output "$REPORT"
 ```
 
-`--claim` and `--evidence` are for `add-finding`. `add-risk`, `add-omitted` and
-`set-next-step` require `--text`. Do not hand-write the final JSON.
+`batch` validates and stores a complete report in the ledger in one command;
+the helper can render it later if the agent is interrupted. `--claim-type` must be `observed`, `structural` or `inferred`; `--confidence`
+must be `high`, `medium` or `low`. Use `inferred` for interpretations and make
+their uncertainty explicit in the claim. `--anchors` lists literal terms that
+must occur inside the cited evidence ranges; split a claim instead of using
+anchors that belong to different files. `add-covered-path` records the exact read set that the parent should not repeat
+without a documented reason. `add-follow-up` records a bounded path that remains
+outside the scout's read set and why the parent may need it. `--claim` and
+`--evidence` are for `add-finding`. `add-risk`, `add-omitted` and `set-next-step`
+require `--text`. Do not hand-write the final JSON.
 
 Ledger and report output paths must be under `var/agent/cache` or the system
 temporary directory. The builder rejects writes to source and configuration
@@ -33,5 +44,6 @@ paths.
 
 Reserve at least 40% of the step budget for evidence preflight, coverage,
 `check` and `render`. Once every handoff criterion has minimal evidence, stop
-discovery and finalize. A missing or unverifiable evidence item means
-`INCOMPLETE`.
+discovery and finalize instead of broadening the read set. A single evidence
+range may span at most 80 lines. A missing or
+unverifiable evidence item means `INCOMPLETE`.

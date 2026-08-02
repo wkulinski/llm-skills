@@ -5,9 +5,9 @@ import {
     DIRTY_TREE_STRATEGIES,
     normalizeDirtyTreeStrategy,
     promptDirtyTreeStrategy,
-} from "../../../.agents/skills/_shared/scripts/worktree.mjs";
+} from "../../../.agents/skills/gh-issue-start/scripts/branch-preparation.mjs";
 
-describe("worktree helpers", () => {
+describe("branch preparation helpers", () => {
     it("normalizes only supported dirty tree strategies", () => {
         expect(normalizeDirtyTreeStrategy("move-to-new-branch")).toBe("move-to-new-branch");
         expect(normalizeDirtyTreeStrategy("unknown")).toBe("");

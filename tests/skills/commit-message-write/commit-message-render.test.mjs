@@ -9,7 +9,7 @@ import {
     renderCommitMessage,
     renderCommitMessageDraftToFile,
     sectionKeyFromLabel,
-} from "../../../.agents/skills/_shared/scripts/commit-message-render.mjs";
+} from "../../../.agents/skills/commit-message-write/scripts/commit-message-render.mjs";
 
 describe("commit-message-render", () => {
     it("parses and renders a full draft", () => {

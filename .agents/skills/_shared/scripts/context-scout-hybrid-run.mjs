@@ -8,27 +8,44 @@ import {fileURLToPath} from "node:url";
 import {readCriteriaFile} from "./context-criteria.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const VALIDATOR = path.join(SCRIPT_DIR, "context-scout-report.mjs");
+const REPORT_BUILDER = path.join(SCRIPT_DIR, "context-scout-report-builder.mjs");
 const MANIFEST_TOOL = path.join(SCRIPT_DIR, "context-manifest.mjs");
 const HANDOFF_TOOL = path.join(SCRIPT_DIR, "context-handoff.mjs");
-const PROTOCOL_VERSION = 2;
+const PROTOCOL_VERSION = 3;
 const PRIMARY_AGENT = "context-scout-fast";
 const FALLBACK_AGENT = "context-scout";
-const DEFAULT_LOCK_TIMEOUT_MS = 7_200_000;
 
 function usage() {
     return `Usage:
   node context-scout-hybrid-run.mjs prepare \\
     --prompt-file <file> --manifest <file> --handoff <file> --criteria <file> \\
-    [--output-dir <dir>] [--title <name>] [--lock-file <file>] [--lock-timeout-ms <ms>]
+    [--output-dir <dir>] [--title <name>]
+  node context-scout-hybrid-run.mjs claim \\
+     --state <file> --run-id <id> --attempt primary|fallback
   node context-scout-hybrid-run.mjs evaluate \\
-    --state <file> --run-id <id> --attempt primary|fallback [--duration-ms <ms>]
+    --state <file> --run-id <id> --attempt primary|fallback --token <dispatch-token> \\
+    [--duration-ms <ms>] [--ack '<compact-json>']
+  node context-scout-hybrid-run.mjs settle \\
+     --state <file> --run-id <id> --attempt primary|fallback --token <dispatch-token>
+  node context-scout-hybrid-run.mjs settle-batch   # JSON list on stdin
   node context-scout-hybrid-run.mjs finalize --state <file> --run-id <id>
   node context-scout-hybrid-run.mjs abort --state <file> --run-id <id>
 
-The helper never starts OpenCode or any agent. The main agent delegates the
-returned task prompt through the native task tool, then calls evaluate/finalize.
+The helper never starts OpenCode or any agent. prepare validates inputs and
+creates artifacts; the main agent claims each attempt (idempotent dispatch guard)
+to obtain a one-time token and the task prompt, delegates through the native task
+tool, then evaluates. settle performs evaluate+finalize in one shot.
 `;
+}
+
+function readStdinSync() {
+    try {
+        return fs.readFileSync(0, "utf8");
+    } catch {
+        return "";
+    }
 }
 
 export function parseArgs(argv) {
@@ -36,7 +53,7 @@ export function parseArgs(argv) {
     for (let index = 0; index < argv.length; index += 1) {
         const item = argv[index];
         if (!item.startsWith("--")) {
-            if (!args._) args._ = [];
+            if (!args._) { args._ = []; }
             args._.push(item);
             continue;
         }
@@ -71,7 +88,7 @@ function writeJson(filePath, value) {
 
 function resolveExisting(cwd, value, label) {
     const resolved = path.resolve(cwd, value);
-    if (!fs.existsSync(resolved)) throw new Error(`${label} does not exist: ${resolved}`);
+    if (!fs.existsSync(resolved)) { throw new Error(`${label} does not exist: ${resolved}`); }
     return resolved;
 }
 
@@ -117,55 +134,18 @@ function assertInputsUnchanged(state) {
     }
 }
 
-function lockAgeMs(lockPath, lock) {
-    const createdAt = Date.parse(lock?.createdAt ?? "");
-    if (Number.isFinite(createdAt)) return Date.now() - createdAt;
-    return Date.now() - fs.statSync(lockPath).mtimeMs;
-}
-
-function acquireLock(lockPath, lock, timeoutMs) {
-    fs.mkdirSync(path.dirname(lockPath), {recursive: true});
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-        try {
-            const fd = fs.openSync(lockPath, "wx");
-            try {
-                fs.writeFileSync(fd, `${JSON.stringify(lock, null, 2)}\n`);
-            } finally {
-                fs.closeSync(fd);
-            }
-            return;
-        } catch (error) {
-            if (error.code !== "EEXIST") throw error;
-            let current = null;
-            try { current = readJson(lockPath); } catch { /* The age check below handles malformed locks. */ }
-            if (lockAgeMs(lockPath, current) <= timeoutMs) {
-                throw new Error(`Repository-context hybrid already active: ${lockPath}`);
-            }
-            fs.unlinkSync(lockPath);
-        }
-    }
-    throw new Error(`Unable to acquire repository-context hybrid lock: ${lockPath}`);
-}
-
-function assertLock(state) {
-    if (!fs.existsSync(state.lockPath)) throw new Error("Repository-context hybrid lock is missing");
-    const lock = readJson(state.lockPath);
-    if (lock.runId !== state.runId) throw new Error("Repository-context hybrid lock belongs to another run");
-}
-
-function releaseLock(state) {
-    assertLock(state);
-    fs.unlinkSync(state.lockPath);
-}
-
 function assertRun(state, runId) {
-    if (state.protocolVersion !== PROTOCOL_VERSION) throw new Error("Unsupported hybrid protocol version");
-    if (state.runId !== runId) throw new Error("Hybrid run-id does not match state");
-    assertLock(state);
+    if (state.protocolVersion !== PROTOCOL_VERSION) { throw new Error("Unsupported hybrid protocol version"); }
+    if (state.runId !== runId) { throw new Error("Hybrid run-id does not match state"); }
     assertInputsUnchanged(state);
 }
 
-function buildTaskPrompt({agent, inputs, reportPath}) {
+function buildTaskPrompt({agent, inputs, reportPath, ledgerPath, mode}) {
+    const primary = agent === PRIMARY_AGENT;
+    const finalizationDeadline = primary ? 24 : 22;
+    const discoveryBudget = primary && mode === "targeted"
+        ? "Use a bounded targeted discovery budget: at most 6 relevant files, 3 symbols, and 2 tests/commands; stop after one discovery pass and one direct verification pass once criteria are covered."
+        : "Use a bounded discovery budget: at most 10 relevant files, 5 symbols, and 3 tests/commands; stop after one discovery pass and one direct verification pass once criteria are covered.";
     return [
         `Act strictly as ${agent} for one read-only repository-context attempt.`,
         "Do not delegate, invoke another agent, run context-scout-hybrid-run.mjs, or perform QA/review/implementation.",
@@ -176,14 +156,52 @@ function buildTaskPrompt({agent, inputs, reportPath}) {
         `- handoff: ${inputs.handoff}`,
         `- acceptance criteria: ${inputs.criteria}`,
         "Use context-scout-report-builder.mjs and the repository contract to produce the report.",
-        `Write the final report JSON to exactly: ${reportPath}`,
-        "Then return the exact same report JSON as your only response. Do not include or inspect another attempt's output.",
-    ].join("\n");
+        `Initialize the report ledger exactly at: ${ledgerPath}`,
+        discoveryBudget,
+        "Record read_coverage.covered for exact paths read and read_coverage.follow_up for at most 8 parent follow-ups with concrete reasons.",
+        "Every finding must declare claim_type (observed, structural, inferred), confidence (high, medium, low), and anchors containing literal terms present in the cited evidence; never infer a field or behavior from a filename, symbol name, or analogy.",
+        primary ? "Default to exactly one compact, parent-ready finding per criterion and keep the complete report near 1000 tokens. Add a second finding only when one criterion spans independent roles that cannot be supported honestly by one claim." : "",
+        primary ? "Use at most three minimal evidence ranges per finding. When finding evidence already proves the criterion, keep coverage[].evidence empty instead of duplicating the same ranges; record actual reads only in read_coverage.covered." : "",
+        primary ? "If the prompt or criterion names a concrete file, agent, symbol, test, configuration, route, or entrypoint, search for that exact name and directly read its defining source before accepting substitute references from tests or documentation. CMM silence cannot establish that an untracked file is absent." : "",
+        "Treat every criteria[].required_evidence entry as a hard validator gate. Satisfy its exact path or path_prefix, optional relation, and all literal anchors with finding evidence for the same criterion; substitute documentation or tests do not satisfy a defining-source requirement. When forbid_negative_claims is true, avoid absolute absence or exclusivity claims in COMPLETE.",
+        primary ? "A COMPLETE report must not claim that an artifact does not exist, is missing, is the only one, or that no test covers it. If a named target is not directly located, leave that criterion uncovered and return INCOMPLETE with the bounded statement that it was not located; never recommend creating an allegedly missing file unless the user explicitly requested it." : "",
+        primary ? "Add risks, omitted paths, next_step, and read_coverage.follow_up only when they change the parent's decision. Never direct the parent to reread a path already present in read_coverage.covered." : "",
+        primary ? "After input validation, initialize the ledger exactly once. Do not call add-evidence, add-finding, set-coverage, check, batch, or render separately. Build the complete report JSON with one finding per criterion in memory and send it directly to batch-render as the second and final builder operation." : "",
+        "Keep every evidence range at or below 80 lines and use the smallest range that proves the claim.",
+        `Before any optional enrichment, complete the minimum-report checkpoint: every criterion must have direct evidence and a valid covered status. Do not spend more than ${finalizationDeadline} steps on discovery and verification; reserve the remaining steps for batch-render and the compact acknowledgement. Optional enrichment must never delay batch-render.`,
+        "Finalize with a single mandatory command once every criterion has minimal evidence:",
+        `  node .agents/skills/_shared/scripts/context-scout-report-builder.mjs batch-render ${ledgerPath} --status COMPLETE --output ${reportPath}`,
+        "It reads the complete report JSON from stdin, validates it against the ledger, stores it, and renders the artifact in one step. Do not use separate batch then render.",
+        `Write the full report artifact to exactly: ${reportPath}`,
+        "After writing the report artifact, return ONLY a compact JSON acknowledgement (no other text):",
+        '  {"status":"COMPLETE","report_path":"' + reportPath + '","findings_count":<n>,"covered_criteria":["C1"]}',
+        "The helper remains authoritative, computes the report hash, and validates the report file; the acknowledgement is metadata only. Do not include or inspect another attempt's output.",
+    ].filter(Boolean).join("\n");
+}
+
+function recoverReportFromLedger(state, attempt) {
+    const attemptState = state[attempt];
+    if (fs.existsSync(attemptState.reportPath) || !attemptState.ledgerPath || !fs.existsSync(attemptState.ledgerPath)) { return false; }
+    const check = spawnSync(process.execPath, [REPORT_BUILDER, "check", attemptState.ledgerPath], {
+        cwd: state.cwd,
+        encoding: "utf8",
+    });
+    if (check.status !== 0) { return false; }
+    const render = spawnSync(process.execPath, [
+        REPORT_BUILDER,
+        "render",
+        attemptState.ledgerPath,
+        "--status",
+        "COMPLETE",
+        "--output",
+        attemptState.reportPath,
+    ], {cwd: state.cwd, encoding: "utf8"});
+    return render.status === 0 && fs.existsSync(attemptState.reportPath);
 }
 
 export function validateReport({reportPath, manifestHead, criteriaPath, expectedMode, cwd}) {
     if (!reportPath || !fs.existsSync(reportPath)) {
-        return {valid: false, schemaValid: false, status: null, reason: "missing_report"};
+        return {valid: false, schemaValid: false, status: null, reportSha256: undefined, reason: "missing_report"};
     }
     const result = spawnSync(process.execPath, [
         VALIDATOR,
@@ -203,6 +221,7 @@ export function validateReport({reportPath, manifestHead, criteriaPath, expected
         valid,
         schemaValid,
         status: report?.status ?? null,
+        reportSha256: hashFile(reportPath),
         stdout: result.stdout?.trim() || undefined,
         stderr: result.stderr?.trim() || undefined,
         reason: valid ? null : (!schemaValid ? "validator_failed" : (!modeMatches ? "mode_mismatch" : "status_not_complete")),
@@ -221,13 +240,10 @@ export function prepareHybrid(args, cwd = process.cwd()) {
     const manifest = readJson(inputs.manifest);
     const handoff = readJson(inputs.handoff);
     readCriteriaFile(inputs.criteria);
-    if (!manifest.head) throw new Error("Manifest does not contain head");
+    if (!manifest.head) { throw new Error("Manifest does not contain head"); }
 
     const outputDir = path.resolve(cwd, args["output-dir"] ?? "var/agent/cache/context-scout-hybrid");
     const title = safeName(args.title ?? "context-scout-hybrid");
-    const lockPath = path.resolve(cwd, args["lock-file"] ?? "var/agent/cache/context-scout-hybrid.lock");
-    const lockTimeoutMs = Number(args["lock-timeout-ms"] ?? DEFAULT_LOCK_TIMEOUT_MS);
-    if (!Number.isFinite(lockTimeoutMs) || lockTimeoutMs <= 0) throw new Error("Invalid --lock-timeout-ms");
     fs.mkdirSync(outputDir, {recursive: true});
 
     const runId = crypto.randomUUID();
@@ -235,7 +251,8 @@ export function prepareHybrid(args, cwd = process.cwd()) {
     const statePath = path.join(outputDir, `${artifactPrefix}.state.json`);
     const primaryReportPath = path.join(outputDir, `${artifactPrefix}-primary.report.json`);
     const fallbackReportPath = path.join(outputDir, `${artifactPrefix}-fallback.report.json`);
-    acquireLock(lockPath, {protocolVersion: PROTOCOL_VERSION, runId, title, outputDir, createdAt: new Date().toISOString()}, lockTimeoutMs);
+    const primaryLedgerPath = path.join(outputDir, `${artifactPrefix}-primary.ledger.json`);
+    const fallbackLedgerPath = path.join(outputDir, `${artifactPrefix}-fallback.ledger.json`);
 
     const state = {
         protocolVersion: PROTOCOL_VERSION,
@@ -246,58 +263,102 @@ export function prepareHybrid(args, cwd = process.cwd()) {
         title,
         artifactPrefix,
         outputDir,
-        lockPath,
         inputs,
         inputHashes: inputHashes(inputs),
         manifestHead: manifest.head,
         mode: handoff.mode,
-        primary: {agent: PRIMARY_AGENT, reportPath: primaryReportPath, evaluated: false, startedAtMs: Date.now()},
-        fallback: {agent: FALLBACK_AGENT, reportPath: fallbackReportPath, used: false, evaluated: false},
+        primary: {agent: PRIMARY_AGENT, reportPath: primaryReportPath, ledgerPath: primaryLedgerPath, claimed: false, dispatchToken: null, evaluated: false, startedAtMs: null},
+        fallback: {agent: FALLBACK_AGENT, reportPath: fallbackReportPath, ledgerPath: fallbackLedgerPath, used: false, claimed: false, dispatchToken: null, evaluated: false},
     };
-    try {
-        writeJson(statePath, state);
-    } catch (error) {
-        if (fs.existsSync(lockPath)) {
-            const lock = readJson(lockPath);
-            if (lock.runId === runId) fs.unlinkSync(lockPath);
-        }
-        throw error;
-    }
+    writeJson(statePath, state);
     return {
         protocolVersion: PROTOCOL_VERSION,
         runId,
         statePath,
         phase: state.phase,
         next: {
-            action: "DELEGATE_PRIMARY",
+            action: "CLAIM_PRIMARY",
             agent: PRIMARY_AGENT,
             reportPath: primaryReportPath,
-            taskPrompt: buildTaskPrompt({agent: PRIMARY_AGENT, inputs, reportPath: primaryReportPath}),
+            ledgerPath: primaryLedgerPath,
+            claim: `node ${path.relative(state.cwd, SCRIPT_PATH)} claim --state ${statePath} --run-id ${runId} --attempt primary`,
         },
     };
 }
 
 function parseDuration(args, startedAtMs) {
     const duration = args["duration-ms"] === undefined ? Date.now() - startedAtMs : Number(args["duration-ms"]);
-    if (!Number.isFinite(duration) || duration < 0) throw new Error("Invalid --duration-ms");
+    if (!Number.isFinite(duration) || duration < 0) { throw new Error("Invalid --duration-ms"); }
     return duration;
 }
 
 function discardReport(attemptState) {
-    if (attemptState.reportPath && fs.existsSync(attemptState.reportPath)) fs.unlinkSync(attemptState.reportPath);
+    if (attemptState.reportPath && fs.existsSync(attemptState.reportPath)) { fs.unlinkSync(attemptState.reportPath); }
     return {...attemptState, reportDiscarded: true};
+}
+
+export function claimAttempt(args) {
+    const statePath = path.resolve(required(args, "state"));
+    const runId = required(args, "run-id");
+    const attempt = required(args, "attempt");
+    if (!["primary", "fallback"].includes(attempt)) { throw new Error("--attempt must be primary or fallback"); }
+    const state = readJson(statePath);
+    assertRun(state, runId);
+    const expectedPending = attempt === "primary" ? "PRIMARY_PENDING" : "FALLBACK_PENDING";
+    if (state.phase !== expectedPending) {
+        throw new Error(`Cannot claim ${attempt} while phase is ${state.phase}`);
+    }
+    if (state[attempt].claimed) {
+        throw new Error(`Duplicate claim rejected for ${attempt} attempt`);
+    }
+    const dispatchToken = crypto.randomUUID();
+    const claimedAtMs = Date.now();
+    state.phase = attempt === "primary" ? "PRIMARY_RUNNING" : "FALLBACK_RUNNING";
+    state[attempt] = {
+        ...state[attempt],
+        claimed: true,
+        dispatchToken,
+        claimedAtMs,
+        startedAtMs: claimedAtMs,
+    };
+    writeJson(statePath, state);
+    return {
+        protocolVersion: PROTOCOL_VERSION,
+        runId,
+        statePath,
+        attempt,
+        phase: state.phase,
+        dispatchToken,
+        agent: state[attempt].agent,
+        reportPath: state[attempt].reportPath,
+        ledgerPath: state[attempt].ledgerPath,
+        taskPrompt: buildTaskPrompt({
+            agent: state[attempt].agent,
+            inputs: state.inputs,
+            reportPath: state[attempt].reportPath,
+            ledgerPath: state[attempt].ledgerPath,
+            mode: state.mode,
+        }),
+    };
 }
 
 export function evaluateAttempt(args) {
     const statePath = path.resolve(required(args, "state"));
     const runId = required(args, "run-id");
     const attempt = required(args, "attempt");
-    if (!["primary", "fallback"].includes(attempt)) throw new Error("--attempt must be primary or fallback");
+    const token = required(args, "token");
+    if (!["primary", "fallback"].includes(attempt)) { throw new Error("--attempt must be primary or fallback"); }
     const state = readJson(statePath);
     assertRun(state, runId);
-    const expectedPhase = attempt === "primary" ? "PRIMARY_PENDING" : "FALLBACK_PENDING";
-    if (state.phase !== expectedPhase) throw new Error(`Cannot evaluate ${attempt} while phase is ${state.phase}`);
+    const expectedPhase = attempt === "primary" ? "PRIMARY_RUNNING" : "FALLBACK_RUNNING";
+    if (state.phase !== expectedPhase) {
+        throw new Error(`Cannot evaluate ${attempt} while phase is ${state.phase} (expected ${expectedPhase})`);
+    }
+    if (state[attempt].dispatchToken !== token) {
+        throw new Error(`evaluate requires the matching dispatch token for ${attempt}`);
+    }
 
+    recoverReportFromLedger(state, attempt);
     const validation = validateReport({
         reportPath: state[attempt].reportPath,
         manifestHead: state.manifestHead,
@@ -305,12 +366,29 @@ export function evaluateAttempt(args) {
         expectedMode: state.mode,
         cwd: state.cwd,
     });
-    const storedValidation = {valid: validation.valid, schemaValid: validation.schemaValid, status: validation.status};
+    const storedValidation = {
+        valid: validation.valid,
+        schemaValid: validation.schemaValid,
+        status: validation.status,
+        reportSha256: validation.reportSha256,
+    };
+
+    let ack;
+    if (args.ack !== undefined) {
+        try {
+            ack = typeof args.ack === "string" ? JSON.parse(args.ack) : args.ack;
+        } catch {
+            ack = {raw: String(args.ack)};
+        }
+    }
+
     state[attempt] = {
         ...state[attempt],
         evaluated: true,
         durationMs: parseDuration(args, state[attempt].startedAtMs),
         validation: storedValidation,
+        reportSha256: validation.reportSha256,
+        ...(ack !== undefined ? {ack} : {}),
     };
 
     let next;
@@ -323,18 +401,68 @@ export function evaluateAttempt(args) {
         state.fallback.used = true;
         state.fallback.startedAtMs = Date.now();
         next = {
-            action: "DELEGATE_FALLBACK",
+            action: "CLAIM_FALLBACK",
             agent: FALLBACK_AGENT,
             reportPath: state.fallback.reportPath,
-            taskPrompt: buildTaskPrompt({agent: FALLBACK_AGENT, inputs: state.inputs, reportPath: state.fallback.reportPath}),
+            ledgerPath: state.fallback.ledgerPath,
+            claim: `node ${path.relative(state.cwd, SCRIPT_PATH)} claim --state ${statePath} --run-id ${runId} --attempt fallback`,
         };
     } else {
-        if (!validation.valid) state.fallback = discardReport(state.fallback);
+        if (!validation.valid) { state.fallback = discardReport(state.fallback); }
         state.phase = validation.valid ? "FALLBACK_ACCEPTED" : "FALLBACK_FAILED";
         next = {action: "FINALIZE"};
     }
     writeJson(statePath, state);
     return {protocolVersion: PROTOCOL_VERSION, runId, statePath, attempt, validation, phase: state.phase, next};
+}
+
+export function settleAttempt(args) {
+    const statePath = path.resolve(required(args, "state"));
+    const runId = required(args, "run-id");
+    const attempt = required(args, "attempt");
+    const token = required(args, "token");
+    const evaluated = evaluateAttempt({...args, state: statePath, "run-id": runId, attempt, token});
+    let finalized = null;
+    if (evaluated.next.action === "FINALIZE") {
+        finalized = finalizeHybrid({state: statePath, "run-id": runId});
+    }
+    return {
+        protocolVersion: PROTOCOL_VERSION,
+        runId,
+        statePath,
+        attempt,
+        phase: evaluated.phase,
+        evaluate: {validation: evaluated.validation, next: evaluated.next},
+        finalized,
+    };
+}
+
+export function settleBatch(args, input = readStdinSync()) {
+    let entries;
+    try {
+        entries = JSON.parse(input);
+    } catch {
+        throw new Error("settle-batch input must be a JSON array of {state, runId, attempt}");
+    }
+    if (!Array.isArray(entries)) {
+        throw new Error("settle-batch input must be a JSON array of {state, runId, attempt}");
+    }
+    const results = entries.map((entry, index) => {
+        try {
+            const result = settleAttempt({
+                state: entry.state,
+                "run-id": entry.runId,
+                attempt: entry.attempt,
+                token: entry.token,
+                ...(entry.durationMs !== undefined ? {"duration-ms": String(entry.durationMs)} : {}),
+                ...(entry.ack !== undefined ? {ack: entry.ack} : {}),
+            });
+            return {index, state: entry.state, runId: entry.runId, attempt: entry.attempt, ok: true, result};
+        } catch (error) {
+            return {index, state: entry.state, runId: entry.runId, attempt: entry.attempt, ok: false, error: error instanceof Error ? error.message : String(error)};
+        }
+    });
+    return {count: results.length, results};
 }
 
 function finalMetadata(state) {
@@ -354,6 +482,7 @@ function finalMetadata(state) {
             valid: primaryValid,
             status: state.primary.validation?.status ?? null,
             durationMs: state.primary.durationMs ?? null,
+            reportSha256: state.primary.reportSha256 ?? null,
             reportPath: primaryValid ? state.primary.reportPath : null,
         },
         fallback: {
@@ -361,6 +490,7 @@ function finalMetadata(state) {
             valid: fallbackValid,
             status: state.fallback.validation?.status ?? null,
             durationMs: state.fallback.durationMs ?? null,
+            reportSha256: state.fallback.reportSha256 ?? null,
             reportPath: fallbackValid ? state.fallback.reportPath : null,
         },
         final: {
@@ -383,7 +513,6 @@ export function finalizeHybrid(args) {
     const metadata = finalMetadata(state);
     const metadataPath = path.join(state.outputDir, `${state.artifactPrefix}.meta.json`);
     writeJson(metadataPath, metadata);
-    releaseLock(state);
     state.phase = "FINALIZED";
     state.finalizedAt = new Date().toISOString();
     state.metadataPath = metadataPath;
@@ -395,10 +524,9 @@ export function abortHybrid(args) {
     const statePath = path.resolve(required(args, "state"));
     const runId = required(args, "run-id");
     const state = readJson(statePath);
-    if (state.runId !== runId) throw new Error("Hybrid run-id does not match state");
-    if (state.phase === "FINALIZED") throw new Error("Cannot abort a finalized hybrid run");
-    if (state.phase === "ABORTED") return {protocolVersion: PROTOCOL_VERSION, runId, statePath, phase: state.phase};
-    releaseLock(state);
+    if (state.runId !== runId) { throw new Error("Hybrid run-id does not match state"); }
+    if (state.phase === "FINALIZED") { throw new Error("Cannot abort a finalized hybrid run"); }
+    if (state.phase === "ABORTED") { return {protocolVersion: PROTOCOL_VERSION, runId, statePath, phase: state.phase}; }
     state.phase = "ABORTED";
     state.abortedAt = new Date().toISOString();
     writeJson(statePath, state);
@@ -408,17 +536,22 @@ export function abortHybrid(args) {
 if (import.meta.url === `file://${process.argv[1]}`) {
     const args = parseArgs(process.argv.slice(2));
     const command = args._?.[0];
-    if (!command || args.help || !["prepare", "evaluate", "finalize", "abort"].includes(command)) {
+    if (!command || args.help || !["prepare", "claim", "evaluate", "settle", "settle-batch", "finalize", "abort"].includes(command)) {
         process.stdout.write(usage());
         process.exit(args.help ? 0 : 2);
     }
     try {
-        const result = command === "prepare" ? prepareHybrid(args)
-            : command === "evaluate" ? evaluateAttempt(args)
-                : command === "finalize" ? finalizeHybrid(args)
-                    : abortHybrid(args);
+        let result;
+        if (command === "prepare") { result = prepareHybrid(args); }
+        else if (command === "claim") { result = claimAttempt(args); }
+        else if (command === "evaluate") { result = evaluateAttempt(args); }
+        else if (command === "settle") { result = settleAttempt(args); }
+        else if (command === "settle-batch") { result = settleBatch(args); }
+        else if (command === "finalize") { result = finalizeHybrid(args); }
+        else { result = abortHybrid(args); }
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-        if (command === "finalize" && result.hybrid_final === false) process.exitCode = 1;
+        if (command === "finalize" && result.hybrid_final === false) { process.exitCode = 1; }
+        if (command === "settle" && result.finalized === null && result.evaluate?.next?.action === "CLAIM_FALLBACK") { process.exitCode = 3; }
     } catch (error) {
         process.stderr.write(`${error.stack || error}\n`);
         process.exit(2);

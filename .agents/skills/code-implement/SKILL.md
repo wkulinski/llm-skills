@@ -1,37 +1,30 @@
 ---
 name: code-implement
 description: >-
-  Orkiestrator implementacji zmian w kodzie: intake prompta,
-  dopytania/stop-conditions, doczytanie kontekstu repo, zasady kodowania, lekkie
-  checki na końcu (`$review-quick` + punktowy test/lint), bez pełnego `$qa-run`
-  poza jednoznacznym poleceniem użytkownika, oraz standard
-  raportowania. Użyj, gdy użytkownik zleca dodanie funkcjonalności, naprawę
-  błędu lub refaktor.
+    Orkiestrator implementacji zmian w kodzie: intake prompta,
+    dopytania/stop-conditions, doczytanie kontekstu repo, zasady kodowania, lekkie
+    checki na końcu (`$review-quick` + punktowy test/lint), bez pełnego `$qa-run`
+    poza jednoznacznym poleceniem użytkownika, oraz standard
+    raportowania. Użyj, gdy użytkownik zleca dodanie funkcjonalności, naprawę
+    błędu lub refaktor.
 shared_files:
-  - _shared/references/runtime-collaboration-guidelines.md
-  - _shared/references/runtime-quality-procedures.md
-  - _shared/references/php-symfony-postgres-standards.md
-  - _shared/references/cqrs-monolith-standard-overrides.md
-  - _shared/references/symbolic-navigation-and-editing-policy.md
-  - _shared/references/context-subagent-contract.md
-  - _shared/references/repository-context-hybrid.md
-  - _shared/references/repository-context-scout-playbook.md
-  - _shared/references/context-scout-report-protocol.md
-  - _shared/scripts/context-criteria.mjs
-  - _shared/scripts/context-criteria.test.mjs
-  - _shared/scripts/context-handoff.mjs
-  - _shared/scripts/context-handoff.test.mjs
-  - _shared/scripts/context-manifest.mjs
-  - _shared/scripts/context-scout-agent-contract.test.mjs
-  - _shared/scripts/context-scout-hybrid-run.mjs
-  - _shared/scripts/context-scout-hybrid-run.test.mjs
-  - _shared/scripts/context-scout-opencode-integration.test.mjs
-  - _shared/scripts/context-scout-report-builder.mjs
-  - _shared/scripts/context-scout-report-builder.test.mjs
-  - _shared/scripts/context-scout-report.mjs
-  - _shared/scripts/env-load.sh
-  - _shared/scripts/targeted-check-decision.mjs
-  - _shared/scripts/targeted-check-decision.test.mjs
+    - _shared/references/runtime-collaboration-guidelines.md
+    - _shared/references/runtime-quality-procedures.md
+    - _shared/references/php-symfony-postgres-standards.md
+    - _shared/references/cqrs-monolith-standard-overrides.md
+    - _shared/references/symbolic-navigation-and-editing-policy.md
+    - _shared/references/context-subagent-contract.md
+    - _shared/references/repository-context-hybrid.md
+    - _shared/references/repository-context-scout-playbook.md
+    - _shared/references/context-scout-report-protocol.md
+    - _shared/scripts/context-criteria.mjs
+    - _shared/scripts/context-handoff.mjs
+    - _shared/scripts/context-manifest.mjs
+    - _shared/scripts/context-scout-hybrid-run.mjs
+    - _shared/scripts/context-scout-report-builder.mjs
+    - _shared/scripts/context-scout-report.mjs
+    - _shared/scripts/env-load.sh
+    - _shared/scripts/targeted-check-decision.mjs
 ---
 
 # $code-implement
@@ -100,26 +93,62 @@ Podczas implementacji nie wykonuj ręcznie operacji, które są już opisane prz
 wyspecjalizowany skill, jeśli ten skill może wykonać je precyzyjniej, szybciej
 albo z mniejszym ryzykiem pomyłki.
 
-### Delegowane capability
-Jeśli środowisko udostępnia subagenta dla capability wymaganego przez krok,
-delegacja jest równoważna bezpośredniemu wykonaniu skilla tylko wtedy, gdy:
-- lokalna konfiguracja mapuje capability na dostępnego subagenta; ten skill nie zna nazw agentów,
-- raport subagenta zawiera minimalne dowody wskazane dla capability,
-- agent główny zapisze w `STATE_PATH` zwięzłe podsumowanie raportu oraz źródła dowodów,
-- nie wykona drugi raz tego samego skilla dla tego samego kroku.
+### Delegacja do specjalistycznych agentów i skryptów
+Podczas implementacji nie wykonuj ręcznie operacji, które są już opisane przez
+wyspecjalizowany skill, jeśli ten skill albo jego entrypoint może wykonać je
+precyzyjniej, szybciej albo z mniejszym ryzykiem pomyłki.
 
-Dopuszczone capability:
-- `repository-context` jest kontrolowany przez helper hybrydy
-  zgodnie z jedynym źródłem prawdy
-  `<skills_root>/_shared/references/repository-context-hybrid.md`. Raport zawiera
-  zakres repozytoryjny, istotne pliki/moduły/symbole, testy, ryzyka i następny
-  krok; po jego walidacji agent główny może wykonywać punktowe odczyty,
-- `context-initialization` mapuje się na `context-refresher`; jest jedyną delegowaną capability, która może wykonać pełny `$context-refresh` i zwrócić manifest kontekstu,
-- `runtime-diagnostics` zastępuje `$dev-mate`; raport zawiera użyte narzędzia i parametry, wynik, dowody, wskazane pliki/symbole oraz następny krok.
+Stosuj bezpośrednie trasy:
+- repozytoryjny rekonesans wykonuj przez
+  `<skills_root>/_shared/scripts/context-scout-hybrid-run.mjs` i jego lifecycle
+  `prepare → evaluate → finalize/abort`; po walidacji raportu możesz wykonywać
+  punktowe odczyty,
+- pełny `$context-refresh` wykonuj jako agent główny albo deleguj bezpośrednio
+  `context-refresher`, gdy nie istnieje ważny manifest,
+- problemy runtime, DI, logów i profilera deleguj bezpośrednio
+  `runtime-diagnostician`, a jeśli agent jest niedostępny, użyj `$dev-mate`,
+- mały, spójny i w pełni określony pakiet implementacyjny, także wieloplikowy,
+  deleguj bezpośrednio `implementation-worker`; przekaż cel, zakres,
+  ograniczenia, decyzje, referencje, kryteria akceptacji i weryfikację. Worker
+  zwraca `STATUS: COMPLETED` albo `STATUS: ESCALATE_TO_PRIMARY`.
 
-Jeśli capability nie jest skonfigurowane, subagent jest niedostępny, raport nie
-zawiera wymaganych dowodów albo użytkownik wyraźnie żąda bezpośredniego
-wykonania skilla, użyj właściwego skilla bezpośrednio. Nie deleguj automatycznie
+Minimalny handoff do `implementation-worker`:
+
+```text
+Objective: <konkretne zachowanie lub zmiana>
+Scope: <dozwolone pliki, symbole lub katalog>
+Constraints: <zachowanie i obszary, których nie wolno zmieniać>
+Decisions: <decyzje projektowe już podjęte przez agenta głównego>
+References: <istniejące implementacje, wzorce lub dokumentacja>
+Acceptance criteria: <obserwowalne kryteria sukcesu>
+Verification: <komendy i checki do uruchomienia>
+```
+
+Jeśli któregoś pola brakuje i nie można bezpiecznie uzupełnić go z lokalnych
+konwencji, nie deleguj zadania — doprecyzuj je albo wykonaj eskalację.
+
+### Bramka kosztowa delegacji
+Nie deleguj do `implementation-worker`, jeśli:
+- zmiana jest trywialna i lokalna, bez potrzeby testu lub dodatkowej weryfikacji,
+- agent główny musiałby dopiero odkrywać zakres albo wybierać podejście,
+- worker prawdopodobnie będzie musiał zadawać pytania lub wracać po decyzję.
+
+Deleguj, gdy worker może samodzielnie wykonać pełny cykl `odczyt → implementacja
+→ weryfikacja`, a koszt przygotowania handoffu i końcowego review jest mniejszy
+niż wykonanie tych kroków przez agenta głównego. Nie stosuj sztywnego limitu
+plików; oceniaj zamknięcie zakresu i liczbę wymaganych interakcji.
+
+Po `STATUS: COMPLETED` agent główny powinien tylko:
+1. obejrzeć scoped diff i listę zmienionych plików,
+2. uruchomić wskazany punktowy check,
+3. zaktualizować własny stan bez ponownego szerokiego discovery.
+
+Po `STATUS: ESCALATE_TO_PRIMARY` agent główny przejmuje wskazaną decyzję lub
+brakujący kontekst; nie deleguje ponownie tego samego pakietu bez zmiany
+kontraktu.
+
+Jeśli wskazany agent lub entrypoint jest niedostępny, wykonaj właściwy skill
+bezpośrednio albo użyj opisanego fallbacku. Nie deleguj automatycznie
 `$review-quick` ani `$qa-run`; ich procedury już ograniczają output i stanowią
 część głównego workflow jakości.
 
@@ -134,8 +163,8 @@ Reguła praktyczna:
 - jeśli Serena nie jest dostępna, ale działa inna warstwa symboliczna dla
   języka, użyj jej według tej samej logiki,
 - jeśli zadanie dotyczy runtime, autowiringu, DI, logów albo profilera,
-  najpierw użyj `runtime-diagnostics`, gdy capability jest skonfigurowane i
-  spełnia warunki delegacji; w przeciwnym razie użyj `$dev-mate`,
+  najpierw deleguj `runtime-diagnostician`, gdy jest dostępny; w przeciwnym
+  razie użyj `$dev-mate`,
 - jeśli zadanie jest czysto tekstowe albo banalnie lokalne, użyj zwykłego patcha.
 
 Dla PHP użyj `$php-structure-refactor` dopiero wtedy, gdy po zawężeniu zakresu
@@ -342,13 +371,12 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
 
 ### 2) Kontekst repo (skalowalnie)
 1. Dla zadania przekrojowego, nieznanego modułu albo dużego dirty diffu użyj
-   capability `repository-context`, jeśli jest skonfigurowane. Raport spełniający
-   kontrakt delegacji zastępuje bezpośrednie `$context-refresh`.
+   `<skills_root>/_shared/scripts/context-scout-hybrid-run.mjs`. Zwalidowany
+   raport z repozytoryjnego rekonesansu zastępuje bezpośredni szeroki odczyt.
 2. Jeśli nie istnieje ważny manifest kontekstu dla bieżącej sesji, uruchom
-   `$context-refresh` bezpośrednio jako agent główny albo jawnie deleguj
-   `context-initialization` do `context-refresher`. Nie uruchamiaj pełnego refreshu
-   z `context-scout`.
-3. Dla każdego zadania wymagającego `repository-context` przygotuj zwięzły brief,
+   `$context-refresh` bezpośrednio jako agent główny albo deleguj bezpośrednio
+   `context-refresher`. Nie uruchamiaj pełnego refreshu z `context-scout`.
+3. Dla każdego zadania wymagającego repozytoryjnego rekonesansu przygotuj zwięzły brief,
    handoff, manifest i criteria, a następnie uruchom helper hybrydy zgodnie z
    `<skills_root>/_shared/references/context-subagent-contract.md`. Nie
    przekazuj pełnej treści issue, komentarzy, dokumentów ani plików i nie omijaj
@@ -365,7 +393,7 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
 6. Przed zmianą krytycznego pliku **lub** przed edycją pliku, który jest już zmieniony w repo (tracked/untracked):
    - przeczytaj diff (`git diff -- <plik>`) i aktualną treść (relewantne sekcje),
    - dopiero potem edytuj.
-7. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) albo po otrzymaniu raportu delegowanego capability dopisz wpis do Dziennika odczytów przez `<skill_dir>/scripts/state-readlog.mjs "<msg>"` (możesz grupować kilka odczytów w jeden wpis).
+7. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) albo po otrzymaniu raportu helpera lub subagenta dopisz wpis do Dziennika odczytów przez `<skill_dir>/scripts/state-readlog.mjs "<msg>"` (możesz grupować kilka odczytów w jeden wpis).
 8. Jeśli w trakcie implementacji wychodzi, że trzeba zmodyfikować plik, który nie wynika wprost z zadania:
    - jeśli to **krytyczny plik**: zatrzymaj się i dopytaj użytkownika, czy taki scope jest akceptowalny,
    - jeśli to **nie jest krytyczny plik**: nie “zasypuj pytaniami” — spróbuj znaleźć rozwiązanie w obrębie ustalonego zakresu; jeśli to niemożliwe, wykonaj minimalną zmianę konieczną technicznie i jawnie zaraportuj to w podsumowaniu.
@@ -393,7 +421,7 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
 ### 5) Stop-conditions (kiedy przerwać i dopytać)
 Wstrzymaj implementację i zadaj pytania, jeśli pojawia się którykolwiek przypadek:
 - brakuje danych wejściowych / kryteriów akceptacji, a bez nich łatwo zgadnąć źle,
-- zmiana dotyka security/auth/capabilities/permissions i nie jest jasno opisana,
+- zmiana dotyka security/auth/access permissions i nie jest jasno opisana,
 - zmiana wymaga migracji lub zmiany relacji danych,
 - trzeba dodać/zmienić zależność (`composer.json`/`package.json`) bez zgody użytkownika,
 - problem wygląda na środowiskowy (np. brak DB/containers) i blokuje QA/testy,
@@ -402,7 +430,7 @@ Wstrzymaj implementację i zadaj pytania, jeśli pojawia się którykolwiek przy
 
 Mapowanie przypadków na `STOP_CODES`:
 - brak danych wejściowych / kryteriów akceptacji -> `missing_acceptance_criteria`
-- niejasny zakres security/auth/capabilities/permissions -> `security_scope_unclear`
+- niejasny zakres security/auth/access permissions -> `security_scope_unclear`
 - wymagana migracja lub zmiana relacji danych -> `migration_requires_decision`
 - wymagana zmiana zależności (`composer.json`/`package.json`) bez zgody -> `dependency_change_requires_approval`
 - wymagane wyjście poza zakres w krytycznym pliku / znaczące przekroczenie zakresu -> `critical_scope_expansion`

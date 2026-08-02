@@ -1,0 +1,1 @@
+{"mode":"cross-layer","task_brief":"Map the context-scout-fast contract and report lifecycle across agent configuration, shared protocol, scripts, and tests.","decisions":["Treat the shared hybrid policy as canonical.","Keep the scout read-only and parent-ready."],"constraints":["Read-only reconnaissance.","Do not run QA or modify files."]}

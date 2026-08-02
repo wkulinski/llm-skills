@@ -13,7 +13,7 @@ Jeśli środowisko udostępnia **Serenę**, traktuj ją jako preferowaną warstw
   - operacje runtime,
   - transformacje narzędziowe typu refactor/codemod.
 
-## 2. Capability Gate
+## 2. Tool Availability Gate
 - Najpierw ustal, czy bieżące środowisko ma **dostępne i działające** narzędzie symboliczne dla języka dotkniętego zadaniem.
 - Jeśli tym narzędziem jest **Serena**, preferuj właśnie Serenę jako domyślną warstwę symboliczną.
 - Jeśli tak:
@@ -21,7 +21,8 @@ Jeśli środowisko udostępnia **Serenę**, traktuj ją jako preferowaną warstw
   - preferuj je także do lokalnych zmian symbolicznych, jeśli wspiera zapis zmian.
 - Jeśli nie:
   - wróć do `rg`, odczytu plików i zwykłego patcha.
-- Nie zakładaj obecności konkretnego narzędzia z nazwy; liczy się capability, nie brand.
+- Nie zakładaj obecności konkretnego narzędzia z nazwy; liczy się dostępność
+  działającej warstwy, nie brand.
 
 ## 2a. Preflight Sereny
 - Jeśli środowisko udostępnia Serenę, wykonaj krótki preflight przed szerokim odczytem kodu:
@@ -31,7 +32,8 @@ Jeśli środowisko udostępnia **Serenę**, traktuj ją jako preferowaną warstw
 - Jeśli którykolwiek krok preflightu Sereny nie powiedzie się:
   - zgłoś to krótko,
   - przejdź do fallbacku opisanego w tej polityce zamiast udawać pracę symboliczną.
-- Nie powtarzaj preflightu Sereny bez potrzeby w każdej iteracji, jeśli aktywny projekt i capability zostały już potwierdzone w tej samej sesji.
+- Nie powtarzaj preflightu Sereny bez potrzeby w każdej iteracji, jeśli aktywny
+  projekt i działająca warstwa zostały już potwierdzone w tej samej sesji.
 
 ## 3. Bramka kosztowa
 - Nie uruchamiaj warstwy symbolicznej dla banalnej zmiany tekstowej w pliku już wskazanym przez użytkownika, jeśli zwykły patch jest wyraźnie tańszy.
@@ -69,7 +71,8 @@ Jeśli środowisko udostępnia **Serenę**, traktuj ją jako preferowaną warstw
   - fallbacku, gdy warstwa symboliczna nie daje stabilnej operacji wykonawczej.
 
 ## 6. Fallback i raportowanie
-- Jeśli capability symboliczne jest niedostępne albo niestabilne, powiedz to krótko i użyj fallbacku zamiast udawać pracę symboliczną.
+- Jeśli warstwa symboliczna jest niedostępna albo niestabilna, powiedz to krótko
+  i użyj fallbacku zamiast udawać pracę symboliczną.
 - Jeśli wybierasz zwykły patch mimo dostępności warstwy symbolicznej, kieruj się kosztem: prostsza i bezpieczniejsza ścieżka wygrywa.
 - W raporcie końcowym wystarczy krótko wskazać, dlaczego użyto:
   - warstwy symbolicznej,

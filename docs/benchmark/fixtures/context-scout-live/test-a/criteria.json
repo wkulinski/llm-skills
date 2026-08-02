@@ -1,0 +1,30 @@
+{
+  "criteria": [
+    {
+      "id": "C1",
+      "description": "Locate the pricing configuration and context-tier definitions.",
+      "forbid_negative_claims": true,
+      "required_evidence": [
+        {"path": ".agents/skills/opencode-workflow-economics/scripts/lib/config.mjs", "anchors": ["validateContextTiers"]}
+      ]
+    },
+    {
+      "id": "C2",
+      "description": "Locate the calculator and validation symbols that consume pricing tiers.",
+      "forbid_negative_claims": true,
+      "required_evidence": [
+        {"path": ".agents/skills/opencode-workflow-economics/scripts/lib/pricing.mjs", "anchors": ["calculateStepCost", "selectRates"]},
+        {"path": ".agents/skills/opencode-workflow-economics/scripts/lib/config.mjs", "anchors": ["validatePricing"]}
+      ]
+    },
+    {
+      "id": "C3",
+      "description": "Locate the focused tests covering pricing tiers or aliases.",
+      "forbid_negative_claims": true,
+      "required_evidence": [
+        {"path": "tests/skills/opencode-workflow-economics/parser-pricing.test.mjs", "anchors": ["long-context price tier"]},
+        {"path": "tests/skills/opencode-workflow-economics/parser-pricing.test.mjs", "anchors": ["duplicate model alias"]}
+      ]
+    }
+  ]
+}

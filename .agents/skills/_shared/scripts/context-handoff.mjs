@@ -25,7 +25,7 @@ export function validateHandoff(handoff) {
         return {valid: false, errors: ["handoff must be an object"]};
     }
     for (const key of REQUIRED_KEYS) {
-        if (!(key in handoff)) errors.push(`missing key: ${key}`);
+        if (!(key in handoff)) { errors.push(`missing key: ${key}`); }
     }
     for (const key of ["task_brief"]) {
         if (key in handoff && (typeof handoff[key] !== "string" || handoff[key].trim() === "")) {
@@ -33,13 +33,13 @@ export function validateHandoff(handoff) {
         }
     }
     for (const key of ["decisions", "constraints"]) {
-        if (key in handoff && !isStringArray(handoff[key])) errors.push(`${key} must be an array of strings`);
+        if (key in handoff && !isStringArray(handoff[key])) { errors.push(`${key} must be an array of strings`); }
     }
-    if (!new Set(["targeted", "cross-layer"]).has(handoff.mode)) errors.push("mode must be targeted or cross-layer");
+    if (!new Set(["targeted", "cross-layer"]).has(handoff.mode)) { errors.push("mode must be targeted or cross-layer"); }
     if ("issue" in handoff || "issue_comments" in handoff || "document_contents" in handoff || "secrets" in handoff) {
         errors.push("handoff must not contain issue/comments/document contents/secrets");
     }
-    if (SECRET_PATTERNS.some((pattern) => pattern.test(JSON.stringify(handoff)))) errors.push("handoff appears to contain a secret");
+    if (SECRET_PATTERNS.some((pattern) => pattern.test(JSON.stringify(handoff)))) { errors.push("handoff appears to contain a secret"); }
     return {valid: errors.length === 0, errors};
 }
 

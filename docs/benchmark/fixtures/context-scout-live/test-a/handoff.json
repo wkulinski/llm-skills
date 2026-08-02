@@ -1,0 +1,1 @@
+{"mode":"targeted","task_brief":"Map the current OWE pricing tier and provider alias implementation for a maintenance change.","decisions":["Keep the existing pricing schema and provider aliases unless source evidence requires otherwise."],"constraints":["Read-only reconnaissance.","Do not run QA or modify files."]}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "role": "primary",
+  "repository": "wkulinski/llm-skills",
+  "branch": "skills-sync/publish-20260712T203324-4c696388",
+  "head": "a8e197ecc919f7b19c36a09eb6487e5d2f4d296a",
+  "rules": ["AGENTS.md"],
+  "documentation": [
+    ".agents/skills/_shared/references/repository-context-hybrid.md",
+    ".agents/skills/_shared/references/repository-context-scout-playbook.md"
+  ],
+  "active_overrides": [],
+  "constraints": ["Read-only reconnaissance", "Use the canonical hybrid lifecycle"],
+  "already_read": ["AGENTS.md"],
+  "omitted": [],
+  "generated_at": "2026-07-28T12:31:42.279Z"
+}

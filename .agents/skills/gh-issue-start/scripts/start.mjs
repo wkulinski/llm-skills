@@ -10,7 +10,7 @@ import {
     normalizeDirtyTreeStrategy,
     promptDirtyTreeStrategy,
     run,
-} from "../../_shared/scripts/worktree.mjs";
+} from "./branch-preparation.mjs";
 
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 

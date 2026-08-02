@@ -7,7 +7,6 @@ shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh
   - _shared/scripts/issue-branch.mjs
-  - _shared/scripts/worktree.mjs
 ---
 
 # $gh-issue-start
@@ -33,16 +32,16 @@ Zautomatyzować start pracy nad issue: ustalenie numeru issue, utworzenie/checko
    - `<skill_dir>/scripts/start.mjs`
    - Opcje:
      - `--issue-number <NUMER>`
-      - `--title "<Tytuł>"` (używane, gdy trzeba utworzyć nowe issue)
-      - `--desc "<Opis>"` (krótki opis do utworzenia issue i nazwy brancha)
-      - `--dirty-strategy <stash|commit-wip|move-to-new-branch|other>` (opcjonalnie; pomija interaktywny wybór)
-      - `--dirty-instruction "<tekst>"` (wymagane dla `other` bez TTY)
+     - `--title "<Tytuł>"` (używane, gdy trzeba utworzyć nowe issue)
+     - `--desc "<Opis>"` (krótki opis do utworzenia issue i nazwy brancha)
+     - `--dirty-strategy <stash|commit-wip|move-to-new-branch|other>` (opcjonalnie; pomija interaktywny wybór)
+     - `--dirty-instruction "<tekst>"` (wymagane dla `other` bez TTY)
      - `--base <remote/branch|branch>` (opcjonalnie; domyślnie domyślna gałąź repo)
    - Nazwa brancha jest wyprowadzana przez wspólny helper `node <skills_root>/_shared/scripts/issue-branch.mjs` i ma postać `issue/<ID>-<slug>`.
     - Skrypt zawsze wykonuje `git fetch` dla base ref przed utworzeniem lub checkoutem brancha, aby porównanie odbywało się ze świeżą bazą.
     - Skrypt zawsze tworzy lub checkoutuje branch dla wskazanego issue (jeśli branch nie istnieje, zostanie utworzony).
-    - Po checkoutcie istniejącego brancha helper porównuje `ahead/behind` względem base ref: branch wyłącznie za bazą jest aktualizowany przez `git merge --ff-only <base>`, a branch rozjechany w obu kierunkach zatrzymuje procedurę.
-    - Każdy checkout i ewentualna synchronizacja są sprawdzane przez helper `<skills_root>/_shared/scripts/worktree.mjs`; sukces jest raportowany dopiero po potwierdzeniu aktywnego i zgodnego brancha.
+     - Po checkoutcie istniejącego brancha helper porównuje `ahead/behind` względem base ref: branch wyłącznie za bazą jest aktualizowany przez `git merge --ff-only <base>`, a branch rozjechany w obu kierunkach zatrzymuje procedurę.
+    - Każdy checkout i ewentualna synchronizacja są sprawdzane przez helper `<skill_dir>/scripts/branch-preparation.mjs`; sukces jest raportowany dopiero po potwierdzeniu aktywnego i zgodnego brancha.
     - Przed checkoutem skrypt sprawdza `git status --porcelain=v1 -uall`. Przy dirty tree, w terminalu interaktywnym pokazuje wybór strzałkami: `stash`, `commit-wip`, `move-to-new-branch` albo `other`.
     - `stash` zachowuje zmiany w stashu i tworzy czysty branch z bazy; `commit-wip` tworzy jawnie wybrany commit WIP na bieżącym branchu; `move-to-new-branch` aplikuje zmiany na nowym branchu; `other` przekazuje instrukcję agentowi.
     - Bez TTY i bez `--dirty-strategy` skrypt kończy się błędem zamiast podejmować decyzję za użytkownika. Skrypt nie wykonuje automatycznie stashowania ani commita.
