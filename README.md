@@ -161,6 +161,7 @@ Minimal `.env.local` or `.env.dist` variables used by this repository:
 - `GH_TOKEN` (optional): token for GitHub CLI/MCP work.
 - `BIN_PATH` (optional): wrapper prefix for project tools (proxy path).
 - `CACHE_PATH` (optional): local agent cache/state directory.
+- `OWC_PATH` (optional): persistent OpenCode Workflow Economics report directory.
 - `CQRS_MONOLITH_STANDARD_OVERRIDES` (`0|1`): enables CQRS/monolith overrides.
 
 Shell scripts in `.agents/skills/**/scripts` auto-load `.env` and `.env.local` through `.agents/skills/_shared/scripts/env-load.sh`. This helper also exposes `resolve_tool_cmd` for deterministic entrypoint resolution.
@@ -182,6 +183,7 @@ CODECEPT_CMD="$(resolve_tool_cmd codecept vendor/bin/codecept codecept)"
 If a required command cannot be resolved by `resolve_tool_cmd`, treat it as a blocker and ask the user for the correct entrypoint. `resolve_tool_cmd` lazy-loads `.env` and `.env.local` automatically.
 
 `CACHE_PATH` is used by local cache scripts. It is auto-loaded from `.env` or `.env.local`, but you can still override it with `export` in the current shell session.
+`OWC_PATH` controls the persistent OWE report directory; without it OWE uses `$CACHE_PATH/owc` or `var/agent/cache/owc`.
 
 ### Deterministic QA matrix (`$qa-run`)
 `$qa-run` uses repo-level matrix config in `.agents/qa-run.matrix.json`.

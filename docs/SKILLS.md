@@ -14,6 +14,7 @@
 - `$git-commit`
 - `$handoff-refresh`
 - `$module-atlas-sync`
+- `$opencode-workflow-economics`
 - `$php-structure-refactor`
 - `$qa-run`
 - `$review-quick`

@@ -20,4 +20,5 @@ default-reviewers.txt
 
 /docs/draft/
 /var/
+/.owe/
 /.playwright-cli/
