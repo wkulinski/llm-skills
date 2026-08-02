@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "currency": "USD",
+  "models": {
+    "example/provider-model": {
+      "aliases": [],
+      "reasoning_accounting": "included_in_output",
+      "cache_read_accounting": "excluded",
+      "cache_write_accounting": "excluded",
+      "prices_per_million": {
+        "input": "0",
+        "output": "0",
+        "cache_read": "0",
+        "cache_write": "0"
+      }
+    }
+  }
+}
