@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import {spawnSync} from "node:child_process";
-import test from "node:test";
+import {test} from "vitest";
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../../");
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../");
 
 function debugAgent(name) {
     const result = spawnSync("opencode", ["debug", "agent", name], {cwd: ROOT, encoding: "utf8"});

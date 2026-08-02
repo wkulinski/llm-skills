@@ -86,6 +86,30 @@ HEAD i `already_read` pochodzą wyłącznie z manifestu. Kryteria pochodzą wył
 z osobnego, walidowanego `criteria.json` i mają stabilne identyfikatory, np.
 `C1`, `C2`.
 
+Kryterium może opcjonalnie zawierać deterministyczną bramkę evidence:
+
+```json
+{
+  "id": "C1",
+  "description": "Map the primary agent definition.",
+  "forbid_negative_claims": true,
+  "required_evidence": [
+    {
+      "path": ".opencode/agent/context-scout-fast.md",
+      "relation": "defines",
+      "anchors": ["permission:"]
+    }
+  ]
+}
+```
+
+Każdy wpis `required_evidence` wymaga dokładnie jednego bezpiecznego `path` albo
+`path_prefix`; opcjonalne `relation` i wszystkie `anchors` muszą pasować do
+evidence findingu z tym samym `criterion_id`. `forbid_negative_claims` odrzuca
+w raporcie `COMPLETE` absolutne twierdzenia o braku lub wyłączności. Pola te
+stosuj tylko wtedy, gdy wynikający z zadania target albo rola evidence są znane;
+nie zgaduj ścieżek tylko po to, aby utworzyć bramkę.
+
 Scout waliduje wejście w tej kolejności:
 
 1. sprawdza obecność pól handoffu,
@@ -114,7 +138,7 @@ omitted: [znane, celowo niezaładowane źródła]
 ```
 
 Manifest waliduj przez `<skills_root>/_shared/scripts/context-manifest.mjs`
-przed przekazaniem go capability. Manifesty są lokalnymi artefaktami pod
+przed przekazaniem go scoutowi lub innemu delegowanemu subagentowi. Manifesty są lokalnymi artefaktami pod
 `CACHE_PATH` i nigdy nie mogą zawierać sekretów.
 
 ## Polityka zbierania danych
@@ -150,6 +174,9 @@ zwykle do około 1500 tokenów:
     {
       "criterion_id": "opcjonalny identyfikator kryterium z handoffu",
       "claim": "jedno konkretne twierdzenie",
+      "claim_type": "observed | structural | inferred",
+      "confidence": "high | medium | low",
+      "anchors": ["literal term present in cited evidence"],
       "evidence": [
         {
           "path": "repo/relative/path",
@@ -183,11 +210,32 @@ zwykle do około 1500 tokenów:
 }
 ```
 
-`criterion_id`, `locator` i `relation` są opcjonalne w `findings`, ponieważ ich
+Opcjonalne `read_coverage` opisuje read-set przekazywany rodzicowi:
+
+```json
+{
+  "read_coverage": {
+    "covered": [
+      {"path": "repo/file", "line_start": 1, "line_end": 2, "locator": "Symbol", "relation": "defines"}
+    ],
+    "follow_up": [
+      {"path": "repo/other-file", "reason": "konkretny powód punktowego odczytu przez rodzica"}
+    ]
+  }
+}
+```
+
+`covered` ma maksymalnie 10 ścieżek, a `follow_up` maksymalnie 8. Rodzic nie
+powinien ponownie czytać ścieżki z `covered`, poza read-before-write, zmianą
+snapshotu, luką w raporcie albo jawnym wymaganiem użytkownika.
+
+`claim_type`, `confidence` i co najmniej jeden literalny `anchor` są wymagane w każdym findingu. `observed` oznacza
+bezpośredni fakt z evidence, `structural` relację lub definicję widoczną w kodzie,
+a `inferred` interpretację, która musi jawnie zachować niepewność. Każdy anchor musi występować w zakresie co najmniej jednego cytowanego evidence. `criterion_id`, `locator` i `relation` są opcjonalne w `findings`, ponieważ ich
 znaczenie zależy od zadania. `coverage` jest obowiązkową, domenowo neutralną
 mapą kompletności kryteriów. Status `covered` wymaga evidence bezpośrednio w
 `coverage` albo evidence w findingu z tym samym `criterion_id`, a
-`not_applicable` i `blocked` wymagają niepustego `reason`. Nie wolno dodawać pól domenowych do koperty raportu. Zakres
+`not_applicable` i `blocked` wymagają niepustego `reason`. Nie wolno dodawać pól domenowych do koperty raportu. Pojedynczy zakres evidence nie może przekraczać 80 linii. Zakres
 każdego twierdzenia musi być równy zakresowi dowodów. Uogólnienie dotyczące
 zbioru wymaga dowodów obejmujących cały zbiór; w przeciwnym razie elementy
 trzeba wymienić osobno albo oznaczyć twierdzenie jako częściowe.
@@ -209,7 +257,9 @@ nie `COMPLETE`.
 Mechaniczne składanie raportu, dozwolone ścieżki artefaktów i dokładną składnię
 ledger buildera definiuje wyłącznie
 `<skills_root>/_shared/references/context-scout-report-protocol.md`. Scout nie
-składa końcowego JSON ręcznie.
+składa końcowego JSON ręcznie. Jeśli agent nie zdąży wykonać `render`, helper
+może odzyskać raport z poprawnego ledgeru wskazanego w promptcie; brak końcowego
+renderu nie powinien sam w sobie uruchamiać fallbacku.
 
 `risks` może zawierać krótkie teksty albo obiekty z `claim` i `evidence`; obiekty
 ryzyka podlegają tym samym regułom dowodowym co `findings`. `omitted` pozostaje
@@ -225,7 +275,8 @@ node .agents/skills/_shared/scripts/context-scout-report.mjs validate <report.js
 Plik `criteria.json` jest obowiązkowy. Walidator sprawdza referencje
 `criterion_id` w `findings` i `coverage` oraz wymaga wpisu `covered` albo
 `not_applicable` dla każdego kryterium w raporcie `COMPLETE`. Status `blocked`
-nie może wystąpić w `COMPLETE`; walidacja strukturalna nie udaje semantycznej
-oceny prawdziwości claimów.
+nie może wystąpić w `COMPLETE`. Opcjonalne `required_evidence` i
+`forbid_negative_claims` są egzekwowane deterministycznie, ale nadal nie stanowią
+pełnej semantycznej oceny prawdziwości claimów.
 Agent główny nie powtarza szerokiego rekonesansu, chyba że raport jest
 niekompletny albo sprzeczny z repo.

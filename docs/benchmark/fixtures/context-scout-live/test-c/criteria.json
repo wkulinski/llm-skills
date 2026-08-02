@@ -1,0 +1,28 @@
+{
+  "criteria": [
+    {
+      "id": "C1",
+      "description": "Locate the function that selects input/output prices for context length.",
+      "forbid_negative_claims": true,
+      "required_evidence": [
+        {"path": ".agents/skills/opencode-workflow-economics/scripts/lib/pricing.mjs", "anchors": ["selectRates", "min_context_tokens"]}
+      ]
+    },
+    {
+      "id": "C2",
+      "description": "Locate the OpenAI long-context pricing configuration.",
+      "forbid_negative_claims": true,
+      "required_evidence": [
+        {"path": "tests/skills/opencode-workflow-economics/parser-pricing.test.mjs", "anchors": ["openai/model", "context_tiers", "272001"]}
+      ]
+    },
+    {
+      "id": "C3",
+      "description": "Locate the smallest relevant regression test.",
+      "forbid_negative_claims": true,
+      "required_evidence": [
+        {"path": "tests/skills/opencode-workflow-economics/parser-pricing.test.mjs", "anchors": ["uses the long-context price tier"]}
+      ]
+    }
+  ]
+}

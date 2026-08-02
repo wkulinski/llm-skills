@@ -1,0 +1,1 @@
+Map the smallest implementation surface for verifying an OpenAI long-context pricing regression in OWE. Identify the exact calculator/config/test locations and stop once sufficient evidence is collected. Do not implement changes.

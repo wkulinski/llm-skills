@@ -15,7 +15,7 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
    - nie wyprowadzaj ścieżek ręcznie z `BIN_PATH` i nie stosuj dodatkowych heurystyk,
    - `resolve_tool_cmd` ładuje aktywne pliki env repo automatycznie.
    - wyjątek: `$qa-run` w trybie macierzy JSON uruchamia komendy 1:1 z `.agents/qa-run.matrix.json` (bez discovery entrypointów).
-4. Jeśli pracujesz jako główny agent LLM lub użytkownik prosi o odświeżenie kontekstu, uruchom `$context-refresh`. Delegowane subagenty nie uruchamiają go automatycznie; stosują kontrakt swojej capability i manifest przekazany przez agenta głównego. Wyjątkiem jest jawnie zlecona capability `context-initialization` wykonywana przez `context-refresher`.
+4. Jeśli pracujesz jako główny agent LLM lub użytkownik prosi o odświeżenie kontekstu, uruchom `$context-refresh`. Delegowane subagenty nie uruchamiają go automatycznie; stosują kontrakt swojego promptu i manifest przekazany przez agenta głównego. Wyjątkiem jest jawnie zlecony `context-refresher`.
 
 ## 2. Po utworzeniu nowego pliku
 1. Podejrzyj zawartość pliku i sprawdź, czy powstał poprawnie.

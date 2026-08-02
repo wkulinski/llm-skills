@@ -68,7 +68,7 @@ Ten skill działa dwuetapowo:
 - Jeśli zmiana pasuje do kilku sekcji, przypisz ją do najbardziej specyficznej sekcji.
 - Klasyfikację stosuj w kolejności: najpierw `Zmiany API poleceń CLI`, potem `Zmiany wpływające na strukturę bazy danych`, a wszystko co nie pasuje do tych dwóch sekcji trafia do `Zmiany ogólne`; sekcje zapisuj potem zawsze w kolejności zdefiniowanej niżej.
 - Puste sekcje pomiń.
-- Finalny zapis body wykonuj przez `node <skills_root>/_shared/scripts/commit-message-render.mjs`; helper renderuje sekcje bezpośrednio do `<COMMIT_MESSAGE_DIR>/commit-message.txt` i odrzuca fillery typu `Brak zmian`.
+- Finalny zapis body wykonuj przez `node <skills_root>/commit-message-write/scripts/commit-message-render.mjs`; helper renderuje sekcje bezpośrednio do `<COMMIT_MESSAGE_DIR>/commit-message.txt` i odrzuca fillery typu `Brak zmian`.
 
 ## Kroki
 1. Otwórz `AGENTS.md` i odczytaj mapę `docs_map`.
@@ -122,7 +122,7 @@ Ten skill działa dwuetapowo:
    - kolejność sekcji ma być zawsze taka: `Zmiany ogólne`, `Zmiany wpływające na strukturę bazy danych`, `Zmiany API poleceń CLI`,
    - kolejność punktów w obrębie sekcji powinna iść od zmian najbardziej istotnych do pomocniczych,
    - jeśli dana sekcja jest pusta, pomiń ją całkowicie.
-9. Wygeneruj finalny plik przez `node <skills_root>/_shared/scripts/commit-message-render.mjs`:
+9. Wygeneruj finalny plik przez `node <skills_root>/commit-message-write/scripts/commit-message-render.mjs`:
    - przekaż helperowi strukturalny draft przez stdin w formacie:
      - `Subject: ...`
      - `general:`

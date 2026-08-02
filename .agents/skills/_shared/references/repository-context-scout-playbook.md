@@ -14,6 +14,8 @@ nawigacji; ten dokument określa niezmienną procedurę rekonesansu i raportowan
   komentarzy GitHub.
 - Nie kopiuj pełnych plików, dokumentów, diffów, logów ani sekretów. Raportuj
   tylko minimalne ścieżki, symbole, identyfikatory, zakresy linii i streszczenia.
+- Trzymaj twardy budżet: najwyżej 10 istotnych plików, 5 symboli i 3 testy/komendy;
+  wykonaj najwyżej jeden przebieg discovery oraz jeden przebieg weryfikacji źródłowej.
 - Nie czytaj raportu, błędów ani metadanych innej próby.
 
 Naruszenie którejkolwiek granicy kończy próbę statusem `BLOCKED`; nie próbuj
@@ -43,6 +45,8 @@ powiązanego z kryterium lub ryzykiem.
 
 1. Ustal z handoffu tryb `targeted` albo `cross-layer` i utwórz checklistę
    wszystkich identyfikatorów criteria.
+   Dla każdego criterion przepisz też opcjonalne `required_evidence` i
+   `forbid_negative_claims`: są to twarde bramki walidatora, nie sugestie.
 2. Nawiguj strategią opisaną w adapterze agenta. Grupuj niezależne odczyty i nie
    skanuj szerzej, niż wymagają criteria.
 3. Dla każdego kryterium zbierz minimalne evidence: dokładną repo-relative
@@ -55,6 +59,24 @@ powiązanego z kryterium lub ryzykiem.
    wyczerpująco albo oznaczaj twierdzenie jako częściowe.
 6. Po uzyskaniu minimalnego coverage dla wszystkich criteria zakończ discovery.
    Nie zużywaj pozostałych kroków na ulepszanie już wystarczającego raportu.
+
+7. Zapisz `read_coverage.covered` dla dokładnych ścieżek faktycznie odczytanych
+   oraz `read_coverage.follow_up` wyłącznie dla punktowych odczytów, których
+   rodzic może potrzebować z konkretnym powodem. Nie powtarzaj odczytów z
+   `covered` bez uzasadnienia wynikającego z read-before-write, zmiany snapshotu,
+   luki w raporcie albo jawnego wymagania użytkownika.
+
+8. Nie wnioskuj o zawartości pliku z jego nazwy. Claim musi być bezpośrednio
+   potwierdzony minimalnym zakresem linii; nie cytuj całego pliku, jeśli kilka
+   linii wystarcza do rozstrzygnięcia criterion.
+
+9. Każdy finding oznacz jako `observed`, `structural` albo `inferred` i nadaj mu
+   confidence `high`, `medium` albo `low`. Hipotezy i interpretacje oznaczaj jako
+   `inferred`; nie przedstawiaj ich jako faktów.
+
+10. Dodaj do każdego findingu literalne `anchors`, które występują w cytowanym
+    evidence. Jeśli twierdzenie dotyczy kilku niezależnych plików, rozbij je na
+    osobne findings zamiast łączyć kotwice z różnych źródeł.
 
 Przy wznowieniu przez `task_id` odczytaj wyłącznie zakres wskazany przez agenta
 głównego i nie powtarzaj ukończonego rekonesansu.

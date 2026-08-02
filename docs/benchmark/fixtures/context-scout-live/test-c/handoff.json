@@ -1,0 +1,1 @@
+{"mode":"targeted","task_brief":"Find the minimal calculator, configuration, and test surface for an OpenAI long-context pricing regression.","decisions":["Prefer a bounded targeted report over a broad architecture scan."],"constraints":["Read-only reconnaissance.","Stop after criteria coverage.","Do not run QA or modify files."]}

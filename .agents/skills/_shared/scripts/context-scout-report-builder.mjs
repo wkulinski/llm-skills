@@ -11,13 +11,13 @@ const COVERAGE_STATUSES = new Set(["covered", "not_applicable", "blocked"]);
 const ARTIFACT_ROOTS = [resolve(process.cwd(), "var/agent/cache"), resolve(tmpdir())];
 
 function assertArtifactPath(filePath, label) {
-    if (typeof filePath !== "string" || filePath.trim() === "") throw new Error(`${label} path is required`);
+    if (typeof filePath !== "string" || filePath.trim() === "") { throw new Error(`${label} path is required`); }
     const resolved = resolve(filePath);
     const allowed = ARTIFACT_ROOTS.some((root) => {
         const candidate = relative(root, resolved);
         return candidate === "" || (!candidate.startsWith("..") && !isAbsolute(candidate));
     });
-    if (!allowed) throw new Error(`${label} must be under var/agent/cache or the system temporary directory`);
+    if (!allowed) { throw new Error(`${label} must be under var/agent/cache or the system temporary directory`); }
     return resolved;
 }
 
@@ -92,8 +92,8 @@ function validateEvidenceNow(evidence, head) {
         version: 1,
         status: "INCOMPLETE",
         mode: "targeted",
-        findings: [{claim: "ledger evidence", evidence: [evidence]}],
-        coverage: [],
+        findings: [],
+        coverage: [{criterion_id: "__ledger_evidence__", status: "covered", evidence: [evidence]}],
         risks: [],
         omitted: [],
         next_step: "",
@@ -123,6 +123,12 @@ function validateLedgerReferences(ledger) {
         checkCriterion(finding.criterion_id);
         if (typeof finding.claim !== "string" || finding.claim.trim() === "") {
             throw new Error(`finding ${finding.id} must have a non-empty claim`);
+        }
+        if (!finding.claim_type || !finding.confidence) {
+            throw new Error(`finding ${finding.id} must have claim_type and confidence`);
+        }
+        if (!Array.isArray(finding.anchors) || finding.anchors.length === 0) {
+            throw new Error(`finding ${finding.id} must have anchors`);
         }
         if (!Array.isArray(finding.evidence_ids) || finding.evidence_ids.length === 0) {
             throw new Error(`finding ${finding.id} must reference evidence`);
@@ -155,7 +161,17 @@ function buildReport(ledger, status, nextStep) {
     if (!MODES.has(ledger.mode)) {
         throw new Error(`invalid mode: ${ledger.mode}`);
     }
+    if (ledger.batch_report) {
+        const report = {...ledger.batch_report, status, next_step: nextStep || ledger.batch_report.next_step || ""};
+        const validation = validateScoutReport(report, {
+            head: ledger.head,
+            criteria: new Set(ledger.criteria),
+        });
+        if (!validation.valid) { throw new Error(validation.errors.join("\n")); }
+        return report;
+    }
     validateLedgerReferences(ledger);
+    const findingCriteria = new Set(ledger.findings.map((finding) => finding.criterion_id));
     const report = {
         version: 1,
         status,
@@ -163,14 +179,18 @@ function buildReport(ledger, status, nextStep) {
         findings: ledger.findings.map((finding) => ({
             criterion_id: finding.criterion_id,
             claim: finding.claim,
+            claim_type: finding.claim_type,
+            confidence: finding.confidence,
+            anchors: finding.anchors,
             evidence: evidenceFromLedger(ledger, finding.evidence_ids),
         })),
         coverage: ledger.coverage.map((entry) => ({
             criterion_id: entry.criterion_id,
             status: entry.status,
-            evidence: evidenceFromLedger(ledger, entry.evidence_ids ?? []),
+            evidence: findingCriteria.has(entry.criterion_id) ? [] : evidenceFromLedger(ledger, entry.evidence_ids ?? []),
             ...(entry.reason ? {reason: entry.reason} : {}),
         })),
+        read_coverage: ledger.read_coverage ?? {covered: [], follow_up: []},
         risks: ledger.risks,
         omitted: ledger.omitted,
         next_step: nextStep,
@@ -183,6 +203,52 @@ function buildReport(ledger, status, nextStep) {
         throw new Error(validation.errors.join("\n"));
     }
     return report;
+}
+
+function batchReport(ledgerPath) {
+    const ledger = readLedger(ledgerPath);
+    let report;
+    try {
+        report = JSON.parse(readFileSync(0, "utf8"));
+    } catch (error) {
+        throw new Error(`batch input must be valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const validation = validateScoutReport(report, {
+        head: ledger.head,
+        criteria: new Set(ledger.criteria),
+    });
+    if (!validation.valid) { throw new Error(validation.errors.join("\n")); }
+    ledger.batch_report = report;
+    writeLedger(ledgerPath, ledger);
+    process.stdout.write("batch report accepted\n");
+}
+
+function batchRender(ledgerPath, options) {
+    const ledger = readLedger(ledgerPath);
+    let report;
+    try {
+        report = JSON.parse(readFileSync(0, "utf8"));
+    } catch (error) {
+        throw new Error(`batch-render input must be valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const validation = validateScoutReport(report, {
+        head: ledger.head,
+        criteria: new Set(ledger.criteria),
+    });
+    if (!validation.valid) { throw new Error(validation.errors.join("\n")); }
+    ledger.batch_report = report;
+    writeLedger(ledgerPath, ledger);
+    const status = options.status ?? report.status ?? "COMPLETE";
+    const built = buildReport(ledger, status, report.next_step ?? ledger.next_step);
+    const output = options.output;
+    if (typeof output === "string" && output !== "") {
+        const outputPath = assertArtifactPath(output, "report output");
+        mkdirSync(dirname(outputPath), {recursive: true});
+        writeFileSync(outputPath, `${JSON.stringify(built, null, 2)}\n`);
+        process.stdout.write(`${outputPath}\n`);
+    } else {
+        process.stdout.write(`${JSON.stringify(built, null, 2)}\n`);
+    }
 }
 
 function initLedger(ledgerPath, options) {
@@ -203,12 +269,45 @@ function initLedger(ledgerPath, options) {
         evidence: [],
         findings: [],
         coverage: [],
+        read_coverage: {covered: [], follow_up: []},
         risks: [],
         omitted: [],
         next_step: "",
     };
     writeLedger(ledgerPath, ledger);
     process.stdout.write(`${ledgerPath}\n`);
+}
+
+function addCoveredPath(ledgerPath, options) {
+    const ledger = readLedger(ledgerPath);
+    const evidence = {
+        path: requireValue(options, "path"),
+        line_start: Number(requireValue(options, "line-start")),
+        line_end: Number(requireValue(options, "line-end")),
+    };
+    if (options.locator !== undefined) { evidence.locator = String(options.locator); }
+    if (options.relation !== undefined) { evidence.relation = String(options.relation); }
+    validateEvidenceNow(evidence, ledger.head);
+    ledger.read_coverage ??= {covered: [], follow_up: []};
+    if (ledger.read_coverage.covered.length >= 10) { throw new Error("read_coverage.covered exceeds 10 paths"); }
+    if (!ledger.read_coverage.covered.some((item) => JSON.stringify(item) === JSON.stringify(evidence))) {
+        ledger.read_coverage.covered.push(evidence);
+    }
+    writeLedger(ledgerPath, ledger);
+}
+
+function addFollowUpPath(ledgerPath, options) {
+    const ledger = readLedger(ledgerPath);
+    const path = requireValue(options, "path");
+    const reason = requireValue(options, "reason");
+    if (path.startsWith("/") || path.includes("..") || path.includes("...")) { throw new Error("follow-up path must be repo-relative without shorthand"); }
+    ledger.read_coverage ??= {covered: [], follow_up: []};
+    if (ledger.read_coverage.covered.some((item) => item.path === path)) { throw new Error(`follow-up path is already covered: ${path}`); }
+    if (ledger.read_coverage.follow_up.length >= 8) { throw new Error("read_coverage.follow_up exceeds 8 paths"); }
+    if (!ledger.read_coverage.follow_up.some((item) => item.path === path)) {
+        ledger.read_coverage.follow_up.push({path, reason});
+    }
+    writeLedger(ledgerPath, ledger);
 }
 
 function addEvidence(ledgerPath, options) {
@@ -218,8 +317,8 @@ function addEvidence(ledgerPath, options) {
         line_start: Number(requireValue(options, "line-start")),
         line_end: Number(requireValue(options, "line-end")),
     };
-    if (options.locator !== undefined) evidence.locator = String(options.locator);
-    if (options.relation !== undefined) evidence.relation = String(options.relation);
+    if (options.locator !== undefined) { evidence.locator = String(options.locator); }
+    if (options.relation !== undefined) { evidence.relation = String(options.relation); }
     validateEvidenceNow(evidence, ledger.head);
     const existing = ledger.evidence.find((item) => JSON.stringify({...item, id: undefined}) === JSON.stringify(evidence));
     if (existing) {
@@ -239,6 +338,9 @@ function addFinding(ledgerPath, options) {
         id: nextId("F", ledger.findings),
         criterion_id: requireValue(options, "criterion"),
         claim: requireValue(options, "claim"),
+        claim_type: requireValue(options, "claim-type"),
+        confidence: requireValue(options, "confidence"),
+        anchors: splitIds(requireValue(options, "anchors")),
         evidence_ids: evidenceIds,
     };
     validateLedgerReferences({...ledger, findings: [...ledger.findings, finding]});
@@ -255,7 +357,7 @@ function setCoverage(ledgerPath, options) {
         status: requireValue(options, "status"),
         evidence_ids: splitIds(options.evidence),
     };
-    if (options.reason !== undefined) entry.reason = String(options.reason);
+    if (options.reason !== undefined) { entry.reason = String(options.reason); }
     ledger.coverage = ledger.coverage.filter((item) => item.criterion_id !== criterionId);
     validateLedgerReferences({...ledger, coverage: [...ledger.coverage, entry]});
     ledger.coverage.push(entry);
@@ -271,14 +373,18 @@ function appendText(ledgerPath, key, value) {
 function main(argv) {
     const {command, ledgerPath, options} = parseArgs(argv);
     if (!command || !ledgerPath) {
-        throw new Error("Usage: context-scout-report-builder.mjs <init|add-evidence|add-finding|set-coverage|add-risk|add-omitted|set-next-step|check|render> <ledger.json> ...");
+        throw new Error("Usage: context-scout-report-builder.mjs <init|batch|batch-render|add-evidence|add-finding|set-coverage|add-covered-path|add-follow-up|add-risk|add-omitted|set-next-step|check|render> <ledger.json> ...");
     }
-    if (command === "init") return initLedger(ledgerPath, options);
-    if (command === "add-evidence") return addEvidence(ledgerPath, options);
-    if (command === "add-finding") return addFinding(ledgerPath, options);
-    if (command === "set-coverage") return setCoverage(ledgerPath, options);
-    if (command === "add-risk") return appendText(ledgerPath, "risks", options.text);
-    if (command === "add-omitted") return appendText(ledgerPath, "omitted", options.text);
+    if (command === "init") { return initLedger(ledgerPath, options); }
+    if (command === "batch") { return batchReport(ledgerPath); }
+    if (command === "batch-render") { return batchRender(ledgerPath, options); }
+    if (command === "add-evidence") { return addEvidence(ledgerPath, options); }
+    if (command === "add-finding") { return addFinding(ledgerPath, options); }
+    if (command === "set-coverage") { return setCoverage(ledgerPath, options); }
+    if (command === "add-covered-path") { return addCoveredPath(ledgerPath, options); }
+    if (command === "add-follow-up") { return addFollowUpPath(ledgerPath, options); }
+    if (command === "add-risk") { return appendText(ledgerPath, "risks", options.text); }
+    if (command === "add-omitted") { return appendText(ledgerPath, "omitted", options.text); }
     if (command === "set-next-step") {
         const ledger = readLedger(ledgerPath);
         ledger.next_step = requireValue(options, "text");

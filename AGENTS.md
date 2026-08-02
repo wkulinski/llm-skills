@@ -82,6 +82,7 @@ docs_map:
     COMMIT_MESSAGE_DIR: /tmp/
     HANDOFF_DOC: var/agent/HANDOFF.md
     SKILLS_INDEX_DOC: docs/SKILLS.md
+    CACHE_PATH: var/agent/cache/
 ```
 
 ## Active docs_map
@@ -94,6 +95,7 @@ docs_map:
     COMMIT_MESSAGE_DIR: /tmp/
     HANDOFF_DOC: var/agent/HANDOFF.md
     SKILLS_INDEX_DOC: docs/SKILLS.md
+    CACHE_PATH: var/agent/cache/
 ```
 
 ## Role agentów i lifecycle kontekstu
@@ -101,10 +103,11 @@ docs_map:
 Agent główny odpowiada za rozmowę z użytkownikiem, interpretację issue, kryteria
 akceptacji i lifecycle kontekstu projektu. Przy rozpoczęciu sesji agenta
 głównego uruchom `$context-refresh`, chyba że aktywny workflow jawnie deleguje
-capability i zapisuje ważny manifest kontekstu.
+repozytoryjny rekonesans przez `context-scout-hybrid-run.mjs` i zapisuje ważny
+manifest kontekstu.
 
 Delegowane subagenty **nie** uruchamiają automatycznie `$context-refresh`.
-Stosują kontrakt swojej capability i otrzymują zwarty handoff/manifest zamiast
-kopii treści issue lub pełnej dokumentacji. Jedyną delegowaną rolą, która może
-wykonać pełny refresh, jest `context-refresher`, gdy agent główny jawnie ją
-wybierze.
+Otrzymują zwarty handoff/manifest zamiast kopii treści issue lub pełnej
+dokumentacji i działają zgodnie z kontraktem swojego promptu. Jedyną delegowaną
+rolą, która może wykonać pełny refresh, jest `context-refresher`, gdy agent
+główny jawnie ją wybierze.
