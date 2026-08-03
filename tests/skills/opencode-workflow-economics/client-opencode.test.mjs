@@ -35,6 +35,18 @@ describe("OWE OpenCode client", () => {
 
         await expect(createClient("http://localhost:4096").session.list()).rejects.toThrow("OpenCode HTTP 400");
     });
+
+    it("retries transient OpenCode responses before succeeding", async () => {
+        let calls = 0;
+        globalThis.fetch = async () => {
+            calls += 1;
+            if (calls === 1) { return new Response(JSON.stringify({message: "busy"}), {status: 503}); }
+            return new Response(JSON.stringify({sessions: []}), {status: 200});
+        };
+
+        await expect(createClient("http://localhost:4096", {retryCount: 1, retryDelayMs: 1}).session.list()).resolves.toEqual({sessions: []});
+        expect(calls).toBe(2);
+    });
 });
 
 describe("OWE OpenCode payload normalization", () => {

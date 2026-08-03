@@ -34,7 +34,8 @@ hypotheses or unverified evidence. These remain orchestration metadata.
    the context manifest with `.agents/skills/_shared/scripts/context-manifest.mjs`;
    fail closed when the current Git metadata is unavailable or does not match.
 2. After `prepare` the helper returns `CLAIM_PRIMARY`. The main agent calls
-   `claim --attempt primary` to atomically move the attempt to running and obtain
+  `claim --attempt primary` to atomically move the attempt to running under a
+  per-state lock and obtain
    a one-time dispatch token plus the exact task prompt, then delegates
    `context-scout-fast` through the native `task` tool using that prompt and
    report path. The helper never starts OpenCode or an agent. A duplicate claim is
@@ -91,8 +92,9 @@ hypotheses or unverified evidence. These remain orchestration metadata.
   comments, or execute `$context-refresh`.
 - The main agent owns orchestration, validation and metrics.
 - The fallback is an independent retry, not a continuation of primary context.
-- Invalid report files are discarded before fallback delegation; only sanitized
-  status metadata remains in controller state.
+- Invalid report files are moved to a run-scoped discarded artifact before
+  fallback delegation; fallback receives only its own report path, while the
+  original artifact remains available for audit.
 - If the helper cannot be started or a phase/token check fails, stop and report
   the blocker; do not bypass the primary.
 - After a validated final report, the main agent may perform targeted reads for
@@ -104,7 +106,16 @@ The controller does not use a worktree-wide lock. Recursion and duplicate
 attempts within one run are prevented by native task delegation, denied
 task/helper execution in scout permissions, unique `runId` artifact paths, and
 fail-closed phases. Independent runs may execute concurrently; each run keeps
-its own state, reports, input hashes, and final metadata.
+its own state, reports, input hashes, and final metadata. Claim transitions use
+a per-state lock; no worktree-wide lock is required.
+
+## Benchmark snapshot requirements
+
+Benchmark harnesses must generate prompt, handoff, criteria and manifest inputs
+for the exact snapshot being measured. The manifest and all input hashes must be
+recorded in run metadata, and the snapshot hash must be checked before and after
+execution. A result with a stale manifest, changed snapshot, missing runtime
+dependency, or unclassified harness must not be presented as canonical.
 
 ## Metrics
 

@@ -8,6 +8,11 @@ export const DEFAULT_CONFIG = {
     opencode: {
         base_url: "http://localhost:4096",
         directory: ".",
+        request_timeout_ms: 120000,
+        startup_timeout_ms: 30000,
+        readiness_probe_timeout_ms: 2000,
+        request_retry_count: 2,
+        request_retry_delay_ms: 500,
     },
     collection: {
         content_mode: "compact",
@@ -115,6 +120,11 @@ function mergeConfig(input) {
         opencode: {
             base_url: typeof opencode.base_url === "string" ? opencode.base_url : DEFAULT_CONFIG.opencode.base_url,
             directory: typeof opencode.directory === "string" ? opencode.directory : DEFAULT_CONFIG.opencode.directory,
+            request_timeout_ms: positiveInt(opencode.request_timeout_ms, DEFAULT_CONFIG.opencode.request_timeout_ms),
+            startup_timeout_ms: positiveInt(opencode.startup_timeout_ms, DEFAULT_CONFIG.opencode.startup_timeout_ms),
+            readiness_probe_timeout_ms: positiveInt(opencode.readiness_probe_timeout_ms, DEFAULT_CONFIG.opencode.readiness_probe_timeout_ms),
+            request_retry_count: nonNegativeInt(opencode.request_retry_count, DEFAULT_CONFIG.opencode.request_retry_count),
+            request_retry_delay_ms: positiveInt(opencode.request_retry_delay_ms, DEFAULT_CONFIG.opencode.request_retry_delay_ms),
         },
         collection: {
             content_mode: ["metadata", "compact", "full"].includes(String(collection.content_mode))
@@ -197,6 +207,9 @@ function boundedNumber(value, fallback) {
 }
 function positiveInt(value, fallback) {
     return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+function nonNegativeInt(value, fallback) {
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : fallback;
 }
 function booleanValue(value, fallback) {
     return typeof value === "boolean" ? value : fallback;

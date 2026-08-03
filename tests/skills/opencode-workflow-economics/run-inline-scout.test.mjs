@@ -1,6 +1,23 @@
 import {describe, expect, it} from "vitest";
 
-import {isInlineValid} from "../../../.agents/skills/opencode-workflow-economics/benchmarks/run-inline-scout.mjs";
+import {buildInlinePrompt, isInlineValid} from "../../../.agents/skills/opencode-workflow-economics/benchmarks/run-inline-scout.mjs";
+
+const prompt = buildInlinePrompt({
+    promptPath: "/tmp/prompt.txt",
+    manifestPath: "/tmp/manifest.json",
+    handoffPath: "/tmp/handoff.json",
+    criteriaPath: "/tmp/criteria.json",
+    reportPath: "/tmp/report.json",
+});
+
+describe("inline scout task contract", () => {
+    it("uses the same bounded evidence/report gates without delegation", () => {
+        expect(prompt).toContain("same task envelope");
+        expect(prompt).toContain("required_evidence");
+        expect(prompt).toContain("batch-render");
+        expect(prompt).toContain("Do not call task");
+    });
+});
 
 describe("inline scout validity gate", () => {
     it("treats COMPLETE report with valid schema as valid", () => {

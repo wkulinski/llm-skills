@@ -28,6 +28,13 @@
             "/tmp/**/.*/*": "allow",
             "/tmp/**/.*/*/**": "allow"
         },
+        // Scout attempts must not read primary artifacts from another attempt.
+        // The benchmark/helper use separate report paths; the deny rules are
+        // intentionally narrower than the existing workspace/tmp policy.
+        "read": {
+            "**/*primary*.report.json": "deny",
+            "**/*primary*.ledger.json": "deny"
+        },
         "mate_*": "deny"
     },
     "skills": {
@@ -44,13 +51,7 @@
             "prompt": "Stosuj ./AGENTS.md oraz aktywny skill jako źródła prawdy. Każdy repository-context wykonuj wyłącznie według kanonicznej polityki ./.agents/skills/_shared/references/repository-context-hybrid.md; nie deleguj scouta bez decyzji helpera i nie obchodź walidacji. Po prepare zawsze zakończ przebieg przez finalize albo abort, także po błędzie. Po zwalidowanym raporcie możesz wykonywać punktowe odczyty potrzebne do implementacji lub review.",
             "permission": {
                 "task": {
-                    "*": "deny",
-                    "context-scout": "allow",
-                    "context-scout-fast": "allow",
-                    "context-refresher": "allow",
-                    "frontend-ui-engineer": "allow",
-                    "runtime-diagnostician": "allow",
-                    "implementation-worker": "allow"
+                    "*": "allow"
                 },
                 "webfetch": "ask"
             }

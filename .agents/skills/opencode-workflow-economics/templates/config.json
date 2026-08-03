@@ -2,7 +2,12 @@
   "version": 1,
   "opencode": {
     "base_url": "http://localhost:4096",
-    "directory": "."
+    "directory": ".",
+    "request_timeout_ms": 120000,
+    "startup_timeout_ms": 30000,
+    "readiness_probe_timeout_ms": 2000,
+    "request_retry_count": 2,
+    "request_retry_delay_ms": 500
   },
   "collection": {
     "content_mode": "compact",

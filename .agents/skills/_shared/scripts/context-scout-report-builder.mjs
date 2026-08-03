@@ -3,7 +3,7 @@ import {mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {dirname, isAbsolute, relative, resolve} from "node:path";
 import {validateScoutReport} from "./context-scout-report.mjs";
-import {readCriteriaIds} from "./context-criteria.mjs";
+import {readCriteriaFile, readCriteriaIds} from "./context-criteria.mjs";
 
 const STATUSES = new Set(["COMPLETE", "INCOMPLETE", "BLOCKED"]);
 const MODES = new Set(["targeted", "cross-layer"]);
@@ -57,6 +57,12 @@ function readLedger(path) {
         throw new Error("ledger must have version 1, head and criteria");
     }
     return ledger;
+}
+
+function ledgerCriteria(ledger) {
+    return Array.isArray(ledger.criteria_entries) && ledger.criteria_entries.length > 0
+        ? ledger.criteria_entries
+        : new Set(ledger.criteria);
 }
 
 function writeLedger(path, ledger) {
@@ -165,7 +171,7 @@ function buildReport(ledger, status, nextStep) {
         const report = {...ledger.batch_report, status, next_step: nextStep || ledger.batch_report.next_step || ""};
         const validation = validateScoutReport(report, {
             head: ledger.head,
-            criteria: new Set(ledger.criteria),
+            criteria: ledgerCriteria(ledger),
         });
         if (!validation.valid) { throw new Error(validation.errors.join("\n")); }
         return report;
@@ -197,7 +203,7 @@ function buildReport(ledger, status, nextStep) {
     };
     const validation = validateScoutReport(report, {
         head: ledger.head,
-        criteria: new Set(ledger.criteria),
+        criteria: ledgerCriteria(ledger),
     });
     if (!validation.valid) {
         throw new Error(validation.errors.join("\n"));
@@ -215,7 +221,7 @@ function batchReport(ledgerPath) {
     }
     const validation = validateScoutReport(report, {
         head: ledger.head,
-        criteria: new Set(ledger.criteria),
+        criteria: ledgerCriteria(ledger),
     });
     if (!validation.valid) { throw new Error(validation.errors.join("\n")); }
     ledger.batch_report = report;
@@ -233,7 +239,7 @@ function batchRender(ledgerPath, options) {
     }
     const validation = validateScoutReport(report, {
         head: ledger.head,
-        criteria: new Set(ledger.criteria),
+        criteria: ledgerCriteria(ledger),
     });
     if (!validation.valid) { throw new Error(validation.errors.join("\n")); }
     ledger.batch_report = report;
@@ -253,8 +259,9 @@ function batchRender(ledgerPath, options) {
 
 function initLedger(ledgerPath, options) {
     const head = requireValue(options, "head");
-    const criteriaIds = readCriteriaIds(requireValue(options, "criteria"));
-    if (criteriaIds.length === 0) {
+    const criteriaEntries = readCriteriaFile(requireValue(options, "criteria"));
+    const criteriaIds = criteriaEntries.map((criterion) => criterion.id);
+    if (criteriaEntries.length === 0) {
         throw new Error("missing acceptance criteria ids");
     }
     const mode = options.mode ?? "cross-layer";
@@ -266,6 +273,7 @@ function initLedger(ledgerPath, options) {
         head,
         mode,
         criteria: criteriaIds,
+        criteria_entries: criteriaEntries,
         evidence: [],
         findings: [],
         coverage: [],

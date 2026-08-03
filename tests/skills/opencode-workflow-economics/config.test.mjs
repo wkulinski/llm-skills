@@ -40,6 +40,15 @@ describe("OWE configuration", () => {
         expect(template).not.toHaveProperty("reporting");
     });
 
+    it("exposes the OWE timeout defaults in the generated configuration", async () => {
+        const config = await loadConfig(TEMPLATE);
+
+        expect(config.opencode.request_timeout_ms).toBe(120000);
+        expect(config.opencode.startup_timeout_ms).toBe(30000);
+        expect(config.opencode.readiness_probe_timeout_ms).toBe(2000);
+        expect(config.opencode.request_retry_count).toBe(2);
+    });
+
     it("initializes the minimal user configuration", async () => {
         const root = mkdtempSync(path.join(os.tmpdir(), "owe-config-init-"));
         temporaryRoots.push(root);

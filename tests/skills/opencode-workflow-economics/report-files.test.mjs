@@ -10,7 +10,7 @@ import {DEFAULT_CONFIG} from "../../../.agents/skills/opencode-workflow-economic
 import {analyzeRoots} from "../../../.agents/skills/opencode-workflow-economics/scripts/lib/analysis.mjs";
 import {parseTree} from "../../../.agents/skills/opencode-workflow-economics/scripts/lib/parser.mjs";
 import {listReportItems, readReportBrief} from "../../../.agents/skills/opencode-workflow-economics/scripts/lib/report-query.mjs";
-import {writeLayeredReport} from "../../../.agents/skills/opencode-workflow-economics/scripts/lib/report-files.mjs";
+import {writeLayeredReport, writeUnavailableReport} from "../../../.agents/skills/opencode-workflow-economics/scripts/lib/report-files.mjs";
 
 const temporaryRoots = [];
 
@@ -19,6 +19,16 @@ afterEach(async () => {
 });
 
 describe("OWE canonical report persistence", () => {
+    it("writes an explicit COST_UNAVAILABLE report without pretending to have pricing", async () => {
+        const analysisDir = temporaryDirectory();
+        const report = await writeUnavailableReport({analysis_dir: analysisDir, reason: "session fetch timeout", requested_sessions: ["s1"]});
+        const persisted = JSON.parse(await readFile(report.report_path, "utf8"));
+
+        expect(report.status).toBe("COST_UNAVAILABLE");
+        expect(persisted).toMatchObject({status: "COST_UNAVAILABLE", reason: "session fetch timeout", requested_sessions: ["s1"]});
+        expect((await stat(report.report_path)).mode & 0o777).toBe(0o600);
+    });
+
     it("publishes one complete report atomically and resolves projections from it", async () => {
         const analysisDir = temporaryDirectory();
         const bundle = fixtureBundle();

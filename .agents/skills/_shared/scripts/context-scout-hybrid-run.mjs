@@ -86,6 +86,38 @@ function writeJson(filePath, value) {
     fs.renameSync(temporaryPath, filePath);
 }
 
+function withStateLock(statePath, callback) {
+    const lockPath = `${statePath}.lock`;
+    let descriptor;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+        try {
+            descriptor = fs.openSync(lockPath, "wx");
+            fs.writeFileSync(descriptor, `${process.pid}\n`);
+            break;
+        } catch (error) {
+            if (error?.code !== "EEXIST") { throw error; }
+            try {
+                if (Date.now() - fs.statSync(lockPath).mtimeMs > 30_000) {
+                    fs.unlinkSync(lockPath);
+                    continue;
+                }
+            } catch {
+                continue;
+            }
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+        }
+    }
+    if (descriptor === undefined) { throw new Error("Could not acquire hybrid state lock"); }
+    try {
+        return callback();
+    } finally {
+        fs.closeSync(descriptor);
+        try { fs.unlinkSync(lockPath); } catch (error) {
+            if (error?.code !== "ENOENT") { throw error; }
+        }
+    }
+}
+
 function resolveExisting(cwd, value, label) {
     const resolved = path.resolve(cwd, value);
     if (!fs.existsSync(resolved)) { throw new Error(`${label} does not exist: ${resolved}`); }
@@ -293,8 +325,12 @@ function parseDuration(args, startedAtMs) {
 }
 
 function discardReport(attemptState) {
-    if (attemptState.reportPath && fs.existsSync(attemptState.reportPath)) { fs.unlinkSync(attemptState.reportPath); }
-    return {...attemptState, reportDiscarded: true};
+    if (!attemptState.reportPath || !fs.existsSync(attemptState.reportPath)) {
+        return {...attemptState, reportDiscarded: true, reportDiscardedPath: null};
+    }
+    const discardedPath = `${attemptState.reportPath.replace(/\.report\.json$/, "")}-discarded-${Date.now()}-${process.pid}.report.json`;
+    fs.renameSync(attemptState.reportPath, discardedPath);
+    return {...attemptState, reportDiscarded: true, reportDiscardedPath: discardedPath};
 }
 
 export function claimAttempt(args) {
@@ -302,44 +338,52 @@ export function claimAttempt(args) {
     const runId = required(args, "run-id");
     const attempt = required(args, "attempt");
     if (!["primary", "fallback"].includes(attempt)) { throw new Error("--attempt must be primary or fallback"); }
-    const state = readJson(statePath);
-    assertRun(state, runId);
-    const expectedPending = attempt === "primary" ? "PRIMARY_PENDING" : "FALLBACK_PENDING";
-    if (state.phase !== expectedPending) {
-        throw new Error(`Cannot claim ${attempt} while phase is ${state.phase}`);
-    }
-    if (state[attempt].claimed) {
-        throw new Error(`Duplicate claim rejected for ${attempt} attempt`);
-    }
-    const dispatchToken = crypto.randomUUID();
-    const claimedAtMs = Date.now();
-    state.phase = attempt === "primary" ? "PRIMARY_RUNNING" : "FALLBACK_RUNNING";
-    state[attempt] = {
-        ...state[attempt],
-        claimed: true,
-        dispatchToken,
-        claimedAtMs,
-        startedAtMs: claimedAtMs,
-    };
-    writeJson(statePath, state);
-    return {
-        protocolVersion: PROTOCOL_VERSION,
-        runId,
-        statePath,
-        attempt,
-        phase: state.phase,
-        dispatchToken,
-        agent: state[attempt].agent,
-        reportPath: state[attempt].reportPath,
-        ledgerPath: state[attempt].ledgerPath,
-        taskPrompt: buildTaskPrompt({
+    return withStateLock(statePath, () => {
+        const state = readJson(statePath);
+        assertRun(state, runId);
+        const expectedPending = attempt === "primary" ? "PRIMARY_PENDING" : "FALLBACK_PENDING";
+        if (state.phase !== expectedPending) {
+            throw new Error(`Cannot claim ${attempt} while phase is ${state.phase}`);
+        }
+        if (state[attempt].claimed) {
+            throw new Error(`Duplicate claim rejected for ${attempt} attempt`);
+        }
+        const dispatchToken = crypto.randomUUID();
+        const claimedAtMs = Date.now();
+        state.phase = attempt === "primary" ? "PRIMARY_RUNNING" : "FALLBACK_RUNNING";
+        state[attempt] = {
+            ...state[attempt],
+            claimed: true,
+            dispatchToken,
+            claimedAtMs,
+            startedAtMs: claimedAtMs,
+            dispatchAudit: {
+                runId,
+                attempt,
+                agent: state[attempt].agent,
+                claimedAtMs,
+            },
+        };
+        writeJson(statePath, state);
+        return {
+            protocolVersion: PROTOCOL_VERSION,
+            runId,
+            statePath,
+            attempt,
+            phase: state.phase,
+            dispatchToken,
             agent: state[attempt].agent,
-            inputs: state.inputs,
             reportPath: state[attempt].reportPath,
             ledgerPath: state[attempt].ledgerPath,
-            mode: state.mode,
-        }),
-    };
+            taskPrompt: buildTaskPrompt({
+                agent: state[attempt].agent,
+                inputs: state.inputs,
+                reportPath: state[attempt].reportPath,
+                ledgerPath: state[attempt].ledgerPath,
+                mode: state.mode,
+            }),
+        };
+    });
 }
 
 export function evaluateAttempt(args) {
@@ -389,6 +433,11 @@ export function evaluateAttempt(args) {
         validation: storedValidation,
         reportSha256: validation.reportSha256,
         ...(ack !== undefined ? {ack} : {}),
+        dispatchAudit: {
+            ...(state[attempt].dispatchAudit ?? {runId, attempt, agent: state[attempt].agent}),
+            evaluatedAtMs: Date.now(),
+            ...(ack !== undefined ? {ack} : {}),
+        },
     };
 
     let next;
@@ -484,6 +533,7 @@ function finalMetadata(state) {
             durationMs: state.primary.durationMs ?? null,
             reportSha256: state.primary.reportSha256 ?? null,
             reportPath: primaryValid ? state.primary.reportPath : null,
+            reportDiscardedPath: state.primary.reportDiscardedPath ?? null,
         },
         fallback: {
             used: state.fallback.used,
@@ -492,12 +542,17 @@ function finalMetadata(state) {
             durationMs: state.fallback.durationMs ?? null,
             reportSha256: state.fallback.reportSha256 ?? null,
             reportPath: fallbackValid ? state.fallback.reportPath : null,
+            reportDiscardedPath: state.fallback.reportDiscardedPath ?? null,
         },
         final: {
             agent: finalAttempt.agent,
             valid: primaryValid || fallbackValid,
             status: finalAttempt.validation?.status ?? "INCOMPLETE",
             reportPath: primaryValid || fallbackValid ? finalAttempt.reportPath : null,
+        },
+        dispatch_audit: {
+            primary: state.primary.dispatchAudit ?? null,
+            fallback: state.fallback.dispatchAudit ?? null,
         },
     };
 }

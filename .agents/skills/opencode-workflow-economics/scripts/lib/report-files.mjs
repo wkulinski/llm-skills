@@ -60,6 +60,34 @@ export async function writeLayeredReport(bundle, options = {}) {
     }
 }
 
+export async function writeUnavailableReport(options = {}) {
+    const analysisDir = resolve(options.analysis_dir);
+    const reportPath = resolve(analysisDir, REPORT_FILE);
+    const report = `${JSON.stringify({
+        artifact_type: "owe_report",
+        schema_version: 1,
+        status: "COST_UNAVAILABLE",
+        generated_at: new Date().toISOString(),
+        analysis_dir: analysisDir,
+        reason: options.reason ?? "OpenCode session collection failed",
+        phase: options.phase ?? "collection",
+        requested_sessions: options.requested_sessions ?? [],
+        retryable: options.retryable ?? true,
+    }, null, 2)}\n`;
+    const temporary = resolve(analysisDir, `.report-unavailable.${process.pid}.${randomUUID().slice(0, 12)}.tmp`);
+    await mkdir(analysisDir, {recursive: true, mode: 0o700});
+    await chmod(analysisDir, 0o700);
+    try {
+        await writeFile(temporary, report, {mode: 0o600});
+        await chmod(temporary, 0o600);
+        await rename(temporary, reportPath);
+        await chmod(reportPath, 0o600);
+        return {analysis_dir: analysisDir, report_path: reportPath, status: "COST_UNAVAILABLE"};
+    } finally {
+        await rm(temporary, {force: true});
+    }
+}
+
 export function serializeReport(value) {
     return `${JSON.stringify(toSnakeCase(value), null, 2)}\n`;
 }

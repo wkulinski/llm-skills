@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {spawnSync} from "node:child_process";
+import {spawn, spawnSync} from "node:child_process";
 import {test} from "vitest";
 import {abortHybrid, claimAttempt, evaluateAttempt, finalizeHybrid, prepareHybrid, settleAttempt, settleBatch} from "../../../.agents/skills/_shared/scripts/context-scout-hybrid-run.mjs";
 import {enrichContextManifest} from "../../../.agents/skills/_shared/scripts/context-manifest.mjs";
@@ -134,7 +134,7 @@ test("valid primary finalizes without fallback and records required metrics", ()
     const prepared = prepare(dir);
     const primary = claim(prepared);
     fs.writeFileSync(primary.reportPath, JSON.stringify(validReport()));
-    const settled = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: primary.dispatchToken, "duration-ms": "123"});
+    const settled = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: primary.dispatchToken, "duration-ms": "123", ack: {session_ids: ["session-test"], task_tools: 1}});
     assert.equal(settled.evaluate.validation.valid, true);
     assert.equal(settled.evaluate.next.action, "FINALIZE");
     const final = settled.finalized;
@@ -144,6 +144,7 @@ test("valid primary finalizes without fallback and records required metrics", ()
     assert.equal(final.final.agent, "context-scout-fast");
     assert.equal(typeof final.primary.durationMs, "number");
     assert.match(final.primary.reportSha256, /^[a-f0-9]{64}$/);
+    assert.equal(final.dispatch_audit.primary.ack.task_tools, 1);
 });
 
 test("batch settlement finalizes independent claimed runs", () => {
@@ -206,6 +207,9 @@ test("invalid primary requests exactly one isolated fallback", () => {
     assert.equal(primary.next.action, "CLAIM_FALLBACK");
     assert.equal(primary.next.agent, "context-scout");
     assert.equal(fs.existsSync(primaryClaim.reportPath), false);
+    const discardedPrimary = JSON.parse(fs.readFileSync(prepared.statePath, "utf8")).primary.reportDiscardedPath;
+    assert.equal(typeof discardedPrimary, "string");
+    assert.equal(fs.existsSync(discardedPrimary), true);
     const stateAfterPrimary = fs.readFileSync(prepared.statePath, "utf8");
     assert.doesNotMatch(stateAfterPrimary, /not-json|validator_failed/);
     const fallbackClaim = claim(prepared, "fallback");
@@ -252,6 +256,7 @@ test("invalid fallback is final and cannot trigger another attempt", () => {
     assert.equal(final.hybrid_final, false);
     assert.equal(final.final.status, "INCOMPLETE");
     assert.equal(fs.existsSync(primaryClaim.reportPath), false);
+    assert.equal(fs.existsSync(JSON.parse(fs.readFileSync(prepared.statePath, "utf8")).primary.reportDiscardedPath), true);
 });
 
 test("concurrent preparations use isolated run artifacts", () => {
@@ -266,6 +271,27 @@ test("concurrent preparations use isolated run artifacts", () => {
     assert.equal(fs.existsSync(second.statePath), true);
     abortHybrid({state: first.statePath, "run-id": first.runId});
     abortHybrid({state: second.statePath, "run-id": second.runId});
+});
+
+test("concurrent claims serialize and only one caller obtains the token", async () => {
+    const dir = makeFixtureDir();
+    const prepared = prepare(dir, "claim-race");
+    const moduleUrl = new URL("../../../.agents/skills/_shared/scripts/context-scout-hybrid-run.mjs", import.meta.url).href;
+    const script = `import {claimAttempt} from ${JSON.stringify(moduleUrl)}; try { claimAttempt({state: process.env.STATE, "run-id": process.env.RUN_ID, attempt: "primary"}); } catch (error) { console.error(error.message); process.exitCode = 1; }`;
+    const launch = () => new Promise((resolve) => {
+        const child = spawn(process.execPath, ["--input-type=module", "-e", script], {
+            cwd: ROOT,
+            env: {...process.env, STATE: prepared.statePath, RUN_ID: prepared.runId},
+            stdio: ["ignore", "ignore", "pipe"],
+        });
+        let stderr = "";
+        child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+        child.on("close", (code) => resolve({code, stderr}));
+    });
+    const results = await Promise.all([launch(), launch()]);
+    assert.deepEqual(results.map((result) => result.code).sort((a, b) => a - b), [0, 1]);
+    assert.match(results.find((result) => result.code === 1).stderr, /Cannot claim|Duplicate claim/);
+    abortHybrid({state: prepared.statePath, "run-id": prepared.runId});
 });
 
 test("a finalized title can be reused without stale report artifacts", () => {

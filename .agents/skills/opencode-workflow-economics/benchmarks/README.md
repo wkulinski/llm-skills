@@ -77,3 +77,57 @@ remain explicitly `unavailable` unless the Stage 0 artifact contains those
 measurements; the runner never infers them. A corpus-version mismatch makes
 performance deltas descriptive rather than comparable. The report always marks
 that Stage 17 has not started.
+
+## Context-scout benchmark classification
+
+`run-context-scout-fast.mjs` is currently an explicit `model-isolation`
+experimental harness (`protocol_version: legacy-model-isolation`). It uses
+separate `primary.report.json` and `fallback.report.json` paths and writes
+`snapshot.json` with source revision, snapshot hash, file count, runner commit,
+and CMM availability. It is not a substitute for the canonical
+`prepare → claim → native task → evaluate → finalize` flow. Set `CBM_BINARY` to
+provide a host CMM runtime; otherwise the summary records `cmm_available: false`
+and the reason for direct-discovery degradation.
+
+## Minimal canonical equivalence smoke
+
+Run a small paired comparison of the canonical helper/native-task path and the
+inline path on the same immutable task envelope:
+
+```bash
+node .agents/skills/opencode-workflow-economics/benchmarks/run-context-scout-equivalence-smoke.mjs \
+  --output-dir /tmp/opencode/context-scout-live/equivalence-smoke-<new-id> \
+  --variants a,b,c \
+  --repetitions 1
+```
+
+The runner refuses an existing output directory, generates a current manifest,
+keeps the workspace hash before/after, validates both reports with the same
+criteria, records native-task sessions and writes a criteria-level comparison
+gate plus a hard `PRIMARY_OUTPUT_MISSING` startup/output gate; fallback success
+cannot mask a primary that produced no report or ledger. It does not claim full
+downstream semantic interchangeability. It is a
+decision smoke, not a statistically stable performance benchmark; run OWE on
+the recorded session IDs before interpreting cost.
+
+## Required validation gate
+
+Before publishing benchmark numbers, run the focused lifecycle/report tests,
+the agent integration test, syntax checks, and resolved-agent audits:
+
+```bash
+npx vitest run --project unit \
+  tests/skills/_shared/context-scout-hybrid-run.test.mjs \
+  tests/skills/_shared/context-scout-report-builder.test.mjs \
+  tests/skills/opencode-workflow-economics/run-context-scout-fast.test.mjs
+npx vitest run --project integration \
+  tests/skills/_shared/context-scout-opencode.integration.test.mjs
+node --check .agents/skills/_shared/scripts/context-scout-hybrid-run.mjs
+node --check .agents/skills/opencode-workflow-economics/benchmarks/run-context-scout-fast.mjs
+```
+
+`opencode debug agent` failures, incomplete resolved configuration, missing
+permissions, changed snapshot hashes, or `PRIMARY_OUTPUT_MISSING` invalidate
+the cohort before cost/latency aggregation. The current OpenCode debug payload
+exposes an `invalid` tool key for ordinary agents as well; it is recorded, not
+treated as an adapter parse failure.

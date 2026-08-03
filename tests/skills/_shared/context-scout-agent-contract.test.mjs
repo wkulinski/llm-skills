@@ -26,6 +26,8 @@ describe("context scout agent contracts", () => {
             expect(content).toMatch(/"github_\*": deny/);
             expect(content).toMatch(/"context7_\*": deny/);
             expect(content).toMatch(/"mate_\*": deny/);
+            expect(content).toMatch(/"\*\*\/\*primary\*\.report\.json": deny/);
+            expect(content).toMatch(/"\*\*\/\*primary\*\.ledger\.json": deny/);
         }
     });
 

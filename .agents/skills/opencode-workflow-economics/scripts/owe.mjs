@@ -7,7 +7,7 @@ import { loadConfig, loadPricing } from "./lib/config.mjs";
 import { OpenCodeReader } from "./lib/opencode.mjs";
 import { parseSince } from "./lib/util.mjs";
 import { createClient } from "./lib/client.mjs";
-import { writeLayeredReport } from "./lib/report-files.mjs";
+import { writeLayeredReport, writeUnavailableReport } from "./lib/report-files.mjs";
 import { listReportItems, readReportBrief, showReportItem } from "./lib/report-query.mjs";
 import { withManagedServer } from "./lib/server.mjs";
 
@@ -58,29 +58,46 @@ async function prepare(args) {
     const sessions = flagMany(args, "session");
     const sinceLabel = flagOne(args, "since") ?? "30d";
     const contentMode = parseContentMode(flagOne(args, "content") ?? config.collection.content_mode);
-    await withManagedServer({
-        base_url: config.opencode.base_url,
-        directory: config.opencode.directory,
-        cwd: config.opencode.directory,
-        mode: flagOne(args, "server") ?? "auto",
-    }, async ({base_url}) => {
-        const client = await createClient(base_url);
-        const bundle = await collectBundle(client, config, pricing, {
-            since_ms: sessions.length > 0 ? null : parseSince(sinceLabel),
-            since_label: sessions.length > 0 ? null : sinceLabel,
-            session_ids: sessions,
-            limit: numberFlag(args, "limit", config.collection.max_sessions),
-            content_mode: contentMode,
+    try {
+        await withManagedServer({
+            base_url: config.opencode.base_url,
+            directory: config.opencode.directory,
+            cwd: config.opencode.directory,
+            mode: flagOne(args, "server") ?? "auto",
+            startup_timeout_ms: config.opencode.startup_timeout_ms,
+            probe_timeout_ms: config.opencode.readiness_probe_timeout_ms,
+        }, async ({base_url}) => {
+            const client = createClient(base_url, {
+                timeoutMs: config.opencode.request_timeout_ms,
+                retryCount: config.opencode.request_retry_count,
+                retryDelayMs: config.opencode.request_retry_delay_ms,
+            });
+            const bundle = await collectBundle(client, config, pricing, {
+                since_ms: sessions.length > 0 ? null : parseSince(sinceLabel),
+                since_label: sessions.length > 0 ? null : sinceLabel,
+                session_ids: sessions,
+                limit: numberFlag(args, "limit", config.collection.max_sessions),
+                content_mode: contentMode,
+            });
+            const reportOptions = { analysis_dir: analysisDir, brief: config.reporting.brief };
+            const report = await writeLayeredReport(bundle, reportOptions);
+            console.log(`OWE report: ${report.report_path}`);
+            console.log("OWE brief: owe brief");
+            console.log(`OWE details: ${report.analysis_dir} (${report.detail_counts.patterns} patterns, ${report.detail_counts.overlaps} overlaps, ${report.detail_counts.roots} roots)`);
+            console.log(`Roots: ${bundle.summary.root_sessions}; steps: ${bundle.summary.model_steps}; delegations: ${bundle.summary.delegations}; fallback attempts: ${bundle.summary.fallback_attempts}`);
+            console.log(`Estimated reading size: brief ${report.report_sizes.estimated_brief_tokens} tokens; report ${report.report_sizes.estimated_report_tokens} tokens`);
+            if (bundle.warnings.length > 0) { console.log(`Warnings: ${bundle.warnings.join(", ")}`); }
         });
-        const reportOptions = { analysis_dir: analysisDir, brief: config.reporting.brief };
-        const report = await writeLayeredReport(bundle, reportOptions);
-        console.log(`OWE report: ${report.report_path}`);
-        console.log("OWE brief: owe brief");
-        console.log(`OWE details: ${report.analysis_dir} (${report.detail_counts.patterns} patterns, ${report.detail_counts.overlaps} overlaps, ${report.detail_counts.roots} roots)`);
-        console.log(`Roots: ${bundle.summary.root_sessions}; steps: ${bundle.summary.model_steps}; delegations: ${bundle.summary.delegations}; fallback attempts: ${bundle.summary.fallback_attempts}`);
-        console.log(`Estimated reading size: brief ${report.report_sizes.estimated_brief_tokens} tokens; report ${report.report_sizes.estimated_report_tokens} tokens`);
-        if (bundle.warnings.length > 0) { console.log(`Warnings: ${bundle.warnings.join(", ")}`); }
-    });
+    } catch (error) {
+        const report = await writeUnavailableReport({
+            analysis_dir: analysisDir,
+            reason: error instanceof Error ? error.message : String(error),
+            phase: "server_or_collection",
+            requested_sessions: sessions,
+        });
+        console.error(`OWE status: COST_UNAVAILABLE (${report.report_path})`);
+        process.exitCode = 2;
+    }
 }
 
 async function inspect(args) {
