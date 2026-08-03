@@ -9,6 +9,9 @@ options:
         type: disabled
 permission:
     edit: deny
+    read:
+        "**/*primary*.report.json": deny
+        "**/*primary*.ledger.json": deny
     bash:
         "*": deny
         "node ./.agents/skills/_shared/scripts/context-criteria.mjs validate *": allow

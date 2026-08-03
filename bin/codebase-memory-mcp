@@ -5,7 +5,15 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 
-BINARY="$REPO_ROOT/var/agent/bin/codebase-memory-mcp"
+if [ -n "${CBM_BINARY:-}" ]; then
+    BINARY=$CBM_BINARY
+else
+    BINARY="$REPO_ROOT/var/agent/bin/codebase-memory-mcp"
+fi
+case "$BINARY" in
+    /*) ;;
+    *) BINARY="$REPO_ROOT/$BINARY" ;;
+esac
 DEFAULT_CACHE="$REPO_ROOT/var/agent/persistent/codebase-memory-main"
 
 if [ ! -x "$BINARY" ]; then

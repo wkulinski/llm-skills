@@ -2,13 +2,14 @@ import {spawn} from "node:child_process";
 import {createServer} from "node:net";
 import {setTimeout as delay} from "node:timers/promises";
 
-const DEFAULT_STARTUP_TIMEOUT_MS = 10_000;
+const DEFAULT_STARTUP_TIMEOUT_MS = 30_000;
+const DEFAULT_PROBE_TIMEOUT_MS = 2_000;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 2_000;
 
 export async function withManagedServer(options, callback) {
     const mode = normalizeServerMode(options.mode ?? "auto");
     const baseUrl = normalizeBaseUrl(options.base_url);
-    if (mode === "existing" || await probeServer(baseUrl, options.directory, options.fetch_impl))
+    if (mode === "existing" || await probeServer(baseUrl, options.directory, options.fetch_impl, options.probe_timeout_ms))
     { return callback({base_url: baseUrl, managed: false}); }
 
     const attempts = 3;
@@ -30,7 +31,7 @@ export async function withManagedServer(options, callback) {
                 {cwd: options.cwd, stdio: ["ignore", "pipe", "pipe"]},
             );
             const managedUrl = `http://127.0.0.1:${port}`;
-            await waitForReady(child, managedUrl, options.directory, options.fetch_impl, options.startup_timeout_ms);
+            await waitForReady(child, managedUrl, options.directory, options.fetch_impl, options.startup_timeout_ms, options.probe_timeout_ms);
             try {
                 return await callback({base_url: managedUrl, managed: true});
             } finally {
@@ -45,12 +46,12 @@ export async function withManagedServer(options, callback) {
     throw lastError ?? new Error("OpenCode server could not be started");
 }
 
-export async function probeServer(baseUrl, directory, fetchImpl = globalThis.fetch) {
+export async function probeServer(baseUrl, directory, fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_PROBE_TIMEOUT_MS) {
     if (typeof fetchImpl !== "function") { return false; }
     const url = new URL(`${normalizeBaseUrl(baseUrl)}/session`);
     if (directory) { url.searchParams.set("directory", directory); }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 500);
+    const timer = setTimeout(() => controller.abort(), positiveInteger(timeoutMs) ?? DEFAULT_PROBE_TIMEOUT_MS);
     try {
         const response = await fetchImpl(url, {headers: authHeaders(), signal: controller.signal});
         return response.ok;
@@ -66,7 +67,7 @@ export function normalizeServerMode(value) {
     throw new Error(`Invalid --server value: ${value}. Expected auto or existing.`);
 }
 
-async function waitForReady(child, baseUrl, directory, fetchImpl, timeoutMs = DEFAULT_STARTUP_TIMEOUT_MS) {
+async function waitForReady(child, baseUrl, directory, fetchImpl, timeoutMs = DEFAULT_STARTUP_TIMEOUT_MS, probeTimeoutMs = DEFAULT_PROBE_TIMEOUT_MS) {
     const deadline = Date.now() + (positiveInteger(timeoutMs) ?? DEFAULT_STARTUP_TIMEOUT_MS);
     const output = [];
     let exited = null;
@@ -79,7 +80,7 @@ async function waitForReady(child, baseUrl, directory, fetchImpl, timeoutMs = DE
     while (Date.now() < deadline) {
         if (spawnError) { throw spawnError; }
         if (exited) { throw new Error(`OpenCode server exited before readiness (${formatExit(exited)}): ${output.join("").trim()}`); }
-        if (await probeServer(baseUrl, directory, fetchImpl)) { return; }
+        if (await probeServer(baseUrl, directory, fetchImpl, probeTimeoutMs)) { return; }
         await delay(100);
     }
     throw new Error(`OpenCode server readiness timed out after ${timeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS} ms: ${output.join("").trim()}`);

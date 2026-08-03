@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import crypto from "node:crypto";
 import {createWriteStream, existsSync} from "node:fs";
-import {chmod, copyFile, lstat, mkdir, readdir, readFile, readlink, symlink, writeFile} from "node:fs/promises";
+import {chmod, copyFile, lstat, mkdir, readdir, readFile, readlink, rename, symlink, writeFile} from "node:fs/promises";
 import {spawn, spawnSync} from "node:child_process";
 import {join, resolve} from "node:path";
 import {fileURLToPath, pathToFileURL} from "node:url";
@@ -10,6 +10,8 @@ const REPO_ROOT = resolve(fileURLToPath(new URL("../../../..", import.meta.url))
 const VALIDATOR = join(REPO_ROOT, ".agents/skills/_shared/scripts/context-scout-report.mjs");
 const PRIMARY_BENCHMARK_AGENT = "context-scout-benchmark-primary";
 const FALLBACK_BENCHMARK_AGENT = "context-scout-benchmark-fallback";
+const HARNESS_CLASS = "model-isolation";
+const PROTOCOL_VERSION = "legacy-model-isolation";
 const BENCHMARK_AGENT_CONFIGS = {
     [PRIMARY_BENCHMARK_AGENT]: `---
 description: Primary adapter for the context-scout-fast immutable benchmark.
@@ -50,7 +52,7 @@ model: openai/gpt-5.6-luna
 variant: low
 color: info
 steps: 36
-    permission:
+permission:
     edit: deny
     bash:
         "*": deny
@@ -86,6 +88,7 @@ export function parseArgs(args) {
         concurrency: 1,
         variants: ["a", "b", "c"],
         fallback: true,
+        cbmBinary: process.env.CBM_BINARY ? resolve(process.env.CBM_BINARY) : null,
     };
     for (let index = 0; index < args.length; index += 2) {
         const key = args[index];
@@ -108,7 +111,7 @@ export function parseArgs(args) {
     return options;
 }
 
-export function buildScoutPrompt({promptPath, manifestPath, handoffPath, criteriaPath, snapshotHash, mode, criteriaJson, reportPath}) {
+export function buildScoutPrompt({promptPath, manifestPath, handoffPath, criteriaPath, snapshotHash, mode, criteriaJson, reportPath, cmmAvailable = false, cmmReason = "CBM_BINARY is not configured"}) {
     const criteriaText = typeof criteriaJson === "string" ? criteriaJson : JSON.stringify(criteriaJson);
     return [
         "You are the context-scout-fast agent performing one bounded repository-context scout against a frozen snapshot.",
@@ -120,6 +123,8 @@ export function buildScoutPrompt({promptPath, manifestPath, handoffPath, criteri
         `Snapshot SHA-256: ${snapshotHash}.`,
         `Mode: ${mode}.`,
         `Criteria JSON: ${criteriaText}.`,
+        `Harness class: ${HARNESS_CLASS}; protocol version: ${PROTOCOL_VERSION}.`,
+        `CMM available: ${cmmAvailable}; ${cmmReason}.`,
         "Hard gate: every acceptance criterion listed under required_evidence must be satisfied with literal anchors, or emit a status other than COMPLETE.",
         "Forbid negative claims: do not assert that files, tests, configs, routes, or artifacts do not exist; every claim must be backed by evidence present in the snapshot.",
         "Emit one compact finding per criterion; keep the report tightly scoped to the requested target.",
@@ -131,7 +136,7 @@ export function buildScoutPrompt({promptPath, manifestPath, handoffPath, criteri
     ].join("\n");
 }
 
-export function buildFallbackPrompt({promptPath, manifestPath, handoffPath, criteriaPath, snapshotHash, mode, criteriaJson, reportPath}) {
+export function buildFallbackPrompt({promptPath, manifestPath, handoffPath, criteriaPath, snapshotHash, mode, criteriaJson, reportPath, cmmAvailable = false, cmmReason = "CBM_BINARY is not configured"}) {
     const criteriaText = typeof criteriaJson === "string" ? criteriaJson : JSON.stringify(criteriaJson);
     return [
         "You are the canonical context-scout agent performing a full repository-context scout fallback against a frozen snapshot.",
@@ -143,6 +148,8 @@ export function buildFallbackPrompt({promptPath, manifestPath, handoffPath, crit
         `Snapshot SHA-256: ${snapshotHash}.`,
         `Mode: ${mode}.`,
         `Criteria JSON: ${criteriaText}.`,
+        `Harness class: ${HARNESS_CLASS}; protocol version: ${PROTOCOL_VERSION}.`,
+        `CMM available: ${cmmAvailable}; ${cmmReason}.`,
         "Hard gate: every acceptance criterion listed under required_evidence must be satisfied with literal anchors, or emit a status other than COMPLETE.",
         "Forbid negative claims: do not assert that files, tests, configs, routes, or artifacts do not exist; every claim must be backed by evidence present in the snapshot.",
         "You may use a broader budget than the fast arm, but each evidence item must stay within the validator's line limits.",
@@ -249,7 +256,7 @@ async function listDirFiles(root, relative = "", out = []) {
     return out;
 }
 
-async function installBenchmarkAgents(snapshotDir) {
+export async function installBenchmarkAgents(snapshotDir) {
     const agentDir = join(snapshotDir, ".opencode", "agent");
     await mkdir(agentDir, {recursive: true});
     for (const [name, content] of Object.entries(BENCHMARK_AGENT_CONFIGS)) {
@@ -257,8 +264,33 @@ async function installBenchmarkAgents(snapshotDir) {
     }
 }
 
+export function auditBenchmarkAgents(opencode, snapshotDir) {
+    const audit = {};
+    for (const name of Object.keys(BENCHMARK_AGENT_CONFIGS)) {
+        const result = spawnSync(opencode, ["debug", "agent", name], {cwd: snapshotDir, encoding: "utf8"});
+        if (result.status !== 0) {
+            throw new Error(`opencode debug agent ${name} failed: ${result.stderr?.trim() || result.stdout?.trim() || "unknown error"}`);
+        }
+        let config;
+        try { config = JSON.parse(result.stdout); } catch (error) {
+            throw new Error(`opencode debug agent ${name} returned invalid JSON: ${error.message}`);
+        }
+        if (!config.tools || !Array.isArray(config.permission)) {
+            throw new Error(`opencode debug agent ${name} returned an incomplete resolved configuration`);
+        }
+        audit[name] = {
+            mode: config.mode ?? null,
+            model: config.model ?? null,
+            steps: config.steps ?? null,
+            tools_invalid: Boolean(config.tools?.invalid),
+            permission_rules: (config.permission ?? []).filter((rule) => ["task", "edit", "codebase-memory*", "context-scout-report-builder.mjs *"].some((pattern) => rule.permission === pattern)),
+        };
+    }
+    return audit;
+}
+
 async function hashSnapshotDir(snapshotDir) {
-    const files = (await listDirFiles(snapshotDir)).filter(Boolean).sort();
+    const files = (await listDirFiles(snapshotDir)).filter((relativePath) => relativePath && relativePath !== "snapshot.json").sort();
     const hash = crypto.createHash("sha256");
     for (const relativePath of files) {
         const source = join(snapshotDir, relativePath);
@@ -273,9 +305,68 @@ async function hashSnapshotDir(snapshotDir) {
     return {fileCount: files.length, sha256: hash.digest("hex")};
 }
 
-function runProcess(command, args, eventsPath, logPath, cwd) {
+async function materializeBenchmarkInputs(options, source) {
+    const inputRoot = join(options.outputDir, "inputs");
+    if (existsSync(inputRoot)) { throw new Error(`Benchmark input directory already exists: ${inputRoot}`); }
+    await mkdir(inputRoot, {recursive: true});
+    const sourceManifest = JSON.parse(await readFile(join(options.fixtureRoot, "manifest.json"), "utf8"));
+    const manifest = {
+        ...sourceManifest,
+        repository: source.repository || sourceManifest.repository,
+        branch: source.branch,
+        head: source.head,
+        generated_at: new Date().toISOString(),
+    };
+    const manifestPath = join(inputRoot, "manifest.json");
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, {mode: 0o600});
+    const variantHashes = {};
+    for (const variant of options.variants) {
+        const sourceDir = join(options.fixtureRoot, `test-${variant}`);
+        const targetDir = join(inputRoot, `test-${variant}`);
+        await mkdir(targetDir, {recursive: true});
+        variantHashes[variant] = {};
+        for (const name of ["prompt.txt", "handoff.json", "criteria.json"]) {
+            const target = join(targetDir, name);
+            await copyFile(join(sourceDir, name), target);
+            variantHashes[variant][name] = await sha256File(target);
+        }
+    }
+    options.fixtureRoot = inputRoot;
+    options.manifestHead = manifest.head;
+    options.inputHashes = {manifest: await sha256File(manifestPath), variants: variantHashes};
+    return manifestPath;
+}
+
+function resolveCmmRuntime(repoDir, configuredBinary) {
+    if (!configuredBinary) {
+        return {available: false, path: null, reason: "CBM_BINARY is not configured"};
+    }
+    const binaryPath = configuredBinary.startsWith("/") ? configuredBinary : resolve(repoDir, configuredBinary);
+    if (!existsSync(binaryPath)) {
+        return {available: false, path: binaryPath, reason: `CBM_BINARY does not exist: ${binaryPath}`};
+    }
+    return {available: true, path: binaryPath, reason: "CBM_BINARY is available"};
+}
+
+async function sha256File(filePath) {
+    return crypto.createHash("sha256").update(await readFile(filePath)).digest("hex");
+}
+
+function gitMetadata(repoDir) {
+    const run = (args) => {
+        const result = spawnSync("git", args, {cwd: repoDir, encoding: "utf8"});
+        return result.status === 0 ? result.stdout.trim() : null;
+    };
+    return {
+        repository: run(["config", "--get", "remote.origin.url"]),
+        branch: run(["branch", "--show-current"]) || "detached",
+        head: run(["rev-parse", "HEAD"]),
+    };
+}
+
+function runProcess(command, args, eventsPath, logPath, cwd, environment = {}) {
     return new Promise((resolveProcess) => {
-        const child = spawn(command, args, {cwd, stdio: ["ignore", "pipe", "pipe"]});
+        const child = spawn(command, args, {cwd, env: {...process.env, ...environment}, stdio: ["ignore", "pipe", "pipe"]});
         const events = createWriteStream(eventsPath, {mode: 0o600});
         const logs = createWriteStream(logPath, {mode: 0o600});
         child.stdout.pipe(events);
@@ -327,9 +418,9 @@ async function runJob(job, options, snapshot) {
     const fixtureDir = join(options.fixtureRoot, `test-${job.variant}`);
     const outputDir = join(options.outputDir, name);
     await mkdir(outputDir, {recursive: true});
-    const reportPath = join(outputDir, "report.json");
     const primaryReportPath = join(outputDir, "primary.report.json");
     const fallbackReportPath = join(outputDir, "fallback.report.json");
+    const primaryDiscardedPath = join(outputDir, "primary-discarded.report.json");
     const eventsPath = join(outputDir, "events.jsonl");
     const logPath = join(outputDir, "stderr.log");
     const fallbackEventsPath = join(outputDir, "fallback-events.jsonl");
@@ -342,6 +433,18 @@ async function runJob(job, options, snapshot) {
     const [handoffRaw, criteriaRaw] = await Promise.all([readFile(handoffPath, "utf8"), readFile(criteriaPath, "utf8")]);
     const handoff = JSON.parse(handoffRaw);
     const mode = handoff.mode;
+    const cmm = resolveCmmRuntime(options.repoDir, options.cbmBinary);
+    const fallbackInputHashes = {
+        prompt: await sha256File(promptPath),
+        manifest: await sha256File(manifestPath),
+        handoff: await sha256File(handoffPath),
+        criteria: await sha256File(criteriaPath),
+        snapshot: snapshot.sha256,
+    };
+    const processEnvironment = {
+        CBM_ALLOWED_ROOT: options.snapshotDir,
+        ...(cmm.path ? {CBM_BINARY: cmm.path} : {}),
+    };
 
     const prompt = buildScoutPrompt({
         promptPath,
@@ -351,15 +454,17 @@ async function runJob(job, options, snapshot) {
         snapshotHash: snapshot.sha256,
         mode,
         criteriaJson: criteriaRaw,
-        reportPath,
+        reportPath: primaryReportPath,
+        cmmAvailable: cmm.available,
+        cmmReason: cmm.reason,
     });
 
     const started = Date.now();
-    const primaryExit = await runProcess(options.opencode, ["run", "--pure", "--agent", PRIMARY_BENCHMARK_AGENT, "--format", "json", "--title", name, "--dir", options.snapshotDir, prompt], eventsPath, logPath, options.snapshotDir);
+    const primaryExit = await runProcess(options.opencode, ["run", "--pure", "--agent", PRIMARY_BENCHMARK_AGENT, "--format", "json", "--title", name, "--dir", options.snapshotDir, prompt], eventsPath, logPath, options.snapshotDir, processEnvironment);
     const primaryDuration = Date.now() - started;
     const primaryParsed = parseJsonEvents(await readEvents(eventsPath));
-    const primaryValidation = await validateReport(reportPath, options.manifestHead, criteriaPath, options.snapshotDir);
-    const primaryMetrics = await readReportMetrics(reportPath);
+    const primaryValidation = await validateReport(primaryReportPath, options.manifestHead, criteriaPath, options.snapshotDir);
+    const primaryMetrics = await readReportMetrics(primaryReportPath);
     const primaryValid = isReportValid(primaryValidation, primaryMetrics.report);
 
     const primary = {
@@ -375,15 +480,20 @@ async function runJob(job, options, snapshot) {
         covered_criteria: primaryMetrics.covered,
         valid: primaryValid,
         validation_reason: primaryValidation.reason,
-        report_path: reportPath,
+        report_path: primaryReportPath,
     };
 
     let fallbackUsed = false;
     let fallback = null;
     let accepted = primary;
+    let primaryReportDiscardedAt = null;
+    let fallbackStartedAt = null;
 
     if (!primaryValid) {
-        if (existsSync(reportPath)) { await copyFile(reportPath, primaryReportPath); }
+        if (existsSync(primaryReportPath)) {
+            await rename(primaryReportPath, primaryDiscardedPath);
+            primaryReportDiscardedAt = new Date().toISOString();
+        }
         if (shouldRunFallback(primaryValid, options.fallback)) {
             const fallbackName = `${name}-fallback`;
             const fallbackPrompt = buildFallbackPrompt({
@@ -394,16 +504,18 @@ async function runJob(job, options, snapshot) {
                 snapshotHash: snapshot.sha256,
                 mode,
                 criteriaJson: criteriaRaw,
-                reportPath,
+                reportPath: fallbackReportPath,
+                cmmAvailable: false,
+                cmmReason: "Fallback adapter does not use CMM",
             });
+            fallbackStartedAt = new Date().toISOString();
             const fallbackStarted = Date.now();
-            const fallbackExit = await runProcess(options.opencode, ["run", "--pure", "--agent", FALLBACK_BENCHMARK_AGENT, "--format", "json", "--title", fallbackName, "--dir", options.snapshotDir, fallbackPrompt], fallbackEventsPath, fallbackLogPath, options.snapshotDir);
+            const fallbackExit = await runProcess(options.opencode, ["run", "--pure", "--agent", FALLBACK_BENCHMARK_AGENT, "--format", "json", "--title", fallbackName, "--dir", options.snapshotDir, fallbackPrompt], fallbackEventsPath, fallbackLogPath, options.snapshotDir, processEnvironment);
             const fallbackDuration = Date.now() - fallbackStarted;
             const fallbackParsed = parseJsonEvents(await readEvents(fallbackEventsPath));
-            const fallbackValidation = await validateReport(reportPath, options.manifestHead, criteriaPath, options.snapshotDir);
-            const fallbackMetrics = await readReportMetrics(reportPath);
+            const fallbackValidation = await validateReport(fallbackReportPath, options.manifestHead, criteriaPath, options.snapshotDir);
+            const fallbackMetrics = await readReportMetrics(fallbackReportPath);
             const fallbackValid = isReportValid(fallbackValidation, fallbackMetrics.report);
-            if (existsSync(reportPath)) { await copyFile(reportPath, fallbackReportPath); }
             fallback = {
                 session_id: fallbackParsed.session_id,
                 exit_code: fallbackExit,
@@ -417,7 +529,7 @@ async function runJob(job, options, snapshot) {
                 covered_criteria: fallbackMetrics.covered,
                 valid: fallbackValid,
                 validation_reason: fallbackValidation.reason,
-                report_path: reportPath,
+                report_path: fallbackReportPath,
             };
             fallbackUsed = true;
             accepted = fallback;
@@ -426,6 +538,8 @@ async function runJob(job, options, snapshot) {
 
     return {
         arm: "context-scout-fast",
+        harness_class: HARNESS_CLASS,
+        protocol_version: PROTOCOL_VERSION,
         variant: job.variant,
         repetition: job.repetition,
         name,
@@ -446,6 +560,14 @@ async function runJob(job, options, snapshot) {
         final_covered_criteria: accepted.covered_criteria,
         final_validation_reason: accepted.validation_reason,
         final_report_path: accepted.report_path,
+        primary_report_path: primaryReportPath,
+        fallback_report_path: fallbackReportPath,
+        primary_report_discarded_path: existsSync(primaryDiscardedPath) ? primaryDiscardedPath : null,
+        primary_report_discarded_at: primaryReportDiscardedAt,
+        fallback_started_at: fallbackStartedAt,
+        fallback_input_hashes: fallbackInputHashes,
+        cmm_available: cmm.available,
+        cmm_reason: cmm.reason,
         valid: accepted.valid,
         task_tools: accepted.task_tools,
         session_id: accepted.session_id,
@@ -473,11 +595,17 @@ export function summarizeResult(results, snapshot, options = {}) {
     }
     const uniqueSessionIds = [...new Set(sessionIds)].sort();
     const passed = results.length > 0 && results.every((result) => result.valid) && Boolean(snapshot.unchanged) && noTaskTools;
+    const cmmStates = [...new Set(results.map((result) => result.cmm_available).filter((value) => typeof value === "boolean"))];
     return {
         arm: "context-scout-fast",
+        harness_class: HARNESS_CLASS,
+        protocol_version: PROTOCOL_VERSION,
+        cmm_available: cmmStates.length === 1 ? cmmStates[0] : "mixed",
         repetitions: options.repetitions ?? null,
         concurrency: options.concurrency ?? null,
         variants: options.variants ?? null,
+        input_hashes: options.inputHashes ?? null,
+        adapter_audit: options.adapterAudit ?? null,
         snapshot: {...snapshot},
         gates: {
             valid_rate: validRate,
@@ -503,10 +631,25 @@ export async function runBenchmark(options) {
         await copyWorkspaceSnapshot(options.repoDir, snapshotDir);
     }
     await installBenchmarkAgents(snapshotDir);
+    options.adapterAudit = auditBenchmarkAgents(options.opencode, snapshotDir);
     snapshot = await hashSnapshotDir(snapshotDir);
     options.snapshotDir = snapshotDir;
-    const manifest = JSON.parse(await readFile(join(options.fixtureRoot, "manifest.json"), "utf8"));
-    options.manifestHead = manifest.head;
+    const source = gitMetadata(options.repoDir);
+    const cmm = resolveCmmRuntime(options.repoDir, options.cbmBinary);
+    const snapshotMetadata = {
+        source_head: source.head,
+        source_branch: source.branch,
+        source_repository: source.repository,
+        snapshot_sha256: snapshot.sha256,
+        file_count: snapshot.fileCount,
+        runner_commit: source.head,
+        protocol_version: PROTOCOL_VERSION,
+        harness_class: HARNESS_CLASS,
+        cmm_available: cmm.available,
+        cmm_reason: cmm.reason,
+    };
+    await writeFile(join(options.outputDir, "snapshot.json"), `${JSON.stringify(snapshotMetadata, null, 2)}\n`, {mode: 0o600});
+    await materializeBenchmarkInputs(options, source);
     const jobs = options.variants.flatMap((variant) => Array.from({length: options.repetitions}, (_, index) => ({variant, repetition: index + 1})));
     const results = await runPool(jobs, options, snapshot);
     const after = await hashSnapshotDir(snapshotDir);
@@ -516,7 +659,13 @@ export async function runBenchmark(options) {
         afterFileCount: after.fileCount,
         afterSha256: after.sha256,
         unchanged: after.sha256 === snapshot.sha256 && after.fileCount === snapshot.fileCount,
+        source_head: source.head,
+        source_branch: source.branch,
+        runner_commit: source.head,
+        cmm_available: cmm.available,
+        cmm_reason: cmm.reason,
     };
+    await writeFile(join(options.outputDir, "snapshot.json"), `${JSON.stringify({...snapshotMetadata, after_sha256: after.sha256, after_file_count: after.fileCount, snapshot_unchanged: finalSnapshot.unchanged}, null, 2)}\n`, {mode: 0o600});
     const summary = summarizeResult(results, finalSnapshot, options);
     await writeFile(join(options.outputDir, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`, {mode: 0o600});
     return {summary, snapshotDir};

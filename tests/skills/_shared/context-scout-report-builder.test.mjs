@@ -21,6 +21,19 @@ describe("context scout report builder", () => {
         expect(fs.existsSync(ledger)).toBe(true);
     });
 
+    it("stores enriched criteria in the ledger for every builder validation path", () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-test-"));
+        const ledger = path.join(dir, "ledger.json");
+        const criteria = path.join(dir, "criteria.json");
+        fs.writeFileSync(criteria, JSON.stringify({criteria: [{id: "C1", description: "Map the flow.", forbid_negative_claims: true, required_evidence: [{path: "AGENTS.md", relation: "defines", anchors: ["Repository Guidelines"]}]}]}));
+        const result = spawnSync(process.execPath, [BUILDER, "init", ledger, "--head", "HEAD", "--criteria", criteria, "--mode", "targeted"], {
+            cwd: ROOT,
+            encoding: "utf8",
+        });
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(fs.readFileSync(ledger, "utf8")).criteria_entries).toEqual([{id: "C1", description: "Map the flow.", forbid_negative_claims: true, required_evidence: [{path: "AGENTS.md", relation: "defines", anchors: ["Repository Guidelines"]}]}]);
+    });
+
     it("refuses to overwrite source files", () => {
         const sourcePath = path.join(ROOT, "AGENTS.md");
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-test-"));

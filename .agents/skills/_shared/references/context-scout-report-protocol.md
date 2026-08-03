@@ -17,18 +17,19 @@ do not use shell command substitution or compound shell commands:
 add-evidence "$LEDGER" --path "repo/file" --line-start 1 --line-end 2
 add-finding "$LEDGER" --criterion C1 --claim "..." --claim-type structural --confidence high --anchors "literal,terms" --evidence E1,E2
 set-coverage "$LEDGER" --criterion C1 --status covered --evidence E1,E2
-batch "$LEDGER" < report.json
+batch-render "$LEDGER" --status COMPLETE --output "$REPORT" < report.json
 add-covered-path "$LEDGER" --path "repo/file" --line-start 1 --line-end 2 --locator "Symbol" --relation "defines"
 add-follow-up "$LEDGER" --path "repo/other-file" --reason "required only for implementation read-before-write"
 add-risk "$LEDGER" --text "..."
 add-omitted "$LEDGER" --text "..."
 set-next-step "$LEDGER" --text "..."
-check "$LEDGER"
-render "$LEDGER" --status COMPLETE --output "$REPORT"
+check "$LEDGER"  # recovery/debug path only
 ```
 
-`batch` validates and stores a complete report in the ledger in one command;
-the helper can render it later if the agent is interrupted. `--claim-type` must be `observed`, `structural` or `inferred`; `--confidence`
+For a normal scout attempt, use one `batch-render` operation with the complete
+report JSON on stdin. The older `batch` + `render` sequence remains a recovery
+path for an interrupted ledger, not the canonical scout finalization path.
+`--claim-type` must be `observed`, `structural` or `inferred`; `--confidence`
 must be `high`, `medium` or `low`. Use `inferred` for interpretations and make
 their uncertainty explicit in the claim. `--anchors` lists literal terms that
 must occur inside the cited evidence ranges; split a claim instead of using

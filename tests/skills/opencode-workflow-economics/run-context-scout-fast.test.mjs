@@ -1,3 +1,4 @@
+import {readFileSync} from "node:fs";
 import {describe, expect, it} from "vitest";
 
 import {
@@ -9,6 +10,8 @@ import {
     shouldRunFallback,
     summarizeResult,
 } from "../../../.agents/skills/opencode-workflow-economics/benchmarks/run-context-scout-fast.mjs";
+
+const RUNNER_SOURCE = readFileSync(new URL("../../../.agents/skills/opencode-workflow-economics/benchmarks/run-context-scout-fast.mjs", import.meta.url), "utf8");
 
 describe("parseArgs", () => {
     it("applies safe defaults", () => {
@@ -56,6 +59,8 @@ describe("buildScoutPrompt requirements", () => {
         expect(prompt).toContain(base.handoffPath);
         expect(prompt).toContain(base.criteriaPath);
         expect(prompt).toContain("Snapshot SHA-256: sha256:deadbeef");
+        expect(prompt).toContain("Harness class: model-isolation");
+        expect(prompt).toContain("CMM available: false");
         expect(prompt).toContain("Mode: targeted");
         expect(prompt).toContain(base.criteriaJson);
         expect(prompt).toContain(base.reportPath);
@@ -94,6 +99,21 @@ describe("buildFallbackPrompt", () => {
         expect(prompt).toMatch(/report-builder/);
         expect(prompt).not.toMatch(/one compact finding/);
         expect(prompt).not.toMatch(/80 lines/);
+    });
+});
+
+describe("benchmark isolation contract", () => {
+    it("uses independent primary and fallback report paths", () => {
+        expect(RUNNER_SOURCE).toMatch(/primaryReportPath/);
+        expect(RUNNER_SOURCE).toMatch(/fallbackReportPath/);
+        expect(RUNNER_SOURCE).toMatch(/primaryReportDiscardedAt/);
+        expect(RUNNER_SOURCE).toMatch(/fallbackInputHashes/);
+        expect(RUNNER_SOURCE).toMatch(/harness_class: HARNESS_CLASS/);
+        expect(RUNNER_SOURCE).toMatch(/snapshot\.json/);
+        expect(RUNNER_SOURCE).toMatch(/materializeBenchmarkInputs/);
+        expect(RUNNER_SOURCE).toMatch(/inputHashes/);
+        expect(RUNNER_SOURCE).toMatch(/auditBenchmarkAgents/);
+        expect(RUNNER_SOURCE).toMatch(/config\.tools\?\.invalid/);
     });
 });
 
@@ -164,6 +184,8 @@ describe("summarizeResult gates", () => {
     it("passes when every final is valid, snapshot unchanged and no task tools", () => {
         const summary = summarizeResult([validResult(), validResult()], snapshot, {repetitions: 3, concurrency: 1, variants: ["a", "b", "c"]});
         expect(summary.arm).toBe("context-scout-fast");
+        expect(summary.harness_class).toBe("model-isolation");
+        expect(summary.protocol_version).toBe("legacy-model-isolation");
         expect(summary.gates.valid_rate).toBe(1);
         expect(summary.gates.no_task_tools).toBe(true);
         expect(summary.gates.passed).toBe(true);

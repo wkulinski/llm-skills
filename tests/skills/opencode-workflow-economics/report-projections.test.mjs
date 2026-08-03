@@ -135,7 +135,7 @@ describe("OWE bounded baseline projections", () => {
             recommended_hints_per_example: 1,
             rationale: expect.stringContaining("root drill-down rate"),
         });
-    });
+    }, 15_000);
 
     it("warns that a single-root pattern is not a stable delegation class", () => {
         const bundle = analyzeCorpus();

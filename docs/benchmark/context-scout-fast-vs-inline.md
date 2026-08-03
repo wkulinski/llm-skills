@@ -2,6 +2,104 @@
 
 ## Status i konkluzja
 
+> **Audyt statusu (2026-08-03):** historyczne liczby poniżej nie są dowodem
+> wydajności canonical hybrid. Zostały zachowane jako artefakty audytu, ale ich
+> klasa i ograniczenia muszą pozostać jawne.
+
+| Cohort / artefakt | Status | `harness_class` | Powód klasyfikacji |
+|---|---|---|---|
+| controlled fast v4 | `INVALID` dla canonical flow | `legacy-experimental` | Używał `opencode run`, tymczasowych adapterów `mode: primary` i współdzielonego `report.json` dla primary/fallback. |
+| controlled inline v1 | `VERIFIED_EXPERIMENTAL` | `inline-discovery` | Poprawny eksperyment porównawczy, ale nie implementuje helperowego native-task hybrid. |
+| `.owe/benchmarks/baseline.json` | `VERIFIED_EXPERIMENTAL` wyłącznie dla fixture/local CLI | `fixture-only` | Artefakt nie zawiera sesji OpenCode, canonical lifecycle ani kompletnego snapshot contract; nie służy do porównania hybrid. |
+
+`protocol_version` dla wymienionych historycznych artefaktów: `unknown/legacy`.
+Brak pełnego `snapshot.json`, `runner_commit`, jawnej dostępności CMM i dowodu
+izolacji oznacza, że nie wolno przedstawiać ich jako `VERIFIED_CANONICAL`.
+
+### Minimalny smoke canonical equivalence (2026-08-03)
+
+Na trzech fixture (`a,b,c`, po jednej próbie) uruchomiono ten sam task envelope
+przez canonical `prepare → claim → native task → evaluate → fallback → finalize`
+oraz przez inline. Workspace pozostał niezmieniony (`220` plików, ten sam hash).
+
+| Gate | Wynik |
+|---|---:|
+| Hybrid final valid | `3/3` |
+| Hybrid primary valid | `0/3` |
+| Hybrid fallback used | `3/3` |
+| Inline valid | `2/3` |
+| Criteria coverage dla raportów | `3/3` |
+| OWE cost, canonical | `$0.5015972` |
+| OWE cost, inline | `$0.2890048` |
+| Średnia latencja canonical | `274.2 s` |
+| Średnia latencja inline | `133.2 s` |
+
+Smoke nie przeszedł bramki równoważności jako całość: inline fixture `b` miała
+raport `COMPLETE`, ale validator odrzucił go za brak wymaganego evidence.
+Dla `a` i `c` criteria były kompletne po obu stronach. Wynik tego smoke nie
+potwierdza oszczędności obecnego canonical hybrid; w tym środowisku fallback
+uruchomił się w każdej próbie i kosztował więcej niż inline. To mały wynik
+diagnostyczny, nie stabilny benchmark wydajności.
+Smoke sprawdzał równoważność kryteriów i evidence contract, nie pełne
+podstawienie raportu w dalszym workflow parenta; ten drugi test pozostaje poza
+minimalnym zakresem.
+Brak outputu primary jest osobnym hard gate (`PRIMARY_OUTPUT_MISSING`); fallback
+może zapewnić dostępność usługi, ale nie może zamaskować awarii uruchomienia
+primary w ocenie oszczędności.
+
+### Rerun po włączeniu hostingu China (2026-08-03)
+
+Po włączeniu przez użytkownika opcji `Enable models hosted in China` powtórzono
+ten sam smoke (`a,b,c`, po jednej próbie) bez zmiany task envelope.
+
+| Gate / metryka | Canonical hybrid | Inline |
+|---|---:|---:|
+| Valid final reports | `3/3` | `3/3` |
+| Primary valid | `3/3` | — |
+| Fallback used | `0/3` | — |
+| Criteria-level equivalence | `PASS` | `PASS` |
+| OWE cost | `$0.123907411` | `$0.346243400` |
+| Średnia latencja | `197.3 s` | `177.1 s` |
+
+Po usunięciu błędu regionalnego hybrid był około `64.2%` tańszy przy cenach ze
+snapshotu OWE z 2026-07-28, ale średnio `11.4%` wolniejszy. To potwierdzało
+oszczędność kosztową dla małego cohortu, ale nie było jeszcze stabilnym
+benchmarkiem statystycznym ani pełnym testem downstream substitution.
+
+### Rerun po aktualizacji cen OpenAI (2026-08-03)
+
+Ten sam cohort (`a,b,c`, po jednej próbie) policzono ponownie z aktualnym
+`.owe/pricing.json` po obniżce cen Luna/Terra. Oba ramiona przeszły criteria,
+primary wykonał się `3/3`, a fallback nie został użyty.
+
+| Metryka | Canonical hybrid | Inline |
+|---|---:|---:|
+| OWE cost | `$0.039599431` | `$0.056545360` |
+| Średnia latencja | `156.8 s` | `126.6 s` |
+
+Po korekcie cen przewaga kosztowa wynosi około `30.0%`, a hybrid jest około
+`23.9%` wolniejszy. Stare wyniki pozostają porównywalne wyłącznie z użyciem
+snapshotu `.owe/pricing-history/2026-07-28-openai-gpt-5.6-luna-terra.json`.
+
+### Cohort 5×3 po aktualizacji OWE (2026-08-03)
+
+Uruchomiono `a,b,c` po pięć powtórzeń. Wszystkie 15 prób hybrid zakończyło się
+primary success bez fallbacku; wszystkie 15 prób inline przeszły validator.
+OWE zakończył analizę obu ramion (`15` rootów canonical + `15` child sessions,
+`15` rootów inline).
+
+| Metryka | Canonical hybrid | Inline |
+|---|---:|---:|
+| Valid reports | `15/15` | `15/15` |
+| Fallbacks | `0/15` | — |
+| OWE cost | `$0.206727970` | `$0.291401520` |
+| Średnia latencja | `160.5 s` | `109.6 s` |
+
+Hybrid był około `29.1%` tańszy, ale średnio `46.4%` wolniejszy. Cohort został
+dokończony po timeoutcie procesu nadrzędnego: część inline uruchomiono w
+kontynuacji z concurrency `2`, więc latency traktujemy jako wynik orientacyjny;
+koszt i poprawność raportów są pełne.
+
 Benchmark porównywał koszt uzyskania finalnego, zwalidowanego raportu kontekstu
 repozytorium. Nie mierzył późniejszego wykorzystania raportu przez głównego
 agenta; raport był traktowany jako finalny produkt tego zadania.
@@ -200,6 +298,14 @@ bezpośredniego `opencode run --agent`. Pierwsza wersja benchmarku wykazała ten
 problem: wywołanie subagenta z root session spadało do domyślnego agenta build.
 Wynik tej wersji został odrzucony. Poprawiony runner używa świeżych adapterów
 `mode: primary`, zachowując model i ograniczenia odpowiednich agentów.
+
+Aktualny runner jest jawnie klasą `model-isolation` z protokołem
+`legacy-model-isolation`; nie należy przedstawiać jego wyniku jako canonical
+native-task hybrid. Zapisuje osobne `primary.report.json` i
+`fallback.report.json`, przenosi nieudany primary do artefaktu discarded oraz
+zapisuje `snapshot.json` z hashami, revision i stanem CMM. Dostępność CMM jest
+jawna przez `CBM_BINARY`; bez tej zmiennej benchmark raportuje degradację do
+direct discovery zamiast udawać obecność indeksu.
 
 ### Inline
 

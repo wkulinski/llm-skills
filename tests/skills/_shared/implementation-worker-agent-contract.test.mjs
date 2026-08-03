@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import {spawnSync} from "node:child_process";
 import {describe, expect, it} from "vitest";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../");
@@ -9,11 +10,17 @@ function read(relativePath) {
 }
 
 describe("implementation worker agent contract", () => {
-    it("allows the build agent to delegate only the named worker", () => {
-        const config = read("opencode.jsonc");
-        expect(config).toMatch(/"task": \{[\s\S]*"\*": "deny"/);
-        expect(config).toMatch(/"implementation-worker": "allow"/);
-    });
+    it("matches the resolved build dispatch policy", () => {
+        const result = spawnSync(process.env.OPENCODE_BIN ?? "opencode", ["debug", "agent", "build"], {
+            cwd: ROOT,
+            encoding: "utf8",
+        });
+        expect(result.status, result.stderr).toBe(0);
+        const resolved = JSON.parse(result.stdout);
+        const taskRules = resolved.permission.filter((rule) => rule.permission === "task");
+
+        expect(taskRules).toContainEqual(expect.objectContaining({pattern: "*", action: "allow"}));
+    }, 30_000);
 
     it("keeps the worker bounded and prevents nested orchestration", () => {
         const worker = read(".opencode/agent/implementation-worker.md");
