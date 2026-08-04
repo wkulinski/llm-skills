@@ -51,6 +51,7 @@ describe("branch preparation helpers", () => {
             if (command === "git" && args[0] === "show-ref") { return {status: 1, stdout: "", stderr: ""}; }
             if (command === "git" && args[0] === "checkout") { return {status: 0, stdout: "", stderr: ""}; }
             if (command === "git" && args[0] === "branch") { return {status: 0, stdout: "issue/12-target\n", stderr: ""}; }
+            if (command === "git" && args[0] === "rev-list") { return {status: 0, stdout: "0 0\n", stderr: ""}; }
             return {status: 0, stdout: "", stderr: ""};
         };
 
@@ -75,6 +76,7 @@ describe("branch preparation helpers", () => {
             if (command === "git" && args[0] === "show-ref") { return {status: 1, stdout: "", stderr: ""}; }
             if (command === "git" && args[0] === "checkout") { return {status: 0, stdout: "", stderr: ""}; }
             if (command === "git" && args[0] === "branch") { return {status: 0, stdout: "issue/12-target\n", stderr: ""}; }
+            if (command === "git" && args[0] === "rev-list") { return {status: 0, stdout: "0 0\n", stderr: ""}; }
             return {status: 0, stdout: "", stderr: ""};
         };
 

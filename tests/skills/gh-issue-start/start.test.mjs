@@ -50,6 +50,9 @@ describe("gh-issue-start", () => {
             if (command === "git" && args[0] === "branch" && args[1] === "--show-current") {
                 return {status: 0, stdout: "issue/77-feat-add-support\n", stderr: ""};
             }
+            if (command === "git" && args[0] === "rev-list") {
+                return {status: 0, stdout: "0 0\n", stderr: ""};
+            }
 
             throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
         };
@@ -141,6 +144,9 @@ describe("gh-issue-start", () => {
             }
             if (command === "git" && args[0] === "branch" && args[1] === "--show-current") {
                 return {status: 0, stdout: "issue/77-add-support\n", stderr: ""};
+            }
+            if (command === "git" && args[0] === "rev-list") {
+                return {status: 0, stdout: "0 0\n", stderr: ""};
             }
 
             throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
