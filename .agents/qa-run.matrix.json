@@ -62,7 +62,7 @@
                     "cmd": "npm --silent run lint:js -- --format json",
                     "parser": "eslint-json"
                 },
-                "npm test"
+                "npm test -- --maxWorkers=1"
             ],
             "runOn": [
                 "full",
