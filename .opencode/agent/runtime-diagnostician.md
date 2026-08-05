@@ -1,8 +1,8 @@
 ---
 description: Używaj przy błędach runtime, HTTP 5xx, wyjątkach, problemach z profilerem, logami lub kontenerem DI.
 mode: subagent
-model: openai/gpt-5.6-luna
-variant: medium
+model: opencode-go/deepseek-v4-flash
+variant: max
 color: warning
 steps: 12
 permission:

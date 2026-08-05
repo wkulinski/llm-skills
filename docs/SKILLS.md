@@ -20,3 +20,4 @@
 - `$review-quick`
 - `$rules-sync`
 - `$skills-index-refresh`
+- `$task-plan`

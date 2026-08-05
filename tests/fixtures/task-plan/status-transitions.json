@@ -1,0 +1,44 @@
+{
+  "package": {
+    "allowed": [
+      {"from": "pending", "to": "accepted"},
+      {"from": "pending", "to": "excluded"},
+      {"from": "pending", "to": "revision-requested"},
+      {"from": "pending", "to": "separated"},
+      {"from": "revision-requested", "to": "pending"}
+    ],
+    "forbidden": [
+      {"from": "pending", "to": "approved"},
+      {"from": "accepted", "to": "pending"},
+      {"from": "excluded", "to": "accepted"},
+      {"from": "separated", "to": "pending"},
+      {"from": "revision-requested", "to": "accepted"}
+    ],
+    "terminal": ["accepted", "excluded", "separated"],
+    "contract_anchors": [
+      "pending\n  → accepted | excluded | revision-requested | separated",
+      "revision-requested\n  → pending"
+    ]
+  },
+  "plan": {
+    "allowed": [
+      {"from": "needs-clarification", "to": "awaiting-package-decisions"},
+      {"from": "awaiting-package-decisions", "to": "approved"},
+      {"from": "awaiting-package-decisions", "to": "needs-clarification"},
+      {"from": "approved", "to": "awaiting-package-decisions"},
+      {"from": "approved", "to": "approved"},
+      {"from": "review-limit-reached", "to": "awaiting-package-decisions"}
+    ],
+    "forbidden": [
+      {"from": "needs-clarification", "to": "approved"},
+      {"from": "awaiting-package-decisions", "to": "review-limit-reached"},
+      {"from": "review-limit-reached", "to": "approved"}
+    ],
+    "contract_anchors": [
+      "needs-clarification\n  → awaiting-package-decisions",
+      "awaiting-package-decisions\n  → approved | needs-clarification",
+      "approved\n  → awaiting-package-decisions | approved",
+      "review-limit-reached\n  → awaiting-package-decisions"
+    ]
+  }
+}
