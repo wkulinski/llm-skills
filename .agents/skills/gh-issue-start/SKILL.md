@@ -7,6 +7,7 @@ shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh
   - _shared/scripts/issue-branch.mjs
+  - _shared/scripts/slugify-title.mjs
 ---
 
 # $gh-issue-start
@@ -52,6 +53,23 @@ Zautomatyzować start pracy nad issue: ustalenie numeru issue, utworzenie/checko
    - Jeśli nie da się jednoznacznie ustalić numeru issue, pozwól `$gh-issue-status-set` użyć własnych heurystyk i ewentualnie dopytać.
    - Jeśli ustawienie statusu się nie powiedzie: nie ukrywaj błędu, zwróć użytkownikowi jawny komunikat (status nieustawiony + przyczyna), ale pozostaw informację, że branch/issue start zostały wykonane.
 
+4. Dopiero po sukcesie skryptu startowego **i** `$gh-issue-status-set` można
+   przejść do kolejnego workflow, w tym `$task-plan`. Błąd dowolnego wcześniejszego
+   kroku kończy start dla bieżącego uruchomienia: raportuj kod, miejsce i przyczynę
+   oraz nie uruchamiaj task-plan na podstawie częściowego sukcesu.
+
+### Granica z `$task-plan`
+
+- `start.mjs` ustala stabilną tożsamość issue (`owner`, `repo`, `issue_number`,
+  `branch`, `base`) oraz przygotowuje branch; nie pobiera body ani komentarzy.
+- Eksportowane `runIssueStart()` zwraca te pola także w sukcesie strukturalnym;
+  tekstowy komunikat CLI pozostaje kompatybilny.
+- Po przejściu obu bramek sukcesu `$task-plan` pobiera materiał źródłowy
+  samodzielnie, korzystając ze swojego adaptera GitHub i istniejącego `gh`.
+- Niepowodzenie startu albo ustawienia statusu jest jawnie raportowane i blokuje
+  dalszy workflow. Nie wolno uruchamiać task-plan ani tworzyć planu z niepełnych
+  danych.
+
 ## Źródła parametrów
 - `--issue-number`: gdy użytkownik poda **numer** issue wprost (np. „start issue 46”, „zaczynamy pracę nad 46”).
 - `--desc`: krótki opis zadania podany przez użytkownika (np. „rozpocznij zadanie: dodać skille start/finish”).
@@ -72,7 +90,9 @@ Jeśli użytkownik podał `--issue-number`, a issue nie istnieje lub jest zamkni
 
 ## Branch naming
 - Schemat: `issue/<ID>-<slug>`.
-- Slug: lowercase, spacje → myślniki, usuwa znaki spoza ASCII.
+- Slug: lowercase, transliteracja znaków diakrytycznych, spacje → myślniki,
+  usunięcie znaków niebezpiecznych; implementację współdzieli
+  `_shared/scripts/slugify-title.mjs`.
 - Źródłem prawdy dla generowania nazwy brancha jest `node <skills_root>/_shared/scripts/issue-branch.mjs`.
 
 ## Kody wyjścia skryptu

@@ -1,8 +1,8 @@
 ---
 description: Używaj wyłącznie przy nowej sesji lub jawnej prośbie o odświeżenie kontekstu; wykonuje pełny `$context-refresh`, odczytuje reguły, dokumentację, env i stan repozytorium oraz tworzy zwarty manifest, ale nie interpretuje issue ani nie implementuje kodu.
 mode: subagent
-model: openai/gpt-5.6-luna
-variant: medium
+model: opencode-go/deepseek-v4-flash
+variant: max
 color: info
 steps: 24
 permission:

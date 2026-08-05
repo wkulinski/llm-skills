@@ -1,8 +1,8 @@
 ---
 description: Używaj ręcznie do trudnego review bieżącego diffu pod kątem regresji, kontraktów, CQRS i braków w testach.
 mode: subagent
-model: openai/gpt-5.6-luna
-variant: medium
+model: opencode-go/deepseek-v4-flash
+variant: max
 color: error
 steps: 10
 permission:

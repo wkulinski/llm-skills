@@ -298,7 +298,15 @@ export function runIssueStart(argv, {execCommand = createExecutor()} = {}) {
         return assignment;
     }
 
-    return {code: 0, stdout: `Issue #${issueNumber} ready on branch ${branchName}.\n`};
+    return {
+        code: 0,
+        stdout: `Issue #${issueNumber} ready on branch ${branchName}.\n`,
+        owner,
+        repo,
+        issue_number: String(issueNumber),
+        branch: branchName,
+        base: baseRef,
+    };
 }
 
 async function main(argv) {

@@ -7,8 +7,8 @@ description: >-
     of making new design decisions, expanding scope, or repeatedly guessing.
 mode: subagent
 hidden: true
-model: opencode-go/hy3
-reasoningEffort: high
+model: opencode-go/deepseek-v4-flash
+variant: max
 steps: 24
 permission:
     "*": deny

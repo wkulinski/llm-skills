@@ -62,6 +62,11 @@ describe("gh-issue-start", () => {
         expect(result).toEqual({
             code: 0,
             stdout: "Issue #77 ready on branch issue/77-feat-add-support.\n",
+            owner: "acme",
+            repo: "demo",
+            issue_number: "77",
+            branch: "issue/77-feat-add-support",
+            base: "origin/main",
         });
         expect(extractSubjectKeywords("feat: add [support] now, please")).toBe("add support now, please");
         expect(calls).toContain("gh issue create --repo acme/demo --title feat: add support --body ");

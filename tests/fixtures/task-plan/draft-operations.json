@@ -1,0 +1,28 @@
+{
+  "main": {
+    "source_identity": "acme/demo/123",
+    "issue": "123",
+    "title": "Zażółć gęślą jaźń!",
+    "expected_path": "docs/draft/issue-123-zazolc-gesla-jazn-plan.md",
+    "plan_version_before": 1,
+    "plan_version_after_resume": 2
+  },
+  "resume": {
+    "same_source_identity": true,
+    "expected_action": "update-existing-draft",
+    "preserve_review_history": true,
+    "preserve_independent_decisions": true
+  },
+  "derived": {
+    "issue": "123",
+    "work_package_id": "WP2",
+    "package_title": "Import",
+    "expected_path": "docs/draft/issue-123-wp-wp2-import-plan.md",
+    "parent_link": "WP2 — wydzielony do [osobnego planu](./issue-123-wp-wp2-import-plan.md)",
+    "plan_status": "needs-clarification",
+    "on_write_failure": {
+      "parent_preserved": true,
+      "package_status": "pending"
+    }
+  }
+}
