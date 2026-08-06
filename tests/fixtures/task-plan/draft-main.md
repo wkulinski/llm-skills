@@ -4,7 +4,8 @@ source_ref: https://github.com/acme/demo/issues/123
 issue: 123
 title: "Original issue title"
 input_profile: brief-request
-plan_status: awaiting-package-decisions
+plan_status: review-pending
+package_decision_gate: closed
 plan_version: 1
 simplification_status: pending
 fetched_at: 2026-01-01T00:00:00Z
@@ -22,13 +23,20 @@ Implement the explicitly accepted goal without expanding the source scope.
 
 ## Work packages
 
-- WP1 — core package, status `accepted`.
-- WP2 — package awaiting a separate decision.
-- WP2 — wydzielony do [osobnego planu](./issue-123-wp-wp2-import-plan.md)
+- WP1 — core package, status `pending`.
+- WP2 — package pending review and a later decision.
+- No package decision is requested before the review gate opens.
+- After an explicit `separate`: WP2 — wydzielony do [osobnego planu](./issue-123-wp-wp2-import-plan.md)
 
 ## Decisions and open questions
 
-- Q1 [WP2][BLOCKING] Czy pakiet obejmuje także migrację danych?
+### Decyzje zakresowe przed decyzjami pakietowymi
+
+- Brak.
+
+### Decyzje pakietowe
+
+- Niedostępne: `package_decision_gate` jest zamknięta. Najpierw zakończ review, uproszczenie i decyzje zakresowe.
 
 ## Evidence, risks and review
 
@@ -41,7 +49,7 @@ Implement the explicitly accepted goal without expanding the source scope.
 
 ## Next action
 
-Await package decisions.
+Run the critical review and simplification before opening package decisions.
 
 ## Execution handoff (when implementation is requested)
 

@@ -56,7 +56,7 @@
         "body": "Create two independently reviewable packages."
       },
       "expected": {
-        "plan_status": "awaiting-package-decisions",
+        "plan_status": "review-pending",
         "implementation_started": false
       },
       "required_anchors": [
@@ -89,6 +89,15 @@
         "Source plan",
         "Review findings",
         "Revised plan",
+        "review-pending",
+        "package_decision_gate",
+        "critical-review",
+        "simplification_control_review_complete",
+        "scope_questions",
+        "WP<number>-Q<number>",
+        "Pytania blokujące",
+        "Pytania nieblokujące",
+        "Brak.",
         "terminalny (`accepted`, `excluded` albo `separated`)",
         "nie ma otwartych",
         "approved",
@@ -108,7 +117,7 @@
         "base": "main"
       },
       "expected": {
-        "plan_status": "awaiting-package-decisions",
+        "plan_status": "review-pending",
         "implementation_started": false
       },
       "required_anchors": [

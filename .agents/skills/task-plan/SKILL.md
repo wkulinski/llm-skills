@@ -89,6 +89,41 @@ workflow_actions  — działania dozwolone przez aktywny workflow
 Po finalnej akceptacji główny agent może przekazać jawne żądanie do osobnego,
 standardowego workflow implementacji. Task-plan sam go nie uruchamia.
 
+## Obowiązkowa kolejność workflow
+
+Każdy plan przechodzi przez następujące etapy w tej kolejności:
+
+```text
+source/intake
+  → Plan v1
+  → review krytyczny i findings
+  → rewizja planu oraz kolejne review (maks. 3 iteracje)
+  → auto-uproszczenie
+  → review kontrolny uproszczenia
+  → rozstrzygnięcie blockerów i decyzji zakresowych
+  → decyzje work packages
+  → approved
+  → jawny handoff do implementacji
+```
+
+`validate-plan` potwierdza strukturę i niezmienniki danych, ale nie zastępuje
+review ani nie ustawia `review_complete`. Nie wolno pytać użytkownika o
+`accept`, `revise` albo `exclude` dla work packages, dopóki bramka
+`package_decision_gate` nie ma statusu `open`. Decyzje produktowe i zakresowe
+(np. opt-in/default, format odpowiedzi, model alertów albo zakres pilotażu)
+rozstrzygnij przed decyzjami pakietowymi, ponieważ mogą zmienić zakres pakietów.
+Zapisuj je jako top-level `scope_questions`; każda nierozwiązana pozycja blokuje
+otwarcie bramki.
+
+Każda odpowiedź pośrednia pokazuje:
+
+```text
+Etap:
+Wykonano:
+Następny dozwolony krok:
+Niedozwolone jeszcze:
+```
+
 ## Trigger i bramka intencji
 
 Task-plan uruchamia się przy:
@@ -283,8 +318,10 @@ Jeden materiał źródłowy tworzy jeden główny plan, który może zawierać w
 pakietów. Dekompozycja jest uzasadniona wtedy, gdy punkty mają różny cel,
 kryteria, zależności techniczne, moduł lub niezależność wdrożenia/testowania.
 Jeżeli te elementy tworzą jeden spójny zakres, zachowaj jeden pakiet zamiast
-dzielić go mechanicznie. Task-plan nie tworzy automatycznie nowych issue i nie
-wybiera workera.
+dzielić go mechanicznie. Pakiety można pokazać w draftcie wcześniej, ale
+decyzje `accept`, `revise`, `exclude` i `separate` wolno przedstawić użytkownikowi
+dopiero po otwarciu `package_decision_gate`. Task-plan nie tworzy automatycznie
+nowych issue i nie wybiera workera.
 
 Każdy pakiet ma stabilny identyfikator (`WP1`, `WP2`, ...), a jego rekord
 zawiera:
@@ -540,6 +577,7 @@ zatwierdzone wymaganie.
 Kontrakt planu używa następujących stanów:
 
 ```text
+review-pending
 needs-clarification
 awaiting-package-decisions
 review-limit-reached
@@ -556,10 +594,13 @@ excluded
 separated
 ```
 
-Znaczenie i przejścia są aktywną częścią kontraktu bloków B–C. Blok C dodaje
-review i wersjonowanie planu, ale nie zmienia semantyki stanów pakietów. W
-szczególności plan nie może być `approved`, gdy choć jeden pakiet pozostaje
-`pending` albo istnieje nierozwiązany blocker.
+Znaczenie i przejścia są aktywną częścią kontraktu bloków B–C. `review-pending`
+oznacza przygotowany draft, który nie przeszedł jeszcze kompletnego review i
+uproszczenia; w tym stanie nie wolno otwierać decyzji pakietowych.
+`needs-clarification` oznacza blocker lub decyzję zakresową wymagającą
+odpowiedzi użytkownika przed ponownym review. `review-limit-reached` wymaga
+jawnego ponowienia review. W szczególności plan nie może być `approved`, gdy
+choć jeden pakiet pozostaje `pending` albo istnieje nierozwiązany blocker.
 
 Minimalne przejścia pakietu:
 
@@ -577,27 +618,33 @@ użytkownika albo po wykazaniu wpływu zmiany zależności na jego zakres.
 Minimalne przejścia planu:
 
 ```text
+review-pending
+  → awaiting-package-decisions | needs-clarification | review-limit-reached
+
 needs-clarification
-  → awaiting-package-decisions
+  → review-pending
 
 awaiting-package-decisions
-  → approved | needs-clarification
-
-approved
-  → awaiting-package-decisions | approved
+  → approved | needs-clarification | review-pending
 
 review-limit-reached
-  → awaiting-package-decisions
+  → review-pending
+
+approved
+  → review-pending | approved
 ```
 
-`needs-clarification` oznacza, że review wykazał blocker wymagający decyzji
-zakresowej, biznesowej albo technicznej. `awaiting-package-decisions` może
-przejść do `approved` dopiero wtedy, gdy ostatnia wersja planu ma zakończony
-review, uproszczenie nie wymaga dalszej decyzji, wszystkie pakiety mają stan
-terminalny (`accepted`, `excluded` albo `separated`) i nie ma otwartych
-blockerów. Po osiągnięciu limitu review `review-limit-reached` pozostaje
-stanem jawnym; powrót do decyzji pakietowych wymaga świadomego ponowienia lub
-poprawki, a nie cichego kolejnego przebiegu.
+`awaiting-package-decisions` może zostać ustawiony wyłącznie po spełnieniu
+`package_decision_gate`: kompletne review, review krytyczny, brak otwartych
+findings/blockerów, zakończone uproszczenie i review kontrolne oraz brak
+nierozstrzygniętych decyzji zakresowych. Może przejść do `approved` dopiero
+wtedy, gdy wszystkie pakiety mają stan terminalny (`accepted`, `excluded` albo `separated`) i nie ma otwartych blockerów. Po osiągnięciu limitu review nie ma
+cichego przejścia do decyzji pakietowych — potrzebne jest jawne ponowienie
+review.
+
+`package_decision_gate` przyjmuje `closed` albo `open`. Dla draftu
+`review-pending` i `needs-clarification` pozostaje `closed`; formatter może
+renderować sekcje Work Package dopiero przy wartości `open`.
 
 ## Review planu i findings
 
@@ -630,6 +677,20 @@ Minimalny zakres review obejmuje:
 - przypadki brzegowe, obsługę błędów, testy i sposób weryfikacji;
 - ryzyko rozszerzenia zakresu oraz wpływ security, migracji i zależności.
 
+Pierwszy review jest formalnym **review krytycznym**. Jego rekord musi zawierać
+`stage: critical-review`, `complete: true` oraz wszystkie sprawdzenia:
+
+```text
+intent-and-acceptance
+technical-scope
+edge-cases-and-verification
+risks-and-dependencies
+```
+
+Stan planu zapisuje dodatkowo `critical_review_complete: true`. Sama obecność
+sekcji `Evidence, risks and review`, niepusty draft ani pozytywny wynik
+walidacji struktury nie spełniają tej bramki.
+
 ### Pętla review i rejestr rewizji
 
 Review wykonuj na konkretnej wersji planu, bez zmiany `Source plan`:
@@ -648,6 +709,10 @@ Każda iteracja ma jawny zapis:
 
 ```text
 Review #1
+- stage: critical-review
+- complete: true
+- checks: intent-and-acceptance, technical-scope,
+  edge-cases-and-verification, risks-and-dependencies
 - F1 HIGH: <claim> — open
 - F2 MEDIUM: <claim> — open
 
@@ -670,17 +735,93 @@ ponowieniu albo poprawce. Kontrolowany limit chroni przed nieskończoną pętlą
 
 ### Pytania i decyzje użytkownika
 
-Każde pytanie przypisz do pakietu i oznacz jako blokujące albo nieblokujące:
+Pytania dzielą się na dwa rodzaje. Decyzje zakresowe i produktowe, które mogą
+zmienić więcej niż jeden pakiet, zapisuj w top-level `scope_questions` i
+rozstrzygaj przed otwarciem `package_decision_gate`. Pytania dotyczące wyłącznie
+jednego pakietu zapisuj w `packages[].questions` i pokazuj dopiero przy decyzji
+tego pakietu.
+
+Każde pytanie jest strukturalnym rekordem z unikalnym, stabilnym ID:
 
 ```text
-Q1 [WP2][BLOCKING] Czy pakiet obejmuje także migrację danych?
-Q2 [WP3][NON-BLOCKING] Czy test ma być funkcjonalny czy integracyjny?
+scope_questions:
+  - id: SQ1
+    prompt: "Czy async ma być opt-in, czy domyślny dla wszystkich POST-ów grida?"
+    blocking: true
+    resolved: false
+    impact: "Zmienia kontrakt wszystkich pakietów runtime."
+    decision_needed: "Wybrać opt-in albo default async."
+
+packages[].questions:
+  - id: WP2-Q1
+    prompt: "Jakie kody HTTP i envelope JSON obowiązują dla błędów domenowych?"
+    blocking: true
+    resolved: false
+    impact: "Definiuje kryteria akceptacji WP2."
+    decision_needed: "Ustalić kody HTTP i format envelope."
 ```
 
-W stanie przekazywanym do walidatora `questions` jest tablicą. Pytanie blokujące
-może być zapisane jako rekord `{blocking: true, resolved: false}`; dopóki nie ma
-`resolved: true`, pakiet nie może przejść do terminalnego stanu ani do finalnej
-akceptacji. Pytania nieblokujące nie zatrzymują akceptacji.
+ID mają format `SQ<number>` dla pytań zakresowych oraz
+`WP<number>-Q<number>` dla pytań lokalnych. Każdy rekord musi zawierać
+`prompt`, `blocking`, `resolved`, `impact` i `decision_needed`. Pytania muszą
+być osobnymi rekordami — nie wolno scalać kilku pytań w jeden akapit ani używać
+formatu `**Pytania:** pytanie 1? pytanie 2?`.
+Jeżeli `resolved: true`, rekord musi dodatkowo zachować `answer`,
+`decision_source` i `decided_at`; formatter pokazuje tę odpowiedź przy pytaniu.
+Pytanie nierozstrzygnięte nie może zawierać częściowej odpowiedzi.
+Starsze pytania zapisane jako zwykłe stringi nie są cicho dzielone ani
+akceptowane jako decyzje; przy wznowieniu trzeba je jawnie znormalizować do
+rekordów.
+
+Jeżeli `package_decision_gate` jest zamknięta, formatter renderuje pytania
+zakresowe oraz komunikat, że decyzje pakietowe są niedostępne — nie renderuje
+sekcji WP ani akcji `accept/revise/exclude/separate`. Po otwarciu bramki
+renderuje sekcję w następującym układzie:
+
+```md
+## Decisions and open questions
+
+### Decyzje zakresowe przed decyzjami pakietowymi
+
+- **SQ1 [BLOCKING]** Czy async ma być opt-in, czy domyślny dla wszystkich POST-ów grida?
+  - Wpływ: zmienia kontrakt wszystkich pakietów runtime.
+  - Wymagana decyzja: wybrać `opt-in` albo `default async`.
+  - Status: `open`
+
+### WP2 — Runtime TypeScript/Stimulus
+
+**Status:** `pending`<br>
+**Dostępne decyzje:** `accept` / `revise` / `exclude` / `separate`
+
+#### Pytania blokujące
+
+- **WP2-Q1 [BLOCKING]** Jakie kody HTTP i envelope JSON obowiązują dla błędów domenowych?
+  - Wpływ: definiuje kryteria akceptacji WP2.
+  - Wymagana decyzja: ustalić kody HTTP i format envelope.
+  - Status: `open`
+
+#### Pytania nieblokujące
+
+- Brak.
+```
+
+Każdy pakiet ma obie podsekcje pytań; jeżeli lista jest pusta, formatter wypisuje
+`Brak.`. Jedno pytanie oznacza jedną decyzję. Pytania blokujące z
+`resolved: false` blokują terminalny stan pakietu i finalną akceptację, a
+nierozwiązane `scope_questions` blokują otwarcie `package_decision_gate`.
+Pytania nieblokujące nie zatrzymują akceptacji.
+Dla pakietu w stanie `accepted`, `excluded` albo `separated` formatter nie
+pokazuje zwykłych akcji decyzyjnych; wyświetla informację, że ponowne otwarcie
+wymaga jawnej prośby użytkownika.
+
+Odpowiedź użytkownika wskazuje ID pytania lub pakietu, np.:
+
+```text
+SQ1: default async
+WP2-Q1: 422 dla błędów domenowych, 403 dla uprawnień, 419 dla CSRF
+WP1: revise
+WP2: accept
+```
 
 Brak odpowiedzi nie jest akceptacją. Decyzja zachowuje co najmniej:
 
@@ -724,7 +865,8 @@ zależności, ograniczenia bezpieczeństwa oraz warunek finalnej akceptacji.
 Szczegół implementacyjny można scalić lub przenieść do referencji, ale nie
 wolno usuwać go, jeśli chroni kontrakt, dowód, decyzję, kryterium albo ryzyko.
 
-Po uproszczeniu wykonaj jeden kontrolny review i zapisz wynik:
+Po uproszczeniu wykonaj jeden kontrolny review i zapisz wynik oraz
+`simplification_control_review_complete: true`:
 
 ```text
 no-change | simplified | needs-user-decision
@@ -853,7 +995,8 @@ source_ref: https://github.com/owner/repo/issues/123
 issue: 123
 title: "Original issue title"
 input_profile: brief-request
-plan_status: awaiting-package-decisions
+plan_status: review-pending
+package_decision_gate: closed
 plan_version: 1
 simplification_status: pending
 fetched_at: 2026-01-01T00:00:00Z
@@ -919,6 +1062,12 @@ brancha. Task-plan może rozpocząć własny workflow dopiero po sukcesie wszyst
 wcześniejszych kroków `gh-issue-*`, w tym osobnego ustawienia statusu **In
 progress** przez `$gh-issue-status-set`.
 
+Przejście jest zależne od intencji użytkownika: jednoznaczne polecenie łączące
+start issue z przygotowaniem planu pozwala agentowi uruchomić task-plan po obu
+bramkach sukcesu. Samo polecenie rozpoczęcia pracy nad issue nie uruchamia
+task-plan; agent powinien wtedy zaproponować ten krok albo o niego zapytać.
+Tytuł lub opis issue nie zastępuje jawnej intencji planowania.
+
 `start.mjs` nie pobiera body ani komentarzy. Po bramce strukturalny wynik
 `runIssueStart()` przekazuje wyłącznie `owner`, `repo`, `issue_number`, `branch`
 i `base` (CLI zachowuje dotychczasowy komunikat tekstowy); task-plan pobiera
@@ -944,7 +1093,10 @@ Blok E jest walidowany przez:
 ./tests/fixtures/task-plan/draft-operations.json
 ./tests/fixtures/task-plan/draft-main.md
 ./tests/fixtures/task-plan/draft-derived.md
+./tests/fixtures/task-plan/questions.json
+./tests/fixtures/task-plan/draft-questions.md
 ./tests/skills/task-plan/task-plan-contract.test.mjs
+./tests/skills/task-plan/task-plan-questions.test.mjs
 ```
 
 Fixture'y opisują obserwowalne niezmienniki, a test sprawdza je względem tego
@@ -971,10 +1123,15 @@ lub środowiska.
 
 | Moduł | Odpowiedzialność | Główne API/komendy |
 |---|---|---|
-| `<skill_dir>/scripts/draft.mjs` | tożsamość, ścieżka, front matter, sekcje, resume i atomowy zapis | `buildSourceIdentity`, `buildDraftPath`, `validateDraftDocument`, `writeAtomicFile`, `writeSeparatedDraft`; `path`, `validate` |
-| `<skill_dir>/scripts/state.mjs` | jawne przejścia, decyzje, bulk pending, approval guard i graf zależności | `canTransition`, `applyPlanTransition`, `applyDecisionCommand`, `applyPackageDecision`, `canApprovePlan`, `getImpactedPackageIds`; `transition`, `parse-command` |
+| `<skill_dir>/scripts/draft.mjs` | tożsamość, ścieżka, front matter, sekcje, pytania, resume i atomowy zapis | `buildSourceIdentity`, `buildDraftPath`, `buildDraftMetadata`, `validateDraftDocument`, `renderQuestionSections`, `writeAtomicFile`, `writeSeparatedDraft`; `path`, `validate`, `render-questions` |
+| `<skill_dir>/scripts/state.mjs` | jawne przejścia, bramka decyzji pakietowych, walidacja pytań, decyzje, bulk pending, approval guard i graf zależności | `canTransition`, `applyPlanTransition`, `canOpenPackageDecisions`, `validateQuestionRecords`, `applyDecisionCommand`, `applyPackageDecision`, `canApprovePlan`, `getImpactedPackageIds`; `transition`, `parse-command` |
 | `<skill_dir>/scripts/source.mjs` | normalizacja GitHub/file/user input oraz bezpieczny odczyt źródeł | `normalizeGitHubIssue`, `normalizeFileSource`, `normalizeUserInput`, `refreshSource`; `normalize-file`, `normalize-user`, `fetch-github` |
 | `<skill_dir>/scripts/validate-plan.mjs` | findings, review limit, simplification invariants, draft/state i final approval | `validateFinding`, `validateReviewHistory`, `validateSimplification`, `validatePlanDocument`, `validateFinalApproval`; `validate`, `validate-state` |
+
+`validatePlanDocument --state` porównuje metadane draftu ze stanem workflow:
+`plan_status`, `plan_version`, `package_decision_gate`, `source_ref` oraz numer
+issue muszą być zgodne. Rozdzielnie poprawny draft i rozdzielnie poprawny state
+nie oznaczają poprawnego planu.
 
 Przykładowy przepływ punktowy:
 
@@ -985,6 +1142,8 @@ node <skill_dir>/scripts/draft.mjs path \
   --source-kind github-issue --issue 123 --title "Original issue title"
 node <skill_dir>/scripts/state.mjs parse-command \
   --value "accept-selected: WP1, WP2"
+node <skill_dir>/scripts/draft.mjs render-questions \
+  --file ./tests/fixtures/task-plan/questions.json
 node <skill_dir>/scripts/validate-plan.mjs validate \
   --file ./docs/draft/issue-123-original-issue-title-plan.md
 ```
@@ -1009,15 +1168,20 @@ Stan przekazywany do walidatora ma postać danych, nie instrukcji:
 
 ```json
 {
-  "plan_status": "awaiting-package-decisions",
+  "plan_status": "review-pending",
   "plan_version": 1,
   "packages": [],
   "findings": [],
   "review_history": [],
   "decisions": [],
-  "simplification": {"result": "no-change"},
+  "simplification": {"result": "pending"},
   "blockers": [],
-  "review_complete": true
+  "scope_questions": [],
+  "package_decision_gate": "closed",
+  "review_complete": false,
+  "critical_review_complete": false,
+  "simplification_status": "pending",
+  "simplification_control_review_complete": false
 }
 ```
 

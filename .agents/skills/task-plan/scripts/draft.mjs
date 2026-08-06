@@ -8,6 +8,8 @@ import {slugifyTitle} from "../../_shared/scripts/slugify-title.mjs";
 import {
     PLAN_STATUSES,
     SIMPLIFICATION_STATUSES,
+    TERMINAL_PACKAGE_STATUSES,
+    validateQuestionRecords,
 } from "./state.mjs";
 
 export const DRAFT_SECTIONS = Object.freeze([
@@ -152,6 +154,7 @@ export function validateDraftDocument(document, options = {}) {
     if (missingSections.length > 0) {
         errors.push(`Missing draft sections: ${missingSections.join(", ")}.`);
     }
+    errors.push(...validateQuestionPresentation(parsed.body, parsed.metadata));
 
     return {
         valid: errors.length === 0,
@@ -229,7 +232,8 @@ export function buildDraftMetadata(source, options = {}) {
         source_kind: kind,
         source_ref: requireValue(source?.source_ref, "source_ref"),
         input_profile: source.input_profile ?? "brief-request",
-        plan_status: options.planStatus ?? (source.input_profile === "title-only" ? "needs-clarification" : "awaiting-package-decisions"),
+        plan_status: options.planStatus ?? (source.input_profile === "title-only" ? "needs-clarification" : "review-pending"),
+        package_decision_gate: options.packageDecisionGate ?? "closed",
         plan_version: String(options.planVersion ?? 1),
         simplification_status: options.simplificationStatus ?? "pending",
         fetched_at: source.fetched_at ?? now,
@@ -238,6 +242,7 @@ export function buildDraftMetadata(source, options = {}) {
 
     if (metadata.input_profile === "title-only") {
         metadata.plan_status = "needs-clarification";
+        metadata.package_decision_gate = "closed";
     }
     if (kind === "github-issue") {
         metadata.issue = requireIssueId(source.issue_number ?? source.issue);
@@ -248,9 +253,106 @@ export function buildDraftMetadata(source, options = {}) {
         metadata.parent_issue = requireIssueId(source.issue_number ?? source.issue);
         metadata.work_package_id = requirePackageId(source.work_package_id);
         metadata.plan_status = "needs-clarification";
+        metadata.package_decision_gate = "closed";
     }
 
     return metadata;
+}
+
+export function renderQuestionSections(input = {}) {
+    const scopeQuestions = input.scope_questions ?? input.scopeQuestions ?? [];
+    const packages = input.packages ?? [];
+    const packageDecisionGate = input.package_decision_gate
+        ?? input.packageDecisionGate
+        ?? (["awaiting-package-decisions", "approved"].includes(input.plan_status) ? "open" : "closed");
+    const errors = validateQuestionRecords(scopeQuestions, {scope: "scope"});
+
+    if (!["open", "closed"].includes(packageDecisionGate)) {
+        errors.push("package_decision_gate must be open or closed.");
+    }
+
+    if (!Array.isArray(packages)) {
+        errors.push("packages must be an array.");
+    }
+
+    const packageRecords = Array.isArray(packages) ? packages : [];
+    for (const [index, packageRecord] of packageRecords.entries()) {
+        if (!packageRecord || typeof packageRecord !== "object" || Array.isArray(packageRecord)) {
+            errors.push(`Package ${index + 1} must be an object.`);
+            continue;
+        }
+        let packageId;
+        try {
+            packageId = requirePackageId(packageRecord.id);
+        } catch (error) {
+            errors.push(error instanceof DraftError ? error.message : String(error));
+            continue;
+        }
+        if (!Array.isArray(packageRecord.questions)) {
+            errors.push(`${packageId} must declare questions as an array.`);
+            continue;
+        }
+        errors.push(...validateQuestionRecords(packageRecord.questions, {packageId}).map((error) => {
+            return `${packageId}: ${error}`;
+        }));
+    }
+
+    if (errors.length > 0) {
+        throw new DraftError("INVALID_QUESTION_RECORDS", errors.join(" "), {errors});
+    }
+    if (packageDecisionGate === "open" && scopeQuestions.some((question) => question.resolved !== true)) {
+        throw new DraftError(
+            "PACKAGE_DECISION_GATE_FAILED",
+            "Package decision gate cannot open while scope questions remain unresolved.",
+        );
+    }
+
+    const lines = [
+        "## Decisions and open questions",
+        "",
+        "### Decyzje zakresowe przed decyzjami pakietowymi",
+        "",
+        ...renderQuestionList(scopeQuestions),
+    ];
+
+    if (packageDecisionGate !== "open") {
+        lines.push(
+            "",
+            "### Decyzje pakietowe",
+            "",
+            "- Niedostępne: `package_decision_gate` jest zamknięta. Najpierw zakończ review, uproszczenie i decyzje zakresowe.",
+        );
+        return `${lines.join("\n")}\n`;
+    }
+
+    for (const packageRecord of packageRecords) {
+        const packageId = requirePackageId(packageRecord.id);
+        const title = markdownInline(packageRecord.title ?? packageRecord.goal ?? packageId);
+        const questions = packageRecord.questions;
+        const blocking = questions.filter((question) => question.blocking === true);
+        const nonBlocking = questions.filter((question) => question.blocking !== true);
+        const decisionStatus = packageRecord.decision_status ?? "pending";
+        const decisionLine = TERMINAL_PACKAGE_STATUSES.includes(decisionStatus)
+            ? "**Decyzje:** Pakiet terminalny; ponowne otwarcie wymaga jawnej prośby użytkownika."
+            : "**Dostępne decyzje:** `accept` / `revise` / `exclude` / `separate`";
+        lines.push(
+            "",
+            `### ${packageId} — ${title}`,
+            "",
+            `**Status:** \`${markdownInline(decisionStatus)}\`<br>`,
+            decisionLine,
+            "",
+            "#### Pytania blokujące",
+            "",
+            ...renderQuestionList(blocking),
+            "",
+            "#### Pytania nieblokujące",
+            "",
+            ...renderQuestionList(nonBlocking),
+        );
+    }
+
+    return `${lines.join("\n")}\n`;
 }
 
 export function prepareResumeMetadata(existingMetadata, incomingSource, options = {}) {
@@ -328,6 +430,7 @@ function validateRequiredMetadata(metadata) {
         "source_ref",
         "input_profile",
         "plan_status",
+        "package_decision_gate",
         "plan_version",
         "simplification_status",
         "fetched_at",
@@ -355,6 +458,20 @@ function validateMetadataEnums(metadata) {
     }
     if (!SIMPLIFICATION_STATUSES.includes(metadata?.simplification_status)) {
         errors.push(`Invalid simplification_status: ${metadata?.simplification_status ?? ""}.`);
+    }
+    if (Object.hasOwn(metadata, "package_decision_gate")
+        && !["open", "closed"].includes(metadata.package_decision_gate)) {
+        errors.push(`Invalid package_decision_gate: ${metadata.package_decision_gate ?? ""}.`);
+    }
+    if (Object.hasOwn(metadata, "package_decision_gate")) {
+        const packageDecisionStatuses = ["awaiting-package-decisions", "approved"];
+        const reviewStatuses = ["review-pending", "needs-clarification", "review-limit-reached"];
+        if (packageDecisionStatuses.includes(metadata.plan_status) && metadata.package_decision_gate !== "open") {
+            errors.push("Package decision gate must be open before package decisions or approval.");
+        }
+        if (reviewStatuses.includes(metadata.plan_status) && metadata.package_decision_gate !== "closed") {
+            errors.push("Package decision gate must be closed before review is complete.");
+        }
     }
     if (!isPositiveInteger(metadata?.plan_version)) {
         errors.push("plan_version must be a positive integer.");
@@ -387,6 +504,65 @@ function validateKindMetadata(metadata, kind) {
         return validateGitHubMetadata(metadata);
     }
     return [];
+}
+
+function validateQuestionPresentation(body, metadata = {}) {
+    const heading = "## Decisions and open questions";
+    const start = body.indexOf(heading);
+    if (start < 0) {
+        return [];
+    }
+    const sectionStart = start + heading.length;
+    const remainder = body.slice(sectionStart);
+    const nextSection = remainder.search(/\n##\s/);
+    const section = nextSection >= 0 ? remainder.slice(0, nextSection) : remainder;
+    const errors = [];
+    if (!section.includes("### Decyzje zakresowe przed decyzjami pakietowymi")) {
+        errors.push("Question section must contain the scope questions subsection.");
+    }
+    const packageHeadings = [...section.matchAll(/^###\s+(WP[1-9][0-9]*)\s+—\s+.+$/gm)];
+    const packageDecisionGate = metadata.package_decision_gate;
+
+    if (packageDecisionGate === "closed") {
+        if (packageHeadings.length > 0) {
+            errors.push("A closed package decision gate must not contain Work Package decision sections.");
+        }
+        if (!section.includes("### Decyzje pakietowe")) {
+            errors.push("A closed package decision gate must contain the unavailable package decisions notice.");
+        }
+    }
+    if (packageDecisionGate === "open") {
+        if (packageHeadings.length === 0) {
+            errors.push("An open package decision gate must contain Work Package sections.");
+        }
+        errors.push(...packageHeadings.flatMap((match, index) => {
+            return validatePackageQuestionSection(match, index, packageHeadings, section);
+        }));
+    }
+
+    if (/\*\*Pytania:\*\*/i.test(section)) {
+        errors.push("Questions must be rendered as separate structured records, not an aggregate Pytania paragraph.");
+    }
+    return errors;
+}
+
+function validatePackageQuestionSection(match, index, packageHeadings, section) {
+    const packageStart = match.index ?? 0;
+    const packageEnd = packageHeadings[index + 1]?.index ?? section.length;
+    const packageSection = section.slice(packageStart, packageEnd);
+    const requiredSubsections = ["#### Pytania blokujące", "#### Pytania nieblokujące"];
+    const errors = requiredSubsections
+        .filter((subsection) => !packageSection.includes(subsection))
+        .map((subsection) => `${match[1]} is missing ${subsection}.`);
+
+    if (!packageSection.includes("**Status:**")) {
+        errors.push(`${match[1]} is missing its status.`);
+    }
+    if (!packageSection.includes("**Dostępne decyzje:**")
+        && !packageSection.includes("**Decyzje:** Pakiet terminalny")) {
+        errors.push(`${match[1]} is missing its decision instruction.`);
+    }
+    return errors;
 }
 
 function validateDerivedMetadata(metadata) {
@@ -566,12 +742,16 @@ function cliResult(parsed) {
         const source = fs.readFileSync(path.resolve(parsed.values.file), "utf8");
         return validateDraftDocument(source, {kind: parsed.values.kind ?? "main"});
     }
+    if (parsed.command === "render-questions") {
+        const source = JSON.parse(fs.readFileSync(path.resolve(parsed.values.file), "utf8"));
+        return {markdown: renderQuestionSections(source)};
+    }
     throw new DraftError("INVALID_COMMAND", "Use path or validate.");
 }
 
 function main(args) {
     if (args[0] === "--help") {
-        process.stdout.write("Usage: draft.mjs path --source-kind <kind> [--issue <id>] [--title <title>] | validate --file <path> [--kind <main|derived>]\n");
+        process.stdout.write("Usage: draft.mjs path --source-kind <kind> [--issue <id>] [--title <title>] | validate --file <path> [--kind <main|derived>] | render-questions --file <json>\n");
         return 0;
     }
     try {
@@ -585,6 +765,31 @@ function main(args) {
         process.stdout.write(`${JSON.stringify(result)}\n`);
         return CLI_CONTRACT_REJECTIONS.includes(result.code) ? 1 : 2;
     }
+}
+
+function renderQuestionList(questions) {
+    if (questions.length === 0) {
+        return ["- Brak."];
+    }
+
+    return questions.flatMap((question) => {
+        const marker = question.blocking ? "BLOCKING" : "NON-BLOCKING";
+        const status = question.resolved ? "resolved" : "open";
+        return [
+            `- **${question.id} [${marker}]** ${markdownInline(question.prompt)}`,
+            `  - Wpływ: ${markdownInline(question.impact)}`,
+            `  - Wymagana decyzja: ${markdownInline(question.decision_needed)}`,
+            `  - Status: \`${status}\``,
+            ...(question.resolved ? [`  - Odpowiedź: ${markdownInline(question.answer)}`] : []),
+        ];
+    });
+}
+
+function markdownInline(value) {
+    return String(value)
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/[\\`*_]/g, "\\$&");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

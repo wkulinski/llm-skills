@@ -8,6 +8,7 @@ import {buildDraftMetadata} from "../../../.agents/skills/task-plan/scripts/draf
 import {
     applyPlanTransition,
     canApprovePlan,
+    canOpenPackageDecisions,
     parseDecisionCommand,
 } from "../../../.agents/skills/task-plan/scripts/state.mjs";
 import {normalizeGitHubIssue} from "../../../.agents/skills/task-plan/scripts/source.mjs";
@@ -31,6 +32,7 @@ const TASK_PLAN_SCRIPTS = [
 ];
 
 const PLAN_STATUSES = new Set([
+    "review-pending",
     "needs-clarification",
     "awaiting-package-decisions",
     "review-limit-reached",
@@ -112,13 +114,28 @@ describe("task-plan workflow scenarios", () => {
                 decision_source: "user",
                 decided_at: "2026-01-01T00:00:00Z",
             }],
-            findings: [],
-            review_history: [{iteration: 1, plan_version: 1}],
+            review_history: [{
+                iteration: 1,
+                plan_version: 1,
+                stage: "critical-review",
+                complete: true,
+                checks: [
+                    "intent-and-acceptance",
+                    "technical-scope",
+                    "edge-cases-and-verification",
+                    "risks-and-dependencies",
+                ],
+            }],
             review_complete: true,
+            critical_review_complete: true,
             simplification_status: "no-change",
             simplification: {result: "no-change"},
+            simplification_control_review_complete: true,
             blockers: [],
+            findings: [],
+            scope_questions: [],
         };
+        expect(canOpenPackageDecisions(approvedState)).toEqual({ready: true, reasons: []});
         expect(canApprovePlan(approvedState).approved).toBe(true);
         expect(validateFinalApproval(approvedState).valid).toBe(true);
         const reviewScenario = WORKFLOW_SCENARIOS.find(({id}) => id === "review-and-approval");
@@ -126,6 +143,21 @@ describe("task-plan workflow scenarios", () => {
             reason: "fixture approval",
             changed_at: "2026-01-01T00:00:00Z",
         }).plan_status).toBe(reviewScenario.expected.plan_status);
+    });
+
+    it("keeps package decisions closed for an initial non-title draft", () => {
+        const source = normalizeGitHubIssue({
+            owner: "acme",
+            repo: "demo",
+            number: 458,
+            title: "Handle async grid actions",
+            body: "Prepare the implementation plan.",
+            comments: [],
+            branch: "issue/458-async-grid-actions",
+            base: "origin/main",
+        }, {fetchedAt: "2026-01-01T00:00:00Z"});
+
+        expect(buildDraftMetadata(source, {now: "2026-01-01T00:00:00Z"}).plan_status).toBe("review-pending");
     });
 });
 
@@ -177,7 +209,8 @@ describe("task-plan draft operations", () => {
             issue: "123",
             title: "Original issue title",
             input_profile: "brief-request",
-            plan_status: "awaiting-package-decisions",
+            plan_status: "review-pending",
+            package_decision_gate: "closed",
             plan_version: "1",
             simplification_status: "pending",
         });
@@ -230,10 +263,14 @@ describe("task-plan integration boundary", () => {
 
     it("keeps start.mjs free of source body/comment fetching and keeps the index entry", () => {
         const startSource = fs.readFileSync(path.join(ROOT, ".agents/skills/gh-issue-start/scripts/start.mjs"), "utf8");
+        const startSkill = fs.readFileSync(path.join(ROOT, ".agents/skills/gh-issue-start/SKILL.md"), "utf8");
         const skillsIndex = fs.readFileSync(path.join(ROOT, "docs/SKILLS.md"), "utf8");
 
         expect(startSource).not.toContain("comments");
         expect(startSource).not.toContain("number,title,body,comments");
+        expect(startSkill).toContain("Następne działanie po sukcesie");
+        expect(startSkill).toContain("nie oznacza automatycznego uruchomienia `$task-plan`");
+        expect(startSkill).toContain("sam tytuł lub opis issue nie jest wystarczającym dowodem intencji planowania");
         expect(skillsIndex).toContain("$task-plan");
     });
 

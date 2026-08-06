@@ -1,0 +1,54 @@
+{
+  "package_decision_gate": "open",
+  "scope_questions": [
+    {
+      "id": "SQ1",
+      "prompt": "Czy async ma być opt-in, czy domyślny dla wszystkich POST-ów grida?",
+      "blocking": true,
+    "resolved": true,
+    "impact": "Zmienia kontrakt wszystkich pakietów runtime.",
+    "decision_needed": "Wybrać opt-in albo default async.",
+    "answer": "default async",
+    "decision_source": "user",
+    "decided_at": "2026-01-01T00:00:00Z"
+    }
+  ],
+  "packages": [
+    {
+      "id": "WP1",
+      "title": "Kontrakt backendu",
+      "decision_status": "pending",
+      "questions": [
+        {
+          "id": "WP1-Q1",
+          "prompt": "Jakie kody HTTP obowiązują dla błędów domenowych, uprawnień i CSRF?",
+          "blocking": true,
+          "resolved": false,
+          "impact": "Definiuje kryteria akceptacji kontraktu odpowiedzi.",
+          "decision_needed": "Wskazać kody HTTP."
+        }
+      ]
+    },
+    {
+      "id": "WP2",
+      "title": "Runtime TypeScript/Stimulus",
+      "decision_status": "pending",
+      "questions": [
+        {
+          "id": "WP2-Q1",
+          "prompt": "Czy testy mają być funkcjonalne czy integracyjne?",
+          "blocking": false,
+          "resolved": false,
+          "impact": "Wpływa na sposób weryfikacji pakietu.",
+          "decision_needed": "Wybrać preferowany typ testu."
+        }
+      ]
+    },
+    {
+      "id": "WP3",
+      "title": "Flash alerty i live state",
+      "decision_status": "pending",
+      "questions": []
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 import {pathToFileURL} from "node:url";
 
 export const PLAN_STATUSES = Object.freeze([
+    "review-pending",
     "needs-clarification",
     "awaiting-package-decisions",
     "review-limit-reached",
@@ -30,11 +31,22 @@ export const SIMPLIFICATION_STATUSES = Object.freeze([
     "needs-user-decision",
 ]);
 
+export const REQUIRED_REVIEW_CHECKS = Object.freeze([
+    "intent-and-acceptance",
+    "technical-scope",
+    "edge-cases-and-verification",
+    "risks-and-dependencies",
+]);
+
+const QUESTION_FIELDS = Object.freeze(["prompt", "impact", "decision_needed"]);
+const QUESTION_RESOLUTION_FIELDS = Object.freeze(["answer", "decision_source", "decided_at"]);
+
 export const PLAN_TRANSITIONS = Object.freeze({
-    "needs-clarification": Object.freeze(["awaiting-package-decisions"]),
-    "awaiting-package-decisions": Object.freeze(["approved", "needs-clarification"]),
-    "review-limit-reached": Object.freeze(["awaiting-package-decisions"]),
-    approved: Object.freeze(["awaiting-package-decisions", "approved"]),
+    "review-pending": Object.freeze(["awaiting-package-decisions", "needs-clarification", "review-limit-reached"]),
+    "needs-clarification": Object.freeze(["review-pending"]),
+    "awaiting-package-decisions": Object.freeze(["approved", "needs-clarification", "review-pending"]),
+    "review-limit-reached": Object.freeze(["review-pending"]),
+    approved: Object.freeze(["review-pending", "approved"]),
 });
 
 export const PACKAGE_TRANSITIONS = Object.freeze({
@@ -59,6 +71,7 @@ const CLI_CONTRACT_REJECTIONS = Object.freeze([
     "INVALID_TRANSITION",
     "UNKNOWN_STATUS",
     "APPROVAL_GUARD_FAILED",
+    "PACKAGE_DECISION_GATE_FAILED",
 ]);
 
 const CLI_ARGUMENT_ERRORS = Object.freeze([
@@ -75,12 +88,23 @@ export class StateError extends Error {
     }
 }
 
-export function canTransition(kind, from, to) {
+export function canTransition(kind, from, to, state = null) {
     const table = transitionTable(kind);
     if (!table) {
         return false;
     }
-    return Array.isArray(table[from]) && table[from].includes(to);
+    if (!Array.isArray(table[from]) || !table[from].includes(to)) {
+        return false;
+    }
+    if (kind === "plan" && to === "awaiting-package-decisions" && state !== null) {
+        return canOpenPackageDecisions(state).ready;
+    }
+    return true;
+}
+
+export function canOpenPackageDecisions(state) {
+    const reasons = packageDecisionGateReasons(state);
+    return {ready: reasons.length === 0, reasons};
 }
 
 export function assertTransition(kind, from, to) {
@@ -175,6 +199,16 @@ export function applyPlanTransition(state, nextStatus, context = {}) {
     const nextState = prepareState(state);
     const previousStatus = nextState.plan_status;
     assertTransition("plan", previousStatus, nextStatus);
+    if (nextStatus === "awaiting-package-decisions") {
+        const gate = canOpenPackageDecisions(nextState);
+        if (!gate.ready) {
+            throw new StateError("PACKAGE_DECISION_GATE_FAILED", `Package decisions cannot open: ${gate.reasons.join(", ")}.`, {
+                from: previousStatus,
+                to: nextStatus,
+                reasons: gate.reasons,
+            });
+        }
+    }
     if (nextStatus === "approved") {
         const approval = canApprovePlan(nextState);
         if (!approval.approved) {
@@ -186,7 +220,7 @@ export function applyPlanTransition(state, nextStatus, context = {}) {
         }
     }
     nextState.plan_status = nextStatus;
-    if (previousStatus === "approved" && nextStatus === "awaiting-package-decisions") {
+    if (previousStatus === "approved" && nextStatus === "review-pending") {
         nextState.plan_version += 1;
     }
     if (!Array.isArray(nextState.plan_history)) {
@@ -380,20 +414,103 @@ export function canApprovePlan(state) {
     }
     reasons.push(...missingDecisionRecordReasons(candidate, packages));
     reasons.push(...packageQuestionReasons(packages));
-    reasons.push(...blockerReasons(candidate));
-    if (Array.isArray(candidate.findings) && candidate.findings.some((finding) => {
-        return finding && ["CRITICAL", "HIGH"].includes(finding.severity)
-            && ["open", "reopened"].includes(finding.status);
-    })) {
-        reasons.push("open_high_findings");
+    for (const reason of packageDecisionGateReasons(candidate)) {
+        if (!reasons.includes(reason)) {
+            reasons.push(reason);
+        }
     }
-    if (candidate.review_complete !== true) {
-        reasons.push("review_incomplete");
-    }
-    reasons.push(...reviewHistoryReasons(candidate));
-    reasons.push(...simplificationReasons(candidate));
 
     return {approved: reasons.length === 0, reasons};
+}
+
+function packageDecisionGateReasons(state) {
+    const candidate = state && typeof state === "object" ? state : {};
+    const reasons = [];
+    const addReason = (reason) => {
+        if (!reasons.includes(reason)) {
+            reasons.push(reason);
+        }
+    };
+
+    if (Object.hasOwn(candidate, "package_decision_gate")
+        && candidate.package_decision_gate !== "open") {
+        addReason(candidate.package_decision_gate === "closed"
+            ? "package_decision_gate_closed"
+            : "invalid_package_decision_gate");
+    }
+
+    if (!Array.isArray(candidate.packages) || candidate.packages.length === 0) {
+        addReason("no_work_packages");
+    }
+    if (candidate.review_complete !== true) {
+        addReason("review_incomplete");
+    }
+    if (candidate.critical_review_complete !== true) {
+        addReason("critical_review_incomplete");
+    }
+    for (const reason of reviewHistoryReasons(candidate)) {
+        addReason(reason);
+    }
+    if (!hasCompletedCriticalReview(candidate.review_history)) {
+        addReason("critical_review_missing");
+    }
+    if (!["no-change", "simplified"].includes(candidate.simplification_status)) {
+        addReason("simplification_not_resolved");
+    }
+    if (candidate.simplification_control_review_complete !== true) {
+        addReason("simplification_review_incomplete");
+    }
+    for (const reason of simplificationReasons(candidate)) {
+        addReason(reason);
+    }
+    for (const reason of blockerReasons(candidate)) {
+        addReason(reason);
+    }
+
+    if (!Array.isArray(candidate.findings)) {
+        addReason("findings_missing");
+    } else if (candidate.findings.some((finding) => {
+        return finding && ["open", "reopened"].includes(finding.status);
+    })) {
+        addReason("open_actionable_findings");
+    }
+
+    if (!Array.isArray(candidate.scope_questions)) {
+        addReason("scope_questions_missing");
+    } else {
+        const scopeQuestionErrors = validateQuestionRecords(candidate.scope_questions, {scope: "scope"});
+        if (scopeQuestionErrors.length > 0) {
+            addReason("invalid_scope_questions");
+        } else if (candidate.scope_questions.some(isUnresolvedScopeQuestion)) {
+            addReason("unresolved_scope_questions");
+        }
+    }
+
+    return reasons;
+}
+
+function hasCompletedCriticalReview(history) {
+    if (!Array.isArray(history)) {
+        return false;
+    }
+
+    return history.some((review) => {
+        if (!review || review.stage !== "critical-review" || review.complete !== true) {
+            return false;
+        }
+        return Array.isArray(review.checks)
+            && REQUIRED_REVIEW_CHECKS.every((check) => review.checks.includes(check));
+    });
+}
+
+function isUnresolvedScopeQuestion(question) {
+    if (typeof question === "string") {
+        return question.trim() !== "";
+    }
+    return Boolean(question)
+        && typeof question === "object"
+        && !Array.isArray(question)
+        && question.resolved !== true;
 }
 
 export function readSimplificationResult(state) {
@@ -421,12 +538,71 @@ export function validatePackageRecords(packages) {
         }
         if (!Array.isArray(item.questions)) {
             errors.push(`${item.id ?? "Unknown package"} must declare questions as an array.`);
+        } else {
+            errors.push(...validateQuestionRecords(item.questions, {packageId: item.id}).map((error) => {
+                return `${item.id ?? "Unknown package"}: ${error}`;
+            }));
         }
     }
 
     const graphResult = validateDependencyGraph(records);
     errors.push(...graphResult.errors);
     return {valid: errors.length === 0, errors};
+}
+
+export function validateQuestionRecords(questions, options = {}) {
+    if (!Array.isArray(questions)) {
+        return ["Questions must be an array."];
+    }
+
+    const errors = [];
+    const ids = new Set();
+    const expectedId = options.scope === "scope"
+        ? /^SQ[1-9][0-9]*$/
+        : new RegExp(`^${escapeRegExp(options.packageId ?? "WP")}-Q[1-9][0-9]*$`);
+
+    for (const [index, question] of questions.entries()) {
+        const label = `Question ${index + 1}`;
+        if (!question || typeof question !== "object" || Array.isArray(question)) {
+            errors.push(`${label} must be a structured record.`);
+            continue;
+        }
+        if (typeof question.id !== "string" || !expectedId.test(question.id)) {
+            errors.push(`${label} id must match ${options.scope === "scope" ? "SQ<number>" : `${options.packageId ?? "WP<number>"}-Q<number>`}.`);
+        } else if (ids.has(question.id)) {
+            errors.push(`Duplicate question id: ${question.id}.`);
+        } else {
+            ids.add(question.id);
+        }
+        for (const field of QUESTION_FIELDS) {
+            if (typeof question[field] !== "string" || question[field].trim() === "") {
+                errors.push(`${label} is missing ${field}.`);
+            }
+        }
+        if (typeof question.blocking !== "boolean") {
+            errors.push(`${label} blocking must be boolean.`);
+        }
+        if (typeof question.resolved !== "boolean") {
+            errors.push(`${label} resolved must be boolean.`);
+        } else if (question.resolved) {
+            for (const field of QUESTION_RESOLUTION_FIELDS) {
+                if (typeof question[field] !== "string" || question[field].trim() === "") {
+                    errors.push(`${label} is missing ${field} for a resolved question.`);
+                }
+            }
+            if (typeof question.decided_at === "string" && Number.isNaN(Date.parse(question.decided_at))) {
+                errors.push(`${label} decided_at must be a valid timestamp.`);
+            }
+        } else if (QUESTION_RESOLUTION_FIELDS.some((field) => hasMeaningfulQuestionValue(question[field]))) {
+            errors.push(`${label} cannot contain an answer before resolved is true.`);
+        }
+    }
+
+    return errors;
+}
+
+function hasMeaningfulQuestionValue(value) {
+    return value !== null && typeof value !== "undefined" && String(value).trim() !== "";
 }
 
 export function validateDecisionHistory(decisions) {
@@ -486,7 +662,7 @@ function packageQuestionReasons(packages) {
             continue;
         }
         const questions = Array.isArray(item.questions) ? item.questions : [];
-        if (questions.some((question) => !isValidQuestionRecord(question))) {
+        if (validateQuestionRecords(questions, {packageId: item.id}).length > 0) {
             if (!reasons.includes("invalid_package_questions")) {
                 reasons.push("invalid_package_questions");
             }
@@ -499,25 +675,11 @@ function packageQuestionReasons(packages) {
 }
 
 function isUnresolvedBlockingQuestion(question) {
-    if (typeof question === "string") {
-        return /\[BLOCKING\]/i.test(question);
-    }
     return Boolean(question)
         && typeof question === "object"
         && !Array.isArray(question)
         && question.blocking === true
         && question.resolved !== true;
-}
-
-function isValidQuestionRecord(question) {
-    if (typeof question === "string") {
-        return true;
-    }
-    return Boolean(question)
-        && typeof question === "object"
-        && !Array.isArray(question)
-        && (!Object.hasOwn(question, "blocking") || typeof question.blocking === "boolean")
-        && (!Object.hasOwn(question, "resolved") || typeof question.resolved === "boolean");
 }
 
 function blockerReasons(candidate) {
@@ -565,14 +727,26 @@ function reviewHistoryReasons(candidate) {
         || candidate.review_history.length === 0) {
         return ["review_history_missing"];
     }
-    if (candidate.review_history.some((review) => {
-        return !review
+    const iterations = new Set();
+    let previousPlanVersion = 0;
+    for (const review of candidate.review_history) {
+        if (!review
             || typeof review !== "object"
             || !Number.isInteger(review.iteration)
             || review.iteration < 1
+            || iterations.has(review.iteration)
             || (Object.hasOwn(review, "plan_version")
-                && (!Number.isInteger(review.plan_version) || review.plan_version < 1));
-    })) {
+                && (!Number.isInteger(review.plan_version)
+                    || review.plan_version < 1
+                    || review.plan_version <= previousPlanVersion))) {
+            return ["invalid_review_history"];
+        }
+        iterations.add(review.iteration);
+        if (Object.hasOwn(review, "plan_version")) {
+            previousPlanVersion = review.plan_version;
+        }
+    }
+    if (candidate.review_history.length > 3) {
         return ["invalid_review_history"];
     }
     return [];
@@ -663,6 +837,10 @@ function hasDependencyCycle(packages) {
 
 function clone(value) {
     return JSON.parse(JSON.stringify(value));
+}
+
+function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function parseArgs(args) {
