@@ -21,6 +21,7 @@ import {
     applyPackageDecision,
     applyPlanTransition,
     canApprovePlan,
+    canOpenPackageDecisions,
     canTransition,
     getImpactedPackageIds,
     parseDecisionCommand,
@@ -96,7 +97,7 @@ describe("task-plan draft module", () => {
 
         const titleOnly = MAIN_FIXTURE
             .replace("input_profile: brief-request", "input_profile: title-only")
-            .replace("plan_status: awaiting-package-decisions", "plan_status: approved");
+            .replace("plan_status: review-pending", "plan_status: approved");
         expect(validateDraftDocument(titleOnly, {kind: "main"}).valid).toBe(false);
         expect(validateDraftDocument(DERIVED_FIXTURE, {kind: "derived"}).valid).toBe(true);
     });
@@ -197,10 +198,55 @@ describe("task-plan state module", () => {
             reason: "all decisions complete",
             changed_at: "2026-01-02T00:00:00Z",
         }), "INVALID_TRANSITION");
-        expect(applyPlanTransition({...baseState(), plan_status: "approved"}, "awaiting-package-decisions", {
+        expect(applyPlanTransition({...baseState(), plan_status: "approved"}, "review-pending", {
             reason: "user requested corrections",
             changed_at: "2026-01-02T00:00:00Z",
         }).plan_version).toBe(2);
+    });
+
+    it("requires the review and simplification gate before package decisions", () => {
+        const incomplete = {
+            ...baseState(),
+            plan_status: "review-pending",
+            review_complete: false,
+            critical_review_complete: false,
+            review_history: [],
+            simplification_status: "pending",
+            simplification: {result: "pending"},
+            simplification_control_review_complete: false,
+        };
+
+        expect(canOpenPackageDecisions(incomplete).ready).toBe(false);
+        expect(canTransition("plan", "review-pending", "awaiting-package-decisions", incomplete)).toBe(false);
+        expectErrorCode(() => applyPlanTransition(incomplete, "awaiting-package-decisions", {
+            reason: "premature package decision request",
+            changed_at: "2026-01-02T00:00:00Z",
+        }), "PACKAGE_DECISION_GATE_FAILED");
+        expect(validatePlanState({...incomplete, plan_status: "awaiting-package-decisions"}).valid).toBe(false);
+
+        const ready = {
+            ...baseState(),
+            plan_status: "review-pending",
+        };
+        expect(canOpenPackageDecisions(ready)).toEqual({ready: true, reasons: []});
+        expect(canTransition("plan", "review-pending", "awaiting-package-decisions", ready)).toBe(true);
+        expect(applyPlanTransition(ready, "awaiting-package-decisions", {
+            reason: "critical review and simplification complete",
+            changed_at: "2026-01-02T00:00:00Z",
+        }).plan_status).toBe("awaiting-package-decisions");
+
+        const scopeBlocked = {
+            ...ready,
+            scope_questions: [{
+                id: "SQ1",
+                prompt: "Czy zakres obejmuje migrację?",
+                blocking: false,
+                resolved: false,
+                impact: "Zmienia zakres pakietów.",
+                decision_needed: "Potwierdzić zakres.",
+            }],
+        };
+        expect(canOpenPackageDecisions(scopeBlocked).reasons).toContain("unresolved_scope_questions");
     });
 
     it("parses only explicit decision commands", () => {
@@ -276,10 +322,14 @@ describe("task-plan state module", () => {
             ...accepted,
             plan_status: "awaiting-package-decisions",
             review_complete: true,
-            review_history: [{iteration: 1, plan_version: 1}],
+            critical_review_complete: true,
+            review_history: [criticalReview()],
             simplification_status: "no-change",
             simplification: {result: "no-change"},
+            simplification_control_review_complete: true,
             blockers: [],
+            findings: [],
+            scope_questions: [],
         };
 
         expect(canApprovePlan(ready)).toEqual({approved: true, reasons: []});
@@ -293,7 +343,14 @@ describe("task-plan state module", () => {
         expectErrorCode(() => applyPackageDecision({
             ...baseState(),
             packages: baseState().packages.map((item, index) => index === 0
-                ? {...item, questions: [{blocking: true, resolved: false}]}
+                ? {...item, questions: [{
+                    id: `${item.id}-Q1`,
+                    prompt: "Czy pytanie blokujące zostało rozstrzygnięte?",
+                    blocking: true,
+                    resolved: false,
+                    impact: "Blokuje decyzję pakietu.",
+                    decision_needed: "Potwierdzić odpowiedź.",
+                }]}
                 : item),
         }, {
             package_id: "WP1",
@@ -310,16 +367,27 @@ describe("task-plan state module", () => {
             ...accepted,
             plan_status: "awaiting-package-decisions",
             review_complete: true,
-            review_history: [{iteration: 1, plan_version: 1}],
+            critical_review_complete: true,
+            review_history: [criticalReview()],
             simplification_status: "no-change",
             simplification: {result: "no-change"},
+            simplification_control_review_complete: true,
             blockers: [],
+            findings: [],
+            scope_questions: [],
         };
 
         expect(validateFinalApproval({
             ...ready,
             packages: ready.packages.map((item, index) => index === 0
-                ? {...item, questions: [{blocking: true, resolved: false}]}
+                ? {...item, questions: [{
+                    id: `${item.id}-Q1`,
+                    prompt: "Czy pytanie blokujące zostało rozstrzygnięte?",
+                    blocking: true,
+                    resolved: false,
+                    impact: "Blokuje decyzję pakietu.",
+                    decision_needed: "Potwierdzić odpowiedź.",
+                }]}
                 : item),
         }).valid).toBe(false);
         expect(validateFinalApproval({...ready, blockers: "B1"}).valid).toBe(false);
@@ -478,10 +546,14 @@ describe("task-plan validation module", () => {
             ...approved,
             plan_status: "approved",
             review_complete: true,
-            review_history: [{iteration: 1, plan_version: 1}],
+            critical_review_complete: true,
+            review_history: [criticalReview()],
             simplification_status: "no-change",
             simplification: {result: "no-change"},
+            simplification_control_review_complete: true,
             blockers: [],
+            findings: [],
+            scope_questions: [],
         }).valid).toBe(true);
     });
 });
@@ -492,7 +564,7 @@ describe("task-plan CLI contract", () => {
         const invalidDraft = path.join(directory, "invalid.md");
         fs.writeFileSync(invalidDraft, MAIN_FIXTURE
             .replace("input_profile: brief-request", "input_profile: title-only")
-            .replace("plan_status: awaiting-package-decisions", "plan_status: approved"), "utf8");
+            .replace("plan_status: review-pending", "plan_status: approved"), "utf8");
 
         const draftResult = runCli(DRAFT_SCRIPT, ["validate", "--file", invalidDraft]);
         expect(draftResult.status).toBe(1);
@@ -547,12 +619,30 @@ function baseState() {
             },
         ],
         findings: [],
-        review_history: [],
+        review_history: [criticalReview()],
         simplification: {result: "no-change"},
         simplification_status: "no-change",
+        critical_review_complete: true,
+        simplification_control_review_complete: true,
         blockers: [],
         review_complete: true,
+        scope_questions: [],
         decisions: [],
+    };
+}
+
+function criticalReview() {
+    return {
+        iteration: 1,
+        plan_version: 1,
+        stage: "critical-review",
+        complete: true,
+        checks: [
+            "intent-and-acceptance",
+            "technical-scope",
+            "edge-cases-and-verification",
+            "risks-and-dependencies",
+        ],
     };
 }
 

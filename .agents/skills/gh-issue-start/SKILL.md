@@ -70,6 +70,24 @@ Zautomatyzować start pracy nad issue: ustalenie numeru issue, utworzenie/checko
   dalszy workflow. Nie wolno uruchamiać task-plan ani tworzyć planu z niepełnych
   danych.
 
+### Następne działanie po sukcesie
+
+Sukces `$gh-issue-start` nie oznacza automatycznego uruchomienia `$task-plan`.
+Agent rozróżnia intencję rozpoczęcia pracy od intencji rozpoczęcia pracy **i**
+przygotowania planu:
+
+- jeśli pierwotne polecenie jednoznacznie obejmuje przygotowanie planu (np.
+  „rozpocznij issue 123 i przygotuj plan realizacji”), po sukcesie `start.mjs`
+  oraz `$gh-issue-status-set` uruchom `$task-plan`;
+- jeśli użytkownik poprosił tylko o start issue, nie uruchamiaj `$task-plan`
+  bez pytania. Pokaż gotową stabilną tożsamość issue i zaproponuj następny
+  krok, np. `$task-plan --source github-issue --issue-number <ID>`;
+- sam tytuł lub opis issue nie jest wystarczającym dowodem intencji planowania.
+
+W przypadku automatycznego przejścia przekaż do `$task-plan` stabilną tożsamość
+z wyniku startu: `owner`, `repo`, `issue_number`, `branch` i `base`. Nie przenoś
+do `start.mjs` pobierania body ani komentarzy issue.
+
 ## Źródła parametrów
 - `--issue-number`: gdy użytkownik poda **numer** issue wprost (np. „start issue 46”, „zaczynamy pracę nad 46”).
 - `--desc`: krótki opis zadania podany przez użytkownika (np. „rozpocznij zadanie: dodać skille start/finish”).
@@ -111,6 +129,8 @@ Jeśli użytkownik podał `--issue-number`, a issue nie istnieje lub jest zamkni
 
 ## Format odpowiedzi
 - Wynik: issue + branch utworzone/przełączone, status ustawiony.
+- Następny krok: `$task-plan` uruchomiony po jednoznacznej intencji planowania
+  albo zaproponowany użytkownikowi, jeśli wykonano tylko start.
 - Uwagi: brakujące dane, konflikty oraz ewentualny błąd ustawienia statusu (jeśli dotyczy).
 
 ## Przykłady wejścia

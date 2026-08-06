@@ -6,6 +6,7 @@ parent_issue: 123
 parent_draft: issue-123-main-title-plan.md
 work_package_id: WP2
 plan_status: needs-clarification
+package_decision_gate: closed
 plan_version: 1
 simplification_status: pending
 fetched_at: 2026-01-01T00:00:00Z
@@ -27,7 +28,13 @@ The separated package has its own review scope.
 
 ## Decisions and open questions
 
-- No decision is inherited automatically from the parent draft.
+### Decyzje zakresowe przed decyzjami pakietowymi
+
+- Brak.
+
+### Decyzje pakietowe
+
+- Niedostępne: `package_decision_gate` jest zamknięta. Najpierw zakończ review, uproszczenie i decyzje zakresowe.
 
 ## Evidence, risks and review
 

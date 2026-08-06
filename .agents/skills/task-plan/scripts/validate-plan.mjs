@@ -11,12 +11,14 @@ import {
 } from "./draft.mjs";
 import {
     canApprovePlan,
+    canOpenPackageDecisions,
     validateDecisionHistory,
     validatePackageRecords,
     PLAN_STATUSES,
     readSimplificationResult,
     SIMPLIFICATION_STATUSES,
     TERMINAL_PACKAGE_STATUSES,
+    validateQuestionRecords,
 } from "./state.mjs";
 
 export const FINDING_SEVERITIES = Object.freeze(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
@@ -150,10 +152,26 @@ export function validateSimplification(simplification) {
 }
 
 export function validatePlanState(state) {
-    const errors = [];
     if (!state || typeof state !== "object") {
         return {valid: false, errors: ["Plan state must be an object."]};
     }
+    const errors = [
+        ...validateStateMetadata(state),
+        ...validateStatePackages(state),
+        ...validateStateRecords(state),
+    ];
+    const approval = canApprovePlan(state);
+    errors.push(...validateStateApproval(state, approval));
+
+    return {
+        valid: errors.length === 0,
+        errors,
+        approval,
+    };
+}
+
+function validateStateMetadata(state) {
+    const errors = [];
     if (!Number.isInteger(state.plan_version) || state.plan_version < 1) {
         errors.push("Plan state must contain a positive integer plan_version.");
     }
@@ -173,14 +191,42 @@ export function validatePlanState(state) {
     if (Object.hasOwn(state, "blockers") && !Array.isArray(state.blockers)) {
         errors.push("Plan state blockers must be an array.");
     }
+    for (const field of ["review_complete", "critical_review_complete", "simplification_control_review_complete"]) {
+        if (Object.hasOwn(state, field) && typeof state[field] !== "boolean") {
+            errors.push(`Plan state ${field} must be boolean.`);
+        }
+    }
+    if (Object.hasOwn(state, "scope_questions") && !Array.isArray(state.scope_questions)) {
+        errors.push("Plan state scope_questions must be an array.");
+    } else if (Array.isArray(state.scope_questions)) {
+        errors.push(...validateQuestionRecords(state.scope_questions, {scope: "scope"}).map((error) => {
+            return `scope_questions: ${error}`;
+        }));
+    }
+    if (Object.hasOwn(state, "package_decision_gate")
+        && !["open", "closed"].includes(state.package_decision_gate)) {
+        errors.push("Plan state package_decision_gate must be open or closed.");
+    } else if (Object.hasOwn(state, "package_decision_gate")) {
+        const expectedGate = ["awaiting-package-decisions", "approved"].includes(state.plan_status)
+            ? "open"
+            : ["review-pending", "needs-clarification", "review-limit-reached"].includes(state.plan_status)
+                ? "closed"
+                : null;
+        if (expectedGate && state.package_decision_gate !== expectedGate) {
+            errors.push(`Plan state package_decision_gate must be ${expectedGate} for ${state.plan_status}.`);
+        }
+    }
+    return errors;
+}
 
+function validateStatePackages(state) {
+    const errors = [];
     if (!Array.isArray(state.packages)) {
         errors.push("Plan state must contain a packages array.");
     } else if (["awaiting-package-decisions", "approved"].includes(state.plan_status) && state.packages.length === 0) {
         errors.push("Plan state must contain at least one work package before package decisions or approval.");
     }
-    const packageResult = validatePackageRecords(state.packages);
-    errors.push(...packageResult.errors);
+    errors.push(...validatePackageRecords(state.packages).errors);
     for (const [index, item] of (Array.isArray(state.packages) ? state.packages : []).entries()) {
         if (!item || typeof item !== "object") {
             continue;
@@ -194,7 +240,11 @@ export function validatePlanState(state) {
             errors.push(`Package ${index + 1} must contain goal, scope and acceptance criteria.`);
         }
     }
+    return errors;
+}
 
+function validateStateRecords(state) {
+    const errors = [];
     const decisions = state.decisions ?? [];
     errors.push(...validateDecisionHistory(decisions));
     if (Array.isArray(state.packages) && Array.isArray(decisions)) {
@@ -212,20 +262,24 @@ export function validatePlanState(state) {
         before: state.simplification_before,
         after: state.simplification_after,
     }));
+    return errors;
+}
 
-    const approval = canApprovePlan(state);
+function validateStateApproval(state, approval) {
+    const errors = [];
+    if (state.plan_status === "awaiting-package-decisions") {
+        const gate = canOpenPackageDecisions(state);
+        if (!gate.ready) {
+            errors.push(`Package decision gate failed: ${gate.reasons.join(", ")}.`);
+        }
+    }
     if (state.plan_status === "approved" && !approval.approved) {
         errors.push(`Approved plan failed approval guard: ${approval.reasons.join(", ")}.`);
     }
     if (state.plan_status === "approved" && (!Array.isArray(state.review_history) || state.review_history.length === 0)) {
         errors.push("Approved plan must contain review history.");
     }
-
-    return {
-        valid: errors.length === 0,
-        errors,
-        approval,
-    };
+    return errors;
 }
 
 export function validatePlanDocument(document, options = {}) {
@@ -236,6 +290,7 @@ export function validatePlanDocument(document, options = {}) {
 
     if (options.state) {
         errors.push(...validatePlanState(options.state).errors);
+        errors.push(...validateDraftStateConsistency(draftResult.metadata, options.state));
     }
 
     return {
@@ -244,6 +299,42 @@ export function validatePlanDocument(document, options = {}) {
         metadata: draftResult.metadata,
         missingSections: draftResult.missingSections,
     };
+}
+
+function validateDraftStateConsistency(metadata, state) {
+    const errors = [];
+    if (!state || typeof state !== "object") {
+        return errors;
+    }
+    if (typeof state.plan_status === "string"
+        && typeof metadata?.plan_status === "string"
+        && state.plan_status !== metadata.plan_status) {
+        errors.push(`Draft/state plan_status mismatch: draft=${metadata.plan_status}, state=${state.plan_status}.`);
+    }
+    if (Number.isInteger(state.plan_version)
+        && isPositiveInteger(metadata?.plan_version)
+        && Number(state.plan_version) !== Number(metadata.plan_version)) {
+        errors.push(`Draft/state plan_version mismatch: draft=${metadata.plan_version}, state=${state.plan_version}.`);
+    }
+    const expectedGate = ["awaiting-package-decisions", "approved"].includes(state.plan_status)
+        ? "open"
+        : ["review-pending", "needs-clarification", "review-limit-reached"].includes(state.plan_status)
+            ? "closed"
+            : null;
+    const stateGate = state.package_decision_gate ?? expectedGate;
+    if (stateGate && metadata?.package_decision_gate && stateGate !== metadata.package_decision_gate) {
+        errors.push(`Draft/state package_decision_gate mismatch: draft=${metadata.package_decision_gate}, state=${stateGate}.`);
+    }
+    if (typeof state.source_ref === "string"
+        && typeof metadata?.source_ref === "string"
+        && state.source_ref !== metadata.source_ref) {
+        errors.push("Draft/state source_ref mismatch.");
+    }
+    if (typeof state.issue !== "undefined" && typeof metadata?.issue !== "undefined"
+        && String(state.issue) !== String(metadata.issue)) {
+        errors.push("Draft/state issue mismatch.");
+    }
+    return errors;
 }
 
 export function validateFinalApproval(state) {
@@ -285,6 +376,11 @@ function containsAll(after, before) {
 
 function sameValue(left, right) {
     return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function isPositiveInteger(value) {
+    return (typeof value === "number" && Number.isInteger(value) && value > 0)
+        || (typeof value === "string" && /^[1-9][0-9]*$/.test(value));
 }
 
 function parseArgs(args) {
