@@ -57,6 +57,12 @@ before the parent's first write. Command matches remain a separate weaker signal
 and never contribute to `strong_repeated_work_signal`; exact matches after the
 first parent write are reported as `mixed_followup` and do not strengthen strong.
 Matches before the parent's first write are more suggestive of repeated discovery.
+When a structured read-purpose event is unambiguously correlated with an exact
+pre-write path match and no stronger repeated-work evidence wins, classify it as
+`declared_read_context` instead of ordinary repeated work. The declared context
+remains attached to the evidence when a stronger label is retained. It preserves
+exact matches and costs while recording a workflow declaration; it is not proof
+that the read was necessary.
 Jaccard, LCS, shared operation types and structural families remain bounded
 descriptive observations after the Stage 11 ablation; they do not promote a
 delegation to `possible_repeated_work` or `strong_repeated_work_signal`.

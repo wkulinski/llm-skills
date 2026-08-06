@@ -142,13 +142,13 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
    - jeśli jest większa: ogranicz się do orientacji (stat/numstat) + pełne diffy tylko dla plików “high-risk” oraz dla obszaru wskazanego w prompt.
 3. Trigger doczytania on-demand (kluczowe):
    Doczytywanie ma być uruchamiane wtedy, gdy “zadanie dotyka” pliku/obszaru, którego nie masz jeszcze wystarczająco dobrze w głowie. Triggerem jest zawsze potrzeba podjęcia decyzji lub wykonania zmiany w danym obszarze.
-   
-   To nie jest “ponowne uruchomienie `$context-refresh`”. To jest punktowe doczytanie tylko tego, co jest potrzebne w danym momencie.
+
+   To nie jest “ponowne uruchomienie `$context-refresh`”. To jest punktowe doczytanie tylko tego, co jest potrzebne w danym momencie. Sam status `dirty` albo `untracked` nie jest dowodem, że poprzedni odczyt jest nieaktualny.
 
    Uruchom doczytanie on-demand, jeśli zachodzi którekolwiek:
    - prompt wprost wymienia ścieżkę pliku (np. `src/.../Foo.php`) → przeczytaj ten plik i jego diff (jeśli ma),
    - prompt wprost wymienia symbol (klasa/metoda/komenda/route) → jeśli Serena dla języka jest dostępna, znajdź definicję przez Serenę; w przeciwnym razie użyj `rg`; następnie przeczytaj definicję + kontekst,
-   - masz zmienić plik, który już jest zmieniony w repo (czyli “modyfikujesz cudze/bieżące zmiany”) → przeczytaj jego diff i aktualną treść przed edycją,
+   - masz zmienić plik, który już jest zmieniony w repo (czyli “modyfikujesz cudze/bieżące zmiany”) i nie masz ważnego odczytu jego aktualnej wersji dla zakresu patcha → przeczytaj jego diff i aktualną treść przed edycją,
    - aktualny moduł ma użyć funkcjonalności z innego modułu → doczytaj dokumentację obu modułów, zaczynając od `MODULE_INDEX_DOC`, jeśli istnieje,
    - masz przygotować treść commita (`$commit-message-write`) → upewnij się, że rozumiesz “co” i “dlaczego” (diff/kluczowe fragmenty),
    - QA/testy zwróciły błąd w pliku, którego nie analizowałeś → doczytaj od razu ten plik i sąsiedni kontekst,
@@ -159,8 +159,9 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
 4. Procedura doczytania on-demand:
    - Ustal “target” doczytania: plik / moduł / symbol.
    - Jeśli target to plik:
-     - jeśli plik jest zmieniony: przeczytaj `git diff -- <plik>` i aktualną treść pliku (przynajmniej relewantne sekcje),
-     - jeśli plik nie jest zmieniony: przeczytaj aktualną treść pliku (relewantne sekcje).
+     - jeśli plik jest zmieniony i nie ma ważnego odczytu jego aktualnej wersji dla zakresu patcha: przeczytaj `git diff -- <plik>` i aktualną treść pliku (przynajmniej relewantne sekcje),
+     - jeśli plik nie jest zmieniony: przeczytaj aktualną treść pliku (relewantne sekcje),
+     - oznacz odczyt jako `read-before-write`, jeśli chroni patch przed nadpisaniem zmian; jako `snapshot-refresh`, jeśli wynika z wykrytej zmiany snapshotu; w pozostałych przypadkach użyj `discovery`, `verification` albo `report-gap`.
    - Jeśli target to symbol:
      - jeśli Serena dla języka jest dostępna, użyj Sereny najpierw do znalezienia definicji, overview i referencji,
      - jeśli Serena nie jest dostępna, ale działa inna warstwa symboliczna dla języka, użyj jej; w przeciwnym razie użyj `rg`,
@@ -171,7 +172,7 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
    - Po doczytaniu: wróć do zadania i podejmij decyzję/wykonaj zmianę w oparciu o doczytane informacje.
 
 5. Doczytanie on-demand (krótka zasada wykonawcza):
-   - zanim zmodyfikujesz plik, którego zmian nie rozumiesz (bo np. był już zmieniony przed Twoją pracą), doczytaj jego diff/treść w tym momencie,
+   - zanim zmodyfikujesz plik, którego zmian nie rozumiesz (bo np. był już zmieniony przed Twoją pracą albo zmienił się od ostatniego odczytu), doczytaj jego diff/treść w tym momencie; nie powtarzaj szerokiego discovery, jeśli aktualny raport wystarcza do decyzji,
    - analogicznie: zanim przygotujesz `commit-message.txt`, upewnij się, że rozumiesz „co” i “dlaczego” (w praktyce robi to też `$commit-message-write`).
    - jeśli zadanie jest wyraźnie runtime/debuggingowe i AI Mate jest dostępny, możesz pomocniczo użyć `$dev-mate` do zebrania logów/profilera/DI; nie zastępuje to odczytu kodu ani dokumentacji.
    - jeśli zadanie dotyczy kodu w języku wspieranym przez Serenę, preferuj zawężenie przez Serenę zamiast szerokiego odczytu całych plików; jeśli Serena nie jest dostępna, zastosuj tę samą zasadę do innej warstwy symbolicznej; dla Twig/YAML/docs zwykle pozostań przy `rg` i zwykłym odczycie, a dla SCSS użyj zwykłego patcha tylko wtedy, gdy zmiana jest banalna i lokalna.

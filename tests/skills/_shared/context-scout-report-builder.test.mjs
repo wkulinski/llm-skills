@@ -62,7 +62,7 @@ describe("context scout report builder", () => {
             "add-covered-path",
             ledger,
             "--path",
-            "AGENTS.md",
+            "./AGENTS.md",
             "--line-start",
             "1",
             "--line-end",
@@ -95,6 +95,36 @@ describe("context scout report builder", () => {
         const value = JSON.parse(fs.readFileSync(ledger, "utf8"));
         expect(value.read_coverage.covered).toHaveLength(1);
         expect(value.read_coverage.follow_up).toEqual([{path: "README.md", reason: "parent needs implementation-level read"}]);
+    });
+
+    it("accepts a declared read purpose on covered evidence", () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-test-"));
+        const ledger = path.join(dir, "ledger.json");
+        const criteria = path.join(dir, "criteria.json");
+        fs.writeFileSync(criteria, JSON.stringify({criteria: [{id: "C1", description: "Map the flow."}]}));
+        const init = spawnSync(process.execPath, [BUILDER, "init", ledger, "--head", "HEAD", "--criteria", criteria, "--mode", "targeted"], {
+            cwd: ROOT,
+            encoding: "utf8",
+        });
+        expect(init.status, init.stderr).toBe(0);
+        const covered = spawnSync(process.execPath, [
+            BUILDER,
+            "add-covered-path",
+            ledger,
+            "--path", "AGENTS.md",
+            "--line-start", "1",
+            "--line-end", "1",
+            "--purpose", "discovery",
+            "--source", "scout",
+            "--read-mode", "range",
+        ], {cwd: ROOT, encoding: "utf8"});
+        expect(covered.status, covered.stderr).toBe(0);
+        expect(JSON.parse(fs.readFileSync(ledger, "utf8")).read_coverage.covered[0]).toMatchObject({
+            path: "AGENTS.md",
+            purpose: "discovery",
+            source: "scout",
+            read_mode: "range",
+        });
     });
 
     it("accepts a complete report in one batch and renders it from the ledger", () => {

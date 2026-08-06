@@ -2,6 +2,7 @@
 import {existsSync, readFileSync} from "node:fs";
 import {execFileSync} from "node:child_process";
 import {readCriteriaFile} from "./context-criteria.mjs";
+import {normalizeReadObservation} from "./read-purpose.mjs";
 
 const STATUSES = new Set(["COMPLETE", "INCOMPLETE", "BLOCKED"]);
 const MODES = new Set(["targeted", "cross-layer"]);
@@ -107,6 +108,28 @@ function validateEvidence(evidence, head, errors, location, evidenceIndex) {
         if (key in evidence && typeof evidence[key] !== "string") {
             errors.push(`${location}.evidence[${evidenceIndex}].${key} must be a string`);
         }
+    }
+    validateReadPurpose(evidence, errors, location, evidenceIndex);
+}
+
+function validateReadPurpose(evidence, errors, location, evidenceIndex) {
+    const purposeKeys = ["event", "purpose", "source", "read_mode"];
+    if (!purposeKeys.some((key) => Object.hasOwn(evidence, key))) { return; }
+    const missing = purposeKeys.filter((key) => !Object.hasOwn(evidence, key));
+    if (missing.length > 0) {
+        errors.push(`${location}.evidence[${evidenceIndex}] read-purpose: structured metadata must include ${purposeKeys.join(", ")}; missing ${missing.join(", ")}`);
+        return;
+    }
+    const result = normalizeReadObservation({
+        event: evidence.event,
+        purpose: evidence.purpose,
+        source: evidence.source ?? "scout",
+        read_mode: evidence.read_mode ?? "range",
+        resource_kind: "path",
+        path: evidence.path,
+    });
+    for (const error of result.errors) {
+        errors.push(`${location}.evidence[${evidenceIndex}] read-purpose: ${error}`);
     }
 }
 

@@ -113,7 +113,7 @@ function listOverlaps(index, options) {
         throw new Error(`Unknown overlap diagnostic: ${options.diagnostic}. Available: ${Object.keys(index.overlap_views).join(", ")}`);
     }
     if (options.diagnostic) { values = values.filter((item) => item.diagnostic === options.diagnostic); }
-    const priority = new Map([["strong_repeated_work_signal", 0], ["possible_repeated_work", 1], ["mixed_followup", 2], ["no_overlap_observed_in_window", 3], ["structural_overlap_only", 4], ["insufficient_evidence", 5]]);
+    const priority = new Map([["strong_repeated_work_signal", 0], ["declared_read_context", 1], ["possible_repeated_work", 2], ["mixed_followup", 3], ["no_overlap_observed_in_window", 4], ["structural_overlap_only", 5], ["insufficient_evidence", 6]]);
     values.sort((a, b) => (priority.get(a.diagnostic) ?? 99) - (priority.get(b.diagnostic) ?? 99)
         || b.exact_resource_matches_before_first_write - a.exact_resource_matches_before_first_write
         || b.exact_resource_matches - a.exact_resource_matches);
@@ -147,13 +147,13 @@ function renderList(type, values, omitted) {
     if (type === "patterns") {
         for (const item of values) { lines.push(`- ${item.pattern_id}: ${item.collapsed_operation_sequence.join(" → ") || "no tools"}; occurrences ${item.occurrences}; roots ${item.distinct_root_sessions}; total ${formatCost(item.total_cost)}; median ${formatNano(item.median_value_nano, item.total_cost.currency)}; scope ${item.scope}`); }
     } else if (type === "overlaps") {
-        for (const item of values) { lines.push(`- ${item.delegation_id}: historical subagent (untrusted) ${formatUntrusted(item.subagent_name ?? "unknown")}; ${item.diagnostic}; exact ${item.exact_resource_matches}; pre-write semantic ${item.semantic_exact_matches_before_first_write ?? "n/a"}; pre-write commands ${item.command_exact_matches_before_first_write ?? "n/a"}; post-write ${item.exact_resource_matches_after_first_write ?? "n/a"}; root ${item.root_session_id}`); }
+        for (const item of values) { lines.push(`- ${item.delegation_id}: historical subagent (untrusted) ${formatUntrusted(item.subagent_name ?? "unknown")}; ${item.diagnostic}; exact ${item.exact_resource_matches}; declared contexts ${item.declared_read_contexts?.length ?? 0}; pre-write semantic ${item.semantic_exact_matches_before_first_write ?? "n/a"}; pre-write commands ${item.command_exact_matches_before_first_write ?? "n/a"}; post-write ${item.exact_resource_matches_after_first_write ?? "n/a"}; root ${item.root_session_id}`); }
     } else if (type === "roots") {
         for (const item of values) { lines.push(`- ${item.root_session_id}: ${formatCost(item.cost)}; sessions ${item.sessions}; steps ${item.steps}; delegations ${item.delegations}${item.semantic_hint ? `; historical data (untrusted): ${formatUntrusted(item.semantic_hint)}` : ""}`); }
     } else if (type === "models" || type === "activities") {
         for (const item of values) { lines.push(`- ${type === "models" ? "historical model (untrusted) " : "activity "}${type === "models" ? formatUntrusted(item.key) : item.key}: ${formatCost(item.cost)}; ${formatUsage(item.usage)}; ${item.steps} steps; ${item.tools} tools`); }
     } else {
-        for (const item of values) { lines.push(`- historical subagent (untrusted) ${formatUntrusted(item.subagent)}: delegations ${item.delegations}; delegating ${formatCost(item.delegating_step_cost)}; child direct ${formatCost(item.child_direct_cost)}; child subtree ${formatCost(item.child_subtree_cost)}; output ${formatBytes(item.child_output_bytes)} bytes; ordered parent follow-up ${formatCost(item.parent_followup_cost)}; unassigned exposure ${formatCost(item.parent_exposure_cost)}; fallback additional ${formatCost(item.fallback_additional_cost)}; strong ${item.strong_repeated_work_signal ?? 0}; possible ${item.possible_repeated_work ?? 0}; mixed ${item.mixed_followup ?? 0}`); }
+        for (const item of values) { lines.push(`- historical subagent (untrusted) ${formatUntrusted(item.subagent)}: delegations ${item.delegations}; delegating ${formatCost(item.delegating_step_cost)}; child direct ${formatCost(item.child_direct_cost)}; child subtree ${formatCost(item.child_subtree_cost)}; output ${formatBytes(item.child_output_bytes)} bytes; ordered parent follow-up ${formatCost(item.parent_followup_cost)}; unassigned exposure ${formatCost(item.parent_exposure_cost)}; fallback additional ${formatCost(item.fallback_additional_cost)}; strong ${item.strong_repeated_work_signal ?? 0}; declared context ${item.declared_read_contexts ?? 0}; possible ${item.possible_repeated_work ?? 0}; mixed ${item.mixed_followup ?? 0}`); }
     }
     lines.push("", `Omitted records: ${omitted}`);
     return `${lines.join("\n")}\n`;

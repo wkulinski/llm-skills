@@ -1,5 +1,6 @@
 import { calculateStepCost } from "./pricing.mjs";
 import { bool, clampText, firstText, integer, nested, record, sha256, utf8Metrics } from "./util.mjs";
+import { extractReadEventFromCommand } from "../../../_shared/scripts/read-purpose.mjs";
 function partType(part) {
     return firstText(part.type) ?? "unknown";
 }
@@ -248,6 +249,24 @@ function parseSession(entry, rootSessionId, config, pricing, mode) {
                 const metadataState = record(state.metadata);
                 const category = toolCategory(config, toolName);
                 const task = category === "delegation";
+                const rawReadObservation = category === "shell"
+                    ? extractReadEventFromCommand(firstText(input.command, input.cmd))
+                    : null;
+                const readObservation = rawReadObservation
+                    ? {
+                        event: rawReadObservation.event,
+                        purpose: rawReadObservation.purpose,
+                        source: rawReadObservation.source,
+                        read_mode: rawReadObservation.read_mode,
+                        resource_kind: rawReadObservation.resource_kind ?? null,
+                        resource_key: rawReadObservation.resource_kind === "path"
+                            ? hashedResource("path", rawReadObservation.resource, normalizePath)
+                            : rawReadObservation.resource_kind === "scope"
+                                ? hashedResource("scope", rawReadObservation.resource, normalizeQuery)
+                                : null,
+                        delegation_id: rawReadObservation.delegation_id ?? null,
+                    }
+                    : null;
                 tools.push({
                     id: `${entry.session.id}:tool:${toolOrdinal}`,
                     session_id: entry.session.id,
@@ -273,6 +292,7 @@ function parseSession(entry, rootSessionId, config, pricing, mode) {
                     background: task ? bool(metadataState.background) : null,
                     semantic_hint: semanticHint(config, mode, category, input),
                     resource_keys: resourceKeys(category, input),
+                    read_observation: readObservation,
                     candidate_child_session_id: task ? firstText(metadataState.sessionId, metadataState.sessionID) : null,
                 });
                 toolOrdinal += 1;

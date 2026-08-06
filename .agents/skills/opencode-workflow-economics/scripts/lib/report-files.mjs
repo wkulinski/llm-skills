@@ -130,7 +130,7 @@ export function buildOverlapDetail(bundle, diagnostic) {
         artifact_type: "owe_overlap_detail",
         schema_version: 1,
         generated_at: bundle.generated_at,
-        interpretation_warning: "Overlap is diagnostic evidence. Strong repeated-work signals require ordered exact path/query/symbol intersections before the parent's first write; command matches are weaker, and post-write exact matches are mixed follow-up only. Only ordered post-child evidence contributes to repeated-work labels and follow-up cost; unordered or overlapping reads may be deliberate verification rather than wasted work.",
+        interpretation_warning: "Overlap is diagnostic evidence. Strong repeated-work signals require ordered exact path/query/symbol intersections before the parent's first write; command matches are weaker, and post-write exact matches are mixed follow-up only. Declared read context is workflow metadata, not proof of freshness or non-redundancy. Only ordered post-child evidence contributes to repeated-work labels and follow-up cost; unordered or overlapping reads may be deliberate verification rather than wasted work.",
         diagnostic,
         delegation,
         fallback_economics: fallback,

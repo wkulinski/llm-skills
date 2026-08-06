@@ -66,7 +66,13 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
 
 ## 3. Zasady bezpiecznej edycji
 - Nie nadpisuj cudzych zmian i nie edytuj plików „w ciemno”.
-- Przed modyfikacją pliku już zmienionego w repo przeczytaj jego aktualną treść i diff.
+- Przed modyfikacją pliku już zmienionego w repo przeczytaj jego aktualną treść i diff,
+  chyba że ważny odczyt obejmuje bieżącą wersję i zakres patcha, a od tego odczytu nie
+  wykryto zmiany.
+- `dirty`/`untracked` opisuje stan repozytorium, a nie samodzielnie nieaktualność wiedzy agenta.
+- Cel odczytu rozróżniaj jako: `discovery`, `read-before-write`, `verification`, `snapshot-refresh` albo `report-gap`.
+- `read-before-write` jest guardem bezpieczeństwa, a nie szerokim krokiem discovery. Jeśli aktualny kontekst obejmuje plik i nie wykryto zmiany od ostatniego odczytu, nie powtarzaj szerokiego odczytu tylko z powodu statusu `dirty`.
+- Etykieta celu odczytu jest deklarowaną telemetrią workflow; nie jest dowodem aktualności treści ani braku redundancji.
 - Nie używaj destrukcyjnych komend git bez wyraźnego polecenia użytkownika.
 - Commity wykonuj tylko po jednoznacznym poleceniu użytkownika i przez dedykowaną procedurę `$git-commit`.
 

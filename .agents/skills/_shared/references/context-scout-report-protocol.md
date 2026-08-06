@@ -39,6 +39,10 @@ outside the scout's read set and why the parent may need it. `--claim` and
 `--evidence` are for `add-finding`. `add-risk`, `add-omitted` and `set-next-step`
 require `--text`. Do not hand-write the final JSON.
 
+`add-covered-path` may additionally receive `--purpose`, `--source` and
+`--read-mode` to record declared read context. These fields are validated against
+the shared read-purpose enum and do not prove freshness or non-redundancy.
+
 Ledger and report output paths must be under `var/agent/cache` or the system
 temporary directory. The builder rejects writes to source and configuration
 paths.

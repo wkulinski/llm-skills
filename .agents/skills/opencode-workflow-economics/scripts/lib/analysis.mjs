@@ -103,6 +103,7 @@ export function analyzeRoots(parsedRoots, config, pricing, source) {
             unknown_activity_steps: allSteps.filter((step) => step.primary_activity === "unknown").length,
             recurring_pattern_groups: patternAnalysis.summary.recurring_groups,
             strong_repeated_work_signals: overlapAggregates.totals.strong_repeated_work_signal,
+            declared_read_contexts: overlapAggregates.totals.declared_read_contexts,
             possible_repeated_work_signals: overlapAggregates.totals.possible_repeated_work,
             total_usage: aggregateUsage(allSteps),
             total_cost: totalCost,
@@ -685,11 +686,14 @@ function aggregateOverlapAcrossRoots(diagnostics) {
             structural_overlap_only: 0,
             possible_repeated_work: 0,
             strong_repeated_work_signal: 0,
+            declared_read_context: 0,
+            declared_read_contexts: 0,
             mixed_followup: 0,
             insufficient_evidence: 0,
         };
         for (const item of values)
         { result[item.diagnostic] = (result[item.diagnostic] ?? 0) + 1; }
+        result.declared_read_contexts = values.filter((item) => (item.evidence?.declared_read_contexts?.length ?? 0) > 0).length;
         return result;
     };
     return {

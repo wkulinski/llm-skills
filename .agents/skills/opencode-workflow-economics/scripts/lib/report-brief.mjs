@@ -55,7 +55,7 @@ export function renderAnalysisBrief(bundle, index, options = {}) {
         `- Total API-equivalent cost: ${formatCost(bundle.summary.total_cost)}`,
         `- Delegations: ${bundle.summary.delegations}; configured fallback attempts: ${bundle.summary.fallback_attempts}`,
         `- Recurring structural patterns: ${bundle.summary.recurring_pattern_groups}`,
-        `- Repeated-work diagnostics: strong ${bundle.summary.strong_repeated_work_signals}, possible ${bundle.summary.possible_repeated_work_signals}`,
+        `- Repeated-work diagnostics: strong ${bundle.summary.strong_repeated_work_signals}, declared context ${bundle.summary.declared_read_contexts ?? 0}, possible ${bundle.summary.possible_repeated_work_signals}`,
         "",
     ].join("\n")});
     sections.push({text: ["### Top agents", "", ...bundle.aggregates.by_agent.slice(0, 3).map((row) =>
@@ -102,14 +102,14 @@ export function renderAnalysisBrief(bundle, index, options = {}) {
 
     sections.push({text: ["## Existing subagent diagnostics", "",
         ...(index.subagents.length === 0 ? ["- No valid linked subagent delegations were available."] : index.subagents.slice(0, settings.max_subagents).map((row) =>
-            `- Historical subagent (untrusted) ${formatUntrusted(row.subagent)}: ${row.delegations} delegations; strong ${row.strong_repeated_work_signal}; possible ${row.possible_repeated_work}; mixed ${row.mixed_followup}; no overlap observed ${row.no_overlap_observed_in_window ?? 0}`)), ""].join("\n"), kind: "subagents", record_count: Math.min(index.subagents.length, settings.max_subagents)});
+            `- Historical subagent (untrusted) ${formatUntrusted(row.subagent)}: ${row.delegations} delegations; strong ${row.strong_repeated_work_signal}; declared context ${row.declared_read_contexts ?? 0}; possible ${row.possible_repeated_work}; mixed ${row.mixed_followup}; no overlap observed ${row.no_overlap_observed_in_window ?? 0}`)), ""].join("\n"), kind: "subagents", record_count: Math.min(index.subagents.length, settings.max_subagents)});
 
     const overlaps = selectOverlaps(index, settings.max_overlap_diagnostics);
     for (const item of overlaps) {
         sections.push({text: [
             `## Overlap ${item.delegation_id}`,
             "",
-            `- Historical subagent (untrusted) ${formatUntrusted(item.subagent_name ?? "unknown")}: **${item.diagnostic}**; ordered exact ${item.ordered_exact_matches}; pre-write semantic ${item.semantic_exact_matches_before_first_write ?? "n/a"}; pre-write commands ${item.command_exact_matches_before_first_write ?? "n/a"}; post-write ${item.exact_resource_matches_after_first_write ?? "n/a"}; unordered ${item.unordered_exact_matches}; overlapping ${item.overlapping_exact_matches}; shared structural families ${item.shared_structural_family_count}`,
+            `- Historical subagent (untrusted) ${formatUntrusted(item.subagent_name ?? "unknown")}: **${item.diagnostic}**; declared contexts ${item.declared_read_contexts?.length ?? 0}; ordered exact ${item.ordered_exact_matches}; pre-write semantic ${item.semantic_exact_matches_before_first_write ?? "n/a"}; pre-write commands ${item.command_exact_matches_before_first_write ?? "n/a"}; post-write ${item.exact_resource_matches_after_first_write ?? "n/a"}; unordered ${item.unordered_exact_matches}; overlapping ${item.overlapping_exact_matches}; shared structural families ${item.shared_structural_family_count}`,
             `- Drill-down: \`${command} show overlap ${item.delegation_id}\``,
             "",
         ].join("\n"), kind: "overlaps"});
@@ -170,8 +170,9 @@ function selectPatterns(index, limit) {
 function selectOverlaps(index, limit) {
     const priority = new Map([
         ["strong_repeated_work_signal", 0],
-        ["possible_repeated_work", 1],
-        ["mixed_followup", 2],
+        ["declared_read_context", 1],
+        ["possible_repeated_work", 2],
+        ["mixed_followup", 3],
     ]);
     return index.overlaps
         .filter((item) => priority.has(item.diagnostic))
@@ -189,6 +190,7 @@ function renderProtectedFooter(bundle, command, omitted, settings) {
     lines.push(
         "- Structural patterns are not semantic task classes.",
         "- Parent overlap may represent deliberate verification rather than wasted work.",
+        "- Declared read context is workflow metadata; it changes interpretation only when correlation is unambiguous and does not prove freshness or non-redundancy.",
         "- Strong repeated-work signals require pre-write path/query/symbol evidence; commands are weaker and post-write matches are mixed follow-up only.",
         "- `primary_activity` is an additive navigation label, not the complete purpose of a step.",
         "- Never sum non-additive activity-signal or involved-step cost rows.",

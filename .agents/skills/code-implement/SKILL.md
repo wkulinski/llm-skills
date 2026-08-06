@@ -23,6 +23,7 @@ shared_files:
     - _shared/scripts/context-scout-hybrid-run.mjs
     - _shared/scripts/context-scout-report-builder.mjs
     - _shared/scripts/context-scout-report.mjs
+    - _shared/scripts/read-purpose.mjs
     - _shared/scripts/env-load.sh
     - _shared/scripts/targeted-check-decision.mjs
 ---
@@ -225,7 +226,7 @@ Minimalny format (utrzymuj spójnie):
   - `- R3 (DONE): Zmiana e-maila profilu działa w Core`
   - `  - Kryteria: Formularz zapisuje e-mail; flash sukcesu; użytkownik pozostaje zalogowany`
   - `  - Dowody: src/Core/UI/Controller/Profile/EmailController.php; sprawdzenie manualne`
-- **Dziennik odczytów**: dopisuj wyłącznie przez `<skill_dir>/scripts/state-readlog.mjs "<msg>"`.
+- **Dziennik odczytów**: dopisuj wyłącznie przez `<skill_dir>/scripts/state-readlog.mjs`; dla odczytów objętych obserwowalnością użyj strukturalnych flag `--purpose`, `--event`, `--source`, `--read-mode` oraz `--path`/`--scope` jako pierwszych argumentów, a zwykły komunikat pozostaje opcjonalny. Legacy free-text zachowuje dowolne późniejsze argumenty.
   - Przykład: `- [2026-01-16T21:20:00+01:00] rg "EntityConnection" -n src; git diff --stat`
 - **Dziennik iteracji**: dopisuj wyłącznie przez `<skill_dir>/scripts/state-log.mjs "<msg>"`.
   - Timestamp zawsze z systemu (`date --iso-8601=seconds`); zero wpisów ręcznych.
@@ -276,9 +277,28 @@ Traktuj plik jako **krytyczny**, jeśli spełnia dowolny warunek:
 ### “Plik już zmieniony w repo” (guard: read-before-write)
 To nie jest “krytyczność” sama w sobie. To guard przeciw nadpisaniu cudzych/ręcznych zmian.
 
-Jeśli plik jest już zmieniony w repo (tracked/untracked) i masz go edytować:
+Jeśli plik jest już zmieniony w repo (tracked/untracked) i nie masz wiarygodnego
+odczytu jego aktualnej wersji dla zakresu patcha:
 - przed edycją **obowiązkowo** przeczytaj diff i bieżącą treść (zakaz edycji “w ciemno”),
 - staraj się robić minimalne patche, żeby nie nadpisać ręcznych zmian użytkownika.
+Jeśli aktualny raport lub wcześniejszy odczyt obejmuje potrzebny zakres i nie
+wykryto zmiany od tego odczytu, reuse kontekstu jest dozwolony; status dirty sam
+w sobie nie wymusza pełnego odczytu.
+
+Status `dirty`/`untracked` nie oznacza automatycznie, że cały plik trzeba ponownie
+odkrywać. Rozróżniaj cel odczytu:
+
+- `discovery` — szerokie rozpoznanie struktury lub zależności;
+- `read-before-write` — punktowy guard przed patchem chroniący cudzą/ręczną zmianę;
+- `verification` — sprawdzenie wyniku albo konkretnego kontraktu;
+- `snapshot-refresh` — odczyt po wykryciu zmiany stanu repozytorium;
+- `report-gap` — uzupełnienie luki w zwalidowanym raporcie.
+
+Jeśli zwalidowany raport obejmuje plik, a od jego odczytu nie wykryto zmiany,
+reuse raportu zastępuje szerokie `discovery`. Przed edycją nadal wykonaj tylko
+guard wymagany przez aktualność pliku, zakres patcha lub jawne wymaganie użytkownika.
+Cel i zakres odczytu loguj strukturalnie przez `state-readlog.mjs` obok zwykłego
+Dziennika odczytów; etykieta jest telemetrią, nie dowodem aktualności treści.
 
 ### “Rejestr wymagań”
 To krótka, numerowana lista wymagań z prompta (R1..Rn), utrzymywana w `STATE_PATH`.
@@ -390,10 +410,12 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
    - ustal komendy narzędziowe dla repo (co najmniej `composer`, `console`, `yarn`, `codecept`) wyłącznie przez `resolve_tool_cmd`,
    - `resolve_tool_cmd` traktuj jako jedyne źródło prawdy; aktywne pliki env repo są ładowane automatycznie w resolverze,
    - nie mieszaj wielu wariantów entrypointów w ramach jednego zadania.
-6. Przed zmianą krytycznego pliku **lub** przed edycją pliku, który jest już zmieniony w repo (tracked/untracked):
+6. Przed zmianą krytycznego pliku **lub** przed edycją pliku, którego aktualnej wersji
+   dla zakresu patcha nie obejmuje ważny odczyt:
    - przeczytaj diff (`git diff -- <plik>`) i aktualną treść (relewantne sekcje),
-   - dopiero potem edytuj.
-7. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) albo po otrzymaniu raportu helpera lub subagenta dopisz wpis do Dziennika odczytów przez `<skill_dir>/scripts/state-readlog.mjs "<msg>"` (możesz grupować kilka odczytów w jeden wpis).
+   - dopiero potem edytuj. Status tracked/untracked sam nie unieważnia odczytu,
+     jeśli nie wykryto zmiany od jego wykonania.
+7. Po każdym realnym odczycie lub komendzie kontekstowej (np. `rg`, `sed`, `git diff`) albo po otrzymaniu raportu helpera lub subagenta dopisz wpis do Dziennika odczytów przez `<skill_dir>/scripts/state-readlog.mjs` (możesz grupować kilka odczytów w jeden wpis). Jeśli wpis ma być analizowany przez OWE, dodaj zamknięty cel odczytu; `report-reuse` rejestruj jako osobne zdarzenie bez udawania odczytu pliku.
 8. Jeśli w trakcie implementacji wychodzi, że trzeba zmodyfikować plik, który nie wynika wprost z zadania:
    - jeśli to **krytyczny plik**: zatrzymaj się i dopytaj użytkownika, czy taki scope jest akceptowalny,
    - jeśli to **nie jest krytyczny plik**: nie “zasypuj pytaniami” — spróbuj znaleźć rozwiązanie w obrębie ustalonego zakresu; jeśli to niemożliwe, wykonaj minimalną zmianę konieczną technicznie i jawnie zaraportuj to w podsumowaniu.

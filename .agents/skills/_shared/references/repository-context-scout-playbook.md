@@ -65,6 +65,9 @@ powiązanego z kryterium lub ryzykiem.
    rodzic może potrzebować z konkretnym powodem. Nie powtarzaj odczytów z
    `covered` bez uzasadnienia wynikającego z read-before-write, zmiany snapshotu,
    luki w raporcie albo jawnego wymagania użytkownika.
+   Jeśli zapisujesz cel odczytu, użyj jednej z etykiet `discovery`,
+   `read-before-write`, `verification`, `snapshot-refresh` albo `report-gap`;
+   jest to deklarowany kontekst, nie dowód aktualności pliku.
 
 8. Nie wnioskuj o zawartości pliku z jego nazwy. Claim musi być bezpośrednio
    potwierdzony minimalnym zakresem linii; nie cytuj całego pliku, jeśli kilka

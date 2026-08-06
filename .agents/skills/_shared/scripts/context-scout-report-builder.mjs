@@ -4,6 +4,7 @@ import {tmpdir} from "node:os";
 import {dirname, isAbsolute, relative, resolve} from "node:path";
 import {validateScoutReport} from "./context-scout-report.mjs";
 import {readCriteriaFile, readCriteriaIds} from "./context-criteria.mjs";
+import {normalizeReadObservation, normalizeReadPath} from "./read-purpose.mjs";
 
 const STATUSES = new Set(["COMPLETE", "INCOMPLETE", "BLOCKED"]);
 const MODES = new Set(["targeted", "cross-layer"]);
@@ -289,12 +290,27 @@ function initLedger(ledgerPath, options) {
 function addCoveredPath(ledgerPath, options) {
     const ledger = readLedger(ledgerPath);
     const evidence = {
-        path: requireValue(options, "path"),
+        path: normalizeReadPath(requireValue(options, "path")),
         line_start: Number(requireValue(options, "line-start")),
         line_end: Number(requireValue(options, "line-end")),
     };
     if (options.locator !== undefined) { evidence.locator = String(options.locator); }
     if (options.relation !== undefined) { evidence.relation = String(options.relation); }
+    if (options.purpose !== undefined || options.event !== undefined || options.source !== undefined || options["read-mode"] !== undefined) {
+        const observation = normalizeReadObservation({
+            event: options.event,
+            purpose: options.purpose,
+            source: options.source ?? "scout",
+            read_mode: options["read-mode"] ?? "range",
+            resource_kind: "path",
+            path: evidence.path,
+        });
+        if (!observation.valid) { throw new Error(observation.errors.join("; ")); }
+        evidence.event = observation.observation.event;
+        evidence.purpose = observation.observation.purpose;
+        evidence.source = observation.observation.source;
+        evidence.read_mode = observation.observation.read_mode;
+    }
     validateEvidenceNow(evidence, ledger.head);
     ledger.read_coverage ??= {covered: [], follow_up: []};
     if (ledger.read_coverage.covered.length >= 10) { throw new Error("read_coverage.covered exceeds 10 paths"); }
@@ -306,7 +322,7 @@ function addCoveredPath(ledgerPath, options) {
 
 function addFollowUpPath(ledgerPath, options) {
     const ledger = readLedger(ledgerPath);
-    const path = requireValue(options, "path");
+    const path = normalizeReadPath(requireValue(options, "path"));
     const reason = requireValue(options, "reason");
     if (path.startsWith("/") || path.includes("..") || path.includes("...")) { throw new Error("follow-up path must be repo-relative without shorthand"); }
     ledger.read_coverage ??= {covered: [], follow_up: []};
