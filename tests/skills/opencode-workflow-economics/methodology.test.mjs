@@ -18,7 +18,7 @@ describe("OWE methodology manifest", () => {
             fingerprint_version: "operation_fingerprint_v2",
             pattern_grouping_version: "exact_fingerprint_identity_v2",
             representative_sampling_version: "representative_sampling_v2",
-            overlap_version: "deterministic_evidence_rules_v4_no_structural_classifier",
+            overlap_version: "deterministic_evidence_rules_v5_declared_read_context",
             effective_thresholds: {
                 fingerprints: {step_count_maxima: [1, 4, 8]},
                 patterns: {min_occurrences: 2},

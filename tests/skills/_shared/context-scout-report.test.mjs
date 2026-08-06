@@ -89,4 +89,15 @@ describe("context scout report evidence discipline", () => {
         expect(strict.valid).toBe(false);
         expect(strict.errors.join("\n")).toMatch(/forbidden negative or exhaustive claim/);
     });
+
+    it("requires complete structured read metadata once read purpose is declared", () => {
+        const evidence = {path: "AGENTS.md", line_start: 1, line_end: 1, purpose: "discovery"};
+        const result = validateScoutReport(report({
+            findings: [{...report().findings[0], evidence: [evidence]}],
+            coverage: [{criterion_id: "C1", status: "covered", evidence: [evidence]}],
+        }), {criteria: new Set(["C1"])});
+
+        expect(result.valid).toBe(false);
+        expect(result.errors.join("\n")).toMatch(/structured metadata must include/);
+    });
 });

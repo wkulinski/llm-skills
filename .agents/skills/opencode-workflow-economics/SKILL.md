@@ -111,6 +111,7 @@ node <skill_dir>/scripts/owe.mjs list patterns --view high-cost-read-only --limi
 node <skill_dir>/scripts/owe.mjs show pattern <pattern-id>
 
 node <skill_dir>/scripts/owe.mjs list overlaps --diagnostic strong_repeated_work_signal
+node <skill_dir>/scripts/owe.mjs list overlaps --diagnostic declared_read_context
 node <skill_dir>/scripts/owe.mjs show overlap <delegation-id>
 
 node <skill_dir>/scripts/owe.mjs list roots --sort cost --limit 10
@@ -181,6 +182,7 @@ Use these diagnostic levels:
 - `no_overlap_observed_in_window`;
 - `possible_repeated_work`;
 - `strong_repeated_work_signal`;
+- `declared_read_context`;
 - `mixed_followup`;
 - `insufficient_evidence`.
 
@@ -189,6 +191,11 @@ Interpret them conservatively:
 - exact path/query/symbol/command matches are stronger than similar operation sequences;
 - overlap before the parent's first write is more suggestive of repeated discovery;
 - reads after writes or during verification may be deliberate validation;
+- `declared_read_context` is emitted when a structured read-purpose event is
+  unambiguously correlated with an exact pre-write path match and no stronger
+  repeated-work label wins; the declared context remains attached as evidence
+  when a stronger label is retained. It is workflow metadata, not proof of
+  freshness or non-redundancy;
 - `strong_repeated_work_signal` requires its threshold from ordered pre-write path/query/symbol intersections only;
 - command matches are a separate weaker signal, and post-write exact matches are reported as `mixed_followup` rather than strengthening `strong`;
 - shared operation types, structural families, Jaccard and LCS are bounded descriptive context only; they never raise a repeated-work label;
@@ -212,7 +219,7 @@ For each important subagent or hybrid family consider:
 - child direct and subtree cost;
 - returned output size;
 - fallback frequency and additional fallback cost;
-- distribution of no-overlap, mixed, possible, and strong repeated-work diagnostics;
+- distribution of no-overlap, declared-context, mixed, possible, and strong repeated-work diagnostics;
 - whether the parent proceeds to implementation/verification or repeats discovery.
 
 Do not claim why a fallback occurred solely from sequence. Do not attribute all parent follow-up cost to the child result.

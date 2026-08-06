@@ -153,6 +153,7 @@ function summarizeOverlap(item, bundle) {
         pre_write_symbol_count: item.evidence?.pre_write_symbol_count ?? 0,
         command_exact_matches_before_first_write: item.evidence?.command_exact_matches_before_first_write ?? 0,
         exact_resource_matches_after_first_write: item.evidence?.exact_resource_matches_after_first_write ?? 0,
+        declared_read_contexts: declaredReadContexts(item),
         ordered_exact_matches: item.evidence?.ordered_exact_matches ?? 0,
         unordered_exact_matches: item.evidence?.unordered_exact_matches ?? 0,
         overlapping_exact_matches: item.evidence?.overlapping_exact_matches ?? 0,
@@ -167,6 +168,10 @@ function summarizeOverlap(item, bundle) {
         parent_exposure_cost: item.parent_exposure?.total_cost ?? null,
         fallback_additional_cost: fallback?.additional_cost ?? null,
     };
+}
+
+function declaredReadContexts(item) {
+    return Array.isArray(item.evidence?.declared_read_contexts) ? item.evidence.declared_read_contexts : [];
 }
 
 function summarizeRoot(root, currency) {
@@ -189,6 +194,7 @@ function summarizeRoot(root, currency) {
 function buildOverlapViews(overlaps) {
     const result = {
         strong_repeated_work_signal: [],
+        declared_read_context: [],
         possible_repeated_work: [],
         mixed_followup: [],
         structural_overlap_only: [],

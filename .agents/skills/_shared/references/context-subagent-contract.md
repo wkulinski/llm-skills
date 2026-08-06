@@ -216,7 +216,7 @@ Opcjonalne `read_coverage` opisuje read-set przekazywany rodzicowi:
 {
   "read_coverage": {
     "covered": [
-      {"path": "repo/file", "line_start": 1, "line_end": 2, "locator": "Symbol", "relation": "defines"}
+      {"path": "repo/file", "line_start": 1, "line_end": 2, "locator": "Symbol", "relation": "defines", "purpose": "discovery", "source": "scout", "read_mode": "range"}
     ],
     "follow_up": [
       {"path": "repo/other-file", "reason": "konkretny powód punktowego odczytu przez rodzica"}
@@ -226,8 +226,18 @@ Opcjonalne `read_coverage` opisuje read-set przekazywany rodzicowi:
 ```
 
 `covered` ma maksymalnie 10 ścieżek, a `follow_up` maksymalnie 8. Rodzic nie
-powinien ponownie czytać ścieżki z `covered`, poza read-before-write, zmianą
-snapshotu, luką w raporcie albo jawnym wymaganiem użytkownika.
+powinien ponownie czytać ścieżki z `covered`, poza punktowym guardem
+`read-before-write`, gdy raport nie obejmuje bieżącej wersji lub zakresu patcha,
+zmianą snapshotu, luką w raporcie albo jawnym wymaganiem użytkownika. Sam status
+`dirty`/`untracked` nie unieważnia ważnego odczytu.
+
+`purpose` jest opcjonalną, deklarowaną etykietą celu odczytu. Jeśli pojawia się
+którekolwiek pole strukturalnego kontekstu, evidence musi zawierać komplet
+`event`, `purpose`, `source` i `read_mode`. Dozwolone wartości `purpose` to
+`discovery`, `read-before-write`, `verification`, `snapshot-refresh` oraz
+`report-gap`. `source` może wskazywać `main`, `parent`, `scout`, `system` albo
+`unknown`, a `read_mode` — `full`, `range` albo `report`. Te pola opisują intencję
+workflow; nie są dowodem aktualności treści pliku ani dowodem braku redundancji.
 
 `claim_type`, `confidence` i co najmniej jeden literalny `anchor` są wymagane w każdym findingu. `observed` oznacza
 bezpośredni fakt z evidence, `structural` relację lub definicję widoczną w kodzie,

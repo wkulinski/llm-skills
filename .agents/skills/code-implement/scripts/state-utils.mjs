@@ -1,4 +1,4 @@
-import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
+import {appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {dirname, isAbsolute, join} from "node:path";
 import {fileURLToPath} from "node:url";
 
@@ -19,6 +19,15 @@ export function resolveStatePath(cachePath) {
         ...cacheRoot,
         absolute: join(cacheRoot.absolute, "code-implement/state.md"),
         display: `${cacheRoot.display}/code-implement/state.md`,
+    };
+}
+
+export function resolveReadEventsPath(cachePath) {
+    const cacheRoot = resolveCacheRoot(cachePath);
+    return {
+        ...cacheRoot,
+        absolute: join(cacheRoot.absolute, "code-implement/read-events.jsonl"),
+        display: `${cacheRoot.display}/code-implement/read-events.jsonl`,
     };
 }
 
@@ -58,6 +67,11 @@ export function readText(filePath) {
 export function writeText(filePath, content) {
     ensureParentDir(filePath);
     writeFileSync(filePath, content, "utf-8");
+}
+
+export function appendJsonLine(filePath, value) {
+    ensureParentDir(filePath);
+    appendFileSync(filePath, `${JSON.stringify(value)}\n`, {encoding: "utf-8", flag: "a"});
 }
 
 export function stateExists(statePath) {

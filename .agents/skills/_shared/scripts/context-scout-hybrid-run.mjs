@@ -190,7 +190,7 @@ function buildTaskPrompt({agent, inputs, reportPath, ledgerPath, mode}) {
         "Use context-scout-report-builder.mjs and the repository contract to produce the report.",
         `Initialize the report ledger exactly at: ${ledgerPath}`,
         discoveryBudget,
-        "Record read_coverage.covered for exact paths read and read_coverage.follow_up for at most 8 parent follow-ups with concrete reasons.",
+        "Record read_coverage.covered for exact paths read and read_coverage.follow_up for at most 8 parent follow-ups with concrete reasons. When a covered path has a meaningful declared purpose, include purpose/source/read_mode from the shared read-purpose enum; these fields are context metadata, not freshness proof.",
         "Every finding must declare claim_type (observed, structural, inferred), confidence (high, medium, low), and anchors containing literal terms present in the cited evidence; never infer a field or behavior from a filename, symbol name, or analogy.",
         primary ? "Default to exactly one compact, parent-ready finding per criterion and keep the complete report near 1000 tokens. Add a second finding only when one criterion spans independent roles that cannot be supported honestly by one claim." : "",
         primary ? "Use at most three minimal evidence ranges per finding. When finding evidence already proves the criterion, keep coverage[].evidence empty instead of duplicating the same ranges; record actual reads only in read_coverage.covered." : "",

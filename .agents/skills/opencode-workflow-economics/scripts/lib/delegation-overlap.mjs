@@ -1,7 +1,7 @@
 import { aggregateResourceKeys, operationName } from "./fingerprints.mjs";
 import { aggregateCost } from "./costs.mjs";
 
-export const DELEGATION_OVERLAP_VERSION = "deterministic_evidence_rules_v4_no_structural_classifier";
+export const DELEGATION_OVERLAP_VERSION = "deterministic_evidence_rules_v5_declared_read_context";
 
 const DEFAULTS = {
     max_parent_steps: 8,
@@ -178,6 +178,7 @@ function compareWork(delegation, childTools, childSteps, childSpans, followup, c
     const semanticExactBeforeWrite = countShared(semanticBeforeWrite);
     const commandExactBeforeWrite = sharedBeforeWrite.commands.length;
     const exactAfterWrite = countShared(sharedAfterWrite);
+    const declaredReadContexts = declaredReadContext(beforeWrite, sharedBeforeWrite.paths);
     const strongExact = semanticBeforeWrite.paths.length >= 3
         || semanticBeforeWrite.queries.length >= 2
         || (semanticBeforeWrite.queries.length >= 1 && semanticBeforeWrite.paths.length >= 1)
@@ -190,6 +191,9 @@ function compareWork(delegation, childTools, childSteps, childSpans, followup, c
     }
     else if (strongExact) {
         diagnostic = "strong_repeated_work_signal";
+    }
+    else if (declaredReadContexts.length > 0) {
+        diagnostic = "declared_read_context";
     }
     else if (exactAfterWrite > 0) {
         diagnostic = "mixed_followup";
@@ -209,6 +213,10 @@ function compareWork(delegation, childTools, childSteps, childSpans, followup, c
     }
 
     const limitations = ["Repeated reads may be deliberate verification rather than redundant discovery.", "Raw file contents and raw tool outputs were not compared."];
+    if (declaredReadContexts.length > 0) {
+        limitations.push("Declared read purpose is workflow metadata, not proof of file freshness or absence of redundant work.");
+        limitations.push("Exact resource overlap remains visible; the declared context changes interpretation, not raw counts or costs.");
+    }
     limitations.push("Command matches are a weaker signal and never contribute to strong_repeated_work_signal.");
     if (exactAfterWrite > 0)
     { limitations.push("Exact matches after the parent's first write are reported as mixed_followup and do not strengthen strong_repeated_work_signal."); }
@@ -239,6 +247,7 @@ function compareWork(delegation, childTools, childSteps, childSpans, followup, c
             pre_write_symbol_count: sharedBeforeWrite.symbols.length,
             command_exact_matches_before_first_write: commandExactBeforeWrite,
             exact_resource_matches_after_first_write: exactAfterWrite,
+            declared_read_contexts: declaredReadContexts,
             ordered_exact_matches: orderedExact,
             unordered_exact_matches: unorderedExact,
             overlapping_exact_matches: overlappingExact,
@@ -283,6 +292,8 @@ function countDiagnostics(values) {
         structural_overlap_only: counts.structural_overlap_only ?? 0,
         possible_repeated_work: counts.possible_repeated_work ?? 0,
         strong_repeated_work_signal: counts.strong_repeated_work_signal ?? 0,
+        declared_read_context: counts.declared_read_context ?? 0,
+        declared_read_contexts: values.filter((item) => (item.evidence?.declared_read_contexts?.length ?? 0) > 0).length,
         mixed_followup: counts.mixed_followup ?? 0,
         insufficient_evidence: counts.insufficient_evidence ?? 0,
     };
@@ -385,6 +396,7 @@ function emptyEvidence(childTools, followup) {
         pre_write_symbol_count: 0,
         command_exact_matches_before_first_write: 0,
         exact_resource_matches_after_first_write: 0,
+        declared_read_contexts: [],
         ordered_exact_matches: 0,
         unordered_exact_matches: 0,
         overlapping_exact_matches: 0,
@@ -442,6 +454,26 @@ function toolsAfterFirstWrite(tools) {
     const sorted = tools.slice().sort(compareToolOrder);
     const index = sorted.findIndex((tool) => tool.tool_category === "write");
     return index === -1 ? [] : sorted.slice(index + 1);
+}
+
+function declaredReadContext(tools, sharedPaths) {
+    const shared = new Set(sharedPaths);
+    const contexts = new Map();
+    for (const tool of tools) {
+        const observation = tool.read_observation;
+        if (!observation || observation.event !== "read" || !observation.resource_key || !shared.has(observation.resource_key)) {
+            continue;
+        }
+        const key = `${observation.purpose ?? "unknown"}:${observation.source ?? "unknown"}`;
+        contexts.set(key, {
+            purpose: observation.purpose ?? "unknown",
+            source: observation.source ?? "unknown",
+            read_mode: observation.read_mode ?? "unknown",
+            event: observation.event,
+            matched_path_count: (contexts.get(key)?.matched_path_count ?? 0) + 1,
+        });
+    }
+    return [...contexts.values()].sort((a, b) => a.purpose.localeCompare(b.purpose) || a.source.localeCompare(b.source));
 }
 
 function semanticResourceKeys(keys) {

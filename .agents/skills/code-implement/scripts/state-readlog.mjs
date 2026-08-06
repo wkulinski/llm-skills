@@ -2,7 +2,8 @@
 import {existsSync, readFileSync, writeFileSync} from "node:fs";
 import {pathToFileURL} from "node:url";
 
-import {formatIsoSeconds, insertLogLine, resolveStatePath} from "./state-utils.mjs";
+import {formatReadObservation, parseReadEventArgs} from "../../_shared/scripts/read-purpose.mjs";
+import {appendJsonLine, formatIsoSeconds, insertLogLine, resolveReadEventsPath, resolveStatePath} from "./state-utils.mjs";
 
 export function runStateReadLog(argv, {cachePath, now = new Date()} = {}) {
     const {absolute: statePath} = resolveStatePath(cachePath);
@@ -15,8 +16,24 @@ export function runStateReadLog(argv, {cachePath, now = new Date()} = {}) {
         return {code: 1, stderr: "ERROR: missing log message\n"};
     }
 
-    const logLine = `- [${formatIsoSeconds(now)}] ${argv.join(" ")}`;
+    const parsed = parseReadEventArgs(argv);
+    if (parsed.errors.length > 0) {
+        return {code: 1, stderr: `ERROR: ${parsed.errors.join("; ")}\n`};
+    }
+
+    const timestamp = formatIsoSeconds(now);
+    const logMessage = parsed.structured
+        ? [formatReadObservation(parsed.observation), ...parsed.message].join(" ").trim()
+        : argv.join(" ");
+    const logLine = `- [${timestamp}] ${logMessage}`;
     const content = readFileSync(statePath, "utf-8");
+    if (parsed.structured) {
+        appendJsonLine(resolveReadEventsPath(cachePath).absolute, {
+            version: 1,
+            observed_at: timestamp,
+            ...parsed.observation,
+        });
+    }
     writeFileSync(statePath, insertLogLine(content, "### Dziennik odczytów", logLine), "utf-8");
     return {code: 0};
 }

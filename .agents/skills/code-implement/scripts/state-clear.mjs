@@ -2,17 +2,24 @@
 import {rmSync} from "node:fs";
 import {pathToFileURL} from "node:url";
 
-import {resolveStatePath, stateExists} from "./state-utils.mjs";
+import {resolveReadEventsPath, resolveStatePath, stateExists} from "./state-utils.mjs";
 
 export function runStateClear({cachePath} = {}) {
     const {absolute: statePath, display} = resolveStatePath(cachePath);
+    const {absolute: readEventsPath, display: readEventsDisplay} = resolveReadEventsPath(cachePath);
+    const statePresent = stateExists(statePath);
+    const readEventsPresent = stateExists(readEventsPath);
 
-    if (!stateExists(statePath)) {
+    if (!statePresent && !readEventsPresent) {
         return {code: 0, stdout: `${display} (missing; nothing to clear)\n`};
     }
 
     rmSync(statePath, {force: true});
-    return {code: 0, stdout: `${display} (cleared)\n`};
+    rmSync(readEventsPath, {force: true});
+    if (statePresent && readEventsPresent) {
+        return {code: 0, stdout: `${display} (cleared; ${readEventsDisplay} cleared)\n`};
+    }
+    return {code: 0, stdout: `${statePresent ? display : readEventsDisplay} (cleared)\n`};
 }
 
 async function main() {
