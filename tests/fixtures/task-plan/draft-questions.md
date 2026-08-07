@@ -17,8 +17,14 @@
 
 - **WP1-Q1 [BLOCKING]** Jakie kody HTTP obowiązują dla błędów domenowych, uprawnień i CSRF?
   - Wpływ: Definiuje kryteria akceptacji kontraktu odpowiedzi.
-  - Wymagana decyzja: Wskazać kody HTTP.
+  - Wymagana decyzja: Wybrać wariant kontraktu i wskazać kody HTTP.
   - Status: `open`
+  - Kontekst: Decyzja ustala kontrakt odpowiedzi i wpływa na kryteria akceptacji WP1.
+  - Opcje:
+    - `existing` — Zachować istniejące konwencje
+      - Konsekwencja/tradeoff: Ogranicza zakres i ryzyko kompatybilności, ale utrwala obecny kontrakt.
+    - `redesign` — Wprowadzić nowy kontrakt
+      - Konsekwencja/tradeoff: Daje spójniejszy interfejs, ale rozszerza zakres i może wymagać zmian klientów.
 
 #### Pytania nieblokujące
 

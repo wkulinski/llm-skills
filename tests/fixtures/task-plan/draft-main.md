@@ -17,6 +17,17 @@ source_updated_at: 2026-01-01T00:00:00Z
 - source_data: issue body and comments
 - source_ref: https://github.com/acme/demo/issues/123
 
+## Session strategy
+
+- Mode: `planning`
+- Rationale: Plan the accepted goal from the fetched issue before package decisions.
+- Stages: 1. intake; 2. planning; 3. review; 4. decisions
+- Work packages: WP1, WP2
+- Session boundary recommendation: resume after the review gate opens.
+- Dependencies: source fetch, repository context
+- Entry criteria: source fetched and assessed.
+- Exit criteria: every blocking question has an explicit user decision.
+
 ## Goal and scope
 
 Implement the explicitly accepted goal without expanding the source scope.
@@ -26,7 +37,7 @@ Implement the explicitly accepted goal without expanding the source scope.
 - WP1 — core package, status `pending`.
 - WP2 — package pending review and a later decision.
 - No package decision is requested before the review gate opens.
-- After an explicit `separate`: WP2 — wydzielony do [osobnego planu](./issue-123-wp-wp2-import-plan.md)
+- After an explicit `separate`: WP2 — wydzielony do [osobnego planu](./issue-123-wp-wp2-plan.md)
 
 ## Decisions and open questions
 

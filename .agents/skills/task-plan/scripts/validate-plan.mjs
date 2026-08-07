@@ -14,6 +14,9 @@ import {
     canOpenPackageDecisions,
     validateDecisionHistory,
     validatePackageRecords,
+    validateQuestionDecisionPropagation,
+    validateSessionStrategy,
+    validateUserDecisionRecords,
     PLAN_STATUSES,
     readSimplificationResult,
     REDUNDANT_DESIGN_ELEMENT,
@@ -375,6 +378,13 @@ function validateStateRecords(state) {
     }, {
         requireOwnershipReview: true,
     }));
+    errors.push(...validateSessionStrategy(state.session_strategy).map((error) => {
+        return `session_strategy: ${error}`;
+    }));
+    errors.push(...validateUserDecisionRecords(state.user_decisions ?? []).map((error) => {
+        return `user_decisions: ${error}`;
+    }));
+    errors.push(...validateQuestionDecisionPropagation(state));
     return errors;
 }
 

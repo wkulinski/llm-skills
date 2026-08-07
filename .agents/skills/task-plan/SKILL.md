@@ -95,6 +95,7 @@ Każdy plan przechodzi przez następujące etapy w tej kolejności:
 
 ```text
 source/intake
+  → initial draft zapisany w docs/draft
   → Plan v1
   → review krytyczny i findings
   → rewizja planu oraz kolejne review (maks. 3 iteracje)
@@ -123,6 +124,30 @@ Wykonano:
 Następny dozwolony krok:
 Niedozwolone jeszcze:
 ```
+
+### Draft jako żywy artefakt workflow
+
+Po przejściu bramki intencji task-plan najpierw tworzy atomowo główny draft w
+`docs/draft/`, a dopiero potem pobiera źródło lub wykonuje rozpoznanie
+repozytorium. Draft jest niezależnym artefaktem roboczym: może przechowywać
+pochodzenie i referencje do `source_data`, ale nie jest źródłem wejściowym ani
+jego kopią podlegającą nadpisaniu.
+
+Obowiązuje kolejność:
+
+1. ustal stabilną tożsamość wejścia i ścieżkę draftu;
+2. zapisz minimalny, poprawny szkic Markdown w `docs/draft/`;
+3. po każdym istotnym kroku analizy aktualizuj ten sam plik atomowo;
+4. przed każdą serią pytań zapisz bieżącą wersję draftu i pokaż użytkownikowi
+   jej ścieżkę oraz wersję;
+5. po odpowiedzi użytkownika najpierw zaktualizuj draft, rozstrzygnięcia,
+   zależności i strategię sesji, a dopiero potem zadawaj kolejne pytania;
+6. po błędzie źródła lub zapisu zachowaj ostatni poprawny draft albo utwórz
+   częściowy draft z miejscem zatrzymania. Końcowy artefakt task-plan jest
+   zawsze plikiem `.md` pod `docs/draft/`.
+
+Nie wolno emitować pytania, którego aktualna treść, kontekst i opcje nie są już
+zmaterializowane w draftcie.
 
 ## Trigger i bramka intencji
 
@@ -458,6 +483,48 @@ workflow task-plan. Dodatkowa reprezentacja w innym bounded context może być
 uzasadniona tylko przez powyższy kontrakt cross-context, a nie przez samą nazwę
 albo podobieństwo struktury.
 
+## Strategia sesji
+
+Każdy plan zawiera strategię sesji. Strategia jest rekomendacją organizacji
+realizacji, a nie automatycznym wykonaniem ani drugim workflow. Musi określać:
+
+- tryb: `single-session`, `staged` albo `hybrid`;
+- uzasadnienie podziału lub braku podziału;
+- etapy `S1`, `S2`, ... z tytułem, celem, przypisanymi WP, zależnościami,
+  granicą sesji oraz warunkami wejścia i wyjścia;
+- rekomendację, czy kolejny etap realizować w tej samej, czy w oddzielnej
+  sesji.
+
+Nie obowiązuje mechaniczna zasada „jeden WP = jedna sesja”. Pakiety można
+łączyć, gdy mają wspólną semantykę, kryteria lub cykl weryfikacji. Oddzielną
+sesję rekomenduj, gdy występuje silna zależność, duże ryzyko, osobny bounded
+context albo potrzeba niezależnego review.
+
+Minimalny model danych strategii:
+
+```yaml
+session_strategy:
+  mode: staged
+  rationale: "WP1 stabilizuje kontrakt przed WP2."
+  stages:
+    - id: S1
+      title: "Kontrakt"
+      rationale: "Ustalić wspólny kontrakt przed runtime."
+      work_package_ids: [WP1]
+      dependencies: []
+      session_boundary: separate-session
+      entry_criteria: ["Źródło i zakres są potwierdzone."]
+      exit_criteria: ["WP1 ma jawne kryteria i decyzję."]
+  dependencies: ["WP2 depends_on WP1"]
+  session_boundary_recommendation: "WP2 rozpocząć w nowej sesji."
+  entry_criteria: ["Przeszła bramka intencji."]
+  exit_criteria: ["Każdy etap ma terminalny wynik."]
+```
+
+Strategię aktualizuj po zmianie zakresu lub decyzji użytkownika. Jeżeli decyzja
+zmienia grupowanie WP albo granice sesji, propaguj ją także do tej sekcji i
+zapisz w historii rewizji.
+
 ## Work packages
 
 Jeden materiał źródłowy tworzy jeden główny plan, który może zawierać wiele
@@ -560,13 +627,13 @@ planie nadrzędnym zapisuje link do niego. Nazwa i minimalne metadane są
 deterministyczne:
 
 ```text
-docs/draft/issue-<id>-wp-<wpid>-<package-slug>-plan.md
+docs/draft/issue-<id>-wp-<wpid>-plan.md
 ```
 
 ```yaml
 source_kind: derived-work-package
 parent_issue: 123
-parent_draft: issue-123-main-title-plan.md
+parent_draft: issue-123-plan.md
 work_package_id: WP2
 plan_status: needs-clarification
 ```
@@ -574,7 +641,7 @@ plan_status: needs-clarification
 Wpis w planie nadrzędnym wskazuje wynik operacji, np.:
 
 ```md
-WP2 — wydzielony do [osobnego planu](./issue-123-wp-wp2-import-plan.md)
+WP2 — wydzielony do [osobnego planu](./issue-123-wp-wp2-plan.md)
 ```
 
 Pakiet wydzielony nie jest automatycznie zaakceptowany; jego draft przechodzi
@@ -892,19 +959,39 @@ Każde pytanie jest strukturalnym rekordem z unikalnym, stabilnym ID:
 ```text
 scope_questions:
   - id: SQ1
-    prompt: "Czy async ma być opt-in, czy domyślny dla wszystkich POST-ów grida?"
+    prompt: "Kontrakt wszystkich POST-ów grida musi określić tryb async. Czy async ma być opt-in, czy domyślny?"
+    context: "Decyzja zmienia zachowanie wszystkich pakietów runtime."
     blocking: true
     resolved: false
     impact: "Zmienia kontrakt wszystkich pakietów runtime."
-    decision_needed: "Wybrać opt-in albo default async."
+    decision_needed: "Wybrać jedną z dwóch opcji i zaakceptować jej konsekwencje."
+    options:
+      - id: opt-in
+        label: "Async tylko po jawnym włączeniu"
+        description: "Dotychczasowe wywołania pozostają synchroniczne."
+        consequence: "Minimalizuje ryzyko kompatybilności, ale wymaga jawnego wdrożenia async dla nowych przypadków."
+      - id: default
+        label: "Async domyślnie"
+        description: "Nowe wywołania korzystają z async bez dodatkowej konfiguracji."
+        consequence: "Upraszcza adopcję, ale zmienia zachowanie istniejących klientów i rozszerza zakres testów."
 
 packages[].questions:
   - id: WP2-Q1
-    prompt: "Jakie kody HTTP i envelope JSON obowiązują dla błędów domenowych?"
+    prompt: "WP2 musi obsłużyć błędy domenowe, uprawnienia i CSRF. Jakie kody HTTP oraz envelope JSON mają obowiązywać?"
+    context: "Odpowiedź jest częścią publicznego kontraktu i wpływa na kryteria akceptacji WP2."
     blocking: true
     resolved: false
     impact: "Definiuje kryteria akceptacji WP2."
-    decision_needed: "Ustalić kody HTTP i format envelope."
+    decision_needed: "Wybrać wariant kontraktu i wskazać ewentualne wyjątki."
+    options:
+      - id: existing
+        label: "Zachować istniejący kontrakt"
+        description: "Użyć obecnych kodów i envelope JSON."
+        consequence: "Ogranicza zakres oraz ryzyko migracji, ale utrwala obecne ograniczenia kontraktu."
+      - id: redesign
+        label: "Wprowadzić nowy kontrakt"
+        description: "Ujednolicić kody i envelope dla wszystkich błędów."
+        consequence: "Daje spójniejszy interfejs, ale wymaga zmian klientów, testów i dokumentacji."
 ```
 
 ID mają format `SQ<number>` dla pytań zakresowych oraz
@@ -912,6 +999,11 @@ ID mają format `SQ<number>` dla pytań zakresowych oraz
 `prompt`, `blocking`, `resolved`, `impact` i `decision_needed`. Pytania muszą
 być osobnymi rekordami — nie wolno scalać kilku pytań w jeden akapit ani używać
 formatu `**Pytania:** pytanie 1? pytanie 2?`.
+`prompt` powinien być zrozumiały bez otwierania innych sekcji, a opcjonalny
+`context` ma wyjaśniać granicę decyzji. Jeżeli pytanie ma opcje, każda opcja
+zawiera `id`, `label` lub `description` oraz `consequence`/`tradeoff` w kilku
+zdaniach. Renderer pokazuje te informacje, a użytkownik może odpowiedzieć samym
+identyfikatorem opcji.
 Jeżeli `resolved: true`, rekord musi dodatkowo zachować `answer`,
 `decision_source` i `decided_at`; formatter pokazuje tę odpowiedź przy pytaniu.
 Pytanie nierozstrzygnięte nie może zawierać częściowej odpowiedzi.
@@ -932,6 +1024,10 @@ renderuje sekcję w następującym układzie:
 - **SQ1 [BLOCKING]** Czy async ma być opt-in, czy domyślny dla wszystkich POST-ów grida?
   - Wpływ: zmienia kontrakt wszystkich pakietów runtime.
   - Wymagana decyzja: wybrać `opt-in` albo `default async`.
+  - Kontekst: decyzja zmienia zachowanie wszystkich pakietów runtime.
+  - Opcje:
+    - `opt-in` — async tylko po jawnym włączeniu. Konsekwencja: mniejsza zmiana kompatybilności, ale większy koszt adopcji.
+    - `default` — async domyślnie. Konsekwencja: prostsza adopcja, ale szersze testy istniejących klientów.
   - Status: `open`
 
 ### WP2 — Runtime TypeScript/Stimulus
@@ -944,6 +1040,10 @@ renderuje sekcję w następującym układzie:
 - **WP2-Q1 [BLOCKING]** Jakie kody HTTP i envelope JSON obowiązują dla błędów domenowych?
   - Wpływ: definiuje kryteria akceptacji WP2.
   - Wymagana decyzja: ustalić kody HTTP i format envelope.
+  - Kontekst: odpowiedź jest częścią publicznego kontraktu WP2.
+  - Opcje:
+    - `existing` — zachować istniejący kontrakt. Konsekwencja: mniejszy zakres, ale obecne ograniczenia pozostają.
+    - `redesign` — wprowadzić nowy kontrakt. Konsekwencja: spójniejszy interfejs kosztem zmian klientów i testów.
   - Status: `open`
 
 #### Pytania nieblokujące
@@ -963,8 +1063,8 @@ wymaga jawnej prośby użytkownika.
 Odpowiedź użytkownika wskazuje ID pytania lub pakietu, np.:
 
 ```text
-SQ1: default async
-WP2-Q1: 422 dla błędów domenowych, 403 dla uprawnień, 419 dla CSRF
+SQ1: default
+WP2-Q1: existing
 WP1: revise
 WP2: accept
 ```
@@ -978,6 +1078,40 @@ decision_source
 decided_at
 previous_decision, jeśli dotyczy
 ```
+
+### Propagowanie decyzji do planu
+
+Odpowiedź nie kończy pracy nad pytaniem. Każde rozstrzygnięte pytanie tworzy
+rekord w `user_decisions`:
+
+```yaml
+- decision_ref: D1
+  question_id: WP2-Q1
+  selected_option: existing
+  decision_source: user
+  decided_at: 2026-01-01T00:00:00Z
+  affected_refs:
+    - WP2.scope
+    - WP2.acceptance_criteria
+    - session_strategy
+  propagation_status: propagated
+```
+
+Przed zadaniem następnego pytania agent musi:
+
+1. zachować odpowiedź przy pytaniu;
+2. zaktualizować `scope`, kryteria, zależności, ryzyka, strategię sesji,
+   findings/blockery i `Next action` wskazane przez `affected_refs`;
+3. zaktualizować statusy oraz historię rewizji, jeżeli decyzja zmienia zakres;
+4. ustawić `propagation_status: propagated` dopiero po zapisaniu tych zmian;
+5. atomowo zapisać i zwalidować draft.
+
+`affected_refs` są obowiązkowe. Brak wpływu poza pytaniem zapisuj jawnie jako
+`affected_refs: [question:<id>]`. Decyzja z `propagation_status: pending` albo
+brak rekordu decyzji dla rozstrzygniętego pytania blokuje kolejne pytania,
+otwarcie bramki pakietowej i finalne `approved`. Deterministyczny walidator
+sprawdza kompletność jawnych referencji, ale nie rozstrzyga sam semantycznego
+wpływu decyzji.
 
 Zmiana zakresu pakietu otwiera ponownie jego decyzję, a zmianę pakietów
 zależnych wykonuj tylko wtedy, gdy dowód wskazuje rzeczywisty wpływ na ich
@@ -1100,17 +1234,18 @@ Implementacja: nie uruchomiono.
 
 ### Deterministyczne nazwy draftów
 
-Draft jest artefaktem planu, a nie nowym issue. Nazwa wynika wyłącznie ze
-stabilnej tożsamości źródła i bezpiecznego sluga:
+Draft jest artefaktem planu, a nie nowym issue. Nazwa issue i pakietu
+pochodnego wynika wyłącznie ze stabilnej tożsamości wejścia, aby plik mógł
+powstać przed odczytem treści źródła:
 
 ```text
-github issue:       docs/draft/issue-<id>-<title-slug>-plan.md
-derived package:    docs/draft/issue-<id>-wp-<wpid>-<package-slug>-plan.md
+github issue:       docs/draft/issue-<id>-plan.md
+derived package:    docs/draft/issue-<id>-wp-<wpid>-plan.md
 file source:        docs/draft/task-file-<slug>-plan.md
 user input:         docs/draft/task-<slug>-plan.md
 ```
 
-Slugowanie jest współdzielone przez:
+Slugowanie pozostaje współdzielone dla źródeł file/user-input przez:
 
 ```text
 <skills_root>/_shared/scripts/slugify-title.mjs → slugifyTitle()
@@ -1139,7 +1274,7 @@ Minimalny front matter głównego draftu zawiera:
 source_kind: github-issue
 source_ref: https://github.com/owner/repo/issues/123
 issue: 123
-title: "Original issue title"
+title: "Original issue title" # po source intake; szkic może użyć Pending title
 input_profile: brief-request
 plan_status: review-pending
 package_decision_gate: closed
@@ -1155,6 +1290,7 @@ draft ma sekcje:
 
 ```md
 ## Source
+## Session strategy
 ## Goal and scope
 ## Work packages
 ## Decisions and open questions
@@ -1193,7 +1329,7 @@ Po jawnej decyzji `separate` task-plan tworzy draft pochodny bez tworzenia
 nowego issue. Draft rodzica zawiera link względny do wyniku:
 
 ```md
-WP2 — wydzielony do [osobnego planu](./issue-123-wp-wp2-import-plan.md)
+WP2 — wydzielony do [osobnego planu](./issue-123-wp-wp2-plan.md)
 ```
 
 Nowy draft startuje z `plan_status: needs-clarification` i nie jest
@@ -1253,9 +1389,11 @@ kontraktu oraz istniejących helperów. Zakres scenariuszy obejmuje:
 1. trigger, źródła i profile materiału, w tym `title-only`;
 2. granicę `source_data` kontra workflow, dowody i `CONFLICT`;
 3. decyzje work packages, zależności, przejścia statusów i `separated`;
-4. review, limit iteracji, auto-uproszczenie i menu `a/b/c`;
-5. integrację z `$gh-issue-start`, wznowienie draftu i `Execution handoff`;
-6. ownership, redundancję odpowiedzialności, source claims i granice
+4. draft utworzony przed source fetch, strategię sesji, opcje pytań i propagację
+   decyzji;
+5. review, limit iteracji, auto-uproszczenie i menu `a/b/c`;
+6. integrację z `$gh-issue-start`, wznowienie draftu i `Execution handoff`;
+7. ownership, redundancję odpowiedzialności, source claims i granice
    cross-context.
 
 Ponieważ `$task-plan` jest kontraktem Markdown, a nie runtime'em, testy nie
@@ -1273,8 +1411,8 @@ lub środowiska.
 
 | Moduł | Odpowiedzialność | Główne API/komendy |
 |---|---|---|
-| `<skill_dir>/scripts/draft.mjs` | tożsamość, ścieżka, front matter, sekcje, pytania, resume i atomowy zapis | `buildSourceIdentity`, `buildDraftPath`, `buildDraftMetadata`, `validateDraftDocument`, `renderQuestionSections`, `writeAtomicFile`, `writeSeparatedDraft`; `path`, `validate`, `render-questions` |
-| `<skill_dir>/scripts/state.mjs` | jawne przejścia, bramka decyzji pakietowych, walidacja pytań, decyzje, bulk pending, approval guard i graf zależności | `canTransition`, `applyPlanTransition`, `canOpenPackageDecisions`, `validateQuestionRecords`, `applyDecisionCommand`, `applyPackageDecision`, `canApprovePlan`, `getImpactedPackageIds`; `transition`, `parse-command` |
+| `<skill_dir>/scripts/draft.mjs` | tożsamość, stabilna ścieżka, front matter, initial draft, sekcje, pytania, resume i atomowy zapis | `buildSourceIdentity`, `buildDraftPath`, `buildDraftMetadata`, `createInitialDraft`, `renderSessionStrategySection`, `validateDraftDocument`, `renderQuestionSections`, `writeAtomicFile`, `writeSeparatedDraft`; `path`, `validate`, `render-questions` |
+| `<skill_dir>/scripts/state.mjs` | jawne przejścia, bramka decyzji pakietowych, strategia sesji, walidacja pytań/opcji, decyzje i propagacja | `canTransition`, `applyPlanTransition`, `canOpenPackageDecisions`, `validateQuestionRecords`, `validateSessionStrategy`, `applyQuestionDecision`, `validateUserDecisionRecords`, `validateQuestionDecisionPropagation`, `applyDecisionCommand`, `applyPackageDecision`; `transition`, `parse-command` |
 | `<skill_dir>/scripts/source.mjs` | normalizacja GitHub/file/user input oraz bezpieczny odczyt źródeł | `normalizeGitHubIssue`, `normalizeFileSource`, `normalizeUserInput`, `refreshSource`; `normalize-file`, `normalize-user`, `fetch-github` |
 | `<skill_dir>/scripts/validate-plan.mjs` | findings, review limit, simplification invariants, draft/state i final approval | `validateFinding`, `validateReviewHistory`, `validateSimplification`, `validatePlanDocument`, `validateFinalApproval`; `validate`, `validate-state` |
 
@@ -1289,13 +1427,15 @@ Przykładowy przepływ punktowy:
 node <skill_dir>/scripts/source.mjs normalize-file \
   --root "$PWD" --path ./docs/task.md
 node <skill_dir>/scripts/draft.mjs path \
-  --source-kind github-issue --issue 123 --title "Original issue title"
+  --source-kind github-issue --issue 123
+node <skill_dir>/scripts/draft.mjs validate \
+  --file ./docs/draft/issue-123-plan.md
 node <skill_dir>/scripts/state.mjs parse-command \
   --value "accept-selected: WP1, WP2"
 node <skill_dir>/scripts/draft.mjs render-questions \
   --file ./tests/fixtures/task-plan/questions.json
 node <skill_dir>/scripts/validate-plan.mjs validate \
-  --file ./docs/draft/issue-123-original-issue-title-plan.md
+  --file ./docs/draft/issue-123-plan.md
 ```
 
 Operacje wymagające zapisu wywołuj przez eksportowane funkcje z kontrolą
@@ -1321,6 +1461,25 @@ Stan przekazywany do walidatora ma postać danych, nie instrukcji:
   "plan_status": "review-pending",
   "plan_version": 1,
   "packages": [],
+  "session_strategy": {
+    "mode": "staged",
+    "rationale": "WP1 precedes WP2.",
+    "stages": [{
+      "id": "S1",
+      "title": "Contract",
+      "rationale": "Stabilize the shared contract.",
+      "work_package_ids": [],
+      "dependencies": [],
+      "session_boundary": "same-session",
+      "entry_criteria": ["Zakres potwierdzony."],
+      "exit_criteria": ["Etap zakończony."]
+    }],
+    "dependencies": [],
+    "session_boundary_recommendation": "Oddzielna sesja po WP1.",
+    "entry_criteria": ["Zakres potwierdzony."],
+    "exit_criteria": ["Etap zakończony."]
+  },
+  "user_decisions": [],
   "findings": [],
   "review_history": [],
   "decisions": [],

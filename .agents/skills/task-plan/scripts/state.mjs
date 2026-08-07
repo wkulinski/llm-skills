@@ -70,6 +70,18 @@ export const OWNERSHIP_REDUNDANCY_STATUSES = Object.freeze([
 
 export const REDUNDANT_DESIGN_ELEMENT = "REDUNDANT_DESIGN_ELEMENT";
 
+export const SESSION_STRATEGY_MODES = Object.freeze([
+    "single-session",
+    "staged",
+    "hybrid",
+]);
+
+export const USER_DECISION_PROPAGATION_STATUSES = Object.freeze([
+    "pending",
+    "propagated",
+]);
+
+const QUESTION_ID = /^(SQ[1-9][0-9]*|WP[1-9][0-9]*-Q[1-9][0-9]*)$/;
 const OWNERSHIP_SUBJECT_ID = /^OR[1-9][0-9]*$/;
 const OWNERSHIP_FINDING_ID = /^F[1-9][0-9]*$/;
 
@@ -508,6 +520,15 @@ function packageDecisionGateReasons(state) {
     for (const reason of ownershipRedundancyReasons(candidate)) {
         addReason(reason);
     }
+    for (const reason of unpropagatedUserDecisionReasons(candidate)) {
+        addReason(reason);
+    }
+    if (validateQuestionDecisionPropagation(candidate).length > 0) {
+        addReason("question_decision_propagation_incomplete");
+    }
+    if (validateSessionStrategy(candidate.session_strategy).length > 0) {
+        addReason("invalid_session_strategy");
+    }
     for (const reason of blockerReasons(candidate)) {
         addReason(reason);
     }
@@ -551,6 +572,19 @@ function ownershipRedundancyReasons(candidate) {
     }
 
     return reasons;
+}
+
+function unpropagatedUserDecisionReasons(candidate) {
+    if (!Object.hasOwn(candidate, "user_decisions")) {
+        return [];
+    }
+    if (!Array.isArray(candidate.user_decisions)) {
+        return ["invalid_user_decisions"];
+    }
+    const pending = candidate.user_decisions.filter((record) => {
+        return record && record.propagation_status !== "propagated";
+    });
+    return pending.length > 0 ? ["unpropagated_user_decisions"] : [];
 }
 
 function hasCompletedCriticalReview(history) {
@@ -660,9 +694,281 @@ export function validateQuestionRecords(questions, options = {}) {
         } else if (QUESTION_RESOLUTION_FIELDS.some((field) => hasMeaningfulQuestionValue(question[field]))) {
             errors.push(`${label} cannot contain an answer before resolved is true.`);
         }
+        if (question.context !== null && typeof question.context !== "undefined") {
+            if (typeof question.context !== "string" || question.context.trim() === "") {
+                errors.push(`${label} context must be a non-empty string.`);
+            }
+        }
+        errors.push(...validateQuestionOptions(question, index));
+        if (question.resolved === true
+            && Array.isArray(question.options)
+            && question.options.length > 0
+            && !question.options.some((option) => option && option.id === question.answer)) {
+            errors.push(`${label} answer must select one of the declared options.`);
+        }
     }
 
     return errors;
+}
+
+function validateQuestionOptions(question, index) {
+    const label = `Question ${index + 1}`;
+    if (typeof question.options === "undefined") {
+        return [];
+    }
+    if (!Array.isArray(question.options)) {
+        return [`${label} options must be an array.`];
+    }
+
+    const errors = [];
+    const optionIds = new Set();
+    for (const [optionIndex, option] of question.options.entries()) {
+        const optionLabel = `${label} option ${optionIndex + 1}`;
+        if (!option || typeof option !== "object" || Array.isArray(option)) {
+            errors.push(`${optionLabel} must be an object.`);
+            continue;
+        }
+        if (typeof option.id !== "string" || option.id.trim() === "") {
+            errors.push(`${optionLabel} must contain a non-empty id.`);
+        } else if (optionIds.has(option.id)) {
+            errors.push(`${optionLabel} has duplicate id ${option.id}.`);
+        } else {
+            optionIds.add(option.id);
+        }
+        const hasLabel = typeof option.label === "string" && option.label.trim() !== "";
+        const hasDescription = typeof option.description === "string" && option.description.trim() !== "";
+        if (!hasLabel && !hasDescription) {
+            errors.push(`${optionLabel} must contain label or description.`);
+        }
+        if (typeof option.consequence !== "string" || option.consequence.trim() === "") {
+            errors.push(`${optionLabel} must contain a consequence/tradeoff.`);
+        }
+    }
+    return errors;
+}
+
+export function validateSessionStrategy(strategy) {
+    if (typeof strategy === "undefined" || strategy === null) {
+        return ["Plan state must contain session_strategy."];
+    }
+    if (!isRecord(strategy)) {
+        return ["session_strategy must be an object."];
+    }
+
+    const errors = [];
+    if (!SESSION_STRATEGY_MODES.includes(strategy.mode)) {
+        errors.push("session_strategy.mode is invalid.");
+    }
+    if (!isNonEmptyString(strategy.rationale)) {
+        errors.push("session_strategy.rationale must be a non-empty string.");
+    }
+    if (!Array.isArray(strategy.stages) || strategy.stages.length === 0) {
+        errors.push("session_strategy.stages must be a non-empty array.");
+    } else {
+        const stageIds = new Set();
+        for (const [index, stage] of strategy.stages.entries()) {
+            const label = `session_strategy.stages[${index}]`;
+            if (!isRecord(stage)) {
+                errors.push(`${label} must be an object.`);
+                continue;
+            }
+            errors.push(...validateSessionStageFields(stage, label));
+            if (!/^S[1-9][0-9]*$/.test(stage.id ?? "")) {
+                errors.push(`${label}.id must match S<number>.`);
+            } else if (stageIds.has(stage.id)) {
+                errors.push(`${label}.id is duplicated: ${stage.id}.`);
+            } else {
+                stageIds.add(stage.id);
+            }
+            errors.push(...validateSessionStagePackages(stage, label));
+            errors.push(...validateSessionStageCriteria(stage, label));
+        }
+    }
+    if (!isNonEmptyString(strategy.session_boundary_recommendation)) {
+        errors.push("session_strategy.session_boundary_recommendation must be a non-empty string.");
+    }
+    if (!Array.isArray(strategy.dependencies)) {
+        errors.push("session_strategy.dependencies must be an array.");
+    } else {
+        for (const [index, dependency] of strategy.dependencies.entries()) {
+            if (!isNonEmptyString(dependency)) {
+                errors.push(`session_strategy.dependencies[${index}] must be a non-empty string.`);
+            }
+        }
+    }
+    for (const field of ["entry_criteria", "exit_criteria"]) {
+        if (!Array.isArray(strategy[field]) || strategy[field].length === 0) {
+            errors.push(`session_strategy.${field} must be a non-empty array.`);
+        } else {
+            for (const [index, criterion] of strategy[field].entries()) {
+                if (!isNonEmptyString(criterion)) {
+                    errors.push(`session_strategy.${field}[${index}] must be a non-empty string.`);
+                }
+            }
+        }
+    }
+    return errors;
+}
+
+export function validateUserDecisionRecords(records) {
+    if (!Array.isArray(records)) {
+        return ["user_decisions must be an array."];
+    }
+
+    const errors = [];
+    const refs = new Set();
+    for (const [index, record] of records.entries()) {
+        const label = `user_decision ${index + 1}`;
+        if (!isRecord(record)) {
+            errors.push(`${label} must be an object.`);
+            continue;
+        }
+        if (!isNonEmptyString(record.decision_ref)) {
+            errors.push(`${label} is missing decision_ref.`);
+        } else if (refs.has(record.decision_ref)) {
+            errors.push(`Duplicate decision_ref: ${record.decision_ref}.`);
+        } else {
+            refs.add(record.decision_ref);
+        }
+        if (!isNonEmptyString(record.question_id) || !QUESTION_ID.test(record.question_id)) {
+            errors.push(`${label} question_id must match SQ<number> or WP<number>-Q<number>.`);
+        }
+        const hasSelectedOption = hasMeaningfulQuestionValue(record.selected_option);
+        const hasAnswer = hasMeaningfulQuestionValue(record.answer);
+        if (hasSelectedOption === hasAnswer) {
+            errors.push(`${label} must contain exactly one of selected_option or answer.`);
+        }
+        if (!isNonEmptyString(record.decision_source)) {
+            errors.push(`${label} is missing decision_source.`);
+        }
+        if (typeof record.decided_at !== "string" || Number.isNaN(Date.parse(record.decided_at))) {
+            errors.push(`${label} decided_at must be a valid timestamp.`);
+        }
+        if (!Array.isArray(record.affected_refs)) {
+            errors.push(`${label} affected_refs must be an array.`);
+        } else {
+            if (record.affected_refs.length === 0) {
+                errors.push(`${label} affected_refs must not be empty.`);
+            }
+            for (const [refIndex, ref] of record.affected_refs.entries()) {
+                if (!isNonEmptyString(ref)) {
+                    errors.push(`${label} affected_refs[${refIndex}] must be a non-empty string.`);
+                }
+            }
+        }
+        if (!USER_DECISION_PROPAGATION_STATUSES.includes(record.propagation_status)) {
+            errors.push(`${label} propagation_status is invalid.`);
+        }
+    }
+    return errors;
+}
+
+export function validateQuestionDecisionPropagation(state) {
+    const errors = [];
+    if (!state || typeof state !== "object") {
+        return errors;
+    }
+    const records = Array.isArray(state.user_decisions) ? state.user_decisions : [];
+    const questions = [];
+    appendQuestionRecords(questions, state.scope_questions);
+    if (Array.isArray(state.packages)) {
+        for (const item of state.packages) {
+            if (!item || !Array.isArray(item.questions)) {
+                continue;
+            }
+            appendQuestionRecords(questions, item.questions);
+        }
+    }
+
+    const questionIds = new Set(questions.map((question) => question.id));
+    for (const question of questions) {
+        if (question.resolved !== true) {
+            continue;
+        }
+        const record = records.find((candidate) => candidate && candidate.question_id === question.id);
+        if (!record) {
+            errors.push(`Resolved question ${question.id} is missing a user_decisions record.`);
+            continue;
+        }
+        if (Array.isArray(question.options) && question.options.length > 0) {
+            if (!isNonEmptyString(record.selected_option)) {
+                errors.push(`User decision for ${question.id} must record selected_option.`);
+            } else if (!question.options.some((option) => option && option.id === record.selected_option)) {
+                errors.push(`User decision for ${question.id} selected_option must be one of the declared options.`);
+            } else if (record.selected_option !== question.answer) {
+                errors.push(`User decision for ${question.id} answer must match the selected option.`);
+            }
+        } else if (!isNonEmptyString(record.answer)) {
+            errors.push(`User decision for ${question.id} must record answer.`);
+        } else if (record.answer !== question.answer) {
+            errors.push(`User decision for ${question.id} answer must match the resolved question answer.`);
+        }
+    }
+
+    for (const record of records) {
+        if (record && !questionIds.has(record.question_id)) {
+            errors.push(`user_decisions references unknown question ${record.question_id ?? "unknown"}.`);
+        }
+        if (record && record.propagation_status !== "propagated") {
+            errors.push(`user_decisions propagation incomplete for ${record.decision_ref ?? "unknown"}.`);
+        }
+    }
+    return errors;
+}
+
+export function applyQuestionDecision(state, decision) {
+    const nextState = prepareState(state);
+    const questionId = requireString(decision?.question_id, "question_id");
+    const question = findQuestion(nextState, questionId);
+    if (!question) {
+        throw new StateError("QUESTION_NOT_FOUND", `Question ${questionId} was not found.`, {question_id: questionId});
+    }
+    if (question.resolved === true) {
+        throw new StateError("QUESTION_ALREADY_RESOLVED", `Question ${questionId} is already resolved.`, {question_id: questionId});
+    }
+
+    const selectedOption = decision?.selected_option;
+    const answer = decision?.answer;
+    const hasSelectedOption = hasMeaningfulQuestionValue(selectedOption);
+    const hasAnswer = hasMeaningfulQuestionValue(answer);
+    if (hasSelectedOption === hasAnswer) {
+        throw new StateError("INVALID_QUESTION_DECISION", "A question decision must contain exactly one of selected_option or answer.");
+    }
+    if (hasSelectedOption && (!Array.isArray(question.options)
+        || !question.options.some((option) => option?.id === selectedOption))) {
+        throw new StateError("INVALID_QUESTION_DECISION", `Selected option is not declared for ${questionId}.`, {
+            question_id: questionId,
+        });
+    }
+    if (Array.isArray(question.options) && question.options.length > 0 && !hasSelectedOption) {
+        throw new StateError("INVALID_QUESTION_DECISION", `${questionId} requires selected_option because it declares options.`, {
+            question_id: questionId,
+        });
+    }
+
+    const record = {
+        decision_ref: requireString(decision?.decision_ref, "decision_ref"),
+        question_id: questionId,
+        ...(hasSelectedOption ? {selected_option: selectedOption} : {answer}),
+        decision_source: requireString(decision?.decision_source, "decision_source"),
+        decided_at: requireTimestamp(decision?.decided_at, "decided_at"),
+        affected_refs: Array.isArray(decision?.affected_refs) ? [...decision.affected_refs] : [],
+        propagation_status: "pending",
+    };
+    if (nextState.user_decisions.some((candidate) => candidate.decision_ref === record.decision_ref)) {
+        throw new StateError("DUPLICATE_DECISION_REF", `Decision ref ${record.decision_ref} is already recorded.`);
+    }
+    const recordErrors = validateUserDecisionRecords([record]);
+    if (recordErrors.length > 0) {
+        throw new StateError("INVALID_QUESTION_DECISION", recordErrors.join(" "), {errors: recordErrors});
+    }
+
+    question.resolved = true;
+    question.answer = hasSelectedOption ? selectedOption : answer;
+    question.decision_source = record.decision_source;
+    question.decided_at = record.decided_at;
+    nextState.user_decisions.push(record);
+    return nextState;
 }
 
 export function validateOwnershipRedundancyReview(review, findings) {
@@ -1103,11 +1409,85 @@ function prepareState(state) {
     if (decisionResult.length > 0) {
         throw new StateError("INVALID_STATE", decisionResult.join(" "), {errors: decisionResult});
     }
+    const strategyErrors = validateSessionStrategy(state.session_strategy);
+    if (strategyErrors.length > 0) {
+        throw new StateError("INVALID_STATE", strategyErrors.join(" "), {errors: strategyErrors});
+    }
+    if (Object.hasOwn(state, "user_decisions")) {
+        const userDecisionErrors = validateUserDecisionRecords(state.user_decisions);
+        if (userDecisionErrors.length > 0) {
+            throw new StateError("INVALID_STATE", userDecisionErrors.join(" "), {errors: userDecisionErrors});
+        }
+    }
 
     return {
         ...clone(state),
         decisions: Array.isArray(state.decisions) ? clone(state.decisions) : [],
+        user_decisions: Array.isArray(state.user_decisions) ? clone(state.user_decisions) : [],
     };
+}
+
+function findQuestion(state, questionId) {
+    const scopeQuestion = (state.scope_questions ?? []).find((question) => question?.id === questionId);
+    if (scopeQuestion) {
+        return scopeQuestion;
+    }
+    for (const packageRecord of state.packages ?? []) {
+        const packageQuestion = (packageRecord.questions ?? []).find((question) => question?.id === questionId);
+        if (packageQuestion) {
+            return packageQuestion;
+        }
+    }
+    return null;
+}
+
+function validateSessionStageFields(stage, label) {
+    const errors = [];
+    for (const field of ["id", "title", "rationale", "session_boundary"]) {
+        if (!isNonEmptyString(stage[field])) {
+            errors.push(`${label}.${field} must be a non-empty string.`);
+        }
+    }
+    if (!Array.isArray(stage.dependencies)) {
+        errors.push(`${label}.dependencies must be an array.`);
+    } else if (stage.dependencies.some((dependency) => !isNonEmptyString(dependency))) {
+        errors.push(`${label}.dependencies must contain non-empty strings.`);
+    }
+    return errors;
+}
+
+function validateSessionStagePackages(stage, label) {
+    if (!Array.isArray(stage.work_package_ids)) {
+        return [`${label}.work_package_ids must be an array.`];
+    }
+    return stage.work_package_ids.flatMap((packageId, index) => {
+        return /^WP[1-9][0-9]*$/.test(packageId ?? "")
+            ? []
+            : [`${label}.work_package_ids[${index}] must match WP<number>.`];
+    });
+}
+
+function validateSessionStageCriteria(stage, label) {
+    const errors = [];
+    for (const field of ["entry_criteria", "exit_criteria"]) {
+        if (!Array.isArray(stage[field]) || stage[field].length === 0) {
+            errors.push(`${label}.${field} must be a non-empty array.`);
+        } else if (stage[field].some((criterion) => !isNonEmptyString(criterion))) {
+            errors.push(`${label}.${field} must contain non-empty strings.`);
+        }
+    }
+    return errors;
+}
+
+function appendQuestionRecords(target, candidates) {
+    if (!Array.isArray(candidates)) {
+        return;
+    }
+    for (const question of candidates) {
+        if (question && typeof question === "object" && !Array.isArray(question)) {
+            target.push(question);
+        }
+    }
 }
 
 function transitionTable(kind) {

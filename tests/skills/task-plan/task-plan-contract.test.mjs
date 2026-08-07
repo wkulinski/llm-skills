@@ -3,7 +3,6 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 
-import {slugifyTitle} from "../../../.agents/skills/_shared/scripts/slugify-title.mjs";
 import {buildDraftMetadata} from "../../../.agents/skills/task-plan/scripts/draft.mjs";
 import {
     applyPlanTransition,
@@ -44,6 +43,7 @@ const PLAN_STATUSES = new Set([
 
 const DRAFT_SECTIONS = [
     "## Source",
+    "## Session strategy",
     "## Goal and scope",
     "## Work packages",
     "## Decisions and open questions",
@@ -181,6 +181,24 @@ describe("task-plan workflow scenarios", () => {
             blockers: [],
             findings: [],
             scope_questions: [],
+            session_strategy: {
+                mode: "staged",
+                rationale: "WP1 is the core stage.",
+                stages: [{
+                    id: "S1",
+                    title: "Core",
+                    rationale: "Stabilize the core contract.",
+                    work_package_ids: ["WP1"],
+                    dependencies: [],
+                    session_boundary: "same-session",
+                    entry_criteria: ["Scope confirmed."],
+                    exit_criteria: ["Contract documented."],
+                }],
+                session_boundary_recommendation: "Review later work separately.",
+                dependencies: [],
+                entry_criteria: ["Intent confirmed."],
+                exit_criteria: ["Stage complete."],
+            },
             ownership_redundancy_review: {
                 required: false,
                 requirement_basis: "not-applicable",
@@ -249,7 +267,7 @@ describe("task-plan status transitions", () => {
 
 describe("task-plan draft operations", () => {
     it("builds the stable main draft path from the issue number and title", () => {
-        const pathName = `docs/draft/issue-${DRAFT_OPERATIONS.main.issue}-${slugifyTitle(DRAFT_OPERATIONS.main.title)}-plan.md`;
+        const pathName = `docs/draft/issue-${DRAFT_OPERATIONS.main.issue}-plan.md`;
 
         expect(pathName).toBe(DRAFT_OPERATIONS.main.expected_path);
     });
@@ -274,7 +292,7 @@ describe("task-plan draft operations", () => {
     });
 
     it("builds the stable derived draft path and keeps the separate-work-package contract", () => {
-        const pathName = `docs/draft/issue-${DRAFT_OPERATIONS.derived.issue}-wp-${DRAFT_OPERATIONS.derived.work_package_id.toLowerCase()}-${slugifyTitle(DRAFT_OPERATIONS.derived.package_title)}-plan.md`;
+        const pathName = `docs/draft/issue-${DRAFT_OPERATIONS.derived.issue}-wp-${DRAFT_OPERATIONS.derived.work_package_id.toLowerCase()}-plan.md`;
         const metadata = parseFrontMatter(DERIVED_DRAFT);
 
         expect(pathName).toBe(DRAFT_OPERATIONS.derived.expected_path);
@@ -283,7 +301,7 @@ describe("task-plan draft operations", () => {
             source_ref: "https://github.com/acme/demo/issues/123",
             input_profile: "brief-request",
             parent_issue: "123",
-            parent_draft: "issue-123-main-title-plan.md",
+            parent_draft: "issue-123-plan.md",
             work_package_id: "WP2",
             plan_status: DRAFT_OPERATIONS.derived.plan_status,
         });

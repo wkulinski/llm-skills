@@ -36,6 +36,8 @@ describe("task-plan question contract", () => {
         });
         expect(cliResult.status).toBe(0);
         expect(JSON.parse(cliResult.stdout).markdown).toBe(EXPECTED_MARKDOWN);
+        expect(EXPECTED_MARKDOWN).toContain("Konsekwencja/tradeoff: Ogranicza zakres");
+        expect(EXPECTED_MARKDOWN).toContain("Kontekst: Decyzja ustala kontrakt");
     });
 
     it("requires stable IDs and structured question fields", () => {
@@ -65,6 +67,15 @@ describe("task-plan question contract", () => {
             "Question 1 is missing decision_source for a resolved question.",
             "Question 1 is missing decided_at for a resolved question.",
         ]));
+        expect(validateQuestionRecords([{
+            id: "WP1-Q1",
+            prompt: "Który wariant?",
+            blocking: true,
+            resolved: false,
+            impact: "Zakres",
+            decision_needed: "Wybrać wariant.",
+            options: [{id: "a", label: "A"}],
+        }], {packageId: "WP1"})).toContain("Question 1 option 1 must contain a consequence/tradeoff.");
     });
 
     it("keeps complete and incomplete ownership review states separate from package questions", () => {
@@ -195,6 +206,24 @@ describe("task-plan question contract", () => {
             simplification_status: "pending",
             blockers: [],
             scope_questions: [],
+            session_strategy: {
+                mode: "staged",
+                rationale: "Initial review is separate from package decisions.",
+                stages: [{
+                    id: "S1",
+                    title: "Review",
+                    rationale: "Complete review before package decisions.",
+                    work_package_ids: [],
+                    dependencies: [],
+                    session_boundary: "same-session",
+                    entry_criteria: ["Draft exists."],
+                    exit_criteria: ["Review complete."],
+                }],
+                session_boundary_recommendation: "Continue after review.",
+                dependencies: [],
+                entry_criteria: ["Intent confirmed."],
+                exit_criteria: ["Questions are explicit."],
+            },
             ownership_redundancy_review: {
                 required: false,
                 requirement_basis: "not-applicable",

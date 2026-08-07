@@ -32,10 +32,25 @@
         {
           "id": "WP1-Q1",
           "prompt": "Jakie kody HTTP obowiązują dla błędów domenowych, uprawnień i CSRF?",
+          "context": "Decyzja ustala kontrakt odpowiedzi i wpływa na kryteria akceptacji WP1.",
           "blocking": true,
           "resolved": false,
           "impact": "Definiuje kryteria akceptacji kontraktu odpowiedzi.",
-          "decision_needed": "Wskazać kody HTTP."
+          "decision_needed": "Wybrać wariant kontraktu i wskazać kody HTTP.",
+          "options": [
+            {
+              "id": "existing",
+              "label": "Zachować istniejące konwencje",
+              "description": "Użyć obecnych kodów i envelope.",
+              "consequence": "Ogranicza zakres i ryzyko kompatybilności, ale utrwala obecny kontrakt."
+            },
+            {
+              "id": "redesign",
+              "label": "Wprowadzić nowy kontrakt",
+              "description": "Ujednolicić kody i envelope.",
+              "consequence": "Daje spójniejszy interfejs, ale rozszerza zakres i może wymagać zmian klientów."
+            }
+          ]
         }
       ]
     },
