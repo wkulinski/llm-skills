@@ -10,10 +10,12 @@ import {
     SIMPLIFICATION_STATUSES,
     TERMINAL_PACKAGE_STATUSES,
     validateQuestionRecords,
+    validateSessionStrategy,
 } from "./state.mjs";
 
 export const DRAFT_SECTIONS = Object.freeze([
     "## Source",
+    "## Session strategy",
     "## Goal and scope",
     "## Work packages",
     "## Decisions and open questions",
@@ -22,6 +24,40 @@ export const DRAFT_SECTIONS = Object.freeze([
     "## Next action",
     "## Execution handoff (when implementation is requested)",
 ]);
+
+export const SESSION_STRATEGY_LABELS = Object.freeze([
+    "Mode:",
+    "Rationale:",
+    "Stages:",
+    "Work packages:",
+    "Session boundary recommendation:",
+    "Dependencies:",
+    "Entry criteria:",
+    "Exit criteria:",
+]);
+
+export const DEFAULT_PENDING_TITLE = "Pending title";
+
+export const INITIAL_SESSION_STRATEGY = Object.freeze({
+    mode: "staged",
+    rationale: "Initial draft created before source fetch; strategy is finalized after source intake.",
+    stages: [
+        {
+            id: "S1",
+            title: "Source intake",
+            rationale: "Fetch and assess the source before defining implementation packages.",
+            work_package_ids: [],
+            dependencies: [],
+            session_boundary: "same-session",
+            entry_criteria: ["Intent gate passed."],
+            exit_criteria: ["Source fetched and profile assigned."],
+        },
+    ],
+    session_boundary_recommendation: "Resume in a new session after source intake.",
+    dependencies: ["source fetch"],
+    entry_criteria: ["Source fetched, assessed and profile assigned."],
+    exit_criteria: ["Every blocking question has an explicit user decision."],
+});
 
 export const DETAILED_PLAN_SECTIONS = Object.freeze([
     "## Source plan",
@@ -155,6 +191,7 @@ export function validateDraftDocument(document, options = {}) {
         errors.push(`Missing draft sections: ${missingSections.join(", ")}.`);
     }
     errors.push(...validateQuestionPresentation(parsed.body, parsed.metadata));
+    errors.push(...validateSessionStrategyPresentation(parsed.body));
 
     return {
         valid: errors.length === 0,
@@ -203,20 +240,22 @@ export function buildDraftPath(source, options = {}) {
     const draftRoot = safeRelativePath(options.draftRoot ?? "docs/draft", "draftRoot");
     const maxLength = options.maxSlugLength ?? 80;
     const kind = source?.source_kind;
-    const title = source?.title ?? source?.package_title ?? source?.source_ref ?? "";
-    const slug = slugifyTitle(title, {maxLength}) || "task";
     let filename;
 
     if (kind === "github-issue") {
         const issue = requireIssueId(source.issue_number ?? source.issue);
-        filename = `issue-${issue}-${slug}-plan.md`;
+        filename = `issue-${issue}-plan.md`;
     } else if (kind === "derived-work-package") {
         const issue = requireIssueId(source.issue_number ?? source.issue);
         const packageId = requirePackageId(source.work_package_id).toLowerCase();
-        filename = `issue-${issue}-wp-${packageId}-${slug}-plan.md`;
+        filename = `issue-${issue}-wp-${packageId}-plan.md`;
     } else if (kind === "file") {
+        const title = source?.title ?? source?.package_title ?? source?.source_ref ?? "";
+        const slug = slugifyTitle(title, {maxLength}) || "task";
         filename = `task-file-${slug}-plan.md`;
     } else if (kind === "user-input") {
+        const title = source?.title ?? source?.package_title ?? source?.source_ref ?? "";
+        const slug = slugifyTitle(title, {maxLength}) || "task";
         filename = `task-${slug}-plan.md`;
     } else {
         throw new DraftError("INVALID_DRAFT_PATH", `Unsupported source kind: ${kind ?? ""}.`);
@@ -230,7 +269,7 @@ export function buildDraftMetadata(source, options = {}) {
     const kind = source?.source_kind;
     const metadata = {
         source_kind: kind,
-        source_ref: requireValue(source?.source_ref, "source_ref"),
+        source_ref: requireValue(deriveSourceRef(source, kind), "source_ref"),
         input_profile: source.input_profile ?? "brief-request",
         plan_status: options.planStatus ?? (source.input_profile === "title-only" ? "needs-clarification" : "review-pending"),
         package_decision_gate: options.packageDecisionGate ?? "closed",
@@ -246,7 +285,9 @@ export function buildDraftMetadata(source, options = {}) {
     }
     if (kind === "github-issue") {
         metadata.issue = requireIssueId(source.issue_number ?? source.issue);
-        metadata.title = requireValue(source.title, "title");
+        metadata.title = source.title
+            ? requireValue(source.title, "title")
+            : (options.placeholderTitle ?? DEFAULT_PENDING_TITLE);
     }
     if (kind === "derived-work-package") {
         metadata.parent_draft = requireValue(source.parent_draft, "parent_draft");
@@ -423,6 +464,96 @@ export function writeSeparatedDraft({derivedPath, derivedContent, parentPath, pa
     };
 }
 
+export function renderSessionStrategySection(strategy) {
+    const errors = validateSessionStrategy(strategy);
+    if (errors.length > 0) {
+        throw new DraftError("INVALID_SESSION_STRATEGY", errors.join(" "), {errors});
+    }
+    const stages = strategy.stages.map((stage, index) => {
+        const packages = stage.work_package_ids.length > 0 ? stage.work_package_ids.join(", ") : "none yet";
+        const dependencies = stage.dependencies.length > 0 ? stage.dependencies.map(markdownInline).join(", ") : "none";
+        return `${index + 1}. ${markdownInline(stage.id)} ${markdownInline(stage.title)} — ${markdownInline(stage.rationale)} [${packages}; zależności: ${dependencies}; ${markdownInline(stage.session_boundary)}; wejście: ${stage.entry_criteria.map(markdownInline).join(", ")}; wyjście: ${stage.exit_criteria.map(markdownInline).join(", ")}]`;
+    }).join("; ");
+    return [
+        "## Session strategy",
+        "",
+        `- Mode: \`${markdownInline(strategy.mode)}\``,
+        `- Rationale: ${markdownInline(strategy.rationale)}`,
+        `- Stages: ${stages}`,
+        `- Work packages: ${strategy.stages.flatMap((stage) => stage.work_package_ids).join(", ") || "none yet"}`,
+        `- Session boundary recommendation: ${markdownInline(strategy.session_boundary_recommendation)}`,
+        `- Dependencies: ${strategy.dependencies.length > 0 ? strategy.dependencies.join(", ") : "none"}`,
+        `- Entry criteria: ${strategy.entry_criteria.map(markdownInline).join("; ")}`,
+        `- Exit criteria: ${strategy.exit_criteria.map(markdownInline).join("; ")}`,
+        "",
+    ].join("\n");
+}
+
+export function renderInitialDraftDocument(metadata) {
+    const strategySection = renderSessionStrategySection(INITIAL_SESSION_STRATEGY).trimEnd();
+    const body = [
+        "## Source",
+        "",
+        "- Source fetch pending; provenance is recorded after intake.",
+        "",
+        strategySection,
+        "",
+        "## Goal and scope",
+        "",
+        "- To be established from the fetched source.",
+        "",
+        "## Work packages",
+        "",
+        "- None yet.",
+        "",
+        "## Decisions and open questions",
+        "",
+        "### Decyzje zakresowe przed decyzjami pakietowymi",
+        "",
+        "- Brak.",
+        "",
+        "### Decyzje pakietowe",
+        "",
+        "- Niedostępne: `package_decision_gate` jest zamknięta. Najpierw zakończ review, uproszczenie i decyzje zakresowe.",
+        "",
+        "## Evidence, risks and review",
+        "",
+        "- No evidence is collected before source fetch.",
+        "",
+        "## Acceptance and verification",
+        "",
+        "- To be established from the fetched source.",
+        "",
+        "## Next action",
+        "",
+        "- Fetch and assess the source, then update this draft atomically.",
+        "",
+        "## Execution handoff (when implementation is requested)",
+        "",
+        "- Not applicable for an initial draft.",
+        "",
+    ].join("\n");
+    return `${serializeFrontMatter(metadata)}${body}`;
+}
+
+export function createInitialDraft({source, now, draftRoot = "docs/draft", rootDir, writeFile = writeAtomicFile} = {}) {
+    if (!source || typeof source !== "object") {
+        throw new DraftError("INVALID_SOURCE_IDENTITY", "Initial draft requires a source identity object.");
+    }
+    const metadata = buildDraftMetadata(source, {now});
+    const relativePath = buildDraftPath(source, {draftRoot});
+    const target = rootDir ? path.resolve(rootDir, relativePath) : path.resolve(relativePath);
+    const content = renderInitialDraftDocument(metadata);
+    writeFile(target, content, rootDir ? {rootDir} : {});
+    return {
+        path: relativePath,
+        target,
+        content,
+        metadata,
+        written: true,
+    };
+}
+
 function validateRequiredMetadata(metadata) {
     const errors = [];
     const required = [
@@ -506,15 +637,28 @@ function validateKindMetadata(metadata, kind) {
     return [];
 }
 
-function validateQuestionPresentation(body, metadata = {}) {
-    const heading = "## Decisions and open questions";
-    const start = body.indexOf(heading);
-    if (start < 0) {
+function validateSessionStrategyPresentation(body) {
+    const headingMatch = /^##\s+Session strategy\s*$/m.exec(body);
+    if (!headingMatch) {
         return [];
     }
-    const sectionStart = start + heading.length;
+    const sectionStart = headingMatch.index + headingMatch[0].length;
     const remainder = body.slice(sectionStart);
-    const nextSection = remainder.search(/\n##\s/);
+    const nextSection = remainder.search(/^##\s/m);
+    const section = nextSection >= 0 ? remainder.slice(0, nextSection) : remainder;
+    return SESSION_STRATEGY_LABELS
+        .filter((label) => !section.includes(label))
+        .map((label) => `Session strategy section is missing ${label}`);
+}
+
+function validateQuestionPresentation(body, metadata = {}) {
+    const headingMatch = /^##\s+Decisions and open questions\s*$/m.exec(body);
+    if (!headingMatch) {
+        return [];
+    }
+    const sectionStart = headingMatch.index + headingMatch[0].length;
+    const remainder = body.slice(sectionStart);
+    const nextSection = remainder.search(/^##\s/m);
     const section = nextSection >= 0 ? remainder.slice(0, nextSection) : remainder;
     const errors = [];
     if (!section.includes("### Decyzje zakresowe przed decyzjami pakietowymi")) {
@@ -698,6 +842,21 @@ function parseGitHubSourceRef(value) {
     return {owner: match[1], repo: match[2]};
 }
 
+function deriveSourceRef(source, kind) {
+    if (source?.source_ref) {
+        return source.source_ref;
+    }
+    if (kind === "github-issue") {
+        const owner = source?.owner;
+        const repo = source?.repo;
+        if (typeof owner === "string" && owner.trim() !== "" && typeof repo === "string" && repo.trim() !== "") {
+            const issue = requireIssueId(source.issue_number ?? source.issue);
+            return `https://github.com/${owner}/${repo}/issues/${issue}`;
+        }
+    }
+    return null;
+}
+
 function toSourceIdentityInput(metadata) {
     return {
         source_kind: metadata.source_kind,
@@ -775,13 +934,32 @@ function renderQuestionList(questions) {
     return questions.flatMap((question) => {
         const marker = question.blocking ? "BLOCKING" : "NON-BLOCKING";
         const status = question.resolved ? "resolved" : "open";
-        return [
+        const lines = [
             `- **${question.id} [${marker}]** ${markdownInline(question.prompt)}`,
             `  - Wpływ: ${markdownInline(question.impact)}`,
             `  - Wymagana decyzja: ${markdownInline(question.decision_needed)}`,
             `  - Status: \`${status}\``,
-            ...(question.resolved ? [`  - Odpowiedź: ${markdownInline(question.answer)}`] : []),
         ];
+        if (question.context) {
+            lines.push(`  - Kontekst: ${markdownInline(question.context)}`);
+        }
+        if (Array.isArray(question.options) && question.options.length > 0) {
+            lines.push("  - Opcje:");
+            for (const option of question.options) {
+                const optionTitle = markdownInline(option.label ?? option.description ?? option.id);
+                lines.push(`    - \`${markdownInline(option.id)}\` — ${optionTitle}`);
+                lines.push(`      - Konsekwencja/tradeoff: ${markdownInline(option.consequence)}`);
+            }
+        }
+        if (question.resolved) {
+            const selected = Array.isArray(question.options)
+                ? question.options.find((option) => option.id === question.answer)
+                : null;
+            lines.push(selected
+                ? `  - Odpowiedź: \`${markdownInline(selected.id)}\` — ${markdownInline(selected.label ?? selected.description ?? selected.id)}`
+                : `  - Odpowiedź: ${markdownInline(question.answer)}`);
+        }
+        return lines;
     });
 }
 

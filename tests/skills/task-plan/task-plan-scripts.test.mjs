@@ -9,8 +9,10 @@ import {
     DraftError,
     buildDraftPath,
     buildSourceIdentity,
+    createInitialDraft,
     parseDraftDocument,
     prepareResumeMetadata,
+    renderSessionStrategySection,
     validateDraftDocument,
     writeAtomicFile,
     writeSeparatedDraft,
@@ -28,6 +30,10 @@ import {
     reopenPackage,
     validateDependencyGraph,
     validateOwnershipRedundancyReview,
+    validateSessionStrategy,
+    validateUserDecisionRecords,
+    validateQuestionDecisionPropagation,
+    applyQuestionDecision,
 } from "../../../.agents/skills/task-plan/scripts/state.mjs";
 import {
     compareSourceSnapshots,
@@ -77,15 +83,89 @@ describe("task-plan draft module", () => {
             source_kind: "github-issue",
             issue: "123",
             title: "Zażółć gęślą jaźń!",
-        })).toBe("docs/draft/issue-123-zazolc-gesla-jazn-plan.md");
+        })).toBe("docs/draft/issue-123-plan.md");
         expect(buildDraftPath({
             source_kind: "user-input",
             title: "!!!",
         })).toBe("docs/draft/task-task-plan.md");
+        expect(buildDraftPath({
+            source_kind: "file",
+            source_ref: "docs/task.md",
+        })).toBe("docs/draft/task-file-docstaskmd-plan.md");
+        expect(buildDraftPath({
+            source_kind: "github-issue",
+            issue: "123",
+            title: "A different fetched title",
+        })).toBe(buildDraftPath({
+            source_kind: "github-issue",
+            issue: "123",
+            title: "Original title",
+        }));
         expect(() => buildDraftPath({
             source_kind: "user-input",
             title: "x",
         }, {draftRoot: "../outside"})).toThrow(DraftError);
+    });
+
+    it("creates a valid initial draft before source details are fetched", () => {
+        const directory = makeTemporaryDirectory();
+        let sourceRead = false;
+        const result = createInitialDraft({
+            source: {
+                source_kind: "github-issue",
+                owner: "acme",
+                repo: "demo",
+                issue_number: "123",
+            },
+            now: "2026-01-01T00:00:00Z",
+            rootDir: directory,
+            writeFile: (target, content, options) => {
+                expect(sourceRead).toBe(false);
+                fs.mkdirSync(path.dirname(target), {recursive: true});
+                fs.writeFileSync(target, content, "utf8");
+                return {path: target, written: true, options};
+            },
+        });
+        sourceRead = true;
+
+        expect(result.path).toBe("docs/draft/issue-123-plan.md");
+        expect(fs.existsSync(path.join(directory, result.path))).toBe(true);
+        expect(validateDraftDocument(result.content, {kind: "main"}).valid).toBe(true);
+        expect(parseDraftDocument(result.content).metadata.title).toBe("Pending title");
+    });
+
+    it("keeps the initial draft after source failure and resumes the same path", () => {
+        const directory = makeTemporaryDirectory();
+        const initial = createInitialDraft({
+            source: {source_kind: "github-issue", owner: "acme", repo: "demo", issue_number: "123"},
+            now: "2026-01-01T00:00:00Z",
+            rootDir: directory,
+        });
+
+        expect(() => fetchGitHubIssue({
+            owner: "acme",
+            repo: "demo",
+            issueNumber: "123",
+            resolveCommand: () => "gh",
+            execCommand: () => ({status: 1, stderr: "network unavailable"}),
+        })).toThrow(SourceError);
+
+        const draftPath = path.join(directory, initial.path);
+        const savedDraft = fs.readFileSync(draftPath, "utf8");
+        expect(validateDraftDocument(savedDraft, {kind: "main"}).valid).toBe(true);
+        const resumed = prepareResumeMetadata(
+            parseDraftDocument(savedDraft).metadata,
+            {
+                source_kind: "github-issue",
+                source_ref: "https://github.com/acme/demo/issues/123",
+                issue_number: "123",
+                title: "Fetched title",
+                source_updated_at: "2026-01-02T00:00:00Z",
+            },
+            {now: "2026-01-02T00:00:00Z"},
+        );
+        expect(resumed.plan_version).toBe("2");
+        expect(buildDraftPath(resumed)).toBe(initial.path);
     });
 
     it("validates fixture documents and parses scalar front matter", () => {
@@ -192,6 +272,34 @@ describe("task-plan draft module", () => {
             work_package_id: "WP2",
         })).toBe("acme/demo/123/wp/WP2");
     });
+
+    it("validates staged session strategy with explicit package grouping", () => {
+        const strategy = {
+            mode: "staged",
+            rationale: "Separate review from implementation.",
+            stages: [{
+                id: "S1",
+                title: "Core contract",
+                rationale: "Stabilize the shared contract first.",
+                work_package_ids: ["WP1"],
+                dependencies: [],
+                session_boundary: "separate-session",
+                entry_criteria: ["Source assessed."],
+                exit_criteria: ["WP1 contract accepted."],
+            }],
+            session_boundary_recommendation: "Start WP2 in a new session.",
+            dependencies: ["WP1 before WP2"],
+            entry_criteria: ["Intent confirmed."],
+            exit_criteria: ["All stages have terminal decisions."],
+        };
+        expect(validateSessionStrategy(strategy)).toEqual([]);
+        expect(renderSessionStrategySection(strategy)).toContain("Stabilize the shared contract first.");
+        expect(renderSessionStrategySection(strategy)).toContain("zależności: none");
+        expect(validateSessionStrategy({...strategy, mode: "unsupported"})).toContain("session_strategy.mode is invalid.");
+        expect(validateSessionStrategy({...strategy, stages: [{...strategy.stages[0], entry_criteria: []}]})).toContain(
+            "session_strategy.stages[0].entry_criteria must be a non-empty array.",
+        );
+    });
 });
 
 describe("task-plan state module", () => {
@@ -239,6 +347,9 @@ describe("task-plan state module", () => {
             plan_status: "review-pending",
         };
         expect(canOpenPackageDecisions(ready)).toEqual({ready: true, reasons: []});
+        const withoutStrategy = {...ready};
+        delete withoutStrategy.session_strategy;
+        expect(canOpenPackageDecisions(withoutStrategy).reasons).toContain("invalid_session_strategy");
         expect(canTransition("plan", "review-pending", "awaiting-package-decisions", ready)).toBe(true);
         expect(applyPlanTransition(ready, "awaiting-package-decisions", {
             reason: "critical review and simplification complete",
@@ -367,6 +478,78 @@ describe("task-plan state module", () => {
             decision_source: "user",
             decided_at: "2026-01-02T00:00:00Z",
         }), "INVALID_BULK_DECISION");
+    });
+
+    it("records and validates propagation of a user answer", () => {
+        const state = {
+            ...baseState(),
+            packages: [{
+                ...baseState().packages[0],
+                questions: [{
+                    id: "WP1-Q1",
+                    prompt: "Który kontrakt obowiązuje?",
+                    context: "Decyzja zmienia kryteria WP1.",
+                    blocking: true,
+                    resolved: false,
+                    impact: "Wpływa na API.",
+                    decision_needed: "Wybrać kontrakt.",
+                    options: [
+                        {id: "existing", label: "Istniejący", consequence: "Mniejszy zakres i ryzyko migracji."},
+                        {id: "new", label: "Nowy", consequence: "Większy zakres, ale spójniejszy kontrakt."},
+                    ],
+                }],
+            }],
+        };
+        const pending = applyQuestionDecision(state, {
+            question_id: "WP1-Q1",
+            decision_ref: "D1",
+            selected_option: "existing",
+            decision_source: "user",
+            decided_at: "2026-01-02T00:00:00Z",
+            affected_refs: ["WP1.scope", "WP1.acceptance_criteria"],
+            propagation_status: "propagated",
+        });
+
+        expect(pending.user_decisions[0].propagation_status).toBe("pending");
+        expect(validateQuestionDecisionPropagation(pending)).toContain("user_decisions propagation incomplete for D1.");
+        expect(canOpenPackageDecisions(pending).reasons).toContain("question_decision_propagation_incomplete");
+        const propagated = structuredClone(pending);
+        propagated.user_decisions[0].propagation_status = "propagated";
+        expect(validateUserDecisionRecords(propagated.user_decisions)).toEqual([]);
+        expect(validateQuestionDecisionPropagation(propagated)).toEqual([]);
+        expect(canApprovePlan(pending).reasons).toContain("question_decision_propagation_incomplete");
+
+        const missingRecord = structuredClone(propagated);
+        missingRecord.user_decisions = [];
+        expect(validateQuestionDecisionPropagation(missingRecord)).toContain(
+            "Resolved question WP1-Q1 is missing a user_decisions record.",
+        );
+        const mismatched = structuredClone(propagated);
+        mismatched.user_decisions[0].selected_option = "new";
+        expect(validateQuestionDecisionPropagation(mismatched)).toContain(
+            "User decision for WP1-Q1 answer must match the selected option.",
+        );
+        const unknown = structuredClone(propagated);
+        unknown.user_decisions.push({
+            decision_ref: "D9",
+            question_id: "WP9-Q1",
+            answer: "unused",
+            decision_source: "user",
+            decided_at: "2026-01-02T00:00:00Z",
+            affected_refs: ["question:WP9-Q1"],
+            propagation_status: "propagated",
+        });
+        expect(validateQuestionDecisionPropagation(unknown)).toContain(
+            "user_decisions references unknown question WP9-Q1.",
+        );
+        expectErrorCode(() => applyQuestionDecision(state, {
+            question_id: "WP1-Q1",
+            decision_ref: "D2",
+            answer: "free text",
+            decision_source: "user",
+            decided_at: "2026-01-02T00:00:00Z",
+            affected_refs: ["WP1.scope"],
+        }), "INVALID_QUESTION_DECISION");
     });
 
     it("reopens terminal packages explicitly and computes dependent impact", () => {
@@ -784,6 +967,7 @@ describe("task-plan validation module", () => {
             review_history: [],
             decisions: [],
             simplification: {result: "pending"},
+            session_strategy: sessionStrategy(),
             ownership_redundancy_review: notRequiredOwnershipReview(),
         }).valid).toBe(true);
         const invalid = validatePlanState({...baseState(), plan_status: "approved", blockers: ["B1"]});
@@ -857,6 +1041,19 @@ describe("task-plan CLI contract", () => {
         expect(invalidStateResult.status).toBe(1);
         expect(JSON.parse(invalidStateResult.stdout).errors).toContain("Plan state must contain ownership_redundancy_review.");
     });
+
+    it("resolves a title-independent GitHub draft path without fetching the source", () => {
+        const result = runCli(DRAFT_SCRIPT, [
+            "path",
+            "--source-kind",
+            "github-issue",
+            "--issue",
+            "123",
+        ]);
+
+        expect(result.status).toBe(0);
+        expect(JSON.parse(result.stdout).path).toBe("docs/draft/issue-123-plan.md");
+    });
 });
 
 function baseState() {
@@ -895,6 +1092,7 @@ function baseState() {
         review_complete: true,
         scope_questions: [],
         decisions: [],
+        session_strategy: sessionStrategy(),
         ownership_redundancy_review: notRequiredOwnershipReview(),
     };
 }
@@ -941,6 +1139,27 @@ function notRequiredOwnershipReview() {
         requirement_decision_ref: "",
         status: "not-required",
         subjects: [],
+    };
+}
+
+function sessionStrategy() {
+    return {
+        mode: "staged",
+        rationale: "WP1 precedes dependent work.",
+        stages: [{
+            id: "S1",
+            title: "Core",
+            rationale: "Stabilize the core contract first.",
+            work_package_ids: ["WP1"],
+            dependencies: [],
+            session_boundary: "same-session",
+            entry_criteria: ["Scope confirmed."],
+            exit_criteria: ["Core contract documented."],
+        }],
+        session_boundary_recommendation: "Review dependent work in a new session.",
+        dependencies: ["WP2 depends_on WP1"],
+        entry_criteria: ["Intent confirmed."],
+        exit_criteria: ["Every stage has a terminal result."],
     };
 }
 

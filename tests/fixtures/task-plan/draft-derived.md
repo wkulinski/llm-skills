@@ -3,7 +3,7 @@ source_kind: derived-work-package
 source_ref: https://github.com/acme/demo/issues/123
 input_profile: brief-request
 parent_issue: 123
-parent_draft: issue-123-main-title-plan.md
+parent_draft: issue-123-plan.md
 work_package_id: WP2
 plan_status: needs-clarification
 package_decision_gate: closed
@@ -16,7 +16,18 @@ source_updated_at: 2026-01-01T00:00:00Z
 ## Source
 
 - source_kind: derived-work-package
-- parent_draft: issue-123-main-title-plan.md
+- parent_draft: issue-123-plan.md
+
+## Session strategy
+
+- Mode: `decisions`
+- Rationale: The separated package runs its own bounded workflow.
+- Stages: 1. intake; 2. planning; 3. review; 4. decisions
+- Work packages: WP2
+- Session boundary recommendation: resume in a dedicated session.
+- Dependencies: parent draft separation link
+- Entry criteria: explicit `separate` decision recorded.
+- Exit criteria: every blocking question has an explicit user decision.
 
 ## Goal and scope
 

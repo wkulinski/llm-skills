@@ -123,7 +123,10 @@
       "required_anchors": [
         "gh-issue-status-set",
         "`start.mjs` nie pobiera body ani komentarzy.",
-        "issue-<id>-<title-slug>-plan.md",
+        "issue-<id>-plan.md",
+        "Po przejściu bramki intencji task-plan najpierw tworzy",
+        "przed każdą serią pytań",
+        "## Session strategy",
         "## Execution handoff",
         "Plan version",
         "docs/SKILLS.md",
