@@ -31,6 +31,48 @@ export const SIMPLIFICATION_STATUSES = Object.freeze([
     "needs-user-decision",
 ]);
 
+export const OWNERSHIP_REDUNDANCY_SUBJECT_KINDS = Object.freeze([
+    "field",
+    "object",
+    "algorithm",
+    "workflow",
+    "module",
+    "endpoint",
+]);
+
+export const OWNERSHIP_REDUNDANCY_REQUIREMENT_BASES = Object.freeze([
+    "critical-review",
+    "user-request",
+    "not-applicable",
+]);
+
+export const OWNERSHIP_REDUNDANCY_REVIEW_STATUSES = Object.freeze([
+    "not-required",
+    "pending",
+    "complete",
+]);
+
+export const OWNERSHIP_REDUNDANCY_CLAIM_CLASSIFICATIONS = Object.freeze([
+    "requirement",
+    "source_example",
+    "agent_hypothesis",
+    "user_decision",
+]);
+
+export const OWNERSHIP_REDUNDANCY_SCOPES = Object.freeze(["local", "cross-context"]);
+
+export const OWNERSHIP_REDUNDANCY_STATUSES = Object.freeze([
+    "not-assessed",
+    "justified",
+    "redundant",
+    "accepted-exception",
+]);
+
+export const REDUNDANT_DESIGN_ELEMENT = "REDUNDANT_DESIGN_ELEMENT";
+
+const OWNERSHIP_SUBJECT_ID = /^OR[1-9][0-9]*$/;
+const OWNERSHIP_FINDING_ID = /^F[1-9][0-9]*$/;
+
 export const REQUIRED_REVIEW_CHECKS = Object.freeze([
     "intent-and-acceptance",
     "technical-scope",
@@ -463,6 +505,9 @@ function packageDecisionGateReasons(state) {
     for (const reason of simplificationReasons(candidate)) {
         addReason(reason);
     }
+    for (const reason of ownershipRedundancyReasons(candidate)) {
+        addReason(reason);
+    }
     for (const reason of blockerReasons(candidate)) {
         addReason(reason);
     }
@@ -484,6 +529,25 @@ function packageDecisionGateReasons(state) {
         } else if (candidate.scope_questions.some(isUnresolvedScopeQuestion)) {
             addReason("unresolved_scope_questions");
         }
+    }
+
+    return reasons;
+}
+
+function ownershipRedundancyReasons(candidate) {
+    const reasons = [];
+    const review = candidate.ownership_redundancy_review;
+    const validationErrors = validateOwnershipRedundancyReview(review, candidate.findings);
+
+    if (validationErrors.length > 0) {
+        reasons.push("ownership_redundancy_review_invalid");
+    }
+    if (review
+        && typeof review === "object"
+        && !Array.isArray(review)
+        && review.required === true
+        && review.status !== "complete") {
+        reasons.push("ownership_redundancy_review_incomplete");
     }
 
     return reasons;
@@ -599,6 +663,270 @@ export function validateQuestionRecords(questions, options = {}) {
     }
 
     return errors;
+}
+
+export function validateOwnershipRedundancyReview(review, findings) {
+    if (typeof review === "undefined") {
+        return ["Plan state must contain ownership_redundancy_review."];
+    }
+    if (!isRecord(review)) {
+        return ["ownership_redundancy_review must be an object."];
+    }
+
+    const errors = [];
+    if (typeof review.required !== "boolean") {
+        errors.push("ownership_redundancy_review.required must be boolean.");
+    }
+    if (!OWNERSHIP_REDUNDANCY_REQUIREMENT_BASES.includes(review.requirement_basis)) {
+        errors.push("ownership_redundancy_review.requirement_basis is invalid.");
+    }
+    if (Object.hasOwn(review, "requirement_decision_ref")
+        && review.requirement_decision_ref !== ""
+        && !isNonEmptyString(review.requirement_decision_ref)) {
+        errors.push("ownership_redundancy_review.requirement_decision_ref must be a string.");
+    }
+    if (!OWNERSHIP_REDUNDANCY_REVIEW_STATUSES.includes(review.status)) {
+        errors.push("ownership_redundancy_review.status is invalid.");
+    }
+    if (!Array.isArray(review.subjects)) {
+        errors.push("ownership_redundancy_review.subjects must be an array.");
+        return errors;
+    }
+
+    if (review.required === false) {
+        if (review.requirement_basis !== "not-applicable") {
+            errors.push("ownership_redundancy_review.required=false requires requirement_basis=not-applicable.");
+        }
+        if (isNonEmptyString(review.requirement_decision_ref)) {
+            errors.push("ownership_redundancy_review.required=false requires an empty requirement_decision_ref.");
+        }
+        if (review.status !== "not-required") {
+            errors.push("ownership_redundancy_review.required=false requires status=not-required.");
+        }
+        if (review.subjects.length > 0) {
+            errors.push("ownership_redundancy_review.required=false requires empty subjects.");
+        }
+    }
+
+    if (review.required === true) {
+        if (!["critical-review", "user-request"].includes(review.requirement_basis)) {
+            errors.push("ownership_redundancy_review.required=true requires a review or user-request basis.");
+        }
+        if (review.requirement_basis === "user-request" && !isNonEmptyString(review.requirement_decision_ref)) {
+            errors.push("ownership_redundancy_review user-request basis requires requirement_decision_ref.");
+        }
+        if (review.subjects.length === 0) {
+            errors.push("ownership_redundancy_review.required=true requires at least one subject.");
+        }
+    }
+
+    const subjectIds = new Set();
+    for (const [index, subject] of review.subjects.entries()) {
+        errors.push(...validateOwnershipSubject(subject, index, subjectIds));
+    }
+    errors.push(...validateOwnershipFindingRelations(review, findings, subjectIds));
+    if (review.required === true
+        && review.status === "pending"
+        && !hasPendingOwnershipEvidence(review.subjects, findings)) {
+        errors.push("ownership_redundancy_review.status=pending requires an incomplete or not-assessed subject or an open finding.");
+    }
+    return errors;
+}
+
+function hasPendingOwnershipEvidence(subjects, findings) {
+    if (subjects.some((subject) => isRecord(subject) && subject.redundancy_status === "not-assessed")) {
+        return true;
+    }
+    return Array.isArray(findings)
+        && findings.some((finding) => isRecord(finding) && ["open", "reopened"].includes(finding.status));
+}
+
+function validateOwnershipSubject(subject, index, subjectIds) {
+    const label = `ownership_redundancy_review subject ${index + 1}`;
+    if (!isRecord(subject)) {
+        return [`${label} must be an object.`];
+    }
+
+    const errors = [];
+    if (!isNonEmptyString(subject.id) || !OWNERSHIP_SUBJECT_ID.test(subject.id)) {
+        errors.push(`${label}.id must match OR<number>.`);
+    } else if (subjectIds.has(subject.id)) {
+        errors.push(`Duplicate ownership subject id: ${subject.id}.`);
+    } else {
+        subjectIds.add(subject.id);
+    }
+
+    for (const field of [
+        "subject_ref",
+        "source_claim",
+        "owner_source_of_truth",
+        "necessity",
+        "alternative_without_subject",
+        "inconsistency_or_divergence_test",
+    ]) {
+        if (!isNonEmptyString(subject[field])) {
+            errors.push(`${label} is missing ${field}.`);
+        }
+    }
+    if (!OWNERSHIP_REDUNDANCY_SUBJECT_KINDS.includes(subject.subject_kind)) {
+        errors.push(`${label}.subject_kind is invalid.`);
+    }
+    if (!OWNERSHIP_REDUNDANCY_CLAIM_CLASSIFICATIONS.includes(subject.claim_classification)) {
+        errors.push(`${label}.claim_classification is invalid.`);
+    }
+    if (!OWNERSHIP_REDUNDANCY_SCOPES.includes(subject.scope)) {
+        errors.push(`${label}.scope is invalid.`);
+    }
+    if (!OWNERSHIP_REDUNDANCY_STATUSES.includes(subject.redundancy_status)) {
+        errors.push(`${label}.redundancy_status is invalid.`);
+    }
+
+    for (const field of ["producer_or_implementer", "consumer_or_caller", "evidence_refs", "finding_ids"]) {
+        if (!Array.isArray(subject[field])) {
+            errors.push(`${label}.${field} must be an array.`);
+            continue;
+        }
+        if (field !== "finding_ids" && subject[field].length === 0) {
+            errors.push(`${label}.${field} must not be empty.`);
+        }
+        const seen = new Set();
+        for (const [valueIndex, value] of subject[field].entries()) {
+            if (!isNonEmptyString(value)) {
+                errors.push(`${label}.${field}[${valueIndex}] must be a non-empty string.`);
+                continue;
+            }
+            if (field === "finding_ids" && !OWNERSHIP_FINDING_ID.test(value)) {
+                errors.push(`${label}.finding_ids must contain F<number> ids.`);
+            }
+            if (seen.has(value)) {
+                errors.push(`${label}.${field} contains duplicate value ${value}.`);
+            }
+            seen.add(value);
+        }
+    }
+
+    for (const field of ["promotion_decision_ref", "decision_ref", "context_boundary"]) {
+        if (Object.hasOwn(subject, field)
+            && subject[field] !== ""
+            && !isNonEmptyString(subject[field])) {
+            errors.push(`${label}.${field} must be a string.`);
+        }
+    }
+    if (subject.scope === "cross-context" && !isNonEmptyString(subject.context_boundary)) {
+        errors.push(`${label} cross-context scope requires context_boundary.`);
+    }
+    if (subject.redundancy_status === "redundant"
+        && (!Array.isArray(subject.finding_ids) || subject.finding_ids.length === 0)) {
+        errors.push(`${label} redundant status requires finding_ids.`);
+    }
+    if (subject.redundancy_status === "accepted-exception"
+        && !isNonEmptyString(subject.decision_ref)) {
+        errors.push(`${label} accepted-exception status requires decision_ref.`);
+    }
+
+    return errors;
+}
+
+function validateOwnershipFindingRelations(review, findings, subjectIds) {
+    const relatedFindings = findings === null || typeof findings === "undefined" ? [] : findings;
+    if (!Array.isArray(relatedFindings)) {
+        return ["ownership_redundancy_review findings must be an array."];
+    }
+
+    const errors = [];
+    const subjects = Array.isArray(review.subjects) ? review.subjects : [];
+    const subjectsById = new Map(subjects
+        .filter((subject) => isRecord(subject) && isNonEmptyString(subject.id))
+        .map((subject) => [subject.id, subject]));
+    const findingsById = new Map();
+    const redundantFindings = [];
+
+    for (const finding of relatedFindings) {
+        if (!isRecord(finding)) {
+            continue;
+        }
+        if (isNonEmptyString(finding.id)) {
+            if (findingsById.has(finding.id)) {
+                errors.push(`Duplicate finding id: ${finding.id}.`);
+            } else {
+                findingsById.set(finding.id, finding);
+            }
+        }
+        if (finding.code === REDUNDANT_DESIGN_ELEMENT) {
+            redundantFindings.push(finding);
+        }
+    }
+
+    for (const subject of subjects) {
+        if (!isRecord(subject) || !Array.isArray(subject.finding_ids)) {
+            continue;
+        }
+        for (const findingId of subject.finding_ids) {
+            const finding = findingsById.get(findingId);
+            if (!finding) {
+                errors.push(`Ownership subject ${subject.id} references missing finding ${findingId}.`);
+                continue;
+            }
+            if (finding.code !== REDUNDANT_DESIGN_ELEMENT) {
+                errors.push(`Ownership subject ${subject.id} finding ${findingId} must use code ${REDUNDANT_DESIGN_ELEMENT}.`);
+            }
+            if (finding.subject_id !== subject.id) {
+                errors.push(`Ownership finding ${findingId} must reference subject ${subject.id}.`);
+            }
+        }
+    }
+
+    for (const finding of redundantFindings) {
+        if (!isNonEmptyString(finding.id)) {
+            errors.push("REDUNDANT_DESIGN_ELEMENT finding must contain an id.");
+            continue;
+        }
+        if (!isNonEmptyString(finding.subject_id) || !OWNERSHIP_SUBJECT_ID.test(finding.subject_id)) {
+            errors.push(`Finding ${finding.id} subject_id must match OR<number>.`);
+            continue;
+        }
+        if (!subjectIds.has(finding.subject_id)) {
+            errors.push(`Finding ${finding.id} references missing ownership subject ${finding.subject_id}.`);
+            continue;
+        }
+        const subject = subjectsById.get(finding.subject_id);
+        if (!Array.isArray(subject.finding_ids) || !subject.finding_ids.includes(finding.id)) {
+            errors.push(`Finding ${finding.id} is not listed by subject ${finding.subject_id}.`);
+        }
+        if (!["redundant", "accepted-exception"].includes(subject.redundancy_status)) {
+            errors.push(`Finding ${finding.id} references subject ${finding.subject_id} without a redundant status.`);
+        }
+        if (review.required === true
+            && review.status === "complete"
+            && !["resolved", "accepted"].includes(finding.status)) {
+            errors.push(`Complete ownership review cannot contain open finding ${finding.id}.`);
+        }
+    }
+
+    for (const subject of subjects) {
+        if (!isRecord(subject)) {
+            continue;
+        }
+        if (subject.redundancy_status === "redundant"
+            && !redundantFindings.some((finding) => finding.subject_id === subject.id)) {
+            errors.push(`Redundant subject ${subject.id} must have a REDUNDANT_DESIGN_ELEMENT finding.`);
+        }
+        if (review.required === true
+            && review.status === "complete"
+            && subject.redundancy_status === "not-assessed") {
+            errors.push(`Complete ownership review cannot contain not-assessed subject ${subject.id}.`);
+        }
+    }
+
+    return errors;
+}
+
+function isRecord(value) {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNonEmptyString(value) {
+    return typeof value === "string" && value.trim() !== "";
 }
 
 function hasMeaningfulQuestionValue(value) {

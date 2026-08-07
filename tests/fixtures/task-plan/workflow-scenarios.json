@@ -129,6 +129,46 @@
         "docs/SKILLS.md",
         "source_ref"
       ]
+    },
+    {
+      "id": "ownership-review-not-required",
+      "description": "A plan without a new responsibility records the conditional review as not required.",
+      "input": {
+        "source_kind": "user-input",
+        "title": "Clarify existing wording",
+        "body": "Update documentation without adding or changing responsibility."
+      },
+      "expected": {
+        "plan_status": "review-pending",
+        "implementation_started": false,
+        "ownership_redundancy_review_required": false
+      },
+      "required_anchors": [
+        "ownership-and-redundancy-review",
+        "required: false",
+        "status: not-required",
+        "not-applicable"
+      ]
+    },
+    {
+      "id": "ownership-review-required",
+      "description": "A new responsibility requires a complete conditional ownership review before package decisions.",
+      "input": {
+        "source_kind": "user-input",
+        "title": "Add a second representation",
+        "body": "Introduce a new object that may duplicate existing state."
+      },
+      "expected": {
+        "plan_status": "review-pending",
+        "implementation_started": false,
+        "ownership_redundancy_review_required": true
+      },
+      "required_anchors": [
+        "ownership_redundancy_review",
+        "required: true",
+        "ownership_redundancy_review_incomplete",
+        "package_decision_gate"
+      ]
     }
   ]
 }

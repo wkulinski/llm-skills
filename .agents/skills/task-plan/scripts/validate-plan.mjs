@@ -16,9 +16,11 @@ import {
     validatePackageRecords,
     PLAN_STATUSES,
     readSimplificationResult,
+    REDUNDANT_DESIGN_ELEMENT,
     SIMPLIFICATION_STATUSES,
     TERMINAL_PACKAGE_STATUSES,
     validateQuestionRecords,
+    validateOwnershipRedundancyReview,
 } from "./state.mjs";
 
 export const FINDING_SEVERITIES = Object.freeze(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
@@ -29,6 +31,8 @@ export const SIMPLIFICATION_RESULTS = Object.freeze([
     "simplified",
     "needs-user-decision",
 ]);
+
+const OWNERSHIP_SNAPSHOT_FIELDS = Object.freeze(["ownership_redundancy_review"]);
 
 const REQUIRED_FINDING_FIELDS = Object.freeze([
     "id",
@@ -57,6 +61,32 @@ export function validateFinding(finding, index = 0) {
     }
     if (!FINDING_STATUSES.includes(finding.status)) {
         errors.push(`Finding ${index + 1} has invalid status.`);
+    }
+    if (Object.hasOwn(finding, "code")
+        && (!isMeaningfulString(finding.code))) {
+        errors.push(`Finding ${index + 1} code must be a non-empty string.`);
+    }
+    if (finding.code === REDUNDANT_DESIGN_ELEMENT) {
+        errors.push(...validateRedundantFinding(finding, index));
+    }
+    return errors;
+}
+
+function validateRedundantFinding(finding, index) {
+    const errors = [];
+    if (!isMeaningfulString(finding.subject_id) || !/^OR[1-9][0-9]*$/.test(finding.subject_id)) {
+        errors.push(`Finding ${index + 1} subject_id must match OR<number>.`);
+    }
+    if (finding.status !== "accepted") {
+        return errors;
+    }
+    for (const field of ["decision_ref", "decision_source", "decided_at"]) {
+        if (!isMeaningfulString(finding[field])) {
+            errors.push(`Finding ${index + 1} is missing ${field} for an accepted redundancy finding.`);
+        }
+    }
+    if (isMeaningfulString(finding.decided_at) && Number.isNaN(Date.parse(finding.decided_at))) {
+        errors.push(`Finding ${index + 1} decided_at must be a valid timestamp.`);
     }
     return errors;
 }
@@ -101,7 +131,7 @@ export function validateReviewHistory(history, maxIterations = REVIEW_LIMIT) {
     return errors;
 }
 
-export function validateSimplification(simplification) {
+export function validateSimplification(simplification, options = {}) {
     const errors = [];
     if (!simplification || typeof simplification !== "object") {
         return ["Simplification result must be an object."];
@@ -124,7 +154,14 @@ export function validateSimplification(simplification) {
     if (!simplification.before || !simplification.after) {
         return ["Resolved simplification must include before and after snapshots."];
     }
-    for (const field of ["scope", "acceptance_criteria", "user_decisions", "required_evidence", "risks"]) {
+    const snapshotFields = ["scope", "acceptance_criteria", "user_decisions", "required_evidence", "risks"];
+    const hasOwnershipSnapshot = OWNERSHIP_SNAPSHOT_FIELDS.some((field) => {
+        return Object.hasOwn(simplification.before, field) || Object.hasOwn(simplification.after, field);
+    });
+    if (options.requireOwnershipReview || hasOwnershipSnapshot) {
+        snapshotFields.push("ownership_redundancy_review");
+    }
+    for (const field of snapshotFields) {
         if (!Object.hasOwn(simplification.before, field) || !Object.hasOwn(simplification.after, field)) {
             errors.push(`Simplification snapshots must include ${field}.`);
         }
@@ -148,7 +185,80 @@ export function validateSimplification(simplification) {
     if (!containsAll(simplification.after.risks, simplification.before.risks)) {
         errors.push("Simplification removed relevant risks.");
     }
+    errors.push(...validateOwnershipSimplificationSnapshots(simplification.before, simplification.after));
     return errors;
+}
+
+function validateOwnershipSimplificationSnapshots(before, after) {
+    const errors = [];
+    const beforeReview = before.ownership_redundancy_review;
+    const afterReview = after.ownership_redundancy_review;
+    const hasBeforeReview = Object.hasOwn(before, "ownership_redundancy_review");
+    const hasAfterReview = Object.hasOwn(after, "ownership_redundancy_review");
+
+    if (hasBeforeReview && hasAfterReview) {
+        errors.push(...validateOwnershipReviewSnapshot(beforeReview, afterReview));
+    }
+
+    for (const field of ["findings", "decisions"]) {
+        const hasBefore = Object.hasOwn(before, field);
+        const hasAfter = Object.hasOwn(after, field);
+        if (!hasBefore && !hasAfter) {
+            continue;
+        }
+        if (!hasBefore && hasAfter) {
+            continue;
+        }
+        if (hasBefore && !hasAfter) {
+            errors.push(`Simplification snapshots must preserve ${field}.`);
+            continue;
+        }
+        if (!Array.isArray(before[field]) || !Array.isArray(after[field])) {
+            errors.push(`Simplification snapshot ${field} must remain an array.`);
+        } else if (!containsAll(after[field], before[field])) {
+            errors.push(`Simplification removed ${field}.`);
+        }
+    }
+
+    return errors;
+}
+
+function validateOwnershipReviewSnapshot(before, after) {
+    if (!isRecord(before) || !isRecord(after)) {
+        return ["Simplification ownership_redundancy_review snapshots must be objects."];
+    }
+
+    const errors = [];
+    for (const field of ["required", "requirement_basis", "requirement_decision_ref", "status"]) {
+        if (!sameValue(after[field], before[field])) {
+            errors.push(`Simplification changed ownership_redundancy_review.${field}.`);
+        }
+    }
+    if (!Array.isArray(before.subjects) || !Array.isArray(after.subjects)) {
+        errors.push("Simplification ownership_redundancy_review subjects must remain arrays.");
+    } else if (!before.subjects.every((subject) => containsOwnershipSubject(after.subjects, subject))) {
+        errors.push("Simplification removed ownership_redundancy_review subjects or their evidence/findings/decisions.");
+    }
+    return errors;
+}
+
+function containsOwnershipSubject(afterSubjects, beforeSubject) {
+    if (!isRecord(beforeSubject)) {
+        return afterSubjects.some((subject) => sameValue(subject, beforeSubject));
+    }
+    const candidate = afterSubjects.find((subject) => {
+        return isRecord(subject) && sameValue(subject.id, beforeSubject.id);
+    });
+    if (!candidate) {
+        return false;
+    }
+
+    return Object.entries(beforeSubject).every(([field, value]) => {
+        if (Array.isArray(value)) {
+            return Array.isArray(candidate[field]) && containsAll(candidate[field], value);
+        }
+        return sameValue(candidate[field], value);
+    });
 }
 
 export function validatePlanState(state) {
@@ -256,11 +366,14 @@ function validateStateRecords(state) {
         }
     }
     errors.push(...validateFindings(state.findings ?? []));
+    errors.push(...validateOwnershipRedundancyReview(state.ownership_redundancy_review, state.findings));
     errors.push(...validateReviewHistory(state.review_history ?? []));
     errors.push(...validateSimplification(state.simplification ?? {
         result: state.simplification_status,
         before: state.simplification_before,
         after: state.simplification_after,
+    }, {
+        requireOwnershipReview: true,
     }));
     return errors;
 }
@@ -365,6 +478,14 @@ function hasMeaningfulValue(value) {
         return Object.keys(value).length > 0;
     }
     return typeof value === "string" ? value.trim() !== "" : Boolean(value);
+}
+
+function isRecord(value) {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isMeaningfulString(value) {
+    return typeof value === "string" && value.trim() !== "";
 }
 
 function containsAll(after, before) {

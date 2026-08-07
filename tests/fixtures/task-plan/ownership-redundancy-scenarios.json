@@ -1,0 +1,577 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "field-local-justified",
+      "description": "A local field has explicit ownership and is not redundant.",
+      "review": {
+        "required": true,
+        "requirement_basis": "critical-review",
+        "requirement_decision_ref": "",
+        "status": "complete",
+        "subjects": [
+          {
+            "id": "OR1",
+            "subject_kind": "field",
+            "subject_ref": "Plan.scope",
+            "source_claim": "The plan records the user-visible scope.",
+            "claim_classification": "requirement",
+            "promotion_decision_ref": "",
+            "producer_or_implementer": ["task-plan review"],
+            "consumer_or_caller": ["package decision gate"],
+            "owner_source_of_truth": "plan scope section",
+            "scope": "local",
+            "context_boundary": "",
+            "necessity": "The gate needs one canonical scope value.",
+            "alternative_without_subject": "Keep scope only in the plan state.",
+            "inconsistency_or_divergence_test": "Compare the draft scope with the state scope before approval.",
+            "evidence_refs": ["SKILL.md:319-331"],
+            "redundancy_status": "justified",
+            "finding_ids": [],
+            "decision_ref": ""
+          }
+        ]
+      },
+      "findings": [],
+      "expected": {
+        "review_valid": true,
+        "finding_valid": true,
+        "subject_kind": "field",
+        "scope": "local",
+        "redundancy_status": "justified"
+      }
+    },
+    {
+      "id": "object-local-redundant",
+      "description": "A local object duplicates an existing state representation and has a resolved finding.",
+      "review": {
+        "required": true,
+        "requirement_basis": "critical-review",
+        "requirement_decision_ref": "",
+        "status": "complete",
+        "subjects": [
+          {
+            "id": "OR2",
+            "subject_kind": "object",
+            "subject_ref": "PackageDecisionSummary",
+            "source_claim": "A separate summary object would mirror package decisions.",
+            "claim_classification": "agent_hypothesis",
+            "promotion_decision_ref": "",
+            "producer_or_implementer": ["package decision state"],
+            "consumer_or_caller": ["draft renderer"],
+            "owner_source_of_truth": "package decision records",
+            "scope": "local",
+            "context_boundary": "",
+            "necessity": "No independent consumer requires the summary object.",
+            "alternative_without_subject": "Reuse package decision records directly.",
+            "inconsistency_or_divergence_test": "Assert rendered package status equals the source decision record.",
+            "evidence_refs": ["SKILL.md:430-435"],
+            "redundancy_status": "redundant",
+            "finding_ids": ["F1"],
+            "decision_ref": ""
+          }
+        ]
+      },
+      "findings": [
+        {
+          "id": "F1",
+          "severity": "HIGH",
+          "claim": "PackageDecisionSummary duplicates package decision records.",
+          "evidence": ["The object has no independent producer or consumer."],
+          "evidence_ref": "review:OR2",
+          "impact": "Two local representations could diverge.",
+          "recommendation": "Reuse the package decision records.",
+          "status": "resolved",
+          "code": "REDUNDANT_DESIGN_ELEMENT",
+          "subject_id": "OR2"
+        }
+      ],
+      "expected": {
+        "review_valid": true,
+        "finding_valid": true,
+        "subject_kind": "object",
+        "scope": "local",
+        "redundancy_status": "redundant",
+        "finding_code": "REDUNDANT_DESIGN_ELEMENT",
+        "finding_subject_id": "OR2"
+      }
+    },
+    {
+      "id": "algorithm-source-example-not-promoted",
+      "description": "An algorithm mentioned as an example remains source_example without becoming a requirement.",
+      "review": {
+        "required": true,
+        "requirement_basis": "critical-review",
+        "requirement_decision_ref": "",
+        "status": "complete",
+        "subjects": [
+          {
+            "id": "OR3",
+            "subject_kind": "algorithm",
+            "subject_ref": "example ranking algorithm",
+            "source_claim": "For example, the plan could rank candidates.",
+            "claim_classification": "source_example",
+            "promotion_decision_ref": "",
+            "producer_or_implementer": ["source material"],
+            "consumer_or_caller": ["task-plan critical review"],
+            "owner_source_of_truth": "source material only",
+            "scope": "local",
+            "context_boundary": "",
+            "necessity": "No implementation requirement has been decided.",
+            "alternative_without_subject": "Ask the user before adding an algorithm requirement.",
+            "inconsistency_or_divergence_test": "Check that the revised plan does not list the example as a requirement.",
+            "evidence_refs": ["SKILL.md:411-418"],
+            "redundancy_status": "justified",
+            "finding_ids": [],
+            "decision_ref": ""
+          }
+        ]
+      },
+      "findings": [],
+      "expected": {
+        "review_valid": true,
+        "finding_valid": true,
+        "subject_kind": "algorithm",
+        "claim_classification": "source_example",
+        "promotion_decision_ref": "",
+        "promoted_to_requirement": false
+      }
+    },
+    {
+      "id": "workflow-source-example-promoted",
+      "description": "A workflow example is promoted only by a recorded user decision and keeps its source classification.",
+      "review": {
+        "required": true,
+        "requirement_basis": "user-request",
+        "requirement_decision_ref": "D1",
+        "status": "complete",
+        "subjects": [
+          {
+            "id": "OR4",
+            "subject_kind": "workflow",
+            "subject_ref": "approval notification workflow",
+            "source_claim": "The source example proposes an approval notification workflow.",
+            "claim_classification": "source_example",
+            "promotion_decision_ref": "D1",
+            "producer_or_implementer": ["approval orchestrator"],
+            "consumer_or_caller": ["notification adapter"],
+            "owner_source_of_truth": "approval workflow decision",
+            "scope": "local",
+            "context_boundary": "",
+            "necessity": "The user explicitly selected this workflow for the plan.",
+            "alternative_without_subject": "Keep the workflow as an unpromoted example.",
+            "inconsistency_or_divergence_test": "Compare the implemented transitions with the accepted workflow decision.",
+            "evidence_refs": ["decision:D1", "SKILL.md:411-418"],
+            "redundancy_status": "justified",
+            "finding_ids": [],
+            "decision_ref": "D1"
+          }
+        ]
+      },
+      "findings": [],
+      "expected": {
+        "review_valid": true,
+        "finding_valid": true,
+        "subject_kind": "workflow",
+        "claim_classification": "source_example",
+        "promotion_decision_ref": "D1",
+        "promoted_to_requirement": true
+      }
+    },
+    {
+      "id": "module-cross-context-justified",
+      "description": "A module representation is justified by an explicit cross-context boundary and independent ownership.",
+      "review": {
+        "required": true,
+        "requirement_basis": "critical-review",
+        "requirement_decision_ref": "",
+        "status": "complete",
+        "subjects": [
+          {
+            "id": "OR5",
+            "subject_kind": "module",
+            "subject_ref": "BillingInvoiceProjection",
+            "source_claim": "Billing owns an invoice projection for the reporting context.",
+            "claim_classification": "requirement",
+            "promotion_decision_ref": "",
+            "producer_or_implementer": ["Billing context"],
+            "consumer_or_caller": ["Reporting context"],
+            "owner_source_of_truth": "Billing invoice aggregate; Reporting projection is independently owned",
+            "scope": "cross-context",
+            "context_boundary": "Billing -> Reporting via invoice projection event",
+            "necessity": "Reporting requires a local read model and cannot reuse Billing storage.",
+            "alternative_without_subject": "Query Billing synchronously, which violates the context boundary.",
+            "inconsistency_or_divergence_test": "Verify projection transformation and detect event-to-read-model divergence.",
+            "evidence_refs": ["context-boundary:Billing-Reporting"],
+            "redundancy_status": "justified",
+            "finding_ids": [],
+            "decision_ref": ""
+          }
+        ]
+      },
+      "findings": [],
+      "expected": {
+        "review_valid": true,
+        "finding_valid": true,
+        "subject_kind": "module",
+        "scope": "cross-context",
+        "redundancy_status": "justified",
+        "cross_context": "justified"
+      }
+    },
+    {
+      "id": "endpoint-cross-context-redundant",
+      "description": "A cross-context endpoint is retained as an explicit redundant element with a resolved finding.",
+      "review": {
+        "required": true,
+        "requirement_basis": "critical-review",
+        "requirement_decision_ref": "",
+        "status": "complete",
+        "subjects": [
+          {
+            "id": "OR6",
+            "subject_kind": "endpoint",
+            "subject_ref": "Reporting /invoice-summary",
+            "source_claim": "The reporting endpoint duplicates Billing's invoice response.",
+            "claim_classification": "requirement",
+            "promotion_decision_ref": "",
+            "producer_or_implementer": ["Reporting API"],
+            "consumer_or_caller": ["Reporting UI"],
+            "owner_source_of_truth": "Reporting API contract; Billing owns invoice state",
+            "scope": "cross-context",
+            "context_boundary": "Billing -> Reporting HTTP integration",
+            "necessity": "The endpoint has no independent representation or consumer contract.",
+            "alternative_without_subject": "Reuse the existing Billing endpoint through the integration boundary.",
+            "inconsistency_or_divergence_test": "Compare both endpoint payloads and fail on response divergence.",
+            "evidence_refs": ["context-boundary:Billing-Reporting", "review:OR6"],
+            "redundancy_status": "redundant",
+            "finding_ids": ["F2"],
+            "decision_ref": ""
+          }
+        ]
+      },
+      "findings": [
+        {
+          "id": "F2",
+          "severity": "HIGH",
+          "claim": "The Reporting endpoint duplicates the Billing endpoint response.",
+          "evidence": ["Both endpoints expose the same invoice representation."],
+          "evidence_ref": "review:OR6",
+          "impact": "Independent endpoint contracts can diverge across contexts.",
+          "recommendation": "Reuse the Billing endpoint or document an independent contract.",
+          "status": "resolved",
+          "code": "REDUNDANT_DESIGN_ELEMENT",
+          "subject_id": "OR6"
+        }
+      ],
+      "expected": {
+        "review_valid": true,
+        "finding_valid": true,
+        "subject_kind": "endpoint",
+        "scope": "cross-context",
+        "redundancy_status": "redundant",
+        "cross_context": "redundant",
+        "finding_subject_id": "OR6"
+      }
+    },
+    {
+      "id": "accepted-exception-with-decision",
+      "description": "An accepted redundancy exception passes only with a recorded decision.",
+      "review": {
+        "required": true,
+        "requirement_basis": "critical-review",
+        "requirement_decision_ref": "",
+        "status": "complete",
+        "subjects": [
+          {
+            "id": "OR7",
+            "subject_kind": "object",
+            "subject_ref": "AuditEventView",
+            "source_claim": "The audit view repeats selected state for an external audit contract.",
+            "claim_classification": "user_decision",
+            "promotion_decision_ref": "D2",
+            "producer_or_implementer": ["Audit context"],
+            "consumer_or_caller": ["External auditor"],
+            "owner_source_of_truth": "Audit event store",
+            "scope": "local",
+            "context_boundary": "",
+            "necessity": "The external contract requires a stable denormalized view.",
+            "alternative_without_subject": "Expose the event store directly and break the contract.",
+            "inconsistency_or_divergence_test": "Compare the view with the event store during audit export.",
+            "evidence_refs": ["decision:D2", "audit-contract:1"],
+            "redundancy_status": "accepted-exception",
+            "finding_ids": ["F3"],
+            "decision_ref": "D2"
+          }
+        ]
+      },
+      "findings": [
+        {
+          "id": "F3",
+          "severity": "MEDIUM",
+          "claim": "AuditEventView is a deliberate redundant representation.",
+          "evidence": ["The external audit contract requires a stable view."],
+          "evidence_ref": "decision:D2",
+          "impact": "The view must be kept synchronized with audit events.",
+          "recommendation": "Keep the exception and monitor synchronization.",
+          "status": "accepted",
+          "code": "REDUNDANT_DESIGN_ELEMENT",
+          "subject_id": "OR7",
+          "decision_ref": "D2",
+          "decision_source": "user",
+          "decided_at": "2026-01-02T00:00:00Z"
+        }
+      ],
+      "expected": {
+        "review_valid": true,
+        "finding_valid": true,
+        "subject_kind": "object",
+        "redundancy_status": "accepted-exception",
+        "finding_status": "accepted",
+        "decision_ref": "D2"
+      }
+    },
+    {
+      "id": "accepted-exception-without-decision",
+      "description": "An accepted redundancy exception without a user decision is rejected.",
+      "review": {
+        "required": true,
+        "requirement_basis": "critical-review",
+        "requirement_decision_ref": "",
+        "status": "complete",
+        "subjects": [
+          {
+            "id": "OR8",
+            "subject_kind": "object",
+            "subject_ref": "UnapprovedView",
+            "source_claim": "An agent recommends retaining a duplicate view.",
+            "claim_classification": "agent_hypothesis",
+            "promotion_decision_ref": "",
+            "producer_or_implementer": ["agent proposal"],
+            "consumer_or_caller": ["unknown consumer"],
+            "owner_source_of_truth": "existing state",
+            "scope": "local",
+            "context_boundary": "",
+            "necessity": "No user decision establishes a need for the duplicate.",
+            "alternative_without_subject": "Remove the duplicate view.",
+            "inconsistency_or_divergence_test": "Ask for an explicit exception decision before approval.",
+            "evidence_refs": ["review:OR8"],
+            "redundancy_status": "accepted-exception",
+            "finding_ids": ["F4"],
+            "decision_ref": ""
+          }
+        ]
+      },
+      "findings": [
+        {
+          "id": "F4",
+          "severity": "HIGH",
+          "claim": "UnapprovedView is redundant but has only an agent recommendation.",
+          "evidence": ["No user decision is recorded."],
+          "evidence_ref": "review:OR8",
+          "impact": "The exception could turn an agent recommendation into a requirement.",
+          "recommendation": "Request a user decision or remove the view.",
+          "status": "accepted",
+          "code": "REDUNDANT_DESIGN_ELEMENT",
+          "subject_id": "OR8"
+        }
+      ],
+      "expected": {
+        "review_valid": false,
+        "finding_valid": false,
+        "subject_kind": "object",
+        "redundancy_status": "accepted-exception",
+        "finding_status": "accepted",
+        "decision_ref": ""
+      }
+    }
+  ],
+  "state_scenarios": [
+    {
+      "id": "required-review-pending",
+      "description": "A required review remains pending while a subject is not assessed.",
+      "review": {
+        "required": true,
+        "requirement_basis": "critical-review",
+        "requirement_decision_ref": "",
+        "status": "pending",
+        "subjects": [
+          {
+            "id": "OR9",
+            "subject_kind": "field",
+            "subject_ref": "Plan.owner",
+            "source_claim": "The owner field still needs review.",
+            "claim_classification": "requirement",
+            "promotion_decision_ref": "",
+            "producer_or_implementer": ["plan review"],
+            "consumer_or_caller": ["package decision gate"],
+            "owner_source_of_truth": "plan ownership section",
+            "scope": "local",
+            "context_boundary": "",
+            "necessity": "The owner is needed to decide responsibility.",
+            "alternative_without_subject": "Leave ownership unresolved.",
+            "inconsistency_or_divergence_test": "Compare owner claims during critical review.",
+            "evidence_refs": ["review:OR9"],
+            "redundancy_status": "not-assessed",
+            "finding_ids": [],
+            "decision_ref": ""
+          }
+        ]
+      },
+      "findings": [],
+      "expected": {
+        "review_valid": true,
+        "gate_ready": false,
+        "gate_reason": "ownership_redundancy_review_incomplete"
+      }
+    },
+    {
+      "id": "review-not-required",
+      "description": "A plan without a new ownership concern records the review explicitly as not required.",
+      "review": {
+        "required": false,
+        "requirement_basis": "not-applicable",
+        "requirement_decision_ref": "",
+        "status": "not-required",
+        "subjects": []
+      },
+      "findings": [],
+      "expected": {
+        "review_valid": true,
+        "gate_ready": true,
+        "gate_reason": ""
+      }
+    }
+  ],
+  "negative_scenarios": [
+    {
+      "id": "required-false-invalid-basis",
+      "source_scenario": "review-not-required",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "review.requirement_basis",
+          "value": "critical-review"
+        }
+      ],
+      "expected_errors": [
+        "ownership_redundancy_review.required=false requires requirement_basis=not-applicable."
+      ]
+    },
+    {
+      "id": "required-false-with-subject",
+      "source_scenario": "review-not-required",
+      "mutations": [
+        {
+          "op": "copy",
+          "path": "review.subjects",
+          "source_scenario": "field-local-justified",
+          "source_path": "review.subjects"
+        }
+      ],
+      "expected_errors": [
+        "ownership_redundancy_review.required=false requires empty subjects."
+      ]
+    },
+    {
+      "id": "required-false-invalid-status",
+      "source_scenario": "review-not-required",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "review.status",
+          "value": "pending"
+        }
+      ],
+      "expected_errors": [
+        "ownership_redundancy_review.required=false requires status=not-required."
+      ]
+    },
+    {
+      "id": "required-false-with-decision",
+      "source_scenario": "review-not-required",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "review.requirement_decision_ref",
+          "value": "D9"
+        }
+      ],
+      "expected_errors": [
+        "ownership_redundancy_review.required=false requires an empty requirement_decision_ref."
+      ]
+    },
+    {
+      "id": "duplicate-subject-id",
+      "source_scenario": "field-local-justified",
+      "mutations": [
+        {
+          "op": "append",
+          "path": "review.subjects",
+          "source_scenario": "field-local-justified",
+          "source_path": "review.subjects.0"
+        }
+      ],
+      "expected_errors": [
+        "Duplicate ownership subject id: OR1."
+      ]
+    },
+    {
+      "id": "duplicate-finding-id",
+      "source_scenario": "object-local-redundant",
+      "mutations": [
+        {
+          "op": "append",
+          "path": "findings",
+          "source_scenario": "object-local-redundant",
+          "source_path": "findings.0"
+        }
+      ],
+      "expected_errors": [
+        "Duplicate finding id: F1."
+      ]
+    },
+    {
+      "id": "missing-finding-reference",
+      "source_scenario": "object-local-redundant",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "review.subjects.0.finding_ids",
+          "value": ["F404"]
+        }
+      ],
+      "expected_errors": [
+        "Ownership subject OR2 references missing finding F404."
+      ]
+    },
+    {
+      "id": "user-request-without-decision",
+      "source_scenario": "workflow-source-example-promoted",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "review.requirement_decision_ref",
+          "value": ""
+        }
+      ],
+      "expected_errors": [
+        "ownership_redundancy_review user-request basis requires requirement_decision_ref."
+      ]
+    },
+    {
+      "id": "pending-complete-subject",
+      "source_scenario": "field-local-justified",
+      "mutations": [
+        {
+          "op": "set",
+          "path": "review.status",
+          "value": "pending"
+        }
+      ],
+      "expected_errors": [
+        "ownership_redundancy_review.status=pending requires an incomplete or not-assessed subject or an open finding."
+      ]
+    }
+  ]
+}

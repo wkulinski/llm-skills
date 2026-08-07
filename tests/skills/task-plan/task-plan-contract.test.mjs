@@ -16,10 +16,13 @@ import {validateFinalApproval} from "../../../.agents/skills/task-plan/scripts/v
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../");
 const SKILL_PATH = path.join(ROOT, ".agents/skills/task-plan/SKILL.md");
+const STATE_SCRIPT = path.join(ROOT, ".agents/skills/task-plan/scripts/state.mjs");
+const VALIDATE_PLAN_SCRIPT = path.join(ROOT, ".agents/skills/task-plan/scripts/validate-plan.mjs");
 const FIXTURE_ROOT = path.join(ROOT, "tests/fixtures/task-plan");
 const SKILL_SOURCE = fs.readFileSync(SKILL_PATH, "utf8");
 
 const WORKFLOW_SCENARIOS = readJson("workflow-scenarios.json").scenarios;
+const OWNERSHIP_SCENARIOS = readJson("ownership-redundancy-scenarios.json").scenarios;
 const STATUS_TRANSITIONS = readJson("status-transitions.json");
 const DRAFT_OPERATIONS = readJson("draft-operations.json");
 const MAIN_DRAFT = fs.readFileSync(path.join(FIXTURE_ROOT, "draft-main.md"), "utf8");
@@ -58,6 +61,8 @@ describe("task-plan workflow scenarios", () => {
             "work-packages-and-separation",
             "review-and-approval",
             "integration-and-handoff",
+            "ownership-review-not-required",
+            "ownership-review-required",
         ]);
     });
 
@@ -72,6 +77,48 @@ describe("task-plan workflow scenarios", () => {
             }
         });
     }
+
+    it("keeps the conditional ownership review explicit in workflow scenarios", () => {
+        const notRequired = WORKFLOW_SCENARIOS.find(({id}) => id === "ownership-review-not-required");
+        const required = WORKFLOW_SCENARIOS.find(({id}) => id === "ownership-review-required");
+
+        expect(notRequired.expected.ownership_redundancy_review_required).toBe(false);
+        expect(required.expected.ownership_redundancy_review_required).toBe(true);
+        expect(notRequired.required_anchors).toEqual(expect.arrayContaining(["required: false", "status: not-required"]));
+        expect(required.required_anchors).toEqual(expect.arrayContaining(["required: true", "ownership_redundancy_review_incomplete"]));
+    });
+
+    it("covers all bounded ownership kinds and preserves source-claim provenance", () => {
+        const kinds = new Set();
+        for (const scenario of OWNERSHIP_SCENARIOS) {
+            const subject = scenario.review.subjects[0];
+            kinds.add(subject.subject_kind);
+
+            expect(typeof scenario.expected.review_valid).toBe("boolean");
+            expect(subject.subject_kind).toBe(scenario.expected.subject_kind);
+            if (scenario.expected.scope) {
+                expect(subject.scope).toBe(scenario.expected.scope);
+            }
+            if (scenario.expected.redundancy_status) {
+                expect(subject.redundancy_status).toBe(scenario.expected.redundancy_status);
+            }
+        }
+
+        expect(kinds).toEqual(new Set(["field", "object", "algorithm", "workflow", "module", "endpoint"]));
+
+        const notPromoted = OWNERSHIP_SCENARIOS.find(({id}) => id === "algorithm-source-example-not-promoted");
+        const promoted = OWNERSHIP_SCENARIOS.find(({id}) => id === "workflow-source-example-promoted");
+        expect(notPromoted.review.subjects[0]).toMatchObject({
+            claim_classification: "source_example",
+            promotion_decision_ref: "",
+        });
+        expect(notPromoted.expected.promoted_to_requirement).toBe(false);
+        expect(promoted.review.subjects[0]).toMatchObject({
+            claim_classification: "source_example",
+            promotion_decision_ref: "D1",
+        });
+        expect(promoted.expected.promoted_to_requirement).toBe(true);
+    });
 
     it("executes representative fixture expectations through deterministic APIs", () => {
         const trigger = WORKFLOW_SCENARIOS.find(({id}) => id === "trigger-and-profiles");
@@ -134,6 +181,13 @@ describe("task-plan workflow scenarios", () => {
             blockers: [],
             findings: [],
             scope_questions: [],
+            ownership_redundancy_review: {
+                required: false,
+                requirement_basis: "not-applicable",
+                requirement_decision_ref: "",
+                status: "not-required",
+                subjects: [],
+            },
         };
         expect(canOpenPackageDecisions(approvedState)).toEqual({ready: true, reasons: []});
         expect(canApprovePlan(approvedState).approved).toBe(true);
@@ -279,6 +333,20 @@ describe("task-plan integration boundary", () => {
 
         expect(normalizedSkill).toContain("nie implementują drugiego silnika workflow");
         expect(normalizedSkill).toContain("kontraktem Markdown, a nie runtime'em");
+    });
+
+    it("keeps ownership validation separate from workflow transitions", () => {
+        const stateSource = fs.readFileSync(STATE_SCRIPT, "utf8");
+        const validatePlanSource = fs.readFileSync(VALIDATE_PLAN_SCRIPT, "utf8");
+        const ownershipValidatorStart = stateSource.indexOf("export function validateOwnershipRedundancyReview");
+        const ownershipValidatorEnd = stateSource.indexOf("function validateOwnershipSubject", ownershipValidatorStart);
+        const ownershipValidatorSource = stateSource.slice(ownershipValidatorStart, ownershipValidatorEnd);
+
+        expect(validatePlanSource).toContain("validateOwnershipRedundancyReview");
+        expect(validatePlanSource).not.toContain("applyPlanTransition");
+        expect(validatePlanSource).not.toContain("applyPackageDecision");
+        expect(ownershipValidatorSource).not.toContain("applyPlanTransition");
+        expect(ownershipValidatorSource).not.toContain("applyPackageDecision");
     });
 
     it("uses explicit path placeholders in the skill body", () => {
