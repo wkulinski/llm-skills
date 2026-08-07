@@ -27,6 +27,7 @@ import {
     parseDecisionCommand,
     reopenPackage,
     validateDependencyGraph,
+    validateOwnershipRedundancyReview,
 } from "../../../.agents/skills/task-plan/scripts/state.mjs";
 import {
     compareSourceSnapshots,
@@ -50,9 +51,18 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../");
 const MAIN_FIXTURE = fs.readFileSync(path.join(ROOT, "tests/fixtures/task-plan/draft-main.md"), "utf8");
 const DERIVED_FIXTURE = fs.readFileSync(path.join(ROOT, "tests/fixtures/task-plan/draft-derived.md"), "utf8");
+const OWNERSHIP_FIXTURE = JSON.parse(fs.readFileSync(path.join(ROOT, "tests/fixtures/task-plan/ownership-redundancy-scenarios.json"), "utf8"));
+const OWNERSHIP_SCENARIOS = OWNERSHIP_FIXTURE.scenarios;
+const OWNERSHIP_STATE_SCENARIOS = OWNERSHIP_FIXTURE.state_scenarios;
+const OWNERSHIP_NEGATIVE_SCENARIOS = OWNERSHIP_FIXTURE.negative_scenarios;
+const OWNERSHIP_SCENARIO_INDEX = new Map([
+    ...OWNERSHIP_SCENARIOS,
+    ...OWNERSHIP_STATE_SCENARIOS,
+].map((scenario) => [scenario.id, scenario]));
 const DRAFT_SCRIPT = path.join(ROOT, ".agents/skills/task-plan/scripts/draft.mjs");
 const STATE_SCRIPT = path.join(ROOT, ".agents/skills/task-plan/scripts/state.mjs");
 const SOURCE_SCRIPT = path.join(ROOT, ".agents/skills/task-plan/scripts/source.mjs");
+const VALIDATE_PLAN_SCRIPT = path.join(ROOT, ".agents/skills/task-plan/scripts/validate-plan.mjs");
 const temporaryDirectories = [];
 
 afterEach(() => {
@@ -247,6 +257,81 @@ describe("task-plan state module", () => {
             }],
         };
         expect(canOpenPackageDecisions(scopeBlocked).reasons).toContain("unresolved_scope_questions");
+    });
+
+    it("blocks and opens package decisions around the ownership review", () => {
+        const source = OWNERSHIP_SCENARIOS.find(({id}) => id === "field-local-justified");
+        const pending = {
+            ...baseState(),
+            plan_version: 3,
+            ownership_redundancy_review: {
+                ...source.review,
+                status: "pending",
+            },
+        };
+        const complete = {
+            ...baseState(),
+            plan_version: 3,
+            ownership_redundancy_review: source.review,
+        };
+
+        expect(canOpenPackageDecisions(pending).reasons).toContain("ownership_redundancy_review_incomplete");
+        expect(canOpenPackageDecisions(complete)).toEqual({ready: true, reasons: []});
+    });
+
+    it("blocks package decisions when a complete review has an open finding", () => {
+        const source = OWNERSHIP_SCENARIOS.find(({id}) => id === "object-local-redundant");
+        const findings = structuredClone(source.findings);
+        findings[0].status = "open";
+
+        const blocked = {
+            ...baseState(),
+            plan_version: 3,
+            findings,
+            ownership_redundancy_review: source.review,
+        };
+
+        expect(canOpenPackageDecisions(blocked).reasons).toContain("ownership_redundancy_review_invalid");
+    });
+
+    it("covers explicit pending and not-required state fixtures", () => {
+        for (const scenario of OWNERSHIP_STATE_SCENARIOS) {
+            const reviewErrors = validateOwnershipRedundancyReview(scenario.review, scenario.findings);
+            const state = {
+                ...baseState(),
+                plan_version: 3,
+                findings: scenario.findings,
+                ownership_redundancy_review: scenario.review,
+            };
+            const gate = canOpenPackageDecisions(state);
+
+            expect(reviewErrors.length === 0, scenario.id).toBe(scenario.expected.review_valid);
+            expect(gate.ready, scenario.id).toBe(scenario.expected.gate_ready);
+            if (scenario.expected.gate_reason) {
+                expect(gate.reasons, scenario.id).toContain(scenario.expected.gate_reason);
+            }
+        }
+    });
+
+    it("blocks the gate when the ownership review record is missing", () => {
+        const state = {...baseState(), plan_version: 3};
+        delete state.ownership_redundancy_review;
+
+        expect(canOpenPackageDecisions(state).reasons).toContain("ownership_redundancy_review_invalid");
+    });
+
+    it("keeps ownership validation side-effect free of workflow transitions", () => {
+        const source = OWNERSHIP_SCENARIOS.find(({id}) => id === "field-local-justified");
+        const state = {
+            ...baseState(),
+            plan_version: 3,
+            ownership_redundancy_review: source.review,
+        };
+        const before = structuredClone(state);
+
+        expect(validatePlanState(state).valid).toBe(true);
+        expect(state).toEqual(before);
+        expect(state.plan_status).toBe("awaiting-package-decisions");
     });
 
     it("parses only explicit decision commands", () => {
@@ -502,6 +587,71 @@ describe("task-plan validation module", () => {
         ])).not.toEqual([]);
     });
 
+    it("validates every ownership kind, cross-context outcome and redundancy finding", () => {
+        for (const scenario of OWNERSHIP_SCENARIOS) {
+            const reviewErrors = validateOwnershipRedundancyReview(scenario.review, scenario.findings);
+            const findingErrors = scenario.findings.flatMap((finding, index) => validateFinding(finding, index));
+
+            expect(reviewErrors.length === 0, scenario.id).toBe(scenario.expected.review_valid);
+            expect(findingErrors.length === 0, scenario.id).toBe(scenario.expected.finding_valid);
+            if (scenario.expected.finding_code) {
+                expect(scenario.findings[0]).toMatchObject({
+                    code: scenario.expected.finding_code,
+                    subject_id: scenario.expected.finding_subject_id,
+                });
+                expect(scenario.findings[0].evidence.length).toBeGreaterThan(0);
+                expect(scenario.review.subjects[0].alternative_without_subject).not.toBe("");
+            }
+        }
+
+        const accepted = OWNERSHIP_SCENARIOS.find(({id}) => id === "accepted-exception-with-decision");
+        expect(accepted.findings[0]).toMatchObject({
+            status: "accepted",
+            decision_ref: "D2",
+            decision_source: "user",
+        });
+        expect(accepted.review.subjects[0].decision_ref).toBe("D2");
+
+        const missingDecision = OWNERSHIP_SCENARIOS.find(({id}) => id === "accepted-exception-without-decision");
+        expect(validateFinding(missingDecision.findings[0])).toEqual(expect.arrayContaining([
+            "Finding 1 is missing decision_ref for an accepted redundancy finding.",
+            "Finding 1 is missing decision_source for an accepted redundancy finding.",
+            "Finding 1 is missing decided_at for an accepted redundancy finding.",
+        ]));
+    });
+
+    it("keeps source-example provenance while allowing explicit promotion metadata", () => {
+        const notPromoted = OWNERSHIP_SCENARIOS.find(({id}) => id === "algorithm-source-example-not-promoted");
+        const promoted = OWNERSHIP_SCENARIOS.find(({id}) => id === "workflow-source-example-promoted");
+
+        expect(validateOwnershipRedundancyReview(notPromoted.review, notPromoted.findings)).toEqual([]);
+        expect(validateOwnershipRedundancyReview(promoted.review, promoted.findings)).toEqual([]);
+        expect(notPromoted.review.subjects[0].claim_classification).toBe("source_example");
+        expect(promoted.review.subjects[0]).toMatchObject({
+            claim_classification: "source_example",
+            promotion_decision_ref: "D1",
+        });
+    });
+
+    it("rejects cross-context ownership without an explicit boundary", () => {
+        const source = OWNERSHIP_SCENARIOS.find(({id}) => id === "module-cross-context-justified");
+        const review = structuredClone(source.review);
+        delete review.subjects[0].context_boundary;
+
+        expect(validateOwnershipRedundancyReview(review, source.findings)).toContain(
+            "ownership_redundancy_review subject 1 cross-context scope requires context_boundary.",
+        );
+    });
+
+    it("rejects negative ownership fixture scenarios", () => {
+        for (const scenario of OWNERSHIP_NEGATIVE_SCENARIOS) {
+            const {review, findings} = materializeOwnershipNegativeScenario(scenario);
+            const errors = validateOwnershipRedundancyReview(review, findings);
+
+            expect(errors, scenario.id).toEqual(expect.arrayContaining(scenario.expected_errors));
+        }
+    });
+
     it("protects simplification invariants", () => {
         const before = {
             scope: ["A"],
@@ -522,6 +672,108 @@ describe("task-plan validation module", () => {
         })).toContain("Simplification removed relevant risks.");
     });
 
+    it("preserves ownership subjects, evidence, findings and decisions during simplification", () => {
+        const source = OWNERSHIP_SCENARIOS.find(({id}) => id === "accepted-exception-with-decision");
+        const before = {
+            scope: ["ownership"],
+            acceptance_criteria: ["C1"],
+            user_decisions: ["D2"],
+            required_evidence: ["review:OR7"],
+            risks: ["divergence"],
+            ownership_redundancy_review: source.review,
+            findings: source.findings,
+            decisions: [{
+                decision_ref: "D2",
+                decision: "accepted",
+                decision_source: "user",
+                decided_at: "2026-01-02T00:00:00Z",
+            }],
+        };
+        const after = structuredClone(before);
+        after.acceptance_criteria.push("C2");
+
+        expect(validateSimplification({result: "simplified", before, after}, {requireOwnershipReview: true})).toEqual([]);
+
+        const removedEvidence = structuredClone(after);
+        removedEvidence.ownership_redundancy_review.subjects[0].evidence_refs = [];
+        expect(validateSimplification({result: "simplified", before, after: removedEvidence}, {requireOwnershipReview: true})).toContain(
+            "Simplification removed ownership_redundancy_review subjects or their evidence/findings/decisions.",
+        );
+
+        const removedDecision = structuredClone(after);
+        removedDecision.decisions = [];
+        expect(validateSimplification({result: "simplified", before, after: removedDecision}, {requireOwnershipReview: true})).toContain(
+            "Simplification removed decisions.",
+        );
+    });
+
+    it("requires an explicit ownership review in every plan state version", () => {
+        const accepted = applyDecisionCommand(baseState(), "accept-all-pending", {
+            decision_source: "user",
+            decided_at: "2026-01-02T00:00:00Z",
+        });
+        const complete = {
+            ...accepted,
+            plan_status: "approved",
+            review_complete: true,
+            critical_review_complete: true,
+            review_history: [criticalReview()],
+            simplification_status: "no-change",
+            simplification: {result: "no-change"},
+            simplification_control_review_complete: true,
+            blockers: [],
+            findings: [],
+            scope_questions: [],
+        };
+
+        for (const planVersion of [1, 2, 3]) {
+            const stateWithoutReview = {...complete, plan_version: planVersion};
+            delete stateWithoutReview.ownership_redundancy_review;
+            const result = validatePlanState(stateWithoutReview);
+            expect(result.valid).toBe(false);
+            expect(result.errors).toContain("Plan state must contain ownership_redundancy_review.");
+        }
+
+        expect(validatePlanState({
+            ...complete,
+            plan_version: 1,
+            ownership_redundancy_review: {
+                required: false,
+                requirement_basis: "not-applicable",
+                requirement_decision_ref: "",
+                status: "not-required",
+                subjects: [],
+            },
+        }).valid).toBe(true);
+    });
+
+    it("rejects an accepted exception without decision data in the full state validator", () => {
+        const source = OWNERSHIP_SCENARIOS.find(({id}) => id === "accepted-exception-without-decision");
+        const accepted = applyDecisionCommand(baseState(), "accept-all-pending", {
+            decision_source: "user",
+            decided_at: "2026-01-02T00:00:00Z",
+        });
+        const result = validatePlanState({
+            ...accepted,
+            plan_status: "approved",
+            plan_version: 3,
+            review_complete: true,
+            critical_review_complete: true,
+            review_history: [criticalReview()],
+            simplification_status: "no-change",
+            simplification: {result: "no-change"},
+            simplification_control_review_complete: true,
+            blockers: [],
+            findings: source.findings,
+            scope_questions: [],
+            ownership_redundancy_review: source.review,
+        });
+
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain("Finding 1 is missing decision_ref for an accepted redundancy finding.");
+        expect(result.errors).toContain("ownership_redundancy_review subject 1 accepted-exception status requires decision_ref.");
+    });
+
     it("validates the draft fixture and rejects an approved state with blockers", () => {
         expect(validatePlanDocument(MAIN_FIXTURE, {kind: "main"}).valid).toBe(true);
         expect(validatePlanState({
@@ -532,6 +784,7 @@ describe("task-plan validation module", () => {
             review_history: [],
             decisions: [],
             simplification: {result: "pending"},
+            ownership_redundancy_review: notRequiredOwnershipReview(),
         }).valid).toBe(true);
         const invalid = validatePlanState({...baseState(), plan_status: "approved", blockers: ["B1"]});
         expect(invalid.valid).toBe(false);
@@ -589,6 +842,20 @@ describe("task-plan CLI contract", () => {
         ]);
         expect(validStateResult.status).toBe(0);
         expect(JSON.parse(validStateResult.stdout).valid).toBe(true);
+
+        const validStatePath = path.join(directory, "valid-state.json");
+        fs.writeFileSync(validStatePath, JSON.stringify(baseState()), "utf8");
+        const validateStateResult = runCli(VALIDATE_PLAN_SCRIPT, ["validate-state", "--file", validStatePath]);
+        expect(validateStateResult.status).toBe(0);
+        expect(JSON.parse(validateStateResult.stdout).valid).toBe(true);
+
+        const invalidState = baseState();
+        delete invalidState.ownership_redundancy_review;
+        const invalidStatePath = path.join(directory, "invalid-state.json");
+        fs.writeFileSync(invalidStatePath, JSON.stringify(invalidState), "utf8");
+        const invalidStateResult = runCli(VALIDATE_PLAN_SCRIPT, ["validate-state", "--file", invalidStatePath]);
+        expect(invalidStateResult.status).toBe(1);
+        expect(JSON.parse(invalidStateResult.stdout).errors).toContain("Plan state must contain ownership_redundancy_review.");
     });
 });
 
@@ -628,6 +895,52 @@ function baseState() {
         review_complete: true,
         scope_questions: [],
         decisions: [],
+        ownership_redundancy_review: notRequiredOwnershipReview(),
+    };
+}
+
+function materializeOwnershipNegativeScenario(scenario) {
+    const source = OWNERSHIP_SCENARIO_INDEX.get(scenario.source_scenario);
+    const result = {
+        review: structuredClone(source.review),
+        findings: structuredClone(source.findings),
+    };
+
+    for (const mutation of scenario.mutations) {
+        if (mutation.op === "set") {
+            setPath(result, mutation.path, structuredClone(mutation.value));
+            continue;
+        }
+        const mutationSource = OWNERSHIP_SCENARIO_INDEX.get(mutation.source_scenario);
+        const sourceValue = structuredClone(getPath(mutationSource, mutation.source_path));
+        if (mutation.op === "copy") {
+            setPath(result, mutation.path, sourceValue);
+        } else if (mutation.op === "append") {
+            getPath(result, mutation.path).push(sourceValue);
+        }
+    }
+
+    return result;
+}
+
+function getPath(value, pathValue) {
+    return pathValue.split(".").reduce((current, key) => current[key], value);
+}
+
+function setPath(value, pathValue, replacement) {
+    const parts = pathValue.split(".");
+    const field = parts.pop();
+    const parent = parts.reduce((current, key) => current[key], value);
+    parent[field] = replacement;
+}
+
+function notRequiredOwnershipReview() {
+    return {
+        required: false,
+        requirement_basis: "not-applicable",
+        requirement_decision_ref: "",
+        status: "not-required",
+        subjects: [],
     };
 }
 

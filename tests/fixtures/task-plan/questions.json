@@ -13,6 +13,16 @@
     "decided_at": "2026-01-01T00:00:00Z"
     }
   ],
+  "ownership_redundancy_review_states": [
+    {
+      "id": "complete-required-review",
+      "scenario_id": "field-local-justified"
+    },
+    {
+      "id": "incomplete-required-review",
+      "scenario_id": "required-review-pending"
+    }
+  ],
   "packages": [
     {
       "id": "WP1",

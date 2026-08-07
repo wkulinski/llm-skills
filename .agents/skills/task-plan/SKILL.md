@@ -312,6 +312,152 @@ zaakceptowanych wymagań. Review planu korzysta z tej rozdzielonej struktury:
 findings odnoszą się do bieżącej wersji planu, a każda korekta tworzy nową
 wersję zamiast nadpisywać materiał źródłowy.
 
+## Review ownership i redundancji odpowiedzialności
+
+### Trigger i odpowiedzialność za decyzję
+
+`ownership-and-redundancy-review` jest wymagany, gdy plan wprowadza albo zmienia
+odpowiedzialność i review wskazuje ryzyko dublowania informacji, stanu lub
+zachowania. Dotyczy to każdego z poniższych bounded kinds:
+
+```text
+field | object | algorithm | workflow | module | endpoint
+```
+
+Semantyczną decyzję o tym, czy review jest `required`, podejmuje task-plan w
+ramach critical review. Nie wolno wyliczać jej w MJS na podstawie nazwy pola,
+podobieństwa tekstu, słownika ani podobieństwa obiektów. Plan, który nie
+wprowadza ani nie zmienia takiej odpowiedzialności, zapisuje wynik jawnie jako
+`required: false` i `status: not-required`.
+
+### Stan `ownership_redundancy_review`
+
+Nowy stan planu ma następujący kontrakt:
+
+```text
+ownership_redundancy_review:
+  required: boolean
+  requirement_basis: critical-review | user-request | not-applicable
+  requirement_decision_ref: optional; required when basis is user-request
+  status: not-required | pending | complete
+  subjects: SubjectRecord[]
+```
+
+Obowiązują następujące niezmienniki:
+
+- `required: false` wymaga `requirement_basis: not-applicable`, pustego
+  `requirement_decision_ref`, `status: not-required` i pustego `subjects`;
+- `required: true` wymaga `requirement_basis: critical-review` albo
+  `user-request`, co najmniej jednego subjectu oraz
+  `requirement_decision_ref`, gdy podstawą jest `user-request`;
+- `status: pending` oznacza, że co najmniej jeden subject jest niekompletny,
+  nieoceniony albo ma otwarty finding;
+- `status: complete` jest dozwolony tylko wtedy, gdy wszystkie subjecty są
+  poprawne i mają dowody, a findings `REDUNDANT_DESIGN_ELEMENT` są zamknięte
+  albo jawnie zaakceptowane z decyzją;
+- `required: true` i status inny niż `complete` dodaje do
+  `package_decision_gate` powód `ownership_redundancy_review_incomplete`;
+- nieznany status, niespójna kombinacja pól albo niepoprawny subject dodaje
+  powód `ownership_redundancy_review_invalid`;
+- każdy stan planu zapisuje ten rekord jawnie; brak `ownership_redundancy_review`
+  jest błędem niezależnie od `plan_version`.
+
+Nie dopisuj tego checku do globalnej listy `REQUIRED_REVIEW_CHECKS`. Jest on
+warunkowym dodatkowym warunkiem `package_decision_gate`, a nie obowiązkowym
+checkiem każdego planu.
+
+### `SubjectRecord`
+
+Każdy subject ma stabilne ID `OR<number>` i pełny rekord:
+
+```text
+SubjectRecord:
+  id: OR<number>
+  subject_kind: field | object | algorithm | workflow | module | endpoint
+  subject_ref: non-empty string
+  source_claim: non-empty string
+  claim_classification: requirement | source_example | agent_hypothesis | user_decision
+  promotion_decision_ref: optional decision ID
+  producer_or_implementer: non-empty string[]
+  consumer_or_caller: non-empty string[]
+  owner_source_of_truth: non-empty string
+  scope: local | cross-context
+  context_boundary: required for cross-context
+  necessity: non-empty string
+  alternative_without_subject: non-empty string
+  inconsistency_or_divergence_test: non-empty string
+  evidence_refs: non-empty string[]
+  redundancy_status: not-assessed | justified | redundant | accepted-exception
+  finding_ids: F<number>[]
+  decision_ref: required for accepted-exception
+```
+
+`producer_or_implementer` i `consumer_or_caller` są tablicami, ponieważ jeden
+element może mieć wielu producentów albo konsumentów. Dla algorytmu oznaczają
+implementera i callerów, dla workflow orkiestratora i uczestników, a dla pola
+lub obiektu producenta i użytkowników stanu. `owner_source_of_truth` wskazuje
+właściciela oraz kanoniczną implementację, źródło stanu albo proces — zależnie
+od `subject_kind`.
+
+### Pochodzenie claimu i promocja przykładu
+
+`source_claim` zachowuje pochodzenie treści, a `claim_classification` musi
+rozróżniać dokładnie:
+
+```text
+requirement | source_example | agent_hypothesis | user_decision
+```
+
+`source_example` nie jest automatycznie wymaganiem. Jeżeli `source_example` albo
+`agent_hypothesis` ma zostać użyty jako podstawa zakresu, rekord musi zawierać
+`promotion_decision_ref` wskazujący jawną decyzję użytkownika. Oryginalna
+klasyfikacja pozostaje zachowana; decyzja nie nadpisuje pochodzenia claimu.
+Słowa przykładowe, takie jak `np.`, `e.g.` albo „można zwrócić”, są najwyżej
+sygnałem do review — nie stanowią słownikowego detektora. Jeśli kontekst
+ustanawia wymaganie, zapisz `requirement` wraz z dowodem; w przeciwnym razie
+zachowaj `source_example` i pokaż alternatywę przed pytaniem o decyzję.
+
+### Finding redundant elementu
+
+Finding `REDUNDANT_DESIGN_ELEMENT` używa istniejącego minimalnego kontraktu
+findingu oraz dodatkowych pól warunkowych:
+
+```text
+code: REDUNDANT_DESIGN_ELEMENT
+subject_id: OR<number>
+```
+
+`subject_id` musi wskazywać istniejący `SubjectRecord`, a każdy subject ze
+statusem `redundant` musi mieć co najmniej jeden taki finding. Status `accepted`
+dla tego findingu wymaga `decision_ref`, `decision_source` i `decided_at`;
+akceptacja samej rekomendacji agenta nie jest decyzją użytkownika. Subject
+redundant musi jednocześnie zachować dowód, właściciela, zakres, konieczność,
+alternatywę bez elementu oraz test rozbieżności.
+
+### Granica cross-context
+
+`scope: cross-context` jest poprawne wyłącznie wtedy, gdy rekord wskazuje:
+
+- `context_boundary` obejmujące oba konteksty i granicę integracji;
+- odrębne ownership oraz source of truth;
+- `necessity` wyjaśniającą, dlaczego reprezentacji nie zastępuje lokalny reuse;
+- `inconsistency_or_divergence_test` dla transformacji albo synchronizacji;
+- `evidence_refs` potwierdzające granicę.
+
+Cross-context z tymi dowodami może mieć `redundancy_status: justified` i nie
+tworzy findingu. Brak granicy, odrębnego ownership albo testu rozbieżności
+pozostawia subject `not-assessed` albo `redundant` i blokuje bramkę.
+
+### Granice automatyzacji
+
+Task-plan wykonuje semantyczny review, klasyfikuje claimy i zapisuje findings;
+moduły deterministyczne mogą walidować wyłącznie jawne dane oraz niezmienniki.
+Żaden moduł nie rozstrzyga semantycznej równoważności obiektów, algorytmów lub
+workflow, nie generuje findings z podobieństwa i nie tworzy drugiego runtime'u
+workflow task-plan. Dodatkowa reprezentacja w innym bounded context może być
+uzasadniona tylko przez powyższy kontrakt cross-context, a nie przez samą nazwę
+albo podobieństwo struktury.
+
 ## Work packages
 
 Jeden materiał źródłowy tworzy jeden główny plan, który może zawierać wiele
@@ -1094,8 +1240,10 @@ Blok E jest walidowany przez:
 ./tests/fixtures/task-plan/draft-main.md
 ./tests/fixtures/task-plan/draft-derived.md
 ./tests/fixtures/task-plan/questions.json
+./tests/fixtures/task-plan/ownership-redundancy-scenarios.json
 ./tests/fixtures/task-plan/draft-questions.md
 ./tests/skills/task-plan/task-plan-contract.test.mjs
+./tests/skills/task-plan/task-plan-scripts.test.mjs
 ./tests/skills/task-plan/task-plan-questions.test.mjs
 ```
 
@@ -1106,7 +1254,9 @@ kontraktu oraz istniejących helperów. Zakres scenariuszy obejmuje:
 2. granicę `source_data` kontra workflow, dowody i `CONFLICT`;
 3. decyzje work packages, zależności, przejścia statusów i `separated`;
 4. review, limit iteracji, auto-uproszczenie i menu `a/b/c`;
-5. integrację z `$gh-issue-start`, wznowienie draftu i `Execution handoff`.
+5. integrację z `$gh-issue-start`, wznowienie draftu i `Execution handoff`;
+6. ownership, redundancję odpowiedzialności, source claims i granice
+   cross-context.
 
 Ponieważ `$task-plan` jest kontraktem Markdown, a nie runtime'em, testy nie
 implementują drugiego silnika workflow. Weryfikują obecność i spójność
@@ -1177,6 +1327,13 @@ Stan przekazywany do walidatora ma postać danych, nie instrukcji:
   "simplification": {"result": "pending"},
   "blockers": [],
   "scope_questions": [],
+  "ownership_redundancy_review": {
+    "required": false,
+    "requirement_basis": "not-applicable",
+    "requirement_decision_ref": "",
+    "status": "not-required",
+    "subjects": []
+  },
   "package_decision_gate": "closed",
   "review_complete": false,
   "critical_review_complete": false,

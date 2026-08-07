@@ -10,11 +10,18 @@ import {
 } from "../../../.agents/skills/task-plan/scripts/draft.mjs";
 import {
     validateQuestionRecords,
+    validateOwnershipRedundancyReview,
 } from "../../../.agents/skills/task-plan/scripts/state.mjs";
 import {validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate-plan.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../");
 const QUESTIONS = JSON.parse(fs.readFileSync(path.join(ROOT, "tests/fixtures/task-plan/questions.json"), "utf8"));
+const OWNERSHIP_FIXTURE = JSON.parse(fs.readFileSync(path.join(ROOT, "tests/fixtures/task-plan/ownership-redundancy-scenarios.json"), "utf8"));
+const OWNERSHIP_REVIEW_SCENARIOS = new Map([
+    ...OWNERSHIP_FIXTURE.scenarios,
+    ...OWNERSHIP_FIXTURE.state_scenarios,
+].map((scenario) => [scenario.id, scenario]));
+const OWNERSHIP_REVIEW_STATES = QUESTIONS.ownership_redundancy_review_states;
 const EXPECTED_MARKDOWN = fs.readFileSync(path.join(ROOT, "tests/fixtures/task-plan/draft-questions.md"), "utf8");
 const MAIN_DRAFT = fs.readFileSync(path.join(ROOT, "tests/fixtures/task-plan/draft-main.md"), "utf8");
 const DRAFT_SCRIPT = path.join(ROOT, ".agents/skills/task-plan/scripts/draft.mjs");
@@ -58,6 +65,37 @@ describe("task-plan question contract", () => {
             "Question 1 is missing decision_source for a resolved question.",
             "Question 1 is missing decided_at for a resolved question.",
         ]));
+    });
+
+    it("keeps complete and incomplete ownership review states separate from package questions", () => {
+        expect(OWNERSHIP_REVIEW_STATES).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                id: "complete-required-review",
+                scenario_id: "field-local-justified",
+            }),
+            expect.objectContaining({
+                id: "incomplete-required-review",
+                scenario_id: "required-review-pending",
+            }),
+        ]));
+
+        const incomplete = OWNERSHIP_REVIEW_STATES.find(({id}) => id === "incomplete-required-review");
+        for (const state of OWNERSHIP_REVIEW_STATES) {
+            const scenario = OWNERSHIP_REVIEW_SCENARIOS.get(state.scenario_id);
+            expect(scenario, state.id).toBeDefined();
+            expect(validateOwnershipRedundancyReview(scenario.review, scenario.findings), state.id).toEqual([]);
+        }
+        const incompleteScenario = OWNERSHIP_REVIEW_SCENARIOS.get(incomplete.scenario_id);
+        const markdown = renderQuestionSections({...QUESTIONS, package_decision_gate: "closed"});
+
+        expect(incompleteScenario.review.status).toBe("pending");
+        expect(incompleteScenario.review.subjects[0].id).toBe("OR9");
+        expect(markdown).toContain("package_decision_gate` jest zamknięta");
+        expect(markdown).not.toContain("### WP1 — Kontrakt backendu");
+
+        const openMarkdown = renderQuestionSections({...QUESTIONS, package_decision_gate: "open"});
+        expect(openMarkdown).toContain("### WP1 — Kontrakt backendu");
+        expect(openMarkdown).toContain("WP1-Q1");
     });
 
     it("rejects aggregate legacy question paragraphs and duplicate IDs", () => {
@@ -157,6 +195,13 @@ describe("task-plan question contract", () => {
             simplification_status: "pending",
             blockers: [],
             scope_questions: [],
+            ownership_redundancy_review: {
+                required: false,
+                requirement_basis: "not-applicable",
+                requirement_decision_ref: "",
+                status: "not-required",
+                subjects: [],
+            },
             review_complete: false,
             critical_review_complete: false,
             simplification_control_review_complete: false,
