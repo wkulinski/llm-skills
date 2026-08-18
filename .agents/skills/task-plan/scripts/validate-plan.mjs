@@ -7,6 +7,7 @@ import {pathToFileURL} from "node:url";
 import {
     DRAFT_SECTIONS,
     parseDraftDocument,
+    renderSessionStrategyProjection,
     validateDraftDocument,
 } from "./draft.mjs";
 import {
@@ -21,9 +22,13 @@ import {
     readSimplificationResult,
     REDUNDANT_DESIGN_ELEMENT,
     SIMPLIFICATION_STATUSES,
+    SOURCE_FETCH_STATUSES,
     TERMINAL_PACKAGE_STATUSES,
+    WORKFLOW_PHASES,
+    WORKFLOW_OUTCOMES,
     validateQuestionRecords,
     validateOwnershipRedundancyReview,
+    validateTaskPlanState,
 } from "./state.mjs";
 
 export const FINDING_SEVERITIES = Object.freeze(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
@@ -33,6 +38,18 @@ export const SIMPLIFICATION_RESULTS = Object.freeze([
     "no-change",
     "simplified",
     "needs-user-decision",
+]);
+export const STATE_LIFECYCLES = Object.freeze([
+    "absent",
+    "virtual-initial",
+    "persisted",
+]);
+
+const INCOMPLETE_ARTIFACT_LIFECYCLE = "ARTIFACT_SET_INCOMPLETE";
+const CANONICAL_STATE_FIELDS = Object.freeze([
+    "schema_version",
+    "workflow_phase",
+    "context_requirements",
 ]);
 
 const OWNERSHIP_SNAPSHOT_FIELDS = Object.freeze(["ownership_redundancy_review"]);
@@ -158,6 +175,10 @@ export function validateSimplification(simplification, options = {}) {
         return ["Resolved simplification must include before and after snapshots."];
     }
     const snapshotFields = ["scope", "acceptance_criteria", "user_decisions", "required_evidence", "risks"];
+    if (Object.hasOwn(simplification.before, "evidence")
+        || Object.hasOwn(simplification.after, "evidence")) {
+        snapshotFields.push("evidence");
+    }
     const hasOwnershipSnapshot = OWNERSHIP_SNAPSHOT_FIELDS.some((field) => {
         return Object.hasOwn(simplification.before, field) || Object.hasOwn(simplification.after, field);
     });
@@ -184,6 +205,10 @@ export function validateSimplification(simplification, options = {}) {
     }
     if (!containsAll(simplification.after.required_evidence, simplification.before.required_evidence)) {
         errors.push("Simplification removed required evidence.");
+    }
+    if (snapshotFields.includes("evidence")
+        && !containsAll(simplification.after.evidence, simplification.before.evidence)) {
+        errors.push("Simplification removed evidence.");
     }
     if (!containsAll(simplification.after.risks, simplification.before.risks)) {
         errors.push("Simplification removed relevant risks.");
@@ -264,16 +289,39 @@ function containsOwnershipSubject(afterSubjects, beforeSubject) {
     });
 }
 
-export function validatePlanState(state) {
-    if (!state || typeof state !== "object") {
-        return {valid: false, errors: ["Plan state must be an object."]};
+export function validatePlanState(input) {
+    const lifecycle = validateStateLifecycle(input);
+    const state = lifecycle.state;
+    const errors = [...lifecycle.errors];
+
+    if (errors.length === 0 && lifecycle.lifecycle !== "absent") {
+        const stateErrors = isCanonicalState(state)
+            ? [
+                ...validateTaskPlanState(state).errors,
+                ...validateStateMetadata(state),
+                ...validateStateSourceMetadata(state),
+                ...validateStatePackages(state),
+                ...validateStateRecords(state),
+            ]
+            : [
+                ...validateStateMetadata(state),
+                ...validateStateSourceMetadata(state),
+                ...validateStatePackages(state),
+                ...validateStateRecords(state),
+            ];
+        errors.push(...stateErrors);
+        if (!isCanonicalState(state)
+            && Object.hasOwn(state, "workflow_outcome")
+            && !WORKFLOW_OUTCOMES.includes(state.workflow_outcome)) {
+            errors.push(`Invalid workflow_outcome: ${state.workflow_outcome ?? ""}.`);
+        }
+        if (isCanonicalState(state)) {
+            errors.push(...validateCanonicalProjection(state));
+            errors.push(...validateCanonicalHybridAttempt(state));
+        }
     }
-    const errors = [
-        ...validateStateMetadata(state),
-        ...validateStatePackages(state),
-        ...validateStateRecords(state),
-    ];
-    const approval = canApprovePlan(state);
+
+    const approval = buildApprovalResult(state);
     errors.push(...validateStateApproval(state, approval));
 
     return {
@@ -281,6 +329,184 @@ export function validatePlanState(state) {
         errors,
         approval,
     };
+}
+
+export function validateStateLifecycle(input) {
+    if (!isRecord(input)) {
+        return {
+            valid: false,
+            errors: ["Plan state must be an object."],
+            lifecycle: null,
+            state: null,
+        };
+    }
+
+    if (!Object.hasOwn(input, "lifecycle") && !Object.hasOwn(input, "state")) {
+        return {valid: true, errors: [], lifecycle: null, state: input};
+    }
+
+    const lifecycle = input.lifecycle ?? input.status;
+    if (lifecycle === INCOMPLETE_ARTIFACT_LIFECYCLE) {
+        return {
+            valid: false,
+            errors: ["Draft and state form an incomplete artifact pair; explicit restart is required."],
+            lifecycle,
+            state: null,
+        };
+    }
+    if (!STATE_LIFECYCLES.includes(lifecycle)) {
+        return {
+            valid: false,
+            errors: [`Invalid state lifecycle: ${lifecycle ?? ""}.`],
+            lifecycle,
+            state: null,
+        };
+    }
+
+    const state = input.state ?? null;
+    if (lifecycle === "absent") {
+        if (state !== null) {
+            return {
+                valid: false,
+                errors: ["Absent state lifecycle must not contain state data."],
+                lifecycle,
+                state,
+            };
+        }
+        return {valid: true, errors: [], lifecycle, state: null};
+    }
+    if (!isRecord(state)) {
+        return {
+            valid: false,
+            errors: [`${lifecycle} state lifecycle requires a state object.`],
+            lifecycle,
+            state,
+        };
+    }
+    if (!isCanonicalState(state)) {
+        return {
+            valid: false,
+            errors: [`${lifecycle} state lifecycle requires the complete canonical state.`],
+            lifecycle,
+            state,
+        };
+    }
+    return {valid: true, errors: [], lifecycle, state};
+}
+
+function isCanonicalState(state) {
+    return isRecord(state) && CANONICAL_STATE_FIELDS.some((field) => Object.hasOwn(state, field));
+}
+
+function validateCanonicalProjection(state) {
+    if (state.projection_status === "PROJECTION_STALE") {
+        return ["State projection is stale and cannot be treated as a valid plan."];
+    }
+    return [];
+}
+
+function validateCanonicalHybridAttempt(state) {
+    const errors = [];
+    for (const field of ["hybrid_attempt_id", "hybrid_attempt_hash", "hybrid_attempt"]) {
+        if (!Object.hasOwn(state, field)) {
+            errors.push(`State is missing ${field}.`);
+        }
+    }
+
+    const attempt = state.hybrid_attempt;
+    if (attempt === null || typeof attempt === "undefined") {
+        if (state.hybrid_attempt_id !== null || state.hybrid_attempt_hash !== null) {
+            errors.push("Empty hybrid_attempt must have null reference fields.");
+        }
+        return errors;
+    }
+    if (!isRecord(attempt)) {
+        return [...errors, "hybrid_attempt must be an object or null."];
+    }
+
+    for (const field of [
+        "run_id",
+        "attempt_id",
+        "attempt_hash",
+        "criteria_hash",
+        "strategy_hash",
+        "phase",
+        "status",
+    ]) {
+        if (!isMeaningfulString(attempt[field])) {
+            errors.push(`hybrid_attempt is missing ${field}.`);
+        }
+    }
+    if (isMeaningfulString(attempt.phase) && !WORKFLOW_PHASES.includes(attempt.phase)) {
+        errors.push(`hybrid_attempt has invalid phase: ${attempt.phase}.`);
+    }
+    if (typeof attempt.started_at !== "string" || Number.isNaN(Date.parse(attempt.started_at))) {
+        errors.push("hybrid_attempt.started_at must be a valid timestamp.");
+    }
+    if (state.hybrid_attempt_id !== attempt.attempt_id) {
+        errors.push("hybrid_attempt_id must match hybrid_attempt.attempt_id.");
+    }
+    if (state.hybrid_attempt_hash !== attempt.attempt_hash) {
+        errors.push("hybrid_attempt_hash must match hybrid_attempt.attempt_hash.");
+    }
+    return errors;
+}
+
+function buildApprovalResult(state) {
+    const approval = canApprovePlan(state);
+    if (!isRecord(state)) {
+        return approval;
+    }
+
+    const reasons = [...approval.reasons];
+    const addReason = (reason) => {
+        if (!reasons.includes(reason)) {
+            reasons.push(reason);
+        }
+    };
+    if (isCanonicalState(state) && state.workflow_outcome === "blocked") {
+        addReason("workflow_blocked");
+    }
+    return {approved: reasons.length === 0, reasons};
+}
+
+function validateStateSourceMetadata(state) {
+    if (!Object.hasOwn(state, "source_fetch_status")) {
+        return [];
+    }
+
+    const errors = [];
+    if (!SOURCE_FETCH_STATUSES.includes(state.source_fetch_status)) {
+        return [`Invalid source_fetch_status: ${state.source_fetch_status ?? ""}.`];
+    }
+    if (state.source_fetch_status === "pending") {
+        if (state.fetched_at !== null
+            || state.source_updated_at !== null
+            || state.source_fetch_error !== null
+            || state.source_fetch_failed_at !== null) {
+            errors.push("Pending source fetch cannot contain completion timestamps, an error or a failure timestamp.");
+        }
+    }
+    if (state.source_fetch_status === "complete") {
+        for (const field of ["fetched_at", "source_updated_at"]) {
+            if (typeof state[field] !== "string" || Number.isNaN(Date.parse(state[field]))) {
+                errors.push(`Complete source fetch requires valid ${field}.`);
+            }
+        }
+        if (state.source_fetch_error !== null) {
+            errors.push("Complete source fetch cannot contain source_fetch_error.");
+        }
+    }
+    if (state.source_fetch_status === "failed") {
+        if (!isMeaningfulString(state.source_fetch_error)) {
+            errors.push("Failed source fetch requires source_fetch_error.");
+        }
+        if (typeof state.source_fetch_failed_at !== "string"
+            || Number.isNaN(Date.parse(state.source_fetch_failed_at))) {
+            errors.push("Failed source fetch requires a valid source_fetch_failed_at.");
+        }
+    }
+    return errors;
 }
 
 function validateStateMetadata(state) {
@@ -381,7 +607,7 @@ function validateStateRecords(state) {
     errors.push(...validateSessionStrategy(state.session_strategy).map((error) => {
         return `session_strategy: ${error}`;
     }));
-    errors.push(...validateUserDecisionRecords(state.user_decisions ?? []).map((error) => {
+    errors.push(...validateUserDecisionRecords(state.user_decisions ?? [], {packages: state.packages}).map((error) => {
         return `user_decisions: ${error}`;
     }));
     errors.push(...validateQuestionDecisionPropagation(state));
@@ -390,6 +616,9 @@ function validateStateRecords(state) {
 
 function validateStateApproval(state, approval) {
     const errors = [];
+    if (!isRecord(state)) {
+        return errors;
+    }
     if (state.plan_status === "awaiting-package-decisions") {
         const gate = canOpenPackageDecisions(state);
         if (!gate.ready) {
@@ -410,10 +639,18 @@ export function validatePlanDocument(document, options = {}) {
         ? validateDraftDocument(document, {kind: options.kind ?? "main"})
         : validateDraftObject(document, options);
     const errors = [...draftResult.errors];
+    let draftBody = typeof document?.body === "string" ? document.body : "";
+    if (typeof document === "string" && draftResult.errors.length === 0) {
+        draftBody = parseDraftDocument(document).body;
+    }
 
     if (options.state) {
         errors.push(...validatePlanState(options.state).errors);
-        errors.push(...validateDraftStateConsistency(draftResult.metadata, options.state));
+        errors.push(...validateDraftStateConsistency(
+            draftResult.metadata,
+            validateStateLifecycle(options.state).state,
+            draftBody,
+        ));
     }
 
     return {
@@ -424,7 +661,7 @@ export function validatePlanDocument(document, options = {}) {
     };
 }
 
-function validateDraftStateConsistency(metadata, state) {
+function validateDraftStateConsistency(metadata, state, body = "") {
     const errors = [];
     if (!state || typeof state !== "object") {
         return errors;
@@ -456,6 +693,39 @@ function validateDraftStateConsistency(metadata, state) {
     if (typeof state.issue !== "undefined" && typeof metadata?.issue !== "undefined"
         && String(state.issue) !== String(metadata.issue)) {
         errors.push("Draft/state issue mismatch.");
+    }
+    if (isCanonicalState(state)) {
+        if (metadata?.source_identity !== serializeIdentity(state.source_identity)) {
+            errors.push("Draft/state source_identity mismatch.");
+        }
+        for (const field of ["workflow_phase", "workflow_outcome"]) {
+            if (metadata?.[field] !== state[field]) {
+                errors.push(`Draft/state ${field} mismatch.`);
+            }
+        }
+    }
+    if (Number.isInteger(state.revision)) {
+        if (!isNonNegativeInteger(metadata?.state_revision)) {
+            errors.push("Draft/state state_revision is missing or invalid.");
+        } else if (Number(metadata.state_revision) !== state.revision) {
+            errors.push(`Draft/state state_revision mismatch: draft=${metadata.state_revision}, state=${state.revision}.`);
+        }
+    }
+    if (Object.hasOwn(state, "source_fetch_status")) {
+        if (metadata?.source_fetch_status !== state.source_fetch_status) {
+            errors.push(`Draft/state source_fetch_status mismatch: draft=${metadata?.source_fetch_status ?? ""}, state=${state.source_fetch_status}.`);
+        }
+        for (const field of ["fetched_at", "source_updated_at", "source_fetch_error", "source_fetch_failed_at"]) {
+            const stateValue = state[field];
+            if (stateValue !== null && typeof stateValue !== "undefined"
+                && metadata?.[field] !== stateValue) {
+                errors.push(`Draft/state ${field} mismatch.`);
+            }
+        }
+    }
+    if (state.session_strategy && typeof body === "string"
+        && !body.includes(renderSessionStrategyProjection(state.session_strategy).trimEnd())) {
+        errors.push("Draft/state session_strategy mismatch.");
     }
     return errors;
 }
@@ -498,6 +768,23 @@ function isMeaningfulString(value) {
     return typeof value === "string" && value.trim() !== "";
 }
 
+function serializeIdentity(value) {
+    if (typeof value === "string") {
+        return value;
+    }
+    return stableStringify(value);
+}
+
+function stableStringify(value) {
+    if (Array.isArray(value)) {
+        return `[${value.map(stableStringify).join(",")}]`;
+    }
+    if (value && typeof value === "object") {
+        return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+    }
+    return JSON.stringify(value ?? null);
+}
+
 function containsAll(after, before) {
     if (!Array.isArray(after) || !Array.isArray(before)) {
         return false;
@@ -512,6 +799,11 @@ function sameValue(left, right) {
 function isPositiveInteger(value) {
     return (typeof value === "number" && Number.isInteger(value) && value > 0)
         || (typeof value === "string" && /^[1-9][0-9]*$/.test(value));
+}
+
+function isNonNegativeInteger(value) {
+    return (typeof value === "number" && Number.isInteger(value) && value >= 0)
+        || (typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value));
 }
 
 function parseArgs(args) {

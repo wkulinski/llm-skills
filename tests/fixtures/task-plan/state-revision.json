@@ -1,0 +1,30 @@
+{
+  "plan": {
+    "plan_id": "state-revision",
+    "draft_path": "docs/draft/state-revision.md",
+    "source_identity": "user:state-revision",
+    "plan_version": 7
+  },
+  "mutation": {
+    "type": "checkpoint",
+    "expected_revision": 1,
+    "payload": {
+      "reason": "source intake is next",
+      "next_phase": "source/context",
+      "next_allowed_action": "fetch source",
+      "forbidden_actions": ["review", "approval"]
+    }
+  },
+  "stale_mutation": {
+    "type": "checkpoint",
+    "expected_revision": 1,
+    "payload": {
+      "reason": "old read"
+    }
+  },
+  "expected": {
+    "first_revision": 2,
+    "plan_version": 7,
+    "stale_code": "STALE_REVISION"
+  }
+}

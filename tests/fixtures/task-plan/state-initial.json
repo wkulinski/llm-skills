@@ -1,0 +1,18 @@
+{
+  "plan": {
+    "plan_id": "state-initial",
+    "draft_path": "docs/draft/state-initial.md",
+    "source_identity": "user:state-initial",
+    "plan_version": 4
+  },
+  "mutation": {
+    "type": "create-initial",
+    "payload": {}
+  },
+  "expected": {
+    "revision": 1,
+    "workflow_phase": "initial-draft",
+    "source_fetch_status": "pending",
+    "state_revision": 1
+  }
+}

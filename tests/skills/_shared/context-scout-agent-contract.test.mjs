@@ -21,6 +21,7 @@ describe("context scout agent contracts", () => {
             expect(content).toMatch(/skill: deny/);
             expect(content).toMatch(/task: deny/);
             expect(content).toMatch(/"\*": deny/);
+            expect(content).toMatch(/external_directory:\s+"\*": deny/);
             expect(content).toMatch(/context-criteria\.mjs validate \*": allow/);
             expect(content).toMatch(/context-scout-report-builder\.mjs \*": allow/);
             expect(content).toMatch(/"github_\*": deny/);
@@ -102,6 +103,18 @@ describe("context scout agent contracts", () => {
             expect(content).toMatch(/repository-context-hybrid\.md/);
             expect(content).not.toMatch(/DELEGATE_FALLBACK/);
         }
+    });
+
+    it("documents Luna High as the bounded stronger fallback", () => {
+        const canonical = read(".agents/skills/_shared/references/repository-context-hybrid.md");
+        const fallback = read(".opencode/agent/context-scout.md");
+
+        expect(canonical).toMatch(/`context-scout` \(Luna High\)/);
+        expect(canonical).toMatch(/higher-reasoning second pass/);
+        expect(canonical).toMatch(/at most one fallback/);
+        expect(canonical).not.toMatch(/Luna Low/);
+        expect(fallback).toMatch(/model: openai\/gpt-5\.6-luna/);
+        expect(fallback).toMatch(/variant: high/);
     });
 
     it("publishes every shared repository-context runtime dependency", () => {

@@ -1,0 +1,16 @@
+{
+  "blocking": [
+    {
+      "id": "B1",
+      "criterion": "Source is available."
+    }
+  ],
+  "follow_up": [
+    {
+      "id": "F1",
+      "reason": "Confirm the downstream example.",
+      "owner": "planner",
+      "target_phase": "review"
+    }
+  ]
+}

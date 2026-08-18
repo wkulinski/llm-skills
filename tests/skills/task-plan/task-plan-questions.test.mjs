@@ -1,17 +1,23 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
-import {describe, expect, it} from "vitest";
+import {afterEach, describe, expect, it} from "vitest";
 
 import {
+    parseDraftDocument,
+    replaceSessionStrategySection,
     renderQuestionSections,
+    renderSessionStrategyProjection,
+    serializeFrontMatter,
     validateDraftDocument,
 } from "../../../.agents/skills/task-plan/scripts/draft.mjs";
 import {
     validateQuestionRecords,
     validateOwnershipRedundancyReview,
 } from "../../../.agents/skills/task-plan/scripts/state.mjs";
+import {loadState, updateState} from "../../../.agents/skills/task-plan/scripts/state-store.mjs";
 import {validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate-plan.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../");
@@ -25,6 +31,13 @@ const OWNERSHIP_REVIEW_STATES = QUESTIONS.ownership_redundancy_review_states;
 const EXPECTED_MARKDOWN = fs.readFileSync(path.join(ROOT, "tests/fixtures/task-plan/draft-questions.md"), "utf8");
 const MAIN_DRAFT = fs.readFileSync(path.join(ROOT, "tests/fixtures/task-plan/draft-main.md"), "utf8");
 const DRAFT_SCRIPT = path.join(ROOT, ".agents/skills/task-plan/scripts/draft.mjs");
+const temporaryDirectories = [];
+
+afterEach(() => {
+    for (const directory of temporaryDirectories.splice(0)) {
+        fs.rmSync(directory, {recursive: true, force: true});
+    }
+});
 
 describe("task-plan question contract", () => {
     it("renders scope and per-package questions as separate readable sections", () => {
@@ -107,6 +120,67 @@ describe("task-plan question contract", () => {
         const openMarkdown = renderQuestionSections({...QUESTIONS, package_decision_gate: "open"});
         expect(openMarkdown).toContain("### WP1 — Kontrakt backendu");
         expect(openMarkdown).toContain("WP1-Q1");
+    });
+
+    it("propagates a question decision through known state-store mutations", () => {
+        const directory = makeTemporaryDirectory();
+        const plan = {
+            repo_root: directory,
+            state_root: path.join(directory, "var", "agent", "task-plan"),
+            plan_id: "question-propagation",
+            draft_path: "docs/draft/question-propagation.md",
+            source_identity: "user:question-propagation",
+            scope_questions: [{
+                id: "SQ1",
+                prompt: "Czy źródło jest kompletne?",
+                impact: "Zmienia kryteria kontekstu.",
+                decision_needed: "Potwierdzić kompletność.",
+                blocking: true,
+                resolved: false,
+            }],
+        };
+        const clock = fixedClock();
+        updateState(plan, {type: "create-initial", payload: {}}, {clock});
+
+        const decision = updateState(plan, {
+            type: "question-decision",
+            payload: {
+                question_id: "SQ1",
+                decision_ref: "D1",
+                answer: "yes",
+                decision_source: "user",
+                decided_at: "2026-01-01T00:00:01Z",
+                affected_refs: ["session_strategy"],
+            },
+        }, {clock: fixedClock("2026-01-01T00:00:01Z")});
+        expect(decision.state.user_decisions[0]).toMatchObject({
+            decision_ref: "D1",
+            propagation_status: "pending",
+        });
+
+        updateState(plan, {
+            type: "workflow-phase-transition",
+            payload: {to: "source/context", reason: "start source intake"},
+        }, {clock: fixedClock("2026-01-01T00:00:02Z")});
+        updateState(plan, {
+            type: "workflow-phase-transition",
+            payload: {to: "review", reason: "source intake complete"},
+        }, {clock: fixedClock("2026-01-01T00:00:03Z")});
+        const current = loadState(plan).state;
+        const propagated = updateState(plan, {
+            type: "plan-revision",
+            payload: {
+                packages: current.packages,
+                findings: current.findings,
+                session_strategy: {...current.session_strategy, rationale: "Source completeness confirmed."},
+                reason: "Apply the source decision.",
+                propagated_decision_ref: "D1",
+            },
+        }, {clock: fixedClock("2026-01-01T00:00:04Z")});
+        expect(propagated.state.user_decisions[0]).toMatchObject({
+            propagation_status: "propagated",
+        });
+        expect(propagated.state.user_decisions[0].propagation_status).not.toBe("pending");
     });
 
     it("rejects aggregate legacy question paragraphs and duplicate IDs", () => {
@@ -235,15 +309,18 @@ describe("task-plan question contract", () => {
             critical_review_complete: false,
             simplification_control_review_complete: false,
         };
-        expect(validatePlanDocument(MAIN_DRAFT, {kind: "main", state}).valid).toBe(true);
-        const mismatch = validatePlanDocument(MAIN_DRAFT, {
+        const parsed = parseDraftDocument(MAIN_DRAFT);
+        const projectedDraft = serializeFrontMatter(parsed.metadata)
+            + replaceSessionStrategySection(parsed.body, renderSessionStrategyProjection(state.session_strategy));
+        expect(validatePlanDocument(projectedDraft, {kind: "main", state}).valid).toBe(true);
+        const mismatch = validatePlanDocument(projectedDraft, {
             kind: "main",
             state: {...state, plan_status: "needs-clarification"},
         });
         expect(mismatch.valid).toBe(false);
         expect(mismatch.errors).toContain("Draft/state plan_status mismatch: draft=review-pending, state=needs-clarification.");
 
-        const gateMismatch = validatePlanDocument(MAIN_DRAFT, {
+        const gateMismatch = validatePlanDocument(projectedDraft, {
             kind: "main",
             state: {...state, package_decision_gate: "open"},
         });
@@ -251,3 +328,13 @@ describe("task-plan question contract", () => {
         expect(gateMismatch.errors).toContain("Plan state package_decision_gate must be closed for review-pending.");
     });
 });
+
+function fixedClock(value = "2026-01-01T00:00:00Z") {
+    return {now: () => value};
+}
+
+function makeTemporaryDirectory() {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "task-plan-questions-"));
+    temporaryDirectories.push(directory);
+    return directory;
+}

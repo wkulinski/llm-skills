@@ -8,7 +8,10 @@ import {
     applyPlanTransition,
     canApprovePlan,
     canOpenPackageDecisions,
+    createInitialState,
     parseDecisionCommand,
+    validateTaskPlanState,
+    WORKFLOW_OUTCOMES,
 } from "../../../.agents/skills/task-plan/scripts/state.mjs";
 import {normalizeGitHubIssue} from "../../../.agents/skills/task-plan/scripts/source.mjs";
 import {validateFinalApproval} from "../../../.agents/skills/task-plan/scripts/validate-plan.mjs";
@@ -27,8 +30,10 @@ const DRAFT_OPERATIONS = readJson("draft-operations.json");
 const MAIN_DRAFT = fs.readFileSync(path.join(FIXTURE_ROOT, "draft-main.md"), "utf8");
 const DERIVED_DRAFT = fs.readFileSync(path.join(FIXTURE_ROOT, "draft-derived.md"), "utf8");
 const TASK_PLAN_SCRIPTS = [
+    "atomic-file.mjs",
     "draft.mjs",
     "state.mjs",
+    "state-store.mjs",
     "source.mjs",
     "validate-plan.mjs",
 ];
@@ -328,7 +333,8 @@ describe("task-plan integration boundary", () => {
     it("keeps the documented deterministic script surface present", () => {
         for (const script of TASK_PLAN_SCRIPTS) {
             const relativePath = `.agents/skills/task-plan/scripts/${script}`;
-            expect(SKILL_SOURCE).toContain(`scripts/${script}`);
+            const documentedAnchor = script === "atomic-file.mjs" ? "atomic-file" : `scripts/${script}`;
+            expect(SKILL_SOURCE).toContain(documentedAnchor);
             expect(fs.existsSync(path.join(ROOT, relativePath))).toBe(true);
         }
     });
@@ -374,6 +380,121 @@ describe("task-plan integration boundary", () => {
         expect(body).toContain("<skills_root>/_shared/scripts/slugify-title.mjs");
         expect(body).not.toContain("node .agents/skills/task-plan/scripts");
         expect(body).not.toContain("| `scripts/draft.mjs`");
+    });
+});
+
+describe("task-plan WP1 phase contract", () => {
+    const normalizedSkill = SKILL_SOURCE.replace(/\s+/g, " ");
+    const phaseDiagram = "intake → initial-draft → source/context → review → decisions → handoff";
+
+    it("keeps one normative phase diagram and only explicit backward transitions", () => {
+        expect(normalizedSkill.split(phaseDiagram).length - 1).toBe(1);
+        expect(normalizedSkill).toContain("`review` może wrócić do `source/context`");
+        expect(normalizedSkill).toContain("`decisions` może wrócić do `review`");
+        expect(normalizedSkill).toContain("jawnego restartu planu z nową tożsamością");
+    });
+
+    it("documents the checkpoint shape and phase stop outcomes", () => {
+        for (const field of [
+            "phase",
+            "completed_at",
+            "next_phase",
+            "next_allowed_action",
+            "forbidden_actions[]",
+            "reason",
+            "state_revision",
+        ]) {
+            expect(SKILL_SOURCE).toContain(field);
+        }
+
+        expect(normalizedSkill).toContain("Etap: <bieżąca faza>");
+        expect(normalizedSkill).toContain("Wykonano: <obserwowalne operacje i wynik>");
+        expect(normalizedSkill).toContain("Następny dozwolony krok: <jedna dozwolona akcja albo restart>");
+        expect(normalizedSkill).toContain("Niedozwolone jeszcze: <akcje zablokowane przez kontrakt>");
+        expect(normalizedSkill).toContain("running | blocked | complete");
+        expect(normalizedSkill).toContain("workflow_outcome: blocked");
+    });
+
+    it("enforces structural limits without a second budget runtime", () => {
+        expect(SKILL_SOURCE).not.toContain("max_wall_clock_ms");
+        expect(SKILL_SOURCE).not.toContain("max_steps");
+        expect(normalizedSkill).toContain("najwyżej jeden canonical hybrid run");
+        expect(normalizedSkill).toContain("najwyżej jeden fallback wyłącznie po `CLAIM_FALLBACK`");
+        expect(normalizedSkill).toContain("najwyżej jedno automatyczne uproszczenie");
+        expect(normalizedSkill).toContain("nie uruchamia automatycznie kolejnego scouta lub review");
+        expect(normalizedSkill).toContain("Po tym wyniku nie wolno zadawać kolejnego pytania");
+    });
+
+    it("keeps WP5 blocking criteria separate from follow-up context", () => {
+        const sectionStart = SKILL_SOURCE.indexOf("### Granica blocking i follow-up");
+        const sectionEnd = SKILL_SOURCE.indexOf("### Adapter GitHub issue", sectionStart);
+        const section = SKILL_SOURCE.slice(sectionStart, sectionEnd).replace(/\s+/g, " ");
+
+        expect(section).toContain("`criteria.json` wyłącznie z `state.context_requirements.blocking`");
+        expect(section).toContain("`state.context_requirements.follow_up` nie trafiają do canonical handoffu ani do `criteria.json`");
+        expect(section).toContain("nie są bramką bieżącego raportu");
+        expect(section).toContain("Nierozwiązane elementy są renderowane w checkpointach task-plan oraz w finalnym execution handoffie");
+        expect(section).toContain("criteria_hash");
+        expect(section).toContain("strategy_hash");
+    });
+
+    it("requires the initial draft before source/context work", () => {
+        const draftStart = SKILL_SOURCE.indexOf("## Draft jako żywy artefakt");
+        const contextStart = SKILL_SOURCE.indexOf("## Canonical repository-context");
+        const draftContract = SKILL_SOURCE.slice(draftStart, contextStart);
+
+        const firstWrite = draftContract.indexOf("w pierwszych operacjach zapisz minimalny, poprawny szkic Markdown");
+        const sourceContextTransition = draftContract.indexOf("natychmiast przejdź do `source/context`");
+
+        expect(draftStart).toBeGreaterThanOrEqual(0);
+        expect(contextStart).toBeGreaterThan(draftStart);
+        expect(firstWrite).toBeGreaterThanOrEqual(0);
+        expect(sourceContextTransition).toBeGreaterThan(firstWrite);
+        expect(draftContract).toContain("nie dopracowuj provisional WP");
+    });
+});
+
+describe("task-plan canonical state contract", () => {
+    it("keeps workflow outcome separate from the domain plan status", () => {
+        const state = createInitialState({
+            plan_id: "contract-state",
+            draft_path: "docs/draft/contract-state.md",
+            source_identity: "user:contract-state",
+        }, {now: "2026-01-01T00:00:00Z"});
+        state.workflow_outcome = "blocked";
+
+        expect(WORKFLOW_OUTCOMES).toContain("blocked");
+        expect(PLAN_STATUSES.has("blocked")).toBe(false);
+        expect(validateTaskPlanState(state).valid).toBe(true);
+    });
+
+    it("keeps the four version concepts explicit in the contract", () => {
+        const state = createInitialState({
+            plan_id: "contract-versions",
+            draft_path: "docs/draft/contract-versions.md",
+            source_identity: "user:contract-versions",
+            plan_version: 7,
+        }, {now: "2026-01-01T00:00:00Z"});
+
+        expect(state).toHaveProperty("schema_version");
+        expect(state).toHaveProperty("revision");
+        expect(state).toHaveProperty("plan_version");
+        expect(state).toHaveProperty("checkpoint.state_revision");
+        expect(state.schema_version).toBe(2);
+        expect(state.revision).toBe(0);
+        expect(state.plan_version).toBe(7);
+        expect(state.checkpoint.state_revision).toBe(state.revision);
+        expect(SKILL_SOURCE).toContain("plan_version");
+        expect(SKILL_SOURCE).toContain("state_revision");
+    });
+
+    it("requires initial draft materialization to carry a checkpoint contract", () => {
+        const normalizedSkill = SKILL_SOURCE.replace(/\s+/g, " ");
+
+        expect(normalizedSkill).toContain("State store jest jedyną produkcyjną ścieżką tworzenia initial state i draftu");
+        expect(normalizedSkill).toContain("create-initial");
+        expect(normalizedSkill).toContain("checkpoint");
+        expect(normalizedSkill).toContain("state_revision");
     });
 });
 
