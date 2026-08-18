@@ -4,10 +4,13 @@ import fs from "node:fs";
 import path from "node:path";
 import {pathToFileURL} from "node:url";
 
+import {writeFileAtomic} from "./atomic-file.mjs";
 import {slugifyTitle} from "../../_shared/scripts/slugify-title.mjs";
 import {
+    DEFAULT_SESSION_STRATEGY,
     PLAN_STATUSES,
     SIMPLIFICATION_STATUSES,
+    SOURCE_FETCH_STATUSES,
     TERMINAL_PACKAGE_STATUSES,
     validateQuestionRecords,
     validateSessionStrategy,
@@ -38,26 +41,10 @@ export const SESSION_STRATEGY_LABELS = Object.freeze([
 
 export const DEFAULT_PENDING_TITLE = "Pending title";
 
-export const INITIAL_SESSION_STRATEGY = Object.freeze({
-    mode: "staged",
-    rationale: "Initial draft created before source fetch; strategy is finalized after source intake.",
-    stages: [
-        {
-            id: "S1",
-            title: "Source intake",
-            rationale: "Fetch and assess the source before defining implementation packages.",
-            work_package_ids: [],
-            dependencies: [],
-            session_boundary: "same-session",
-            entry_criteria: ["Intent gate passed."],
-            exit_criteria: ["Source fetched and profile assigned."],
-        },
-    ],
-    session_boundary_recommendation: "Resume in a new session after source intake.",
-    dependencies: ["source fetch"],
-    entry_criteria: ["Source fetched, assessed and profile assigned."],
-    exit_criteria: ["Every blocking question has an explicit user decision."],
-});
+export const GENERATED_STATE_START = "<!-- task-plan:generated:start -->";
+export const GENERATED_STATE_END = "<!-- task-plan:generated:end -->";
+export const SESSION_STRATEGY_START = "<!-- task-plan:session-strategy:start -->";
+export const SESSION_STRATEGY_END = "<!-- task-plan:session-strategy:end -->";
 
 export const DETAILED_PLAN_SECTIONS = Object.freeze([
     "## Source plan",
@@ -81,7 +68,6 @@ export const INPUT_PROFILES = Object.freeze([
 
 const CLI_CONTRACT_REJECTIONS = Object.freeze([
     "UNSAFE_PATH",
-    "SOURCE_IDENTITY_MISMATCH",
 ]);
 
 export class DraftError extends Error {
@@ -265,8 +251,8 @@ export function buildDraftPath(source, options = {}) {
 }
 
 export function buildDraftMetadata(source, options = {}) {
-    const now = requireTimestamp(options.now, "now");
     const kind = source?.source_kind;
+    const sourceFetchStatus = defaultSourceFetchStatus(source, options);
     const metadata = {
         source_kind: kind,
         source_ref: requireValue(deriveSourceRef(source, kind), "source_ref"),
@@ -275,9 +261,24 @@ export function buildDraftMetadata(source, options = {}) {
         package_decision_gate: options.packageDecisionGate ?? "closed",
         plan_version: String(options.planVersion ?? 1),
         simplification_status: options.simplificationStatus ?? "pending",
-        fetched_at: source.fetched_at ?? now,
-        source_updated_at: source.source_updated_at ?? now,
+        source_fetch_status: sourceFetchStatus,
     };
+
+    if (sourceFetchStatus === "complete") {
+        metadata.fetched_at = requireTimestamp(
+            source.fetched_at ?? options.fetched_at ?? options.fetchedAt,
+            "fetched_at",
+        );
+        metadata.source_updated_at = requireTimestamp(
+            source.source_updated_at ?? options.source_updated_at ?? options.sourceUpdatedAt,
+            "source_updated_at",
+        );
+    } else if (sourceFetchStatus === "failed") {
+        metadata.source_fetch_error = requireValue(
+            source.source_fetch_error ?? source.error ?? options.source_fetch_error ?? options.sourceFetchError,
+            "source_fetch_error",
+        );
+    }
 
     if (metadata.input_profile === "title-only") {
         metadata.plan_status = "needs-clarification";
@@ -396,49 +397,16 @@ export function renderQuestionSections(input = {}) {
     return `${lines.join("\n")}\n`;
 }
 
-export function prepareResumeMetadata(existingMetadata, incomingSource, options = {}) {
-    const existingIdentity = buildSourceIdentity(toSourceIdentityInput(existingMetadata));
-    const incomingIdentity = buildSourceIdentity(incomingSource);
-    if (existingIdentity !== incomingIdentity) {
-        throw new DraftError("SOURCE_IDENTITY_MISMATCH", "Resume source does not match the existing draft.", {
-            existingIdentity,
-            incomingIdentity,
-        });
-    }
-
-    if (!isPositiveInteger(existingMetadata?.plan_version)) {
-        throw new DraftError("INVALID_METADATA", "Existing draft plan_version must be a positive integer.");
-    }
-
-    return {
-        ...existingMetadata,
-        plan_version: String(Number(existingMetadata.plan_version) + 1),
-        fetched_at: options.now ?? existingMetadata.fetched_at,
-        source_updated_at: incomingSource.source_updated_at ?? existingMetadata.source_updated_at,
-    };
-}
-
 export function writeAtomicFile(filePath, contents, options = {}) {
-    const fsOps = options.fsOps ?? fs;
-    const target = path.resolve(filePath);
-    if (options.rootDir) {
-        assertInsideRoot(target, options.rootDir);
-    }
-    const temporary = `${target}.tmp-${process.pid}`;
     try {
-        fsOps.mkdirSync(path.dirname(target), {recursive: true});
-        fsOps.writeFileSync(temporary, contents, "utf8");
-        fsOps.renameSync(temporary, target);
-        return {path: target, written: true};
+        return writeFileAtomic(filePath, contents, options);
     } catch (error) {
-        try {
-            fsOps.unlinkSync(temporary);
-        } catch {
-            // Cleanup is best effort; the original target remains untouched.
+        if (error?.code === "UNSAFE_PATH") {
+            throw new DraftError("UNSAFE_PATH", error.message, error.details ?? {});
         }
-        throw new DraftError("DRAFT_WRITE_FAILED", `Could not write draft ${target}.`, {
+        throw new DraftError("DRAFT_WRITE_FAILED", `Could not write draft ${path.resolve(filePath)}.`, {
             cause: error instanceof Error ? error.message : String(error),
-            path: target,
+            path: path.resolve(filePath),
         });
     }
 }
@@ -489,13 +457,34 @@ export function renderSessionStrategySection(strategy) {
     ].join("\n");
 }
 
-export function renderInitialDraftDocument(metadata) {
-    const strategySection = renderSessionStrategySection(INITIAL_SESSION_STRATEGY).trimEnd();
+export function renderInitialDraftDocument(metadata, options = {}) {
+    const strategySection = renderSessionStrategyProjection(options.state?.session_strategy ?? DEFAULT_SESSION_STRATEGY).trimEnd();
+    const generatedState = options.state ? renderGeneratedStateSection(options.state) : "";
+    const sourceBody = typeof options.source?.body === "string" && options.source.body.trim() !== ""
+        ? options.source.body.trim()
+        : "- Original source material is pending intake.";
+    const detailedPlanSections = metadata.input_profile === "detailed-plan"
+        ? [
+            "## Source plan",
+            "",
+            sourceBody,
+            "",
+            "## Review findings",
+            "",
+            "- Review starts after source intake; no findings recorded yet.",
+            "",
+            "## Revised plan",
+            "",
+            "- To be established from the source and review.",
+            "",
+        ]
+        : [];
     const body = [
         "## Source",
         "",
         "- Source fetch pending; provenance is recorded after intake.",
         "",
+        ...detailedPlanSections,
         strategySection,
         "",
         "## Goal and scope",
@@ -533,26 +522,79 @@ export function renderInitialDraftDocument(metadata) {
         "- Not applicable for an initial draft.",
         "",
     ].join("\n");
-    return `${serializeFrontMatter(metadata)}${body}`;
+    return `${serializeFrontMatter(metadata)}${generatedState}${generatedState ? "\n" : ""}${body}`;
 }
 
-export function createInitialDraft({source, now, draftRoot = "docs/draft", rootDir, writeFile = writeAtomicFile} = {}) {
-    if (!source || typeof source !== "object") {
-        throw new DraftError("INVALID_SOURCE_IDENTITY", "Initial draft requires a source identity object.");
+export function renderGeneratedStateSection(state) {
+    const checkpoint = state?.checkpoint ?? {};
+    const lines = [
+        GENERATED_STATE_START,
+        "### Task-plan generated state",
+        `- Workflow phase: \`${markdownInline(state?.workflow_phase ?? "unknown")}\``,
+        `- Workflow outcome: \`${markdownInline(state?.workflow_outcome ?? "unknown")}\``,
+        `- Plan status: \`${markdownInline(state?.plan_status ?? "unknown")}\``,
+        `- Plan version: \`${markdownInline(state?.plan_version ?? "unknown")}\``,
+        `- State revision: \`${markdownInline(state?.revision ?? "unknown")}\``,
+        `- Checkpoint: ${markdownInline(checkpoint.reason ?? "not recorded")}`,
+    ];
+    if (state?.source_fetch_error) {
+        lines.push(`- Source fetch error: ${markdownInline(state.source_fetch_error)}`);
     }
-    const metadata = buildDraftMetadata(source, {now});
-    const relativePath = buildDraftPath(source, {draftRoot});
-    const target = rootDir ? path.resolve(rootDir, relativePath) : path.resolve(relativePath);
-    const content = renderInitialDraftDocument(metadata);
-    writeFile(target, content, rootDir ? {rootDir} : {});
-    return {
-        path: relativePath,
-        target,
-        content,
-        metadata,
-        written: true,
-    };
+    lines.push(GENERATED_STATE_END, "");
+    return lines.join("\n");
 }
+
+export function renderSessionStrategyProjection(strategy) {
+    return [
+        SESSION_STRATEGY_START,
+        renderSessionStrategySection(strategy).trimEnd(),
+        SESSION_STRATEGY_END,
+        "",
+    ].join("\n");
+}
+
+export function replaceSessionStrategySection(body, strategySection) {
+    return replaceMarkedSection(
+        body,
+        strategySection,
+        SESSION_STRATEGY_START,
+        SESSION_STRATEGY_END,
+        "Session strategy",
+    );
+}
+
+export function replaceGeneratedStateSection(body, generatedSection) {
+    return replaceMarkedSection(body, generatedSection, GENERATED_STATE_START, GENERATED_STATE_END, "Generated state", true);
+}
+
+function replaceMarkedSection(body, generatedSection, startMarker, endMarker, label, allowMissing = false) {
+    if (typeof body !== "string" || typeof generatedSection !== "string") {
+        throw new DraftError("INVALID_GENERATED_SECTION", `${label} projection requires string content.`);
+    }
+
+    const startIndex = body.indexOf(startMarker);
+    const endIndex = body.indexOf(endMarker);
+    const hasStart = startIndex >= 0;
+    const hasEnd = endIndex >= 0;
+    if (hasStart !== hasEnd || (hasStart && (endIndex < startIndex
+        || body.indexOf(startMarker, startIndex + startMarker.length) >= 0
+        || body.indexOf(endMarker, endIndex + endMarker.length) >= 0))) {
+        throw new DraftError("INVALID_GENERATED_SECTION", `${label} markers must contain exactly one complete block.`);
+    }
+
+    if (!hasStart) {
+        if (allowMissing) {
+            const separator = body.endsWith("\n") ? "\n" : "\n\n";
+            return `${body}${separator}${generatedSection}`;
+        }
+        throw new DraftError("INVALID_GENERATED_SECTION", `${label} markers must contain exactly one complete block.`);
+    }
+
+    const replacement = generatedSection.endsWith("\n") ? generatedSection : `${generatedSection}\n`;
+    return `${body.slice(0, startIndex)}${replacement}${body.slice(endIndex + endMarker.length)}`;
+}
+
+
 
 function validateRequiredMetadata(metadata) {
     const errors = [];
@@ -564,8 +606,7 @@ function validateRequiredMetadata(metadata) {
         "package_decision_gate",
         "plan_version",
         "simplification_status",
-        "fetched_at",
-        "source_updated_at",
+        "source_fetch_status",
     ];
 
     for (const key of required) {
@@ -590,6 +631,9 @@ function validateMetadataEnums(metadata) {
     if (!SIMPLIFICATION_STATUSES.includes(metadata?.simplification_status)) {
         errors.push(`Invalid simplification_status: ${metadata?.simplification_status ?? ""}.`);
     }
+    if (!SOURCE_FETCH_STATUSES.includes(metadata?.source_fetch_status)) {
+        errors.push(`Invalid source_fetch_status: ${metadata.source_fetch_status ?? ""}.`);
+    }
     if (Object.hasOwn(metadata, "package_decision_gate")
         && !["open", "closed"].includes(metadata.package_decision_gate)) {
         errors.push(`Invalid package_decision_gate: ${metadata.package_decision_gate ?? ""}.`);
@@ -611,13 +655,70 @@ function validateMetadataEnums(metadata) {
 }
 
 function validateMetadataTimestamps(metadata) {
+    return validateSourceMetadata(metadata);
+}
+
+function validateSourceMetadata(metadata) {
     const errors = [];
-    for (const key of ["fetched_at", "source_updated_at"]) {
-        if (typeof metadata?.[key] === "string" && Number.isNaN(Date.parse(metadata[key]))) {
+    const status = metadata?.source_fetch_status;
+
+    if (typeof status !== "string") {
+        return errors;
+    }
+
+    if (!SOURCE_FETCH_STATUSES.includes(status)) {
+        return errors;
+    }
+
+    if (status === "pending") {
+        for (const key of ["fetched_at", "source_updated_at", "source_fetch_error", "source_fetch_failed_at"]) {
+            if (Object.hasOwn(metadata, key)) {
+                errors.push(`Pending source fetch must not contain ${key}.`);
+            }
+        }
+        return errors;
+    }
+
+    if (status === "complete") {
+        for (const key of ["fetched_at", "source_updated_at"]) {
+            if (typeof metadata?.[key] !== "string" || metadata[key].trim() === "") {
+                errors.push(`Complete source fetch requires ${key}.`);
+            } else if (Number.isNaN(Date.parse(metadata[key]))) {
+                errors.push(`${key} must be a valid timestamp.`);
+            }
+        }
+        if (Object.hasOwn(metadata, "source_fetch_error") || Object.hasOwn(metadata, "source_fetch_failed_at")) {
+            errors.push("Complete source fetch must not contain failure metadata.");
+        }
+        return errors;
+    }
+
+    if (typeof metadata?.source_fetch_error !== "string" || metadata.source_fetch_error.trim() === "") {
+        errors.push("Failed source fetch requires source_fetch_error.");
+    }
+    for (const key of ["fetched_at", "source_updated_at", "source_fetch_failed_at"]) {
+        if (typeof metadata?.[key] === "string" && metadata[key].trim() !== ""
+            && Number.isNaN(Date.parse(metadata[key]))) {
             errors.push(`${key} must be a valid timestamp.`);
         }
     }
     return errors;
+}
+
+function defaultSourceFetchStatus(source, options = {}) {
+    const explicit = options.source_fetch_status
+        ?? options.sourceFetchStatus
+        ?? source?.source_fetch_status;
+    if (typeof explicit !== "undefined" && explicit !== null) {
+        if (!SOURCE_FETCH_STATUSES.includes(explicit)) {
+            throw new DraftError("INVALID_METADATA", `Invalid source_fetch_status: ${explicit}.`);
+        }
+        return explicit;
+    }
+    if (source?.source_fetch_error || source?.error || options.source_fetch_error || options.sourceFetchError) {
+        return "failed";
+    }
+    return source?.fetched_at && source?.source_updated_at ? "complete" : "pending";
 }
 
 function validateProfileMetadata(metadata) {
@@ -638,12 +739,20 @@ function validateKindMetadata(metadata, kind) {
 }
 
 function validateSessionStrategyPresentation(body) {
-    const headingMatch = /^##\s+Session strategy\s*$/m.exec(body);
+    const startIndex = body.indexOf(SESSION_STRATEGY_START);
+    const endIndex = body.indexOf(SESSION_STRATEGY_END);
+    if (startIndex < 0 || endIndex < startIndex
+        || body.indexOf(SESSION_STRATEGY_START, startIndex + SESSION_STRATEGY_START.length) >= 0
+        || body.indexOf(SESSION_STRATEGY_END, endIndex + SESSION_STRATEGY_END.length) >= 0) {
+        return ["Session strategy markers must contain exactly one complete block."];
+    }
+    const markedSection = body.slice(startIndex + SESSION_STRATEGY_START.length, endIndex);
+    const headingMatch = /^##\s+Session strategy\s*$/m.exec(markedSection);
     if (!headingMatch) {
-        return [];
+        return ["Session strategy block must contain the Session strategy heading."];
     }
     const sectionStart = headingMatch.index + headingMatch[0].length;
-    const remainder = body.slice(sectionStart);
+    const remainder = markedSection.slice(sectionStart);
     const nextSection = remainder.search(/^##\s/m);
     const section = nextSection >= 0 ? remainder.slice(0, nextSection) : remainder;
     return SESSION_STRATEGY_LABELS
@@ -825,14 +934,6 @@ function safeRelativePath(value, name) {
     return normalized;
 }
 
-function assertInsideRoot(target, rootDir) {
-    const root = path.resolve(rootDir);
-    const relative = path.relative(root, target);
-    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-        throw new DraftError("UNSAFE_PATH", "Draft target must remain inside rootDir.", {target, root});
-    }
-}
-
 function parseGitHubSourceRef(value) {
     const sourceRef = typeof value === "string" ? value : "";
     const match = sourceRef.match(/^[a-z]+:\/\/[^/]+\/([^/]+)\/([^/]+)\/issues\/[1-9][0-9]*/i);
@@ -855,18 +956,6 @@ function deriveSourceRef(source, kind) {
         }
     }
     return null;
-}
-
-function toSourceIdentityInput(metadata) {
-    return {
-        source_kind: metadata.source_kind,
-        source_ref: metadata.source_ref,
-        issue: metadata.issue,
-        title: metadata.title,
-        parent_draft: metadata.parent_draft,
-        work_package_id: metadata.work_package_id,
-        parent_identity: metadata.source_ref,
-    };
 }
 
 function parseArgs(args) {

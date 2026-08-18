@@ -8,6 +8,7 @@ plan_status: review-pending
 package_decision_gate: closed
 plan_version: 1
 simplification_status: pending
+source_fetch_status: complete
 fetched_at: 2026-01-01T00:00:00Z
 source_updated_at: 2026-01-01T00:00:00Z
 ---
@@ -17,6 +18,7 @@ source_updated_at: 2026-01-01T00:00:00Z
 - source_data: issue body and comments
 - source_ref: https://github.com/acme/demo/issues/123
 
+<!-- task-plan:session-strategy:start -->
 ## Session strategy
 
 - Mode: `planning`
@@ -27,6 +29,7 @@ source_updated_at: 2026-01-01T00:00:00Z
 - Dependencies: source fetch, repository context
 - Entry criteria: source fetched and assessed.
 - Exit criteria: every blocking question has an explicit user decision.
+<!-- task-plan:session-strategy:end -->
 
 ## Goal and scope
 

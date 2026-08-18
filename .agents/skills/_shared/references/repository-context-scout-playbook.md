@@ -98,9 +98,23 @@ Użyj wyłącznie buildera:
 node ./.agents/skills/_shared/scripts/context-scout-report-builder.mjs
 ```
 
-Nie składaj końcowego JSON ręcznie. Zarezerwuj co najmniej 40% kroków na ledger,
-preflight, coverage, `check` i `render`. Wynik `render` zapisz dokładnie pod
-ścieżką raportu przekazaną przez agenta głównego.
+Nie składaj końcowego JSON ręcznie jako artefaktu poza builderem. Zarezerwuj co
+najmniej 40% kroków na ledger, preflight i coverage. Po walidacji wejść
+zainicjalizuj ledger dokładnie raz, zbuduj kompletny raport JSON w pamięci i
+przekaż go bezpośrednio do `batch-render` jako drugiej i ostatniej operacji
+buildera:
+
+```text
+node ./.agents/skills/_shared/scripts/context-scout-report-builder.mjs batch-render <ledger> --status COMPLETE --output <report> <<'REPORT_JSON'
+<COMPLETE_REPORT_JSON>
+REPORT_JSON
+```
+
+Nie uruchamiaj osobno `add-evidence`, `add-finding`, `set-coverage`, `check`,
+`batch` ani `render`. Nie twórz osobnego pliku wejściowego ani nie używaj
+`cat`, `touch`, `printf`, `echo`, process substitution lub osobnego renderu.
+Wynik `batch-render` zapisz dokładnie pod ścieżką raportu przekazaną przez
+agenta głównego.
 
 Jeśli builder, preflight albo walidacja odrzuci dowód, popraw punktowy odczyt lub
 zwróć `INCOMPLETE`; nie obchodź walidatora. Raport `COMPLETE` wymaga coverage

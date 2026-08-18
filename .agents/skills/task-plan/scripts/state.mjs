@@ -81,6 +81,83 @@ export const USER_DECISION_PROPAGATION_STATUSES = Object.freeze([
     "propagated",
 ]);
 
+export const STATE_SCHEMA_VERSION = 2;
+
+export const WORKFLOW_PHASES = Object.freeze([
+    "intake",
+    "initial-draft",
+    "source/context",
+    "review",
+    "decisions",
+    "handoff",
+]);
+
+export const WORKFLOW_OUTCOMES = Object.freeze([
+    "running",
+    "blocked",
+    "complete",
+]);
+
+export const SOURCE_FETCH_STATUSES = Object.freeze([
+    "pending",
+    "complete",
+    "failed",
+]);
+
+export const MUTATION_TYPES = Object.freeze([
+    "create-initial",
+    "checkpoint",
+    "workflow-phase-transition",
+    "plan-transition",
+    "plan-revision",
+    "package-decision",
+    "package-reopen",
+    "question-decision",
+    "review-record",
+    "finding-record",
+    "simplification-record",
+    "context-requirements-update",
+    "hybrid-attempt",
+    "source-fetch-complete",
+    "source-fetch-failed",
+]);
+
+export const WORKFLOW_PHASE_TRANSITIONS = Object.freeze({
+    intake: Object.freeze(["initial-draft"]),
+    "initial-draft": Object.freeze(["source/context"]),
+    "source/context": Object.freeze(["review"]),
+    review: Object.freeze(["source/context", "decisions"]),
+    decisions: Object.freeze(["review", "handoff"]),
+    handoff: Object.freeze([]),
+});
+
+export const DEFAULT_SESSION_STRATEGY = Object.freeze({
+    mode: "staged",
+    rationale: "Initial draft is materialized before source intake.",
+    stages: [{
+        id: "S1",
+        title: "Source intake",
+        rationale: "Fetch and assess the source before defining packages.",
+        work_package_ids: [],
+        dependencies: [],
+        session_boundary: "same-session",
+        entry_criteria: ["Initial draft exists."],
+        exit_criteria: ["Source fetched and profile assigned."],
+    }],
+    session_boundary_recommendation: "Resume after source intake.",
+    dependencies: ["source fetch"],
+    entry_criteria: ["Initial draft is valid."],
+    exit_criteria: ["Blocking questions have explicit decisions."],
+});
+
+export const DEFAULT_OWNERSHIP_REDUNDANCY_REVIEW = Object.freeze({
+    required: false,
+    requirement_basis: "not-applicable",
+    requirement_decision_ref: "",
+    status: "not-required",
+    subjects: [],
+});
+
 const QUESTION_ID = /^(SQ[1-9][0-9]*|WP[1-9][0-9]*-Q[1-9][0-9]*)$/;
 const OWNERSHIP_SUBJECT_ID = /^OR[1-9][0-9]*$/;
 const OWNERSHIP_FINDING_ID = /^F[1-9][0-9]*$/;
@@ -99,7 +176,7 @@ export const PLAN_TRANSITIONS = Object.freeze({
     "review-pending": Object.freeze(["awaiting-package-decisions", "needs-clarification", "review-limit-reached"]),
     "needs-clarification": Object.freeze(["review-pending"]),
     "awaiting-package-decisions": Object.freeze(["approved", "needs-clarification", "review-pending"]),
-    "review-limit-reached": Object.freeze(["review-pending"]),
+    "review-limit-reached": Object.freeze([]),
     approved: Object.freeze(["review-pending", "approved"]),
 });
 
@@ -142,6 +219,799 @@ export class StateError extends Error {
     }
 }
 
+export function createInitialState(plan, options = {}) {
+    const input = requirePlanStateInput(plan);
+    const now = requireStateTimestamp(toTimestamp(options.now ?? input.now ?? new Date().toISOString()), "now");
+    const inputProfile = input.input_profile ?? input.source?.input_profile ?? "brief-request";
+    const planStatus = input.plan_status ?? (inputProfile === "title-only" ? "needs-clarification" : "review-pending");
+    if (!PLAN_STATUSES.includes(planStatus)) {
+        throw new StateError("INVALID_INITIAL_STATE", `Invalid initial plan_status: ${planStatus}.`);
+    }
+    if (inputProfile === "title-only" && planStatus !== "needs-clarification") {
+        throw new StateError("INVALID_INITIAL_STATE", "A title-only plan must start with plan_status needs-clarification.");
+    }
+
+    const simplificationStatus = input.simplification_status ?? input.simplification?.result ?? "pending";
+    const initial = {
+        schema_version: STATE_SCHEMA_VERSION,
+        revision: 0,
+        plan_id: input.plan_id,
+        draft_path: input.draft_path,
+        source_identity: clone(input.source_identity),
+        ...(input.source_ref ? {source_ref: input.source_ref} : {}),
+        ...(typeof input.issue !== "undefined" ? {issue: input.issue} : {}),
+        plan_status: planStatus,
+        package_decision_gate: packageGateForStatus(planStatus),
+        plan_version: positiveInteger(input.plan_version ?? 1, "plan_version"),
+        workflow_phase: "intake",
+        workflow_outcome: "running",
+        checkpoint: buildCheckpoint({
+            phase: "intake",
+            completed_at: now,
+            next_phase: "initial-draft",
+            next_allowed_action: "materialize initial draft",
+            forbidden_actions: ["source fetch", "review", "package decisions", "approval"],
+            reason: "Initial state is virtual until create-initial is applied.",
+            state_revision: 0,
+        }),
+        source_fetch_status: "pending",
+        fetched_at: null,
+        source_updated_at: null,
+        source_fetch_error: null,
+        source_fetch_failed_at: null,
+        hybrid_attempt_id: null,
+        hybrid_attempt_hash: null,
+        hybrid_attempt: null,
+        context_requirements: normalizeContextRequirements(input.context_requirements),
+        packages: Array.isArray(input.packages) ? clone(input.packages) : [],
+        findings: Array.isArray(input.findings) ? clone(input.findings) : [],
+        review_history: Array.isArray(input.review_history) ? clone(input.review_history) : [],
+        decisions: Array.isArray(input.decisions) ? clone(input.decisions) : [],
+        user_decisions: Array.isArray(input.user_decisions) ? clone(input.user_decisions) : [],
+        scope_questions: Array.isArray(input.scope_questions) ? clone(input.scope_questions) : [],
+        blockers: Array.isArray(input.blockers) ? clone(input.blockers) : [],
+        plan_history: Array.isArray(input.plan_history) ? clone(input.plan_history) : [],
+        phase_history: [],
+        simplification_status: simplificationStatus,
+        simplification: input.simplification ?? {result: simplificationStatus},
+        review_complete: input.review_complete ?? false,
+        critical_review_complete: input.critical_review_complete ?? false,
+        simplification_control_review_complete: input.simplification_control_review_complete ?? false,
+        session_strategy: clone(input.session_strategy ?? DEFAULT_SESSION_STRATEGY),
+        ownership_redundancy_review: clone(input.ownership_redundancy_review ?? DEFAULT_OWNERSHIP_REDUNDANCY_REVIEW),
+        created_at: now,
+        updated_at: now,
+    };
+
+    const validation = validateTaskPlanState(initial);
+    if (!validation.valid) {
+        throw new StateError("INVALID_INITIAL_STATE", validation.errors.join(" "), {errors: validation.errors});
+    }
+    return initial;
+}
+
+export function validateTaskPlanState(state) {
+    if (!isRecord(state)) {
+        return {valid: false, errors: ["Task-plan state must be an object."]};
+    }
+
+    const errors = [
+        ...validateStateEnvelope(state),
+        ...validateStateSource(state),
+        ...validateContextRequirements(state.context_requirements),
+        ...validateStateRecordsForStore(state),
+    ];
+    return {valid: errors.length === 0, errors};
+}
+
+export function applyStateMutation(state, mutation, context = {}) {
+    const type = mutation?.type;
+    if (!MUTATION_TYPES.includes(type)) {
+        throw new StateError("UNKNOWN_MUTATION", `Unsupported state mutation: ${type ?? ""}.`);
+    }
+
+    const current = prepareState(state);
+    if (typeof mutation.payload !== "undefined" && !isRecord(mutation.payload)) {
+        throw new StateError("INVALID_MUTATION", "mutation.payload must be an object.");
+    }
+    const payload = mutation.payload ?? {};
+    const now = requireStateTimestamp(toTimestamp(context.now ?? new Date().toISOString()), "now");
+    switch (type) {
+        case "create-initial":
+            return applyCreateInitial(current, payload, now);
+        case "checkpoint":
+            return applyCheckpoint(current, payload, now);
+        case "workflow-phase-transition":
+            return applyWorkflowPhaseTransition(current, payload, now);
+        case "plan-transition":
+            return applyPlanMutation(current, payload);
+        case "package-decision":
+            return applyPackageMutation(current, payload);
+        case "package-reopen":
+            return applyPackageReopenMutation(current, payload);
+        case "question-decision":
+            return applyQuestionMutation(current, payload);
+        case "plan-revision":
+            return applyPlanRevision(current, payload, now);
+        case "review-record":
+            return appendReviewRecord(current, payload);
+        case "finding-record":
+            return appendFindingRecord(current, payload);
+        case "simplification-record":
+            return applySimplificationMutation(current, payload);
+        case "context-requirements-update":
+            return applyContextRequirementsMutation(current, payload);
+        case "hybrid-attempt":
+            return applyHybridAttemptMutation(current, payload, now);
+        case "source-fetch-complete":
+            return applySourceFetchComplete(current, payload);
+        case "source-fetch-failed":
+            return applySourceFetchFailed(current, payload, now);
+        default:
+            throw new StateError("UNKNOWN_MUTATION", `Unsupported state mutation: ${type}.`);
+    }
+}
+
+function requirePlanStateInput(plan) {
+    if (!isRecord(plan)) {
+        throw new StateError("INVALID_PLAN", "State-store plan must be an object.");
+    }
+    for (const field of ["plan_id", "draft_path"]) {
+        if (typeof plan[field] !== "string" || plan[field].trim() === "") {
+            throw new StateError("INVALID_PLAN", `State-store plan requires ${field}.`);
+        }
+    }
+    if (typeof plan.source_identity === "undefined" || plan.source_identity === null) {
+        throw new StateError("INVALID_PLAN", "State-store plan requires source_identity.");
+    }
+    return plan;
+}
+
+function positiveInteger(value, name) {
+    const number = Number(value);
+    if (!Number.isInteger(number) || number < 1) {
+        throw new StateError("INVALID_STATE", `${name} must be a positive integer.`);
+    }
+    return number;
+}
+
+function requireStateString(value, name) {
+    if (typeof value !== "string" || value.trim() === "") {
+        throw new StateError("INVALID_STATE", `${name} must be a non-empty string.`);
+    }
+    return value.trim();
+}
+
+function requireStateTimestamp(value, name) {
+    const timestamp = requireStateString(value, name);
+    if (Number.isNaN(Date.parse(timestamp))) {
+        throw new StateError("INVALID_STATE", `${name} must be a valid timestamp.`);
+    }
+    return timestamp;
+}
+
+function toTimestamp(value) {
+    if (value instanceof Date) {
+        return value.toISOString();
+    }
+    if (typeof value === "number") {
+        return new Date(value).toISOString();
+    }
+    return value;
+}
+
+function packageGateForStatus(status) {
+    return ["awaiting-package-decisions", "approved"].includes(status) ? "open" : "closed";
+}
+
+function buildCheckpoint(input) {
+    const phase = input.phase;
+    if (!WORKFLOW_PHASES.includes(phase)) {
+        throw new StateError("INVALID_CHECKPOINT", `Unknown checkpoint phase: ${phase ?? ""}.`);
+    }
+    return {
+        phase,
+        completed_at: requireStateTimestamp(input.completed_at, "checkpoint.completed_at"),
+        next_phase: input.next_phase === null ? null : requireStateString(input.next_phase, "checkpoint.next_phase"),
+        next_allowed_action: requireStateString(input.next_allowed_action, "checkpoint.next_allowed_action"),
+        forbidden_actions: normalizeStringArray(input.forbidden_actions, "checkpoint.forbidden_actions"),
+        reason: requireStateString(input.reason, "checkpoint.reason"),
+        state_revision: nonNegativeInteger(input.state_revision, "checkpoint.state_revision"),
+    };
+}
+
+function nonNegativeInteger(value, name) {
+    const number = Number(value);
+    if (!Number.isInteger(number) || number < 0) {
+        throw new StateError("INVALID_STATE", `${name} must be a non-negative integer.`);
+    }
+    return number;
+}
+
+function normalizeStringArray(value, name) {
+    if (!Array.isArray(value)) {
+        throw new StateError("INVALID_STATE", `${name} must be an array.`);
+    }
+    return value.map((item, index) => requireStateString(item, `${name}[${index}]`));
+}
+
+function normalizeContextRequirements(input = {}) {
+    if (!isRecord(input)) {
+        throw new StateError("INVALID_CONTEXT_REQUIREMENTS", "context_requirements must be an object.");
+    }
+    return {
+        blocking: normalizeBlockingRequirements(input.blocking ?? []),
+        follow_up: normalizeFollowUpRequirements(input.follow_up ?? input.followUp ?? []),
+    };
+}
+
+function normalizeBlockingRequirements(items) {
+    if (!Array.isArray(items)) {
+        throw new StateError("INVALID_CONTEXT_REQUIREMENTS", "context_requirements.blocking must be an array.");
+    }
+    return items.map((item, index) => {
+        if (typeof item === "string") {
+            return {id: `B${index + 1}`, criterion: requireStateString(item, "blocking criterion")};
+        }
+        if (!isRecord(item)) {
+            throw new StateError("INVALID_CONTEXT_REQUIREMENTS", `Blocking requirement ${index + 1} must be an object.`);
+        }
+        return {
+            id: requireStateString(item.id, `blocking requirement ${index + 1}.id`),
+            criterion: requireStateString(item.criterion ?? item.description ?? item.reason, `blocking requirement ${index + 1}.criterion`),
+        };
+    });
+}
+
+function normalizeFollowUpRequirements(items) {
+    if (!Array.isArray(items)) {
+        throw new StateError("INVALID_CONTEXT_REQUIREMENTS", "context_requirements.follow_up must be an array.");
+    }
+    return items.map((item, index) => {
+        if (!isRecord(item)) {
+            throw new StateError("INVALID_CONTEXT_REQUIREMENTS", `Follow-up requirement ${index + 1} must be an object.`);
+        }
+        if (item.verified === true) {
+            throw new StateError("INVALID_CONTEXT_REQUIREMENTS", `Follow-up requirement ${index + 1} cannot be verified by state input.`);
+        }
+        return {
+            id: requireStateString(item.id, `follow-up requirement ${index + 1}.id`),
+            reason: requireStateString(item.reason ?? item.description, `follow-up requirement ${index + 1}.reason`),
+            owner: requireStateString(item.owner, `follow-up requirement ${index + 1}.owner`),
+            target_phase: requireStateString(item.target_phase ?? item.phase, `follow-up requirement ${index + 1}.target_phase`),
+        };
+    });
+}
+
+function validateStateEnvelope(state) {
+    const errors = [];
+    if (state.schema_version !== STATE_SCHEMA_VERSION) {
+        errors.push(`Unsupported schema_version: ${state.schema_version ?? ""}.`);
+    }
+    if (!Number.isInteger(state.revision) || state.revision < 0) {
+        errors.push("State revision must be a non-negative integer.");
+    }
+    for (const field of ["plan_id", "draft_path"]) {
+        if (!isNonEmptyString(state[field])) {
+            errors.push(`State is missing ${field}.`);
+        }
+    }
+    if (typeof state.source_identity === "undefined" || state.source_identity === null) {
+        errors.push("State is missing source_identity.");
+    }
+    if (!PLAN_STATUSES.includes(state.plan_status)) {
+        errors.push(`Invalid plan_status: ${state.plan_status ?? ""}.`);
+    }
+    if (state.package_decision_gate !== packageGateForStatus(state.plan_status)) {
+        errors.push(`package_decision_gate must match plan_status ${state.plan_status}.`);
+    }
+    if (!WORKFLOW_PHASES.includes(state.workflow_phase)) {
+        errors.push(`Invalid workflow_phase: ${state.workflow_phase ?? ""}.`);
+    }
+    if (!WORKFLOW_OUTCOMES.includes(state.workflow_outcome)) {
+        errors.push(`Invalid workflow_outcome: ${state.workflow_outcome ?? ""}.`);
+    }
+    if (!isRecord(state.checkpoint)) {
+        errors.push("State must contain a checkpoint object.");
+    } else {
+        errors.push(...validateCheckpoint(state.checkpoint, state.revision));
+    }
+    if (!Number.isInteger(state.plan_version) || state.plan_version < 1) {
+        errors.push("State plan_version must be a positive integer.");
+    }
+    if (state.workflow_outcome === "complete"
+        && (state.workflow_phase !== "handoff" || state.plan_status !== "approved")) {
+        errors.push("workflow_outcome=complete requires approved handoff state.");
+    }
+    if (state.plan_status === "approved" && !["decisions", "handoff"].includes(state.workflow_phase)) {
+        errors.push("approved plan_status is only allowed in decisions or handoff phases.");
+    }
+    return errors;
+}
+
+function validateCheckpoint(checkpoint, revision) {
+    const errors = [];
+    if (!WORKFLOW_PHASES.includes(checkpoint.phase)) {
+        errors.push("Checkpoint phase is invalid.");
+    }
+    if (typeof checkpoint.completed_at !== "string" || Number.isNaN(Date.parse(checkpoint.completed_at))) {
+        errors.push("Checkpoint completed_at must be a valid timestamp.");
+    }
+    if (checkpoint.next_phase !== null && !WORKFLOW_PHASES.includes(checkpoint.next_phase)) {
+        errors.push("Checkpoint next_phase is invalid.");
+    }
+    for (const field of ["next_allowed_action", "reason"]) {
+        if (!isNonEmptyString(checkpoint[field])) {
+            errors.push(`Checkpoint ${field} must be a non-empty string.`);
+        }
+    }
+    if (!Array.isArray(checkpoint.forbidden_actions)
+        || checkpoint.forbidden_actions.some((item) => !isNonEmptyString(item))) {
+        errors.push("Checkpoint forbidden_actions must contain non-empty strings.");
+    }
+    if (!Number.isInteger(checkpoint.state_revision)
+        || checkpoint.state_revision < 0
+        || checkpoint.state_revision > revision) {
+        errors.push("Checkpoint state_revision must be within the state revision.");
+    }
+    return errors;
+}
+
+function validateStateSource(state) {
+    const errors = [];
+    if (!SOURCE_FETCH_STATUSES.includes(state.source_fetch_status)) {
+        errors.push(`Invalid source_fetch_status: ${state.source_fetch_status ?? ""}.`);
+        return errors;
+    }
+    if (state.source_fetch_status === "pending") {
+        if (state.fetched_at !== null
+            || state.source_updated_at !== null
+            || state.source_fetch_error !== null
+            || state.source_fetch_failed_at !== null) {
+            errors.push("Pending source fetch cannot contain completion timestamps or an error.");
+        }
+    }
+    if (state.source_fetch_status === "complete") {
+        for (const field of ["fetched_at", "source_updated_at"]) {
+            if (typeof state[field] !== "string" || Number.isNaN(Date.parse(state[field]))) {
+                errors.push(`Complete source fetch requires valid ${field}.`);
+            }
+        }
+        if (state.source_fetch_error !== null) {
+            errors.push("Complete source fetch cannot contain source_fetch_error.");
+        }
+    }
+    if (state.source_fetch_status === "failed") {
+        if (!isNonEmptyString(state.source_fetch_error)) {
+            errors.push("Failed source fetch requires source_fetch_error.");
+        }
+        if (typeof state.source_fetch_failed_at !== "string"
+            || Number.isNaN(Date.parse(state.source_fetch_failed_at))) {
+            errors.push("Failed source fetch requires a valid source_fetch_failed_at.");
+        }
+    }
+    return errors;
+}
+
+function validateContextRequirements(requirements) {
+    if (!isRecord(requirements)) {
+        return ["context_requirements must be an object."];
+    }
+    const errors = [];
+    if (!Array.isArray(requirements.blocking)) {
+        errors.push("context_requirements.blocking must be an array.");
+    }
+    if (!Array.isArray(requirements.follow_up)) {
+        errors.push("context_requirements.follow_up must be an array.");
+    }
+    const ids = new Set();
+    for (const [index, item] of (requirements.blocking ?? []).entries()) {
+        if (!isRecord(item) || !isNonEmptyString(item.id) || !isNonEmptyString(item.criterion)) {
+            errors.push(`Blocking requirement ${index + 1} must contain id and criterion.`);
+            continue;
+        }
+        addUniqueId(ids, item.id, errors, "context requirement");
+    }
+    for (const [index, item] of (requirements.follow_up ?? []).entries()) {
+        if (!isRecord(item)
+            || !isNonEmptyString(item.id)
+            || !isNonEmptyString(item.reason)
+            || !isNonEmptyString(item.owner)
+            || !isNonEmptyString(item.target_phase)) {
+            errors.push(`Follow-up requirement ${index + 1} must contain id, reason, owner and target_phase.`);
+            continue;
+        }
+        if (item.verified === true) {
+            errors.push(`Follow-up requirement ${item.id} cannot be marked verified by the state store.`);
+        }
+        addUniqueId(ids, item.id, errors, "context requirement");
+    }
+    return errors;
+}
+
+function addUniqueId(ids, value, errors, label) {
+    if (ids.has(value)) {
+        errors.push(`Duplicate ${label} id: ${value}.`);
+        return;
+    }
+    ids.add(value);
+}
+
+function validateStateRecordsForStore(state) {
+    const errors = [];
+    errors.push(...validatePackageRecords(state.packages).errors);
+    errors.push(...validateDecisionHistory(state.decisions));
+    errors.push(...validateSessionStrategy(state.session_strategy));
+    errors.push(...validateOwnershipRedundancyReview(state.ownership_redundancy_review, state.findings));
+    errors.push(...validateUserDecisionRecords(state.user_decisions, {packages: state.packages}));
+    errors.push(...validateStateQuestions(state));
+    errors.push(...validateStateCollections(state));
+    return errors;
+}
+
+function validateStateQuestions(state) {
+    const errors = [];
+    errors.push(...validateQuestionRecords(state.scope_questions, {scope: "scope"}));
+    for (const packageRecord of state.packages) {
+        errors.push(...validateQuestionRecords(packageRecord.questions, {packageId: packageRecord.id}));
+    }
+    return errors;
+}
+
+function validateStateCollections(state) {
+    const errors = [];
+    for (const field of ["findings", "review_history", "decisions", "user_decisions", "scope_questions", "blockers", "plan_history", "phase_history"]) {
+        if (!Array.isArray(state[field])) {
+            errors.push(`${field} must be an array.`);
+        }
+    }
+    if (!SIMPLIFICATION_STATUSES.includes(state.simplification_status)) {
+        errors.push("Invalid simplification_status.");
+    }
+    if (!isRecord(state.simplification) || state.simplification.result !== state.simplification_status) {
+        errors.push("simplification must match simplification_status.");
+    }
+    for (const field of ["review_complete", "critical_review_complete", "simplification_control_review_complete"]) {
+        if (typeof state[field] !== "boolean") {
+            errors.push(`${field} must be boolean.`);
+        }
+    }
+    return errors;
+}
+
+function applyCreateInitial(state, payload, now) {
+    if (state.revision !== 0) {
+        throw new StateError("STATE_ALREADY_MATERIALIZED", "create-initial can only be applied to virtual state.");
+    }
+    const nextState = clone(state);
+    nextState.workflow_phase = "initial-draft";
+    nextState.workflow_outcome = "running";
+    nextState.checkpoint = buildCheckpoint({
+        phase: "initial-draft",
+        completed_at: now,
+        next_phase: "source/context",
+        next_allowed_action: "fetch and assess source",
+        forbidden_actions: ["provisional work packages", "review", "package decisions", "approval"],
+        reason: payload.reason ?? "Initial draft and state materialized.",
+        state_revision: state.revision + 1,
+    });
+    nextState.phase_history.push({
+        from: "intake",
+        to: "initial-draft",
+        changed_at: now,
+        reason: payload.reason ?? "Initial draft and state materialized.",
+    });
+    return nextState;
+}
+
+function applyCheckpoint(state, payload, now) {
+    const resume = payload.resume === true;
+    if (resume) {
+        requireStateString(payload.reason, "resume checkpoint reason");
+        if (state.workflow_outcome !== "blocked") {
+            throw new StateError("INVALID_WORKFLOW_RESUME", "Only a blocked workflow can be resumed.");
+        }
+    }
+    const phase = payload.phase ?? state.workflow_phase;
+    const checkpoint = buildCheckpoint({
+        phase,
+        completed_at: payload.completed_at ?? now,
+        next_phase: payload.next_phase ?? nextPhaseFor(phase),
+        next_allowed_action: payload.next_allowed_action ?? actionForPhase(nextPhaseFor(phase)),
+        forbidden_actions: payload.forbidden_actions ?? forbiddenActionsFor(phase),
+        reason: payload.reason ?? "Phase checkpoint recorded.",
+        state_revision: state.revision + 1,
+    });
+    const nextState = clone(state);
+    nextState.checkpoint = checkpoint;
+    nextState.workflow_outcome = resume
+        ? "running"
+        : (state.workflow_outcome === "blocked" ? "blocked" : (payload.workflow_outcome ?? "running"));
+    return nextState;
+}
+
+function applyWorkflowPhaseTransition(state, payload, now) {
+    const from = state.workflow_phase;
+    const to = requireStateString(payload.to ?? payload.phase, "workflow phase");
+    if (!WORKFLOW_PHASES.includes(to) || !WORKFLOW_PHASE_TRANSITIONS[from]?.includes(to)) {
+        throw new StateError("INVALID_WORKFLOW_PHASE_TRANSITION", `Invalid workflow phase transition: ${from} → ${to}.`);
+    }
+    const nextState = clone(state);
+    nextState.workflow_phase = to;
+    nextState.workflow_outcome = "running";
+    nextState.checkpoint = buildCheckpoint({
+        phase: to,
+        completed_at: now,
+        next_phase: nextPhaseFor(to),
+        next_allowed_action: actionForPhase(nextPhaseFor(to)),
+        forbidden_actions: forbiddenActionsFor(to),
+        reason: payload.reason ?? `Entered workflow phase ${to}.`,
+        state_revision: state.revision + 1,
+    });
+    nextState.phase_history.push({
+        from,
+        to,
+        changed_at: now,
+        reason: payload.reason ?? `Entered workflow phase ${to}.`,
+    });
+    return nextState;
+}
+
+function applyPlanMutation(state, payload) {
+    const nextStatus = payload.to ?? payload.status ?? payload.plan_status;
+    const nextState = applyPlanTransition(state, nextStatus, {
+        reason: payload.reason,
+        changed_at: payload.changed_at,
+    });
+    nextState.package_decision_gate = packageGateForStatus(nextState.plan_status);
+    if (nextState.plan_status === "review-limit-reached") {
+        nextState.workflow_outcome = "blocked";
+    }
+    return nextState;
+}
+
+function applyPackageMutation(state, payload) {
+    return applyPackageDecision(state, payload.decision ?? payload);
+}
+
+function applyPackageReopenMutation(state, payload) {
+    return reopenPackage(state, payload.package_id, payload);
+}
+
+function applyQuestionMutation(state, payload) {
+    return applyQuestionDecision(state, payload.decision ?? payload);
+}
+
+function applyPlanRevision(state, payload, now) {
+    if (state.workflow_phase !== "review") {
+        throw new StateError("INVALID_PLAN_REVISION_PHASE", "plan-revision is allowed only in workflow phase review.");
+    }
+    if (state.plan_status === "review-limit-reached") {
+        throw new StateError("REVIEW_LIMIT_REACHED", "The review limit is terminal for this plan identity; explicitly restart.");
+    }
+    requireStateString(payload.reason, "plan-revision reason");
+    if (!Array.isArray(payload.packages) || !Array.isArray(payload.findings) || !isRecord(payload.session_strategy)) {
+        throw new StateError("INVALID_PLAN_REVISION", "plan-revision requires packages, findings and session_strategy.");
+    }
+
+    const packages = clone(payload.packages);
+    const findings = clone(payload.findings);
+    const sessionStrategy = clone(payload.session_strategy);
+    const packageValidation = validatePackageRecords(packages);
+    const strategyErrors = validateSessionStrategy(sessionStrategy);
+    if (!packageValidation.valid || strategyErrors.length > 0 || findings.some((finding) => !isRecord(finding))) {
+        const errors = [
+            ...packageValidation.errors,
+            ...strategyErrors,
+            ...(findings.some((finding) => !isRecord(finding)) ? ["Every finding must be an object."] : []),
+        ];
+        throw new StateError("INVALID_PLAN_REVISION", errors.join(" "), {errors});
+    }
+
+    const previousSnapshot = JSON.stringify({
+        packages: state.packages,
+        findings: state.findings,
+        session_strategy: state.session_strategy,
+    });
+    const nextSnapshot = JSON.stringify({packages, findings, session_strategy: sessionStrategy});
+    if (previousSnapshot === nextSnapshot) {
+        throw new StateError("PLAN_REVISION_NO_CHANGE", "plan-revision must change the semantic plan snapshot.");
+    }
+
+    const nextState = clone(state);
+    nextState.packages = packages;
+    nextState.findings = findings;
+    nextState.session_strategy = sessionStrategy;
+    nextState.plan_version += 1;
+    nextState.plan_status = "review-pending";
+    nextState.package_decision_gate = "closed";
+    nextState.review_complete = false;
+    nextState.critical_review_complete = false;
+    nextState.simplification_control_review_complete = false;
+    nextState.simplification_status = "pending";
+    nextState.simplification = {result: "pending"};
+
+    if (typeof payload.propagated_decision_ref !== "undefined") {
+        propagateDecisionThroughPlanRevision(nextState, state, payload.propagated_decision_ref, now);
+    }
+
+    const validation = validateTaskPlanState(nextState);
+    if (!validation.valid) {
+        throw new StateError("INVALID_PLAN_REVISION", validation.errors.join(" "), {errors: validation.errors});
+    }
+    return nextState;
+}
+
+function propagateDecisionThroughPlanRevision(state, previousState, decisionRefValue, now) {
+    const decisionRef = requireStateString(decisionRefValue, "propagated_decision_ref");
+    const index = state.user_decisions.findIndex((record) => record.decision_ref === decisionRef);
+    if (index < 0) {
+        throw new StateError("DECISION_NOT_FOUND", `Decision ${decisionRef} was not found.`);
+    }
+    const record = state.user_decisions[index];
+    if (record.propagation_status === "propagated") {
+        throw new StateError("DECISION_ALREADY_PROPAGATED", `Decision ${decisionRef} is already propagated.`);
+    }
+    const refErrors = validateAffectedRefs(record.affected_refs, state.packages);
+    if (refErrors.length > 0) {
+        throw new StateError("INVALID_PROPAGATION", refErrors.join(" "), {errors: refErrors});
+    }
+    for (const ref of record.affected_refs) {
+        if (ref === "session_strategy") {
+            if (JSON.stringify(previousState.session_strategy) === JSON.stringify(state.session_strategy)) {
+                throw new StateError("INVALID_PROPAGATION", "Affected session_strategy was not changed by plan-revision.");
+            }
+            continue;
+        }
+        const packageId = /^(WP[1-9][0-9]*)(?:\.|$)/.exec(ref)?.[1];
+        const previousPackage = previousState.packages.find((item) => item.id === packageId);
+        const revisedPackage = state.packages.find((item) => item.id === packageId);
+        if (!revisedPackage || JSON.stringify(previousPackage) === JSON.stringify(revisedPackage)) {
+            throw new StateError("INVALID_PROPAGATION", `Unsupported or uncovered affected_ref: ${ref}.`);
+        }
+    }
+    state.user_decisions[index] = {
+        ...record,
+        propagation_status: "propagated",
+        propagated_at: now,
+    };
+}
+
+function appendReviewRecord(state, payload) {
+    const record = clone(payload.review ?? payload);
+    if (!isRecord(record) || !Number.isInteger(record.iteration) || record.iteration < 1) {
+        throw new StateError("INVALID_REVIEW_RECORD", "review-record requires a positive integer iteration.");
+    }
+    if (state.review_history.some((item) => item.iteration === record.iteration)) {
+        throw new StateError("DUPLICATE_REVIEW_ITERATION", `Review iteration ${record.iteration} is already recorded.`);
+    }
+    if (state.review_history.length >= 3) {
+        throw new StateError("REVIEW_LIMIT_REACHED", "At most three review iterations are allowed for one plan identity; explicitly restart.");
+    }
+    const nextState = clone(state);
+    nextState.review_history.push(record);
+    if (record.complete === true) {
+        nextState.review_complete = true;
+    }
+    if (record.stage === "critical-review" && record.complete === true) {
+        nextState.critical_review_complete = true;
+    }
+    return nextState;
+}
+
+function appendFindingRecord(state, payload) {
+    const record = clone(payload.finding ?? payload);
+    if (!isRecord(record) || !isNonEmptyString(record.id)) {
+        throw new StateError("INVALID_FINDING_RECORD", "finding-record requires a non-empty id.");
+    }
+    if (state.findings.some((item) => item?.id === record.id)) {
+        throw new StateError("DUPLICATE_FINDING_ID", `Finding ${record.id} is already recorded.`);
+    }
+    const nextState = clone(state);
+    nextState.findings.push(record);
+    return nextState;
+}
+
+function applySimplificationMutation(state, payload) {
+    const simplification = clone(payload.simplification ?? payload);
+    const result = simplification.result ?? payload.status;
+    if (!SIMPLIFICATION_STATUSES.includes(result)) {
+        throw new StateError("INVALID_SIMPLIFICATION", `Invalid simplification result: ${result ?? ""}.`);
+    }
+    simplification.result = result;
+    const nextState = clone(state);
+    nextState.simplification = simplification;
+    nextState.simplification_status = result;
+    if (typeof payload.control_review_complete === "boolean") {
+        nextState.simplification_control_review_complete = payload.control_review_complete;
+    }
+    return nextState;
+}
+
+function applyContextRequirementsMutation(state, payload) {
+    const nextState = clone(state);
+    nextState.context_requirements = normalizeContextRequirements(payload.context_requirements ?? payload);
+    return nextState;
+}
+
+function applyHybridAttemptMutation(state, payload, now) {
+    const phase = requireStateString(payload.phase ?? state.workflow_phase, "hybrid_attempt.phase");
+    const runId = requireStateString(payload.run_id, "hybrid_attempt.run_id");
+    const attemptId = requireStateString(payload.attempt_id ?? payload.id ?? runId, "hybrid_attempt.attempt_id");
+    const criteriaHash = requireStateString(payload.criteria_hash, "hybrid_attempt.criteria_hash");
+    const strategyHash = requireStateString(payload.strategy_hash, "hybrid_attempt.strategy_hash");
+    const attemptHash = requireStateString(payload.attempt_hash ?? payload.hash, "hybrid_attempt.hash");
+    const nextState = clone(state);
+    nextState.hybrid_attempt = {
+        run_id: runId,
+        attempt_id: attemptId,
+        attempt_hash: attemptHash,
+        criteria_hash: criteriaHash,
+        strategy_hash: strategyHash,
+        phase,
+        status: payload.status ?? "started",
+        started_at: payload.started_at ?? now,
+    };
+    nextState.hybrid_attempt_id = attemptId;
+    nextState.hybrid_attempt_hash = attemptHash;
+    return nextState;
+}
+
+function applySourceFetchComplete(state, payload) {
+    const fetchedAt = requireStateTimestamp(payload.fetched_at, "fetched_at");
+    const sourceUpdatedAt = requireStateTimestamp(payload.source_updated_at, "source_updated_at");
+    const nextState = clone(state);
+    nextState.source_fetch_status = "complete";
+    nextState.fetched_at = fetchedAt;
+    nextState.source_updated_at = sourceUpdatedAt;
+    nextState.source_fetch_error = null;
+    nextState.source_fetch_failed_at = null;
+    return nextState;
+}
+
+function applySourceFetchFailed(state, payload, now) {
+    const error = requireStateString(payload.error ?? payload.source_fetch_error, "source_fetch_error");
+    const nextState = clone(state);
+    nextState.source_fetch_status = "failed";
+    nextState.fetched_at = null;
+    nextState.source_updated_at = null;
+    nextState.source_fetch_error = error;
+    nextState.source_fetch_failed_at = payload.failed_at ?? now;
+    return nextState;
+}
+
+function nextPhaseFor(phase) {
+    const next = WORKFLOW_PHASE_TRANSITIONS[phase]?.[0] ?? null;
+    return next;
+}
+
+function actionForPhase(phase) {
+    if (phase === null) {
+        return "no further workflow action";
+    }
+    const actions = {
+        intake: "confirm planning trigger",
+        "initial-draft": "materialize initial draft",
+        "source/context": "fetch source and bounded context",
+        review: "record review findings",
+        decisions: "collect blocking decisions",
+        handoff: "prepare explicit execution handoff",
+    };
+    return actions[phase] ?? "follow the task-plan contract";
+}
+
+function forbiddenActionsFor(phase) {
+    const forbidden = {
+        intake: ["source fetch", "review", "package decisions"],
+        "initial-draft": ["provisional work packages", "review", "approval"],
+        "source/context": ["package decisions", "approval", "implementation"],
+        review: ["package decisions while gate is closed", "approval", "implementation"],
+        decisions: ["approval with open blockers", "implementation"],
+        handoff: ["automatic implementation"],
+    };
+    return forbidden[phase] ?? [];
+}
+
 export function canTransition(kind, from, to, state = null) {
     const table = transitionTable(kind);
     if (!table) {
@@ -157,7 +1027,7 @@ export function canTransition(kind, from, to, state = null) {
 }
 
 export function canOpenPackageDecisions(state) {
-    const reasons = packageDecisionGateReasons(state);
+    const reasons = packageDecisionGateReasons({...state, package_decision_gate: "open"});
     return {ready: reasons.length === 0, reasons};
 }
 
@@ -810,7 +1680,36 @@ export function validateSessionStrategy(strategy) {
     return errors;
 }
 
-export function validateUserDecisionRecords(records) {
+export function validateAffectedRefs(refs, packages = null) {
+    if (!Array.isArray(refs) || refs.length === 0) {
+        return ["affected_refs must be a non-empty array."];
+    }
+    const errors = [];
+    const seen = new Set();
+    const validatePackageExistence = Array.isArray(packages);
+    const packageIds = new Set((validatePackageExistence ? packages : []).map((item) => item?.id));
+    for (const [index, ref] of refs.entries()) {
+        if (!isNonEmptyString(ref)) {
+            errors.push(`affected_refs[${index}] must be a non-empty string.`);
+            continue;
+        }
+        if (seen.has(ref)) {
+            errors.push(`affected_refs contains duplicate ref: ${ref}.`);
+            continue;
+        }
+        seen.add(ref);
+        if (ref === "session_strategy") {
+            continue;
+        }
+        const packageId = /^(WP[1-9][0-9]*)(?:\.[A-Za-z][A-Za-z0-9_]*)?$/.exec(ref)?.[1];
+        if (!packageId || (validatePackageExistence && !packageIds.has(packageId))) {
+            errors.push(`Unsupported affected_ref: ${ref}.`);
+        }
+    }
+    return errors;
+}
+
+export function validateUserDecisionRecords(records, options = {}) {
     if (!Array.isArray(records)) {
         return ["user_decisions must be an array."];
     }
@@ -844,18 +1743,7 @@ export function validateUserDecisionRecords(records) {
         if (typeof record.decided_at !== "string" || Number.isNaN(Date.parse(record.decided_at))) {
             errors.push(`${label} decided_at must be a valid timestamp.`);
         }
-        if (!Array.isArray(record.affected_refs)) {
-            errors.push(`${label} affected_refs must be an array.`);
-        } else {
-            if (record.affected_refs.length === 0) {
-                errors.push(`${label} affected_refs must not be empty.`);
-            }
-            for (const [refIndex, ref] of record.affected_refs.entries()) {
-                if (!isNonEmptyString(ref)) {
-                    errors.push(`${label} affected_refs[${refIndex}] must be a non-empty string.`);
-                }
-            }
-        }
+        errors.push(...validateAffectedRefs(record.affected_refs, options.packages).map((error) => `${label} ${error}`));
         if (!USER_DECISION_PROPAGATION_STATUSES.includes(record.propagation_status)) {
             errors.push(`${label} propagation_status is invalid.`);
         }
@@ -958,7 +1846,7 @@ export function applyQuestionDecision(state, decision) {
     if (nextState.user_decisions.some((candidate) => candidate.decision_ref === record.decision_ref)) {
         throw new StateError("DUPLICATE_DECISION_REF", `Decision ref ${record.decision_ref} is already recorded.`);
     }
-    const recordErrors = validateUserDecisionRecords([record]);
+    const recordErrors = validateUserDecisionRecords([record], {packages: nextState.packages});
     if (recordErrors.length > 0) {
         throw new StateError("INVALID_QUESTION_DECISION", recordErrors.join(" "), {errors: recordErrors});
     }
@@ -1414,7 +2302,7 @@ function prepareState(state) {
         throw new StateError("INVALID_STATE", strategyErrors.join(" "), {errors: strategyErrors});
     }
     if (Object.hasOwn(state, "user_decisions")) {
-        const userDecisionErrors = validateUserDecisionRecords(state.user_decisions);
+        const userDecisionErrors = validateUserDecisionRecords(state.user_decisions, {packages: state.packages});
         if (userDecisionErrors.length > 0) {
             throw new StateError("INVALID_STATE", userDecisionErrors.join(" "), {errors: userDecisionErrors});
         }

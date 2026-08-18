@@ -29,7 +29,6 @@
       {"from": "awaiting-package-decisions", "to": "approved"},
       {"from": "awaiting-package-decisions", "to": "needs-clarification"},
       {"from": "awaiting-package-decisions", "to": "review-pending"},
-      {"from": "review-limit-reached", "to": "review-pending"},
       {"from": "approved", "to": "review-pending"},
       {"from": "approved", "to": "approved"}
     ],
@@ -37,6 +36,7 @@
       {"from": "needs-clarification", "to": "approved"},
       {"from": "needs-clarification", "to": "awaiting-package-decisions"},
       {"from": "awaiting-package-decisions", "to": "review-limit-reached"},
+      {"from": "review-limit-reached", "to": "review-pending"},
       {"from": "review-limit-reached", "to": "approved"},
       {"from": "review-limit-reached", "to": "awaiting-package-decisions"}
     ],
@@ -44,7 +44,7 @@
       "review-pending\n  → awaiting-package-decisions | needs-clarification | review-limit-reached",
       "needs-clarification\n  → review-pending",
       "awaiting-package-decisions\n  → approved | needs-clarification | review-pending",
-      "review-limit-reached\n  → review-pending",
+      "review-limit-reached\n  → restart",
       "approved\n  → review-pending | approved"
     ]
   }

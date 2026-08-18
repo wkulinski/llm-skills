@@ -1,0 +1,9 @@
+{
+  "plan": {
+    "plan_id": "state-restart",
+    "draft_path": "docs/draft/state-restart.md",
+    "source_identity": "user:state-restart"
+  },
+  "missing_artifact": "state",
+  "expected_code": "ARTIFACT_SET_INCOMPLETE"
+}

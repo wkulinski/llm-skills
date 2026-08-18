@@ -4,7 +4,7 @@ mode: subagent
 model: opencode-go/deepseek-v4-flash
 variant: max
 color: error
-steps: 10
+steps: 32
 permission:
     edit: deny
     task: deny

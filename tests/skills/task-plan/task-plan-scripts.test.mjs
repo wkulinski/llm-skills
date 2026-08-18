@@ -7,16 +7,21 @@ import {afterEach, describe, expect, it} from "vitest";
 
 import {
     DraftError,
+    buildDraftMetadata,
     buildDraftPath,
     buildSourceIdentity,
-    createInitialDraft,
     parseDraftDocument,
-    prepareResumeMetadata,
+    replaceSessionStrategySection,
+    renderInitialDraftDocument,
+    renderSessionStrategyProjection,
     renderSessionStrategySection,
+    serializeFrontMatter,
     validateDraftDocument,
     writeAtomicFile,
     writeSeparatedDraft,
 } from "../../../.agents/skills/task-plan/scripts/draft.mjs";
+import {writeFileAtomic} from "../../../.agents/skills/task-plan/scripts/atomic-file.mjs";
+import {updateState} from "../../../.agents/skills/task-plan/scripts/state-store.mjs";
 import {
     applyBulkDecision,
     applyDecisionCommand,
@@ -25,6 +30,7 @@ import {
     canApprovePlan,
     canOpenPackageDecisions,
     canTransition,
+    createInitialState,
     getImpactedPackageIds,
     parseDecisionCommand,
     reopenPackage,
@@ -51,6 +57,7 @@ import {
     validatePlanDocument,
     validatePlanState,
     validateReviewHistory,
+    validateStateLifecycle,
     validateSimplification,
 } from "../../../.agents/skills/task-plan/scripts/validate-plan.mjs";
 
@@ -109,37 +116,47 @@ describe("task-plan draft module", () => {
 
     it("creates a valid initial draft before source details are fetched", () => {
         const directory = makeTemporaryDirectory();
-        let sourceRead = false;
-        const result = createInitialDraft({
+        const plan = {
+            repo_root: directory,
+            state_root: path.join(directory, "state"),
+            plan_id: "issue-123",
+            draft_path: "docs/draft/issue-123-plan.md",
+            source_identity: "github:acme/demo#123",
             source: {
                 source_kind: "github-issue",
                 owner: "acme",
                 repo: "demo",
                 issue_number: "123",
             },
-            now: "2026-01-01T00:00:00Z",
-            rootDir: directory,
-            writeFile: (target, content, options) => {
-                expect(sourceRead).toBe(false);
-                fs.mkdirSync(path.dirname(target), {recursive: true});
-                fs.writeFileSync(target, content, "utf8");
-                return {path: target, written: true, options};
-            },
+        };
+        const result = updateState(plan, {type: "create-initial", payload: {}}, {
+            clock: {now: () => "2026-01-01T00:00:00Z"},
         });
-        sourceRead = true;
+        const content = fs.readFileSync(result.paths.draft_path, "utf8");
 
-        expect(result.path).toBe("docs/draft/issue-123-plan.md");
-        expect(fs.existsSync(path.join(directory, result.path))).toBe(true);
-        expect(validateDraftDocument(result.content, {kind: "main"}).valid).toBe(true);
-        expect(parseDraftDocument(result.content).metadata.title).toBe("Pending title");
+        expect(path.relative(directory, result.paths.draft_path)).toBe("docs/draft/issue-123-plan.md");
+        expect(validateDraftDocument(content, {kind: "main"}).valid).toBe(true);
+        expect(parseDraftDocument(content).metadata).toMatchObject({
+            title: "Pending title",
+            source_fetch_status: "pending",
+            state_revision: "1",
+        });
+        expect(parseDraftDocument(content).metadata).not.toHaveProperty("fetched_at");
+        expect(parseDraftDocument(content).metadata).not.toHaveProperty("source_updated_at");
     });
 
-    it("keeps the initial draft after source failure and resumes the same path", () => {
+    it("keeps the initial draft after source failure", () => {
         const directory = makeTemporaryDirectory();
-        const initial = createInitialDraft({
+        const plan = {
+            repo_root: directory,
+            state_root: path.join(directory, "state"),
+            plan_id: "issue-123",
+            draft_path: "docs/draft/issue-123-plan.md",
+            source_identity: "github:acme/demo#123",
             source: {source_kind: "github-issue", owner: "acme", repo: "demo", issue_number: "123"},
-            now: "2026-01-01T00:00:00Z",
-            rootDir: directory,
+        };
+        const initial = updateState(plan, {type: "create-initial", payload: {}}, {
+            clock: {now: () => "2026-01-01T00:00:00Z"},
         });
 
         expect(() => fetchGitHubIssue({
@@ -150,22 +167,10 @@ describe("task-plan draft module", () => {
             execCommand: () => ({status: 1, stderr: "network unavailable"}),
         })).toThrow(SourceError);
 
-        const draftPath = path.join(directory, initial.path);
+        const draftPath = initial.paths.draft_path;
         const savedDraft = fs.readFileSync(draftPath, "utf8");
         expect(validateDraftDocument(savedDraft, {kind: "main"}).valid).toBe(true);
-        const resumed = prepareResumeMetadata(
-            parseDraftDocument(savedDraft).metadata,
-            {
-                source_kind: "github-issue",
-                source_ref: "https://github.com/acme/demo/issues/123",
-                issue_number: "123",
-                title: "Fetched title",
-                source_updated_at: "2026-01-02T00:00:00Z",
-            },
-            {now: "2026-01-02T00:00:00Z"},
-        );
-        expect(resumed.plan_version).toBe("2");
-        expect(buildDraftPath(resumed)).toBe(initial.path);
+        expect(draftPath).toBe(initial.paths.draft_path);
     });
 
     it("validates fixture documents and parses scalar front matter", () => {
@@ -176,6 +181,9 @@ describe("task-plan draft module", () => {
         expect(parsed.metadata.plan_version).toBe("1");
         expect(result.valid).toBe(true);
         expect(result.missingSections).toEqual([]);
+        expect(validateDraftDocument(MAIN_FIXTURE.replace("source_fetch_status: complete\n", ""), {kind: "main"}).valid).toBe(false);
+        expect(validateDraftDocument(MAIN_FIXTURE.replace("<!-- task-plan:session-strategy:end -->", ""), {kind: "main"}).errors)
+            .toContain("Session strategy markers must contain exactly one complete block.");
     });
 
     it("enforces profile-specific draft invariants and validates the derived fixture", () => {
@@ -192,34 +200,6 @@ describe("task-plan draft module", () => {
         expect(validateDraftDocument(DERIVED_FIXTURE, {kind: "derived"}).valid).toBe(true);
     });
 
-    it("requires matching source identity when resuming and increments version", () => {
-        const next = prepareResumeMetadata({
-            source_kind: "github-issue",
-            source_ref: "https://github.com/acme/demo/issues/123",
-            issue: "123",
-            title: "Original issue title",
-            plan_version: "1",
-            fetched_at: "2026-01-01T00:00:00Z",
-            source_updated_at: "2026-01-01T00:00:00Z",
-        }, {
-            source_kind: "github-issue",
-            source_ref: "https://github.com/acme/demo/issues/123",
-            issue: "123",
-            source_updated_at: "2026-01-02T00:00:00Z",
-        }, {now: "2026-01-02T00:00:00Z"});
-
-        expect(next.plan_version).toBe("2");
-        expect(next.source_updated_at).toBe("2026-01-02T00:00:00Z");
-        expectErrorCode(() => prepareResumeMetadata({
-            ...next,
-            plan_version: "2",
-        }, {
-            source_kind: "github-issue",
-            source_ref: "https://github.com/acme/other/issues/123",
-            issue: "123",
-        }, {now: "2026-01-03T00:00:00Z"}), "SOURCE_IDENTITY_MISMATCH");
-    });
-
     it("keeps the original target when an atomic write fails", () => {
         const directory = makeTemporaryDirectory();
         const target = path.join(directory, "draft.md");
@@ -232,7 +212,41 @@ describe("task-plan draft module", () => {
         };
 
         expectErrorCode(() => writeAtomicFile(target, "new", {fsOps: failingFs}), "DRAFT_WRITE_FAILED");
+        expectErrorCode(() => writeFileAtomic(target, "new", {fsOps: failingFs}), "WRITE_FAILED");
         expect(fs.readFileSync(target, "utf8")).toBe("original");
+    });
+
+    it("validates pending, complete and failed source-fetch metadata conditionally", () => {
+        const source = {
+            source_kind: "user-input",
+            source_ref: "conditional-source",
+            input_profile: "brief-request",
+        };
+        const pending = buildDraftMetadata(source, {now: "2026-01-01T00:00:00Z"});
+        expect(validateDraftDocument(renderInitialDraftDocument(pending), {kind: "main"}).valid).toBe(true);
+
+        const complete = buildDraftMetadata({
+            ...source,
+            source_fetch_status: "complete",
+            fetched_at: "2026-01-01T00:00:00Z",
+            source_updated_at: "2025-12-31T23:59:00Z",
+        }, {now: "2026-01-01T00:00:00Z"});
+        expect(validateDraftDocument(renderInitialDraftDocument(complete), {kind: "main"}).valid).toBe(true);
+
+        const failed = buildDraftMetadata({
+            ...source,
+            source_fetch_status: "failed",
+            source_fetch_error: "network unavailable",
+        }, {now: "2026-01-01T00:00:00Z"});
+        expect(validateDraftDocument(renderInitialDraftDocument(failed), {kind: "main"}).valid).toBe(true);
+
+        expect(validateDraftDocument(renderInitialDraftDocument({
+            ...pending,
+            fetched_at: "2026-01-01T00:00:00Z",
+        }), {kind: "main"}).errors).toContain("Pending source fetch must not contain fetched_at.");
+        const incompleteComplete = {...complete};
+        delete incompleteComplete.source_updated_at;
+        expect(validateDraftDocument(renderInitialDraftDocument(incompleteComplete), {kind: "main"}).valid).toBe(false);
     });
 
     it("leaves the parent pending when the derived or parent write fails", () => {
@@ -515,7 +529,7 @@ describe("task-plan state module", () => {
         expect(canOpenPackageDecisions(pending).reasons).toContain("question_decision_propagation_incomplete");
         const propagated = structuredClone(pending);
         propagated.user_decisions[0].propagation_status = "propagated";
-        expect(validateUserDecisionRecords(propagated.user_decisions)).toEqual([]);
+        expect(validateUserDecisionRecords(propagated.user_decisions, {packages: propagated.packages})).toEqual([]);
         expect(validateQuestionDecisionPropagation(propagated)).toEqual([]);
         expect(canApprovePlan(pending).reasons).toContain("question_decision_propagation_incomplete");
 
@@ -853,6 +867,11 @@ describe("task-plan validation module", () => {
             before,
             after: {...before, risks: []},
         })).toContain("Simplification removed relevant risks.");
+        expect(validateSimplification({
+            result: "simplified",
+            before: {...before, evidence: ["E1"]},
+            after: {...before, evidence: []},
+        })).toContain("Simplification removed evidence.");
     });
 
     it("preserves ownership subjects, evidence, findings and decisions during simplification", () => {
@@ -992,6 +1011,185 @@ describe("task-plan validation module", () => {
             findings: [],
             scope_questions: [],
         }).valid).toBe(true);
+    });
+
+    it("detects stale draft revisions and source projection mismatches", () => {
+        const parsed = parseDraftDocument(MAIN_FIXTURE);
+        const state = {
+            ...baseState(),
+            plan_status: "review-pending",
+            package_decision_gate: "closed",
+            revision: 2,
+            source_fetch_status: "complete",
+            fetched_at: "2026-01-01T00:00:00Z",
+            source_updated_at: "2026-01-01T00:00:00Z",
+            source_fetch_error: null,
+            source_fetch_failed_at: null,
+        };
+        const projectedBody = replaceSessionStrategySection(
+            parsed.body,
+            renderSessionStrategyProjection(state.session_strategy),
+        );
+        const projected = serializeFrontMatter({
+            ...parsed.metadata,
+            source_fetch_status: "complete",
+            state_revision: "2",
+        }) + projectedBody;
+
+        expect(validatePlanDocument(projected, {kind: "main", state}).valid).toBe(true);
+        const stale = validatePlanDocument(projected, {
+            kind: "main",
+            state: {...state, revision: 3},
+        });
+        expect(stale.valid).toBe(false);
+        expect(stale.errors).toContain("Draft/state state_revision mismatch: draft=2, state=3.");
+
+        const strategyMismatch = validatePlanDocument(projected, {
+            kind: "main",
+            state: {...state, session_strategy: {...state.session_strategy, rationale: "A different strategy."}},
+        });
+        expect(strategyMismatch.errors).toContain("Draft/state session_strategy mismatch.");
+
+        const sourceMismatch = validatePlanDocument(projected, {
+            kind: "main",
+            state: {
+                ...state,
+                source_fetch_status: "pending",
+                fetched_at: null,
+                source_updated_at: null,
+            },
+        });
+        expect(sourceMismatch.valid).toBe(false);
+        expect(sourceMismatch.errors).toContain("Draft/state source_fetch_status mismatch: draft=complete, state=pending.");
+
+        const failedMetadata = {...parsed.metadata,
+            source_fetch_status: "failed",
+            source_fetch_error: "network unavailable",
+            source_fetch_failed_at: "2026-01-02T00:00:00Z",
+            state_revision: "2",
+        };
+        delete failedMetadata.fetched_at;
+        delete failedMetadata.source_updated_at;
+        const failedState = {
+            ...state,
+            source_fetch_status: "failed",
+            fetched_at: null,
+            source_updated_at: null,
+            source_fetch_error: "network unavailable",
+            source_fetch_failed_at: "2026-01-02T00:00:00Z",
+        };
+        const failedDraft = serializeFrontMatter(failedMetadata) + projectedBody;
+        expect(validatePlanDocument(failedDraft, {kind: "main", state: failedState}).valid).toBe(true);
+        const failedAtMismatch = validatePlanDocument(failedDraft, {
+            kind: "main",
+            state: {...failedState, source_fetch_failed_at: "2026-01-03T00:00:00Z"},
+        });
+        expect(failedAtMismatch.valid).toBe(false);
+        expect(failedAtMismatch.errors).toContain("Draft/state source_fetch_failed_at mismatch.");
+    });
+
+    it("validates canonical state lifecycle, execution invariants and projection guards", () => {
+        const state = createInitialState({
+            plan_id: "validator-demo",
+            draft_path: "docs/draft/validator-demo.md",
+            source_identity: "user:validator-demo",
+        }, {now: "2026-01-01T00:00:00Z"});
+
+        expect(validateStateLifecycle({lifecycle: "absent", state: null})).toMatchObject({
+            valid: true,
+            lifecycle: "absent",
+        });
+        expect(validatePlanState({lifecycle: "absent"})).toMatchObject({valid: true});
+        expect(validatePlanState({lifecycle: "virtual-initial", state}).valid).toBe(true);
+        expect(validatePlanState({lifecycle: "persisted", state}).valid).toBe(true);
+        expect(validatePlanState({lifecycle: "ARTIFACT_SET_INCOMPLETE", state: null}).errors).toContain(
+            "Draft and state form an incomplete artifact pair; explicit restart is required.",
+        );
+
+        const invalidOutcome = validatePlanState({...state, workflow_outcome: "unknown"});
+        expect(invalidOutcome.errors).toContain("Invalid workflow_outcome: unknown.");
+
+        const invalidCheckpoint = validatePlanState({
+            ...state,
+            checkpoint: {...state.checkpoint, state_revision: state.revision + 1},
+        });
+        expect(invalidCheckpoint.errors).toContain("Checkpoint state_revision must be within the state revision.");
+
+        const duplicateContext = validatePlanState({
+            ...state,
+            context_requirements: {
+                blocking: [{id: "B1", criterion: "Source is available."}],
+                follow_up: [{id: "B1", reason: "Confirm source details.", owner: "planner", target_phase: "review"}],
+            },
+        });
+        expect(duplicateContext.errors).toContain("Duplicate context requirement id: B1.");
+
+        const staleProjection = validatePlanState({...state, projection_status: "PROJECTION_STALE"});
+        expect(staleProjection.errors).toContain("State projection is stale and cannot be treated as a valid plan.");
+
+        const hybridAttemptState = {
+            ...state,
+            hybrid_attempt_id: "attempt-1",
+            hybrid_attempt_hash: "attempt-hash-1",
+            hybrid_attempt: {
+                run_id: "run-1",
+                attempt_id: "attempt-1",
+                attempt_hash: "attempt-hash-1",
+                criteria_hash: "criteria-hash-1",
+                strategy_hash: "strategy-hash-1",
+                phase: state.workflow_phase,
+                status: "started",
+                started_at: "2026-01-01T00:00:00Z",
+            },
+        };
+        expect(validatePlanState(hybridAttemptState).valid).toBe(true);
+        const invalidHybridAttempt = validatePlanState({
+            ...hybridAttemptState,
+            hybrid_attempt_hash: "different-hash",
+        });
+        expect(invalidHybridAttempt.errors).toContain("hybrid_attempt_hash must match hybrid_attempt.attempt_hash.");
+
+        const blockedApproval = validatePlanState({
+            ...state,
+            plan_status: "approved",
+            package_decision_gate: "open",
+            workflow_phase: "handoff",
+            workflow_outcome: "blocked",
+        });
+        expect(blockedApproval.approval.reasons).toContain("workflow_blocked");
+
+    });
+
+    it("requires canonical projection metadata to match the state identity and workflow", () => {
+        const state = createInitialState({
+            plan_id: "validator-projection",
+            draft_path: "docs/draft/validator-projection.md",
+            source_identity: "user:validator-projection",
+        }, {now: "2026-01-01T00:00:00Z"});
+        const parsed = parseDraftDocument(MAIN_FIXTURE);
+        const metadata = {...parsed.metadata,
+            source_fetch_status: "pending",
+            source_identity: "user:validator-projection",
+            workflow_phase: state.workflow_phase,
+            workflow_outcome: state.workflow_outcome,
+            state_revision: "0",
+        };
+        delete metadata.fetched_at;
+        delete metadata.source_updated_at;
+        const projected = serializeFrontMatter(metadata) + replaceSessionStrategySection(
+            parsed.body,
+            renderSessionStrategyProjection(state.session_strategy),
+        );
+
+        expect(validatePlanDocument(projected, {kind: "main", state}).valid).toBe(true);
+        const mismatch = validatePlanDocument(projected, {
+            kind: "main",
+            state: {...state, source_identity: "user:other", workflow_outcome: "blocked"},
+        });
+        expect(mismatch.errors).toEqual(expect.arrayContaining([
+            "Draft/state source_identity mismatch.",
+            "Draft/state workflow_outcome mismatch.",
+        ]));
     });
 });
 

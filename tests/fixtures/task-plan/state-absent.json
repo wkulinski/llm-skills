@@ -1,0 +1,13 @@
+{
+  "plan": {
+    "plan_id": "state-absent",
+    "draft_path": "docs/draft/state-absent.md",
+    "source_identity": "user:state-absent"
+  },
+  "expected": {
+    "status": "virtual-initial",
+    "revision": 0,
+    "state_file": false,
+    "draft_file": false
+  }
+}

@@ -108,25 +108,64 @@ Stosuj bezpośrednie trasy:
   `context-refresher`, gdy nie istnieje ważny manifest,
 - problemy runtime, DI, logów i profilera deleguj bezpośrednio
   `runtime-diagnostician`, a jeśli agent jest niedostępny, użyj `$dev-mate`,
-- mały, spójny i w pełni określony pakiet implementacyjny, także wieloplikowy,
-  deleguj bezpośrednio `implementation-worker`; przekaż cel, zakres,
-  ograniczenia, decyzje, referencje, kryteria akceptacji i weryfikację. Worker
-  zwraca `STATUS: COMPLETED` albo `STATUS: ESCALATE_TO_PRIMARY`.
+- dokładnie jedno aktywne wymaganie `R#` opisujące jeden obserwowalny rezultat
+  behawioralny i jedną główną odpowiedzialność produkcyjną deleguj bezpośrednio
+  `implementation-worker`; testy i konieczna aktualizacja kontraktu mogą
+  wspierać ten sam rezultat, ale nie tworzą osobnych outcome. Worker zwraca
+  `STATUS: COMPLETED` albo `STATUS: ESCALATE_TO_PRIMARY`.
 
 Minimalny handoff do `implementation-worker`:
 
 ```text
-Objective: <konkretne zachowanie lub zmiana>
-Scope: <dozwolone pliki, symbole lub katalog>
+Requirement: <dokładnie jedno aktywne R#>
+Single outcome: <jeden obserwowalny rezultat behawioralny>
+Primary responsibility: <jedna odpowiedzialność produkcyjna>
+Allowed production scope: <dozwolone pliki, symbole, moduł lub wąski katalog>
+Allowed supporting tests: <testy bezpośrednio potwierdzające ten sam outcome>
 Constraints: <zachowanie i obszary, których nie wolno zmieniać>
 Decisions: <decyzje projektowe już podjęte przez agenta głównego>
 References: <istniejące implementacje, wzorce lub dokumentacja>
-Acceptance criteria: <obserwowalne kryteria sukcesu>
-Verification: <komendy i checki do uruchomienia>
+Non-goals: <sąsiednie zachowania jawnie poza zakresem>
+Acceptance criterion: <jeden obserwowalny warunek sukcesu>
+Verification: <jedna punktowa komenda lub check potwierdzający outcome>
 ```
 
 Jeśli któregoś pola brakuje i nie można bezpiecznie uzupełnić go z lokalnych
 konwencji, nie deleguj zadania — doprecyzuj je albo wykonaj eskalację.
+
+### Twarda bramka delegacji do `implementation-worker`
+
+Przed każdym wywołaniem workera agent główny **MUSI** potwierdzić wszystkie
+warunki:
+
+1. delegacja realizuje dokładnie jedno wymaganie `R#` ze statusem `IN_PROGRESS`;
+2. ma dokładnie jeden obserwowalny rezultat behawioralny;
+3. dotyczy jednej głównej odpowiedzialności produkcyjnej;
+4. wszystkie decyzje projektowe zostały już podjęte;
+5. testy, fixtures i zmiany kontraktu dotyczą bezpośrednio tego samego rezultatu;
+6. handoff zawiera jawne `Non-goals`;
+7. istnieje jedna punktowa komenda albo check weryfikujący ukończenie;
+8. ukończenie wycinka nie zależy od implementacji drugiej niezależnej funkcji.
+
+Jeśli dowolny warunek nie jest spełniony, **NIE wywołuj**
+`implementation-worker`. Podziel pracę na osobne wymagania lub iteracje i wybierz
+jedno `R#` jako aktualnie `IN_PROGRESS`. Wyliczenie kilku niezależnych czasowników
+w `Single outcome`, np. „naprawić, dodać, przebudować i udokumentować”, jest
+sygnałem obowiązkowego podziału, chyba że wszystkie opisują nierozłączne części
+jednego obserwowalnego zachowania.
+
+Przed delegacją zapisz decyzję bramki w `STATE_PATH` przez `state-log.mjs`:
+
+```text
+Delegation gate: PASS
+Requirement: R#
+Single outcome: ...
+Primary responsibility: ...
+Non-goals: ...
+Verification: ...
+```
+
+Nie zapisuj `PASS`, jeśli nie potrafisz wypełnić każdego pola bez ogólników.
 
 ### Bramka kosztowa delegacji
 Nie deleguj do `implementation-worker`, jeśli:

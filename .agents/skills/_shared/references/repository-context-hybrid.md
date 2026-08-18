@@ -3,8 +3,10 @@
 ## Purpose
 
 Use one deterministic primary/fallback flow for repository-context discovery.
-The primary is `context-scout-fast` (DeepSeek V4 Flash + CMM); the fallback is
-the independent `context-scout` (Luna Low).
+The primary is `context-scout-fast` (DeepSeek V4 Flash Max + CMM); the fallback
+is the independent `context-scout` (Luna High). Luna High is intentionally the
+higher-reasoning second pass. Its additional cost is bounded because the helper
+authorizes at most one fallback and only after the primary is rejected.
 
 This policy applies to every `repository-context` brief, including `targeted`
 and `cross-layer`. There is no direct scout route: targeted work also starts in

@@ -12,6 +12,8 @@ permission:
     read:
         "**/*primary*.report.json": deny
         "**/*primary*.ledger.json": deny
+    external_directory:
+        "*": deny
     bash:
         "*": deny
         "node ./.agents/skills/_shared/scripts/context-criteria.mjs validate *": allow

@@ -9,6 +9,7 @@ import {enrichContextManifest} from "../../../.agents/skills/_shared/scripts/con
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../");
 const HELPER = path.join(ROOT, ".agents/skills/_shared/scripts/context-scout-hybrid-run.mjs");
+const REPORT_BUILDER = path.join(ROOT, ".agents/skills/_shared/scripts/context-scout-report-builder.mjs");
 
 function makeFixtureDir() {
     return fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-hybrid-test-"));
@@ -97,6 +98,13 @@ test("prepare returns native task instructions and never starts OpenCode", () =>
     assert.match(claimed.taskPrompt, /return INCOMPLETE/);
     assert.match(claimed.taskPrompt, /initialize the ledger exactly once/);
     assert.match(claimed.taskPrompt, /send it directly to batch-render as the second and final builder operation/);
+    assert.match(claimed.taskPrompt, /node \.\/\.agents\/skills\/_shared\/scripts\/context-scout-report-builder\.mjs batch-render/);
+    assert.match(claimed.taskPrompt, /<<'REPORT_JSON'\n<COMPLETE_REPORT_JSON>\nREPORT_JSON/);
+    assert.match(claimed.taskPrompt, /run the opening command, payload, and closing marker as one bash call/);
+    assert.match(claimed.taskPrompt, /Do not run batch-render with empty stdin/);
+    assert.match(claimed.taskPrompt, /Do not create a separate input file/);
+    assert.match(claimed.taskPrompt, /process substitution/);
+    assert.doesNotMatch(claimed.taskPrompt, /node \.agents\/skills\/_shared\/scripts\/context-scout-report-builder\.mjs/);
     assert.match(claimed.taskPrompt, /Do not spend more than 24 steps/);
     assert.doesNotMatch(claimed.taskPrompt, /report_sha256/);
     assert.doesNotMatch(claimed.taskPrompt, /opencode run/);
@@ -112,6 +120,38 @@ test("cross-layer primary retains the wider shared discovery budget", () => {
     abortHybrid({state: result.statePath, "run-id": result.runId});
 });
 
+test("batch-render fails on empty stdin and succeeds with the report payload", () => {
+    const prepared = prepare(makeFixtureDir(), "batch-render-stdin");
+    const primary = claim(prepared);
+    const state = JSON.parse(fs.readFileSync(prepared.statePath, "utf8"));
+    const init = spawnSync(process.execPath, [
+        REPORT_BUILDER,
+        "init",
+        primary.ledgerPath,
+        "--head",
+        state.manifestHead,
+        "--criteria",
+        prepared.files.criteria,
+        "--mode",
+        "targeted",
+    ], {cwd: ROOT, encoding: "utf8"});
+    assert.equal(init.status, 0, init.stderr);
+
+    const args = [REPORT_BUILDER, "batch-render", primary.ledgerPath, "--status", "COMPLETE", "--output", primary.reportPath];
+    const empty = spawnSync(process.execPath, args, {cwd: ROOT, encoding: "utf8", input: ""});
+    assert.notEqual(empty.status, 0);
+    assert.equal(fs.existsSync(primary.reportPath), false);
+
+    const rendered = spawnSync(process.execPath, args, {
+        cwd: ROOT,
+        encoding: "utf8",
+        input: `${JSON.stringify(validReport())}\n`,
+    });
+    assert.equal(rendered.status, 0, rendered.stderr);
+    assert.equal(fs.existsSync(primary.reportPath), true);
+    abortHybrid({state: prepared.statePath, "run-id": prepared.runId});
+});
+
 test("fallback task prompt retains deterministic semantic criteria gates", () => {
     const result = prepare(makeFixtureDir());
     const primary = claim(result);
@@ -120,6 +160,8 @@ test("fallback task prompt retains deterministic semantic criteria gates", () =>
     const fallback = claim(result, "fallback");
     assert.match(fallback.taskPrompt, /criteria\[\]\.required_evidence entry as a hard validator gate/);
     assert.match(fallback.taskPrompt, /forbid_negative_claims/);
+    assert.match(fallback.taskPrompt, /<<'REPORT_JSON'\n<COMPLETE_REPORT_JSON>\nREPORT_JSON/);
+    assert.match(fallback.taskPrompt, /Do not create a separate input file/);
     abortHybrid({state: result.statePath, "run-id": result.runId});
 });
 

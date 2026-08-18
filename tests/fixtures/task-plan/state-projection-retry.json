@@ -1,0 +1,18 @@
+{
+  "plan": {
+    "plan_id": "state-projection-retry",
+    "draft_path": "docs/draft/state-projection-retry.md",
+    "source_identity": "user:state-projection-retry"
+  },
+  "mutation": {
+    "type": "checkpoint",
+    "payload": {
+      "reason": "render later"
+    }
+  },
+  "expected": {
+    "stale_code": "PROJECTION_STALE",
+    "retry_code": "RETRIED",
+    "workflow_outcome": "running"
+  }
+}
