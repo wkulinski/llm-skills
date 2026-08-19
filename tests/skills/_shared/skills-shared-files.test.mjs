@@ -31,6 +31,38 @@ describe("skill shared_files contract", () => {
         expect(failures, ["Invalid shared_files references:", ...failures].join("\n")).toEqual([]);
     });
 
+    it("declares local dependencies of every shared file", () => {
+        const failures = [];
+
+        for (const skillFile of skillFiles()) {
+            const declaredFiles = new Set(parseSharedFiles(fs.readFileSync(skillFile, "utf8"), skillFile));
+            const pending = [...declaredFiles];
+            const visited = new Set();
+
+            while (pending.length > 0) {
+                const declaredPath = pending.pop();
+                if (visited.has(declaredPath)) { continue; }
+                visited.add(declaredPath);
+
+                const resolved = resolveSharedFile(declaredPath, skillFile);
+                if (!resolved.ok || !fs.existsSync(resolved.path) || path.extname(resolved.path) !== ".mjs") { continue; }
+
+                for (const importPath of localImportPaths(resolved.path)) {
+                    const dependency = resolveImport(resolved.path, importPath);
+                    if (!dependency || !isWithinSkillsRoot(dependency)) { continue; }
+
+                    const dependencyRelativePath = path.relative(SKILLS_ROOT, dependency);
+                    if (!declaredFiles.has(dependencyRelativePath)) {
+                        failures.push(`${skillFile}: ${declaredPath} imports undeclared ${dependencyRelativePath}`);
+                    }
+                    pending.push(dependencyRelativePath);
+                }
+            }
+        }
+
+        expect(failures, ["Undeclared local shared file dependencies:", ...failures].join("\n")).toEqual([]);
+    });
+
     it("rejects shared file paths that escape the skills root", () => {
         const skillFile = path.join(SKILLS_ROOT, "example", "SKILL.md");
 
@@ -90,4 +122,35 @@ function resolveSharedFile(declaredPath, skillFile) {
         return {ok: false, error: `${declaredPath} escapes skills root`};
     }
     return {ok: true, path: resolvedPath, skillFile};
+}
+
+function localImportPaths(filePath) {
+    const source = fs.readFileSync(filePath, "utf8");
+    const imports = new Set();
+    const patterns = [
+        /\bimport\s+(?:[^"']+?\s+from\s+)?["']([^"']+)["']/g,
+        /\bexport\s+[^;]*?\s+from\s+["']([^"']+)["']/g,
+        /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
+        /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,
+    ];
+
+    for (const pattern of patterns) {
+        for (const match of source.matchAll(pattern)) {
+            if (match[1].startsWith("./") || match[1].startsWith("../")) {
+                imports.add(match[1]);
+            }
+        }
+    }
+    return [...imports];
+}
+
+function resolveImport(sourceFile, importPath) {
+    const basePath = path.resolve(path.dirname(sourceFile), importPath);
+    const candidates = [basePath, `${basePath}.mjs`, `${basePath}.js`, `${basePath}.json`];
+    return candidates.find((candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isFile()) ?? null;
+}
+
+function isWithinSkillsRoot(filePath) {
+    const relativePath = path.relative(SKILLS_ROOT, filePath);
+    return relativePath !== "" && !relativePath.startsWith(`..${path.sep}`) && !path.isAbsolute(relativePath);
 }

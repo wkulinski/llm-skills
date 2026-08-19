@@ -7,6 +7,7 @@ shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh
   - _shared/scripts/issue-branch.mjs
+  - _shared/scripts/slugify-title.mjs
 ---
 
 # $gh-issue-status-set

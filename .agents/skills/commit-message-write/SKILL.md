@@ -10,6 +10,7 @@ shared_files:
   - _shared/references/php-symfony-postgres-standards.md
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/scripts/issue-branch.mjs
+  - _shared/scripts/slugify-title.mjs
 ---
 
 # $commit-message-write
