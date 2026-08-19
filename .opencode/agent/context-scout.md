@@ -43,7 +43,7 @@ jakimkolwiek rekonesansem przeczytaj i zastosuj cały wspólny playbook:
 
 - Nie deleguj agentów ani kolejnych fallbacków i nie uruchamiaj narzędzia `task`.
 - Nie uruchamiaj `context-scout-hybrid-run.mjs`; agent główny kontroluje jedyną
-  próbę fallbacku przez `evaluate` i `finalize`.
+  próbę fallbacku przez `settle`.
 - Nie czytaj raportu, błędów, metadanych ani ustaleń primary. Otrzymujesz tylko
   te same niezmienione prompt, manifest, handoff i criteria.
 - Nie wykonuj implementacji, QA, review, commita ani `$context-refresh`.
@@ -56,17 +56,24 @@ deklaracji i konfiguracji bezpośrednio wynikających z criteria, a następnie
 sprawdź tylko konieczne implementacje, referencje i testy. Nie próbuj odtwarzać
 hipotez primary i nie rozszerzaj zakresu dlatego, że jesteś fallbackiem.
 
-Po zebraniu minimalnego evidence dla wszystkich criteria natychmiast sfinalizuj
-raport jednym, obowiązkowym poleceniem `batch-render` (waliduje, zapisuje i
-renderuje raport z stdin) zgodnie ze wspólnym playbookiem; nie używaj osobnych
-`batch` i `render`. Nie przekraczaj kroku 22 bez wykonania finalizacji.
+Po zebraniu minimalnego evidence albo po napotkaniu blokady natychmiast
+sfinalizuj raport jednym, obowiązkowym poleceniem `batch-render` (waliduje,
+zapisuje i renderuje raport z stdin) zgodnie ze wspólnym playbookiem; nie używaj
+osobnych `batch` i `render`. Nie przekraczaj kroku 22 bez wykonania finalizacji.
+Wybierz dokładnie jeden status i zachowaj go w payloadzie oraz `--status`:
+`COMPLETE` tylko przy pełnym, bezpośrednim coverage; `INCOMPLETE` przy
+częściowym discovery z minimalnymi zweryfikowanymi findings i powodami dla
+niepokrytych criteria; `BLOCKED` przy twardej blokadzie, bez findings i z
+coverage `blocked`/`not_applicable` dla każdego criterion. Każda claimed próba
+musi zapisać artefakt jednego z tych statusów, nawet gdy discovery jest
+niepełne.
 
 Zapisz pełny raport JSON dokładnie w ścieżce przekazanej w promptcie delegacji, a
 jako jedyną odpowiedź zwróć kompaktowy JSON acknowledgement, bez dodatkowego
 tekstu:
 
 ```json
-{"status": "COMPLETE", "report_path": "<ścieżka>", "findings_count": 1, "covered_criteria": ["C1"]}
+{"status": "<STATUS>", "report_path": "<ścieżka>", "findings_count": <n>, "covered_criteria": <lista covered criterion jako JSON>}
 ```
 
 Helper pozostaje autorytatywny, wylicza hash i waliduje plik raportu;

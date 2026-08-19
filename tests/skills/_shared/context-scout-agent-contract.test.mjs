@@ -41,11 +41,17 @@ describe("context scout agent contracts", () => {
         expect(primary).not.toMatch(/`index_repository` w trybie `moderate`/);
         expect(primary).toMatch(/batch-render/);
         expect(primary).toMatch(/JSON acknowledgement/);
+        expect(primary).toMatch(/`COMPLETE`/);
+        expect(primary).toMatch(/`INCOMPLETE`/);
+        expect(primary).toMatch(/`BLOCKED`/);
         expect(fallback).toMatch(/niezależnym fallbackiem/);
         expect(fallback).toMatch(/CLAIM_FALLBACK/);
         expect(fallback).toMatch(/Nie czytaj raportu, błędów, metadanych ani ustaleń primary/);
         expect(fallback).toMatch(/"codebase-memory\*": deny/);
         expect(fallback).not.toMatch(/codebase-memory-mcp jako pierwszej warstwy/);
+        expect(fallback).toMatch(/`COMPLETE`/);
+        expect(fallback).toMatch(/`INCOMPLETE`/);
+        expect(fallback).toMatch(/`BLOCKED`/);
     });
 
     it("keeps the fast scout compact, grounded and fail-closed", () => {
@@ -81,12 +87,17 @@ describe("context scout agent contracts", () => {
         expect(playbook).toMatch(/`required_evidence`/);
         expect(playbook).toMatch(/`forbid_negative_claims`/);
         expect(playbook).toMatch(/Nie deleguj agentów/);
+        expect(playbook).toMatch(/`<STATUS>`/);
+        expect(playbook).toMatch(/`BLOCKED` nie zawiera findings/);
+        expect(playbook).toMatch(/nie kończ próby bez artefaktu/);
     });
 
     it("requires the shared playbook in the hybrid task prompt", () => {
         const helper = read(".agents/skills/_shared/scripts/context-scout-hybrid-run.mjs");
         expect(helper).toMatch(/repository-context-scout-playbook\.md/);
-        expect(helper).toMatch(/10 relevant files, 5 symbols, and 3 tests\/commands/);
+        expect(helper).toMatch(/effective_file_budget/);
+        expect(helper).toMatch(/effective_symbol_budget/);
+        expect(helper).toMatch(/effective_test_budget/);
         expect(helper).toMatch(/read_coverage\.covered/);
         expect(helper).toMatch(/claim_type \(observed, structural, inferred\)/);
         expect(helper).toMatch(/anchors containing literal terms/);
@@ -102,6 +113,12 @@ describe("context scout agent contracts", () => {
             const content = read(reference);
             expect(content).toMatch(/repository-context-hybrid\.md/);
             expect(content).not.toMatch(/DELEGATE_FALLBACK/);
+        }
+        for (const adapter of [
+            ".opencode/agent/context-scout-fast.md",
+            ".opencode/agent/context-scout.md",
+        ]) {
+            expect(read(adapter)).not.toMatch(/DELEGATE_FALLBACK/);
         }
     });
 

@@ -19,6 +19,8 @@ default-reviewers.txt
 .agents/project_path.txt
 
 /docs/draft/
+/docs/plan/
+
 /var/
 /.owe/
 /.playwright-cli/

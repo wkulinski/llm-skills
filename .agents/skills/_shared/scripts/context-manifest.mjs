@@ -1,6 +1,10 @@
 #!/usr/bin/env node
-import {readFileSync, writeFileSync} from "node:fs";
+import crypto from "node:crypto";
+import {lstatSync, readFileSync, readlinkSync, writeFileSync} from "node:fs";
+import path from "node:path";
 import {execFileSync} from "node:child_process";
+
+import {formatSecretValidationErrors} from "./secret-detector.mjs";
 
 const REQUIRED_KEYS = [
     "version",
@@ -14,23 +18,72 @@ const REQUIRED_KEYS = [
     "constraints",
     "already_read",
     "omitted",
+    "worktree",
 ];
 
 const ROLES = new Set(["primary", "context-refresher"]);
 const PATH_KEYS = ["rules", "documentation", "already_read", "omitted"];
-const SECRET_PATTERNS = [
-    /gh[pousr]_[A-Za-z0-9_\-]+/,
-    /sk-[A-Za-z0-9_\-]{12,}/,
-    /-----BEGIN [A-Z ]+ PRIVATE KEY-----/,
-    /(?:api[_-]?key|password|secret|token)\s*[:=]/i,
-];
-
-function gitValue(args, execFile = execFileSync) {
+const WORKTREE_HASH_KEYS = ["staged_sha256", "unstaged_sha256", "untracked_sha256", "combined_sha256"];
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+function gitValue(args, execFile = execFileSync, cwd = process.cwd()) {
     try {
-        return String(execFile("git", args, {encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]})).trim();
+        return String(execFile("git", args, {cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]})).trim();
     } catch {
         return "";
     }
+}
+
+function gitOutput(args, {cwd, execFile}) {
+    return String(execFile("git", args, {cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]}));
+}
+
+function sha256(value) {
+    return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function canonicalDiffHash(args, context) {
+    return sha256(gitOutput(args, context));
+}
+
+function canonicalUntrackedHash({cwd, execFile}) {
+    const listed = gitOutput(["ls-files", "--others", "--exclude-standard", "-z", "--"], {cwd, execFile});
+    const relativePaths = [...new Set(listed.split("\0").filter(Boolean))].sort();
+    const representation = crypto.createHash("sha256");
+
+    for (const relativePath of relativePaths) {
+        const absolutePath = path.resolve(cwd, relativePath);
+        const stats = lstatSync(absolutePath);
+        representation.update(`path:${relativePath}\0mode:${stats.mode & 0o7777}\0`);
+        if (stats.isSymbolicLink()) {
+            representation.update(`link:${readlinkSync(absolutePath)}\0`);
+        } else if (stats.isFile()) {
+            representation.update(readFileSync(absolutePath));
+            representation.update("\0");
+        } else {
+            throw new Error(`Unsupported untracked entry type: ${relativePath}`);
+        }
+    }
+
+    return representation.digest("hex");
+}
+
+export function getWorktreeFingerprint({cwd = process.cwd(), execFile = execFileSync} = {}) {
+    const context = {cwd: path.resolve(cwd), execFile};
+    const staged_sha256 = canonicalDiffHash([
+        "diff", "--cached", "--binary", "--full-index", "--no-ext-diff", "--no-color", "--no-renames", "--",
+    ], context);
+    const unstaged_sha256 = canonicalDiffHash([
+        "diff", "--binary", "--full-index", "--no-ext-diff", "--no-color", "--no-renames", "--",
+    ], context);
+    const untracked_sha256 = canonicalUntrackedHash(context);
+    const combined_sha256 = sha256([
+        "worktree-fingerprint-v1",
+        staged_sha256,
+        unstaged_sha256,
+        untracked_sha256,
+    ].join("\0"));
+
+    return {staged_sha256, unstaged_sha256, untracked_sha256, combined_sha256};
 }
 
 function normalizeRepository(value) {
@@ -41,13 +94,15 @@ function normalizeRepository(value) {
         .replace(/\.git$/, "");
 }
 
-export function enrichContextManifest(manifest, {execFile = execFileSync, now = new Date()} = {}) {
+export function enrichContextManifest(manifest, {execFile = execFileSync, now = new Date(), cwd = process.cwd()} = {}) {
+    const repositoryRoot = path.resolve(cwd);
     return {
         ...manifest,
         version: manifest.version ?? 1,
-        repository: manifest.repository || normalizeRepository(gitValue(["remote", "get-url", "origin"], execFile)),
-        branch: manifest.branch || gitValue(["branch", "--show-current"], execFile) || "detached",
-        head: manifest.head || gitValue(["rev-parse", "HEAD"], execFile),
+        repository: manifest.repository || normalizeRepository(gitValue(["remote", "get-url", "origin"], execFile, repositoryRoot)),
+        branch: manifest.branch || gitValue(["branch", "--show-current"], execFile, repositoryRoot) || "detached",
+        head: manifest.head || gitValue(["rev-parse", "HEAD"], execFile, repositoryRoot),
+        worktree: getWorktreeFingerprint({cwd: repositoryRoot, execFile}),
         generated_at: manifest.generated_at || now.toISOString(),
     };
 }
@@ -78,6 +133,17 @@ export function validateContextManifest(manifest) {
         }
     }
 
+    if (typeof manifest.worktree !== "object" || manifest.worktree === null || Array.isArray(manifest.worktree)) {
+        errors.push("MANIFEST_REGENERATION_REQUIRED: regenerate the manifest with context-manifest.mjs write before prepare");
+        errors.push("worktree must be an object");
+    } else {
+        for (const key of WORKTREE_HASH_KEYS) {
+            if (typeof manifest.worktree[key] !== "string" || !SHA256_PATTERN.test(manifest.worktree[key])) {
+                errors.push(`worktree.${key} must be a lowercase sha256 hash`);
+            }
+        }
+    }
+
     for (const key of PATH_KEYS) {
         if (isStringArray(manifest[key]) && manifest[key].some((value) => value.startsWith("/") || value.startsWith("~"))) {
             errors.push(`${key} must contain repo-relative paths`);
@@ -88,9 +154,7 @@ export function validateContextManifest(manifest) {
         errors.push("manifest must not contain issue/comments/document contents");
     }
 
-    if (SECRET_PATTERNS.some((pattern) => pattern.test(JSON.stringify(manifest)))) {
-        errors.push("manifest appears to contain a secret");
-    }
+    errors.push(...formatSecretValidationErrors("manifest", manifest));
 
     return {valid: errors.length === 0, errors};
 }
@@ -119,12 +183,39 @@ function parseOutputPath(args) {
     return outputIndex >= 0 ? args[outputIndex + 1] : "";
 }
 
-function currentGitMetadata() {
+export function currentGitMetadata(cwd = process.cwd()) {
     return {
-        repository: normalizeRepository(gitValue(["remote", "get-url", "origin"])),
-        branch: gitValue(["branch", "--show-current"]) || "detached",
-        head: gitValue(["rev-parse", "HEAD"]),
+        repository: normalizeRepository(gitValue(["remote", "get-url", "origin"], execFileSync, cwd)),
+        branch: gitValue(["branch", "--show-current"], execFileSync, cwd) || "detached",
+        head: gitValue(["rev-parse", "HEAD"], execFileSync, cwd),
     };
+}
+
+export function verifyContextManifest(manifest, cwd = process.cwd()) {
+    const validation = validateContextManifest(manifest);
+    if (!validation.valid) { return validation; }
+
+    const current = currentGitMetadata(cwd);
+    if (!current.head || !current.branch) {
+        return {valid: false, errors: ["cannot verify manifest: current git metadata is unavailable"]};
+    }
+
+    const mismatches = ["repository", "branch", "head"]
+        .filter((key) => manifest[key] && current[key] && manifest[key] !== current[key])
+        .map((key) => `${key}: manifest=${manifest[key]} current=${current[key]}`);
+    let currentWorktree;
+    try {
+        currentWorktree = getWorktreeFingerprint({cwd});
+    } catch (error) {
+        return {valid: false, errors: [`cannot verify worktree fingerprint: ${error.message}`]};
+    }
+    for (const key of WORKTREE_HASH_KEYS) {
+        if (manifest.worktree[key] !== currentWorktree[key]) {
+            mismatches.push(`worktree.${key}: manifest=${manifest.worktree[key]} current=${currentWorktree[key]}`);
+        }
+    }
+
+    return {valid: mismatches.length === 0, errors: mismatches};
 }
 
 function main(argv) {
@@ -170,16 +261,9 @@ function main(argv) {
             return 1;
         }
 
-        const current = currentGitMetadata();
-        if (!current.head || !current.branch) {
-            process.stderr.write("cannot verify manifest: current git metadata is unavailable\n");
-            return 1;
-        }
-        const mismatches = ["repository", "branch", "head"]
-            .filter((key) => manifest[key] && current[key] && manifest[key] !== current[key])
-            .map((key) => `${key}: manifest=${manifest[key]} current=${current[key]}`);
-        if (mismatches.length > 0) {
-            process.stderr.write(`${mismatches.join("\n")}\n`);
+        const verification = verifyContextManifest(manifest);
+        if (!verification.valid) {
+            process.stderr.write(`${verification.errors.join("\n")}\n`);
             return 1;
         }
         process.stdout.write("context manifest: current\n");

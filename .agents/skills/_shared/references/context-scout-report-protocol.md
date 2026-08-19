@@ -17,7 +17,7 @@ do not use shell command substitution or compound shell commands:
 add-evidence "$LEDGER" --path "repo/file" --line-start 1 --line-end 2
 add-finding "$LEDGER" --criterion C1 --claim "..." --claim-type structural --confidence high --anchors "literal,terms" --evidence E1,E2
 set-coverage "$LEDGER" --criterion C1 --status covered --evidence E1,E2
-batch-render "$LEDGER" --status COMPLETE --output "$REPORT" < report.json
+batch-render "$LEDGER" --status <STATUS> --output "$REPORT" < report.json
 add-covered-path "$LEDGER" --path "repo/file" --line-start 1 --line-end 2 --locator "Symbol" --relation "defines"
 add-follow-up "$LEDGER" --path "repo/other-file" --reason "required only for implementation read-before-write"
 add-risk "$LEDGER" --text "..."
@@ -27,8 +27,12 @@ check "$LEDGER"  # recovery/debug path only
 ```
 
 For a normal scout attempt, use one `batch-render` operation with the complete
-report JSON on stdin. The older `batch` + `render` sequence remains a recovery
-path for an interrupted ledger, not the canonical scout finalization path.
+report JSON on stdin. `<STATUS>` and the payload status must match exactly and
+must be one of `COMPLETE`, `INCOMPLETE` or `BLOCKED`. Use `COMPLETE` only when
+every criterion is covered, `INCOMPLETE` for bounded partial discovery, and
+`BLOCKED` for a hard boundary with no findings and a reason for every criterion.
+The older `batch` + `render` sequence remains a recovery path for an interrupted
+ledger, not the canonical scout finalization path.
 `--claim-type` must be `observed`, `structural` or `inferred`; `--confidence`
 must be `high`, `medium` or `low`. Use `inferred` for interpretations and make
 their uncertainty explicit in the claim. `--anchors` lists literal terms that

@@ -399,7 +399,7 @@ Każde repozytoryjne rozpoznanie używa wyłącznie:
 Obowiązkowy lifecycle jednego przebiegu to:
 
 ```text
-prepare → claim → evaluate → finalize/abort
+prepare → claim → settle/abort
 ```
 
 Zasady:

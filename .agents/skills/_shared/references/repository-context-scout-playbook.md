@@ -102,13 +102,22 @@ Nie składaj końcowego JSON ręcznie jako artefaktu poza builderem. Zarezerwuj 
 najmniej 40% kroków na ledger, preflight i coverage. Po walidacji wejść
 zainicjalizuj ledger dokładnie raz, zbuduj kompletny raport JSON w pamięci i
 przekaż go bezpośrednio do `batch-render` jako drugiej i ostatniej operacji
-buildera:
+buildera. Rezerwacja finalizacji obowiązuje niezależnie od tego, czy discovery
+zakończy się sukcesem, częściowo czy blokadą:
 
 ```text
-node ./.agents/skills/_shared/scripts/context-scout-report-builder.mjs batch-render <ledger> --status COMPLETE --output <report> <<'REPORT_JSON'
-<COMPLETE_REPORT_JSON>
+node ./.agents/skills/_shared/scripts/context-scout-report-builder.mjs batch-render <ledger> --status <STATUS> --output <report> <<'REPORT_JSON'
+<STATUS_REPORT_JSON>
 REPORT_JSON
 ```
+
+`<STATUS>` musi być dokładnie jednym z `COMPLETE`, `INCOMPLETE` albo `BLOCKED` i
+ma być identyczny ze statusem payloadu. `COMPLETE` wymaga bezpośredniego evidence
+oraz poprawnego coverage każdego criterion. `INCOMPLETE` zapisuje tylko
+zweryfikowane findings i oznacza niepokryte criteria statusem `blocked` z powodem.
+`BLOCKED` nie zawiera findings i oznacza każde criterion jako `blocked` albo
+`not_applicable` z konkretnym powodem. Brak pełnego coverage albo wyczerpanie
+budżetu nie zwalnia z zapisu minimalnego raportu; nie kończ próby bez artefaktu.
 
 Nie uruchamiaj osobno `add-evidence`, `add-finding`, `set-coverage`, `check`,
 `batch` ani `render`. Nie twórz osobnego pliku wejściowego ani nie używaj
@@ -119,7 +128,7 @@ agenta głównego.
 Jeśli builder, preflight albo walidacja odrzuci dowód, popraw punktowy odczyt lub
 zwróć `INCOMPLETE`; nie obchodź walidatora. Raport `COMPLETE` wymaga coverage
 każdego criterion jako `covered` albo uzasadnione `not_applicable`. Status
-`blocked` nie może wystąpić w raporcie `COMPLETE`.
+`blocked` nie może wystąpić w raporcie `COMPLETE`, a `BLOCKED` nie może zawierać findings.
 
 ## Odpowiedź
 

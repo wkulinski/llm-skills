@@ -13,8 +13,9 @@ describe("canonical equivalence smoke runner", () => {
     it("uses the production helper lifecycle and native task controller", () => {
         expect(SOURCE).toMatch(/prepareHybrid/);
         expect(SOURCE).toMatch(/claimAttempt/);
-        expect(SOURCE).toMatch(/evaluateAttempt/);
-        expect(SOURCE).toMatch(/finalizeHybrid/);
+        expect(SOURCE).toMatch(/settleAttempt/);
+        expect(SOURCE).not.toMatch(/evaluateAttempt/);
+        expect(SOURCE).not.toMatch(/finalizeHybrid/);
         expect(SOURCE).toMatch(/native task call/);
         expect(SOURCE).toMatch(/criteria_equivalence/);
         expect(SOURCE).toMatch(/PRIMARY_OUTPUT_MISSING/);

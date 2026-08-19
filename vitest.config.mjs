@@ -8,6 +8,10 @@ export default defineConfig({
                     name: "unit",
                     include: ["tests/**/*.test.mjs"],
                     exclude: ["tests/**/*.integration.test.mjs"],
+                    // Snapshot-sensitive hybrid lifecycle tests fingerprint the
+                    // repository. Run unit files serially so another test cannot
+                    // create a transient untracked fixture between prepare and claim.
+                    fileParallelism: false,
                 },
             },
             {
