@@ -19,7 +19,7 @@ izolacji oznacza, że nie wolno przedstawiać ich jako `VERIFIED_CANONICAL`.
 ### Minimalny smoke canonical equivalence (2026-08-03)
 
 Na trzech fixture (`a,b,c`, po jednej próbie) uruchomiono ten sam task envelope
-przez canonical `prepare → claim → native task → evaluate → fallback → finalize`
+przez canonical `prepare → claim → native task → settle → fallback → settle`
 oraz przez inline. Workspace pozostał niezmieniony (`220` plików, ten sam hash).
 
 | Gate | Wynik |

@@ -45,7 +45,7 @@ zastosuj cały wspólny playbook:
 
 - Nie deleguj agentów ani fallbacków i nie uruchamiaj narzędzia `task`.
 - Nie uruchamiaj `context-scout-hybrid-run.mjs`; fallbackiem zarządza wyłącznie
-  agent główny po decyzji helpera `DELEGATE_FALLBACK`.
+  agent główny po decyzji helpera `CLAIM_FALLBACK`.
 - Nie wykonuj implementacji, QA, review, commita ani `$context-refresh`.
 - Zapisz raport dokładnie w ścieżce przekazanej w promptcie delegacji.
 
@@ -117,25 +117,34 @@ ośmiu punktowych odczytów pozostawionych rodzicowi wraz z powodem. Rodzic nie
 powinien powtarzać `covered`, poza wyjątkami określonymi w playbooku.
 
 Przeznacz najwyżej połowę kroków na rekonesans i weryfikację, a resztę zachowaj
-na preflight oraz raport. Przed opcjonalnym wzbogaceniem wykonaj checkpoint:
-każde criterion musi mieć bezpośrednie evidence i status `covered`. Nie
+na preflight oraz raport. Przed opcjonalnym wzbogaceniem wykonaj checkpoint i
+zarezerwuj kroki na finalizację niezależnie od wyniku discovery. Nie
 przekraczaj kroku 24 bez wykonania finalizacji; wzbogacenie nigdy nie może
 opóźniać `batch-render`.
-Po pokryciu wszystkich criteria natychmiast sfinalizuj raport jednym,
-obowiązkowym poleceniem `batch-render` (waliduje, zapisuje i renderuje raport z
-stdin) zgodnie ze wspólnym playbookiem; nie używaj osobnych `batch` i `render`.
+Wybierz dokładnie jedną gałąź raportu:
+- `COMPLETE`: każde criterion ma bezpośrednie evidence i status `covered` albo
+  uzasadnione `not_applicable`.
+- `INCOMPLETE`: discovery lub weryfikacja wyczerpały ograniczony budżet; zapisz
+  tylko zweryfikowane findings, a niepokryte criteria oznacz jako `blocked` z
+  konkretnym powodem.
+- `BLOCKED`: twarda granica wejścia, uprawnień lub bezpieczeństwa uniemożliwia
+  discovery; zapisz pustą listę findings i coverage `blocked`/`not_applicable`
+  z powodami.
+Każdy status wymaga jednego obowiązkowego polecenia `batch-render`, które
+waliduje, zapisuje i renderuje raport z stdin; status payloadu musi być taki
+sam jak `--status`. Nie kończ claimed próby bez artefaktu i nie używaj osobnych
+`batch` ani `render`.
 Po walidacji wejść zainicjalizuj ledger dokładnie raz. Nie używaj modelowych
 sekwencji `add-evidence`, `add-finding`, `set-coverage`, `check` ani osobnego
-`render`; po discovery zbuduj w pamięci kompletny JSON z jednym findingiem na
-criterion i przekaż go bezpośrednio do `batch-render` jako drugiej i ostatniej
-operacji buildera.
+`render`; po discovery zbuduj w pamięci kompletny JSON i przekaż go
+bezpośrednio do `batch-render` jako drugiej i ostatniej operacji buildera.
 
 Zapisz pełny raport JSON dokładnie w ścieżce przekazanej w promptcie delegacji, a
 jako jedyną odpowiedź zwróć kompaktowy JSON acknowledgement, bez dodatkowego
 tekstu:
 
 ```json
-{"status": "COMPLETE", "report_path": "<ścieżka>", "findings_count": 1, "covered_criteria": ["C1"]}
+{"status": "<STATUS>", "report_path": "<ścieżka>", "findings_count": <n>, "covered_criteria": <lista covered criterion jako JSON>}
 ```
 
 Helper pozostaje autorytatywny, wylicza hash i waliduje plik raportu;

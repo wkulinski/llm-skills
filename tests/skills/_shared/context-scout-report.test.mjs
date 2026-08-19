@@ -1,6 +1,13 @@
 import {describe, expect, it} from "vitest";
 
-import {validateScoutReport} from "../../../.agents/skills/_shared/scripts/context-scout-report.mjs";
+import {
+    FAILURE_CLASSES,
+    RETRYABLE_FAILURE_CLASSES,
+    classifyReportValidation,
+    isRetryableFailureClass,
+    nextActionForFailureClass,
+    validateScoutReport,
+} from "../../../.agents/skills/_shared/scripts/context-scout-report.mjs";
 
 function report(overrides = {}) {
     const evidence = {path: "AGENTS.md", line_start: 1, line_end: 1, relation: "defines"};
@@ -75,6 +82,60 @@ describe("context scout report evidence discipline", () => {
         }]}).valid).toBe(true);
     });
 
+    it("accepts scout-selected evidence from the required path prefix", () => {
+        const evidence = {
+            path: "tests/skills/_shared/context-scout-report.test.mjs",
+            line_start: 1,
+            line_end: 35,
+            relation: "tests",
+        };
+        const value = report({
+            findings: [{
+                criterion_id: "C1",
+                claim: "the context scout report evidence discipline suite is directly tested",
+                claim_type: "observed",
+                confidence: "high",
+                anchors: ["context scout report evidence discipline"],
+                evidence: [evidence],
+            }],
+            coverage: [{criterion_id: "C1", status: "covered", evidence: [evidence]}],
+        });
+
+        expect(validateScoutReport(value, {criteria: [{
+            id: "C1",
+            description: "Map the report tests.",
+            required_evidence: [{path_prefix: "tests/skills/_shared/", relation: "tests", anchor_mode: "scout-selected"}],
+        }]}).valid).toBe(true);
+    });
+
+    it("does not treat a sibling path with the same textual prefix as a descendant", () => {
+        const evidence = {
+            path: "tests/skills/_shared/context-scout-report.test.mjs",
+            line_start: 1,
+            line_end: 35,
+            relation: "tests",
+        };
+        const value = report({
+            findings: [{
+                criterion_id: "C1",
+                claim: "the context scout report evidence discipline suite is directly tested",
+                claim_type: "observed",
+                confidence: "high",
+                anchors: ["context scout report evidence discipline"],
+                evidence: [evidence],
+            }],
+            coverage: [{criterion_id: "C1", status: "covered", evidence: [evidence]}],
+        });
+
+        const result = validateScoutReport(value, {criteria: [{
+            id: "C1",
+            description: "Require a different sibling path.",
+            required_evidence: [{path_prefix: "tests/skills/_share", relation: "tests", anchor_mode: "scout-selected"}],
+        }]});
+        expect(result.valid).toBe(false);
+        expect(result.errors.join("\n")).toMatch(/does not satisfy required_evidence/);
+    });
+
     it("rejects forbidden negative claims only for strict criteria", () => {
         const value = report({
             findings: [{...report().findings[0], claim: "No standalone rules file exists."}],
@@ -99,5 +160,44 @@ describe("context scout report evidence discipline", () => {
 
         expect(result.valid).toBe(false);
         expect(result.errors.join("\n")).toMatch(/structured metadata must include/);
+    });
+});
+
+describe("context scout failure classification", () => {
+    const cases = [
+        [FAILURE_CLASSES.INPUT_INVALID, "STOP", false],
+        [FAILURE_CLASSES.SCOPE_INVALID, "STOP", false],
+        [FAILURE_CLASSES.SNAPSHOT_STALE, "ABORT", false],
+        [FAILURE_CLASSES.AGENT_INCOMPLETE, "CLAIM_FALLBACK", true],
+        [FAILURE_CLASSES.AGENT_TIMEOUT, "CLAIM_FALLBACK", true],
+        [FAILURE_CLASSES.REPORT_MISSING, "CLAIM_FALLBACK", true],
+        [FAILURE_CLASSES.REPORT_INVALID, "CLAIM_FALLBACK", true],
+        [FAILURE_CLASSES.REPORT_WRITE_FAILED, "CLAIM_FALLBACK", true],
+    ];
+
+    it.each(cases)("classifies %s with primary action %s", (failureClass, action, retryable) => {
+        expect(isRetryableFailureClass(failureClass)).toBe(retryable);
+        expect(nextActionForFailureClass(failureClass, "primary")).toBe(action);
+        expect(nextActionForFailureClass(failureClass, "fallback")).toBe(retryable ? "FINALIZE" : action);
+        expect(RETRYABLE_FAILURE_CLASSES.has(failureClass)).toBe(retryable);
+    });
+
+    it("classifies valid incomplete and blocked reports as retryable agent results", () => {
+        for (const status of ["INCOMPLETE", "BLOCKED"]) {
+            expect(classifyReportValidation({
+                valid: false,
+                reportExists: true,
+                schemaValid: true,
+                status,
+                modeMatches: true,
+            })).toBe(FAILURE_CLASSES.AGENT_INCOMPLETE);
+        }
+    });
+
+    it("distinguishes missing, invalid, write-failed and accepted reports", () => {
+        expect(classifyReportValidation({reportExists: false})).toBe(FAILURE_CLASSES.REPORT_MISSING);
+        expect(classifyReportValidation({reportExists: true, ioFailure: true})).toBe(FAILURE_CLASSES.REPORT_WRITE_FAILED);
+        expect(classifyReportValidation({reportExists: true, schemaValid: false, modeMatches: false})).toBe(FAILURE_CLASSES.REPORT_INVALID);
+        expect(classifyReportValidation({valid: true, reportExists: true, schemaValid: true, status: "COMPLETE", modeMatches: true})).toBeNull();
     });
 });

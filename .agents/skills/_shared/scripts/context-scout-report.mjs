@@ -20,6 +20,47 @@ const FORBIDDEN_NEGATIVE_PATTERNS = [
     /\bbrak(?:uje|ują|owało)?\b/i,
 ];
 
+// Stable failure classification contract (WP3). The hybrid helper imports
+// these constants and helpers so that one owner defines the retry policy.
+export const FAILURE_CLASSES = Object.freeze({
+    INPUT_INVALID: "INPUT_INVALID",
+    SCOPE_INVALID: "SCOPE_INVALID",
+    SNAPSHOT_STALE: "SNAPSHOT_STALE",
+    AGENT_INCOMPLETE: "AGENT_INCOMPLETE",
+    AGENT_TIMEOUT: "AGENT_TIMEOUT",
+    REPORT_MISSING: "REPORT_MISSING",
+    REPORT_INVALID: "REPORT_INVALID",
+    REPORT_WRITE_FAILED: "REPORT_WRITE_FAILED",
+});
+
+export const RETRYABLE_FAILURE_CLASSES = Object.freeze(new Set([
+    FAILURE_CLASSES.AGENT_INCOMPLETE,
+    FAILURE_CLASSES.AGENT_TIMEOUT,
+    FAILURE_CLASSES.REPORT_MISSING,
+    FAILURE_CLASSES.REPORT_INVALID,
+    FAILURE_CLASSES.REPORT_WRITE_FAILED,
+]));
+
+export function isRetryableFailureClass(failureClass) {
+    return RETRYABLE_FAILURE_CLASSES.has(failureClass);
+}
+
+export function classifyReportValidation({valid = false, reportExists = true, ioFailure = false, schemaValid = false, status = null, modeMatches = true} = {}) {
+    if (!reportExists) { return FAILURE_CLASSES.REPORT_MISSING; }
+    if (ioFailure) { return FAILURE_CLASSES.REPORT_WRITE_FAILED; }
+    if (valid && modeMatches) { return null; }
+    if (schemaValid && (status === "INCOMPLETE" || status === "BLOCKED")) { return FAILURE_CLASSES.AGENT_INCOMPLETE; }
+    return FAILURE_CLASSES.REPORT_INVALID;
+}
+
+export function nextActionForFailureClass(failureClass, attempt = "primary") {
+    if (failureClass === null || failureClass === undefined) { return "FINALIZE"; }
+    if (failureClass === FAILURE_CLASSES.SNAPSHOT_STALE) { return "ABORT"; }
+    if (failureClass === FAILURE_CLASSES.INPUT_INVALID || failureClass === FAILURE_CLASSES.SCOPE_INVALID) { return "STOP"; }
+    if (isRetryableFailureClass(failureClass)) { return attempt === "primary" ? "CLAIM_FALLBACK" : "FINALIZE"; }
+    return "STOP";
+}
+
 function normalizeCriteria(criteria) {
     if (criteria === null) { return {ids: null, entries: new Map()}; }
     if (criteria instanceof Set) { return {ids: criteria, entries: new Map()}; }
@@ -254,7 +295,10 @@ function evidenceText(evidence, head) {
 function evidenceMatchesRequirement(evidence, requirement, head) {
     const candidates = evidence.filter((item) => {
         if (requirement.path !== undefined && item.path !== requirement.path) { return false; }
-        if (requirement.path_prefix !== undefined && !item.path.startsWith(requirement.path_prefix)) { return false; }
+        if (requirement.path_prefix !== undefined) {
+            const prefix = requirement.path_prefix.replace(/\/+$/, "");
+            if (item.path !== prefix && !item.path.startsWith(`${prefix}/`)) { return false; }
+        }
         return requirement.relation === undefined || item.relation === requirement.relation;
     });
     if (candidates.length === 0) { return false; }

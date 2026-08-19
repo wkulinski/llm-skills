@@ -8,10 +8,10 @@ import {fileURLToPath, pathToFileURL} from "node:url";
 
 import {
     claimAttempt,
-    evaluateAttempt,
-    finalizeHybrid,
     prepareHybrid,
+    settleAttempt,
 } from "../../../skills/_shared/scripts/context-scout-hybrid-run.mjs";
+import {assertArtifactPath} from "../../../skills/_shared/scripts/artifact-path.mjs";
 import {validateContextManifest} from "../../../skills/_shared/scripts/context-manifest.mjs";
 
 const REPO_ROOT = resolve(fileURLToPath(new URL("../../../..", import.meta.url)));
@@ -43,7 +43,8 @@ export function parseArgs(args) {
         else if (key === "--repetitions") { options.repetitions = Number(value); }
         else { throw new Error(`Unknown argument: ${key}`); }
     }
-    if (!options.outputDir) { throw new Error("--output-dir is required; use a new directory"); }
+    if (!options.outputDir) { throw new Error("--output-dir is required; use a new directory under var/agent/cache or the system temporary directory"); }
+    assertArtifactPath(options.outputDir, "benchmark output directory", options.repoDir);
     if (!Number.isSafeInteger(options.repetitions) || options.repetitions < 1) { throw new Error("--repetitions must be positive"); }
     if (options.variants.length === 0 || options.variants.some((variant) => !/^[a-z0-9_-]+$/i.test(variant))) { throw new Error("--variants must contain simple comma-separated names"); }
     if (existsSync(options.outputDir)) { throw new Error(`Output directory already exists: ${options.outputDir}`); }
@@ -175,15 +176,16 @@ async function runCanonicalJob(options, inputs, variant, repetition) {
         let claim = claimAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary"});
         let run = await controllerRun(options, claim.taskPrompt, outputDir, `canonical-${variant}-${repetition}-primary`, "primary");
         const primaryOutputObserved = existsSync(claim.reportPath) || existsSync(claim.ledgerPath);
-        let evaluation = evaluateAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: claim.dispatchToken, "duration-ms": run.duration_ms, ack: {session_ids: run.session_ids, task_tools: run.task_tools, tool_events: run.tool_events, output_observed: primaryOutputObserved}});
-        attempts.push({attempt: "primary", run, evaluation, output_observed: primaryOutputObserved});
-        if (evaluation.next.action === "CLAIM_FALLBACK") {
+        let settlement = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: claim.dispatchToken, "duration-ms": run.duration_ms, ack: {session_ids: run.session_ids, task_tools: run.task_tools, tool_events: run.tool_events, output_observed: primaryOutputObserved}});
+        attempts.push({attempt: "primary", run, evaluation: settlement.evaluate, output_observed: primaryOutputObserved});
+        if (settlement.evaluate.next.action === "CLAIM_FALLBACK") {
             claim = claimAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "fallback"});
             run = await controllerRun(options, claim.taskPrompt, outputDir, `canonical-${variant}-${repetition}-fallback`, "fallback");
-            evaluation = evaluateAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "fallback", token: claim.dispatchToken, "duration-ms": run.duration_ms, ack: {session_ids: run.session_ids, task_tools: run.task_tools, tool_events: run.tool_events, output_observed: existsSync(claim.reportPath) || existsSync(claim.ledgerPath)}});
-            attempts.push({attempt: "fallback", run, evaluation, output_observed: existsSync(claim.reportPath) || existsSync(claim.ledgerPath)});
+            settlement = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "fallback", token: claim.dispatchToken, "duration-ms": run.duration_ms, ack: {session_ids: run.session_ids, task_tools: run.task_tools, tool_events: run.tool_events, output_observed: existsSync(claim.reportPath) || existsSync(claim.ledgerPath)}});
+            attempts.push({attempt: "fallback", run, evaluation: settlement.evaluate, output_observed: existsSync(claim.reportPath) || existsSync(claim.ledgerPath)});
         }
-        const final = finalizeHybrid({state: prepared.statePath, "run-id": prepared.runId});
+        const final = settlement.finalized;
+        if (!final) { throw new Error("Canonical settlement did not finalize the run"); }
         return {
             variant,
             repetition,

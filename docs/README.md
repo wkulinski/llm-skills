@@ -11,6 +11,7 @@ This repository stores reusable LLM skills under `.agents/skills/`.
 - [Skills index](./SKILLS.md)
 - [Module index](./modules/README.md)
 - [Context scout benchmark](./benchmark/context-scout-fast-vs-inline.md)
+- [Repository-context hybrid protocol](../.agents/skills/_shared/references/repository-context-hybrid.md)
 
 ## Notes
 - This repo does not define application modules like a business monolith.

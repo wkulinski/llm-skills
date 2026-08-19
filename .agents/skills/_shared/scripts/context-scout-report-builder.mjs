@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {mkdirSync, readFileSync, writeFileSync} from "node:fs";
-import {tmpdir} from "node:os";
-import {dirname, isAbsolute, relative, resolve} from "node:path";
+import {dirname} from "node:path";
+import {assertArtifactPath} from "./artifact-path.mjs";
 import {validateScoutReport} from "./context-scout-report.mjs";
 import {readCriteriaFile, readCriteriaIds} from "./context-criteria.mjs";
 import {normalizeReadObservation, normalizeReadPath} from "./read-purpose.mjs";
@@ -9,19 +9,6 @@ import {normalizeReadObservation, normalizeReadPath} from "./read-purpose.mjs";
 const STATUSES = new Set(["COMPLETE", "INCOMPLETE", "BLOCKED"]);
 const MODES = new Set(["targeted", "cross-layer"]);
 const COVERAGE_STATUSES = new Set(["covered", "not_applicable", "blocked"]);
-const ARTIFACT_ROOTS = [resolve(process.cwd(), "var/agent/cache"), resolve(tmpdir())];
-
-function assertArtifactPath(filePath, label) {
-    if (typeof filePath !== "string" || filePath.trim() === "") { throw new Error(`${label} path is required`); }
-    const resolved = resolve(filePath);
-    const allowed = ARTIFACT_ROOTS.some((root) => {
-        const candidate = relative(root, resolved);
-        return candidate === "" || (!candidate.startsWith("..") && !isAbsolute(candidate));
-    });
-    if (!allowed) { throw new Error(`${label} must be under var/agent/cache or the system temporary directory`); }
-    return resolved;
-}
-
 function parseArgs(argv) {
     const [command, ledgerPath, ...rest] = argv;
     const options = {};
@@ -243,9 +230,13 @@ function batchRender(ledgerPath, options) {
         criteria: ledgerCriteria(ledger),
     });
     if (!validation.valid) { throw new Error(validation.errors.join("\n")); }
+    const status = options.status ?? report.status ?? "COMPLETE";
+    if (!STATUSES.has(status)) { throw new Error(`invalid status: ${status}`); }
+    if (options.status !== undefined && report.status !== status) {
+        throw new Error(`batch-render status must match report status: ${report.status} !== ${status}`);
+    }
     ledger.batch_report = report;
     writeLedger(ledgerPath, ledger);
-    const status = options.status ?? report.status ?? "COMPLETE";
     const built = buildReport(ledger, status, report.next_step ?? ledger.next_step);
     const output = options.output;
     if (typeof output === "string" && output !== "") {

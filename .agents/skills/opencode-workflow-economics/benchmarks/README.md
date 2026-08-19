@@ -85,7 +85,8 @@ experimental harness (`protocol_version: legacy-model-isolation`). It uses
 separate `primary.report.json` and `fallback.report.json` paths and writes
 `snapshot.json` with source revision, snapshot hash, file count, runner commit,
 and CMM availability. It is not a substitute for the canonical
-`prepare → claim → native task → evaluate → finalize` flow. Set `CBM_BINARY` to
+`prepare → claim → native task → settle` flow. The required new `--output-dir`
+must be under `var/agent/cache` or the system temporary directory. Set `CBM_BINARY` to
 provide a host CMM runtime; otherwise the summary records `cmm_available: false`
 and the reason for direct-discovery degradation.
 

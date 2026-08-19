@@ -102,7 +102,7 @@ precyzyjniej, szybciej albo z mniejszym ryzykiem pomyłki.
 Stosuj bezpośrednie trasy:
 - repozytoryjny rekonesans wykonuj przez
   `<skills_root>/_shared/scripts/context-scout-hybrid-run.mjs` i jego lifecycle
-  `prepare → evaluate → finalize/abort`; po walidacji raportu możesz wykonywać
+  `prepare → claim → settle/abort`; po walidacji raportu możesz wykonywać
   punktowe odczyty,
 - pełny `$context-refresh` wykonuj jako agent główny albo deleguj bezpośrednio
   `context-refresher`, gdy nie istnieje ważny manifest,

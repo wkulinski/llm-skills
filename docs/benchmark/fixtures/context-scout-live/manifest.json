@@ -13,5 +13,11 @@
   "constraints": ["Read-only reconnaissance", "Use the canonical hybrid lifecycle"],
   "already_read": ["AGENTS.md"],
   "omitted": [],
+  "worktree": {
+    "staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "unstaged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untracked_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "combined_sha256": "b486d4482dc02622a91318f38badfdcbbd3b08f0fe866e745bbb979cdcc7e606"
+  },
   "generated_at": "2026-07-28T12:31:42.279Z"
 }

@@ -2,19 +2,14 @@
 
 import {readFileSync} from "node:fs";
 
+import {formatSecretValidationErrors} from "./secret-detector.mjs";
+
 const REQUIRED_KEYS = [
     "mode",
     "task_brief",
     "decisions",
     "constraints",
 ];
-const SECRET_PATTERNS = [
-    /gh[pousr]_[A-Za-z0-9_-]+/,
-    /sk-[A-Za-z0-9_-]{12,}/,
-    /-----BEGIN [A-Z ]+ PRIVATE KEY-----/,
-    /(?:api[_-]?key|password|secret|token)\s*[:=]/i,
-];
-
 function isStringArray(value) {
     return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
@@ -39,7 +34,7 @@ export function validateHandoff(handoff) {
     if ("issue" in handoff || "issue_comments" in handoff || "document_contents" in handoff || "secrets" in handoff) {
         errors.push("handoff must not contain issue/comments/document contents/secrets");
     }
-    if (SECRET_PATTERNS.some((pattern) => pattern.test(JSON.stringify(handoff)))) { errors.push("handoff appears to contain a secret"); }
+    errors.push(...formatSecretValidationErrors("handoff", handoff));
     return {valid: errors.length === 0, errors};
 }
 

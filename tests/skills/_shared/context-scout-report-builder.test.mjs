@@ -187,4 +187,72 @@ describe("context scout report builder", () => {
         expect(JSON.parse(fs.readFileSync(output, "utf8"))).toMatchObject({status: "COMPLETE", findings: [{claim_type: "observed"}]});
         expect(JSON.parse(fs.readFileSync(ledger, "utf8")).batch_report).toMatchObject({status: "COMPLETE"});
     });
+
+    it.each([
+        ["INCOMPLETE", {criterion_id: "C1", status: "blocked", reason: "bounded discovery ended before direct verification"}],
+        ["BLOCKED", {criterion_id: "C1", status: "blocked", reason: "the controlled attempt was blocked before discovery"}],
+    ])("batch-renders %s without coercing the final status", (status, coverageEntry) => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-status-test-"));
+        const ledger = path.join(dir, "ledger.json");
+        const output = path.join(dir, "report.json");
+        const criteria = path.join(dir, "criteria.json");
+        fs.writeFileSync(criteria, JSON.stringify({criteria: [{id: "C1", description: "Map the flow."}]}));
+        const init = spawnSync(process.execPath, [BUILDER, "init", ledger, "--head", "HEAD", "--criteria", criteria, "--mode", "targeted"], {
+            cwd: ROOT,
+            encoding: "utf8",
+        });
+        expect(init.status, init.stderr).toBe(0);
+
+        const report = {
+            version: 1,
+            status,
+            mode: "targeted",
+            findings: [],
+            coverage: [coverageEntry],
+            read_coverage: {covered: [], follow_up: []},
+            risks: [],
+            omitted: [],
+            next_step: "parent should decide whether to retry",
+        };
+        const result = spawnSync(process.execPath, [BUILDER, "batch-render", ledger, "--status", status, "--output", output], {
+            cwd: ROOT,
+            encoding: "utf8",
+            input: `${JSON.stringify(report)}\n`,
+        });
+        expect(result.status, result.stderr).toBe(0);
+        expect(JSON.parse(fs.readFileSync(output, "utf8"))).toMatchObject({status, findings: []});
+        expect(JSON.parse(fs.readFileSync(ledger, "utf8")).batch_report).toMatchObject({status});
+    });
+
+    it("rejects a batch-render status that differs from the payload", () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-status-test-"));
+        const ledger = path.join(dir, "ledger.json");
+        const output = path.join(dir, "report.json");
+        const criteria = path.join(dir, "criteria.json");
+        fs.writeFileSync(criteria, JSON.stringify({criteria: [{id: "C1", description: "Map the flow."}]}));
+        const init = spawnSync(process.execPath, [BUILDER, "init", ledger, "--head", "HEAD", "--criteria", criteria, "--mode", "targeted"], {
+            cwd: ROOT,
+            encoding: "utf8",
+        });
+        expect(init.status, init.stderr).toBe(0);
+        const report = {
+            version: 1,
+            status: "INCOMPLETE",
+            mode: "targeted",
+            findings: [],
+            coverage: [{criterion_id: "C1", status: "blocked", reason: "not enough evidence"}],
+            read_coverage: {covered: [], follow_up: []},
+            risks: [],
+            omitted: [],
+            next_step: "retry",
+        };
+        const result = spawnSync(process.execPath, [BUILDER, "batch-render", ledger, "--status", "COMPLETE", "--output", output], {
+            cwd: ROOT,
+            encoding: "utf8",
+            input: `${JSON.stringify(report)}\n`,
+        });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toMatch(/status must match report status/);
+        expect(fs.existsSync(output)).toBe(false);
+    });
 });
