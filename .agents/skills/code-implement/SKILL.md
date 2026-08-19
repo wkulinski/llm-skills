@@ -20,10 +20,12 @@ shared_files:
     - _shared/scripts/context-criteria.mjs
     - _shared/scripts/context-handoff.mjs
     - _shared/scripts/context-manifest.mjs
+    - _shared/scripts/artifact-path.mjs
     - _shared/scripts/context-scout-hybrid-run.mjs
     - _shared/scripts/context-scout-report-builder.mjs
     - _shared/scripts/context-scout-report.mjs
     - _shared/scripts/read-purpose.mjs
+    - _shared/scripts/secret-detector.mjs
     - _shared/scripts/env-load.sh
     - _shared/scripts/targeted-check-decision.mjs
 ---
