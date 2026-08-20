@@ -1,7 +1,7 @@
 {
   "plan": {
     "plan_id": "state-absent",
-    "draft_path": "docs/draft/state-absent.md",
+    "draft_path": "docs/plan/state-absent.md",
     "source_identity": "user:state-absent"
   },
   "expected": {

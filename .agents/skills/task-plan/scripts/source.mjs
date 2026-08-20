@@ -6,25 +6,15 @@ import {spawnSync} from "node:child_process";
 import {pathToFileURL} from "node:url";
 
 import {slugifyTitle} from "../../_shared/scripts/slugify-title.mjs";
+import {INPUT_PROFILES, SOURCE_FETCH_STATUSES, SOURCE_KINDS} from "./state.mjs";
 
-export const SOURCE_KINDS = Object.freeze([
-    "github-issue",
-    "file",
-    "user-input",
-    "derived-work-package",
-]);
-
-export const INPUT_PROFILES = Object.freeze([
-    "title-only",
-    "brief-request",
-    "specification",
-    "detailed-plan",
-]);
+export {INPUT_PROFILES, SOURCE_KINDS};
 
 const CLI_CONTRACT_REJECTIONS = Object.freeze([
     "UNSAFE_SOURCE_PATH",
     "EMPTY_USER_INPUT",
     "INVALID_PROFILE",
+    "INVALID_SOURCE_FETCH_STATUS",
 ]);
 
 export class SourceError extends Error {
@@ -36,22 +26,19 @@ export class SourceError extends Error {
     }
 }
 
-export function classifyInputProfile(input = {}) {
-    const profileHint = input.profile_hint ?? input.input_profile;
-    if (profileHint) {
-        if (!INPUT_PROFILES.includes(profileHint)) {
-            throw new SourceError("INVALID_PROFILE", `Unsupported input profile: ${profileHint}.`);
-        }
-        return profileHint;
+function requireInputProfile(input = {}, options = {}) {
+    const profile = options.input_profile
+        ?? options.inputProfile
+        ?? options.profileHint
+        ?? input.input_profile
+        ?? input.profile_hint;
+    if (typeof profile !== "string" || profile.trim() === "") {
+        throw new SourceError("INVALID_PROFILE", "An explicit input_profile or profile_hint is required.");
     }
-
-    const title = String(input.title ?? "").trim();
-    const body = String(input.body ?? "").trim();
-    const comments = normalizeComments(input.comments);
-    if (title !== "" && body === "" && comments.length === 0) {
-        return "title-only";
+    if (!INPUT_PROFILES.includes(profile)) {
+        throw new SourceError("INVALID_PROFILE", `Unsupported input profile: ${profile}.`);
     }
-    return "brief-request";
+    return profile;
 }
 
 export function normalizeGitHubIssue(input, options = {}) {
@@ -59,6 +46,8 @@ export function normalizeGitHubIssue(input, options = {}) {
     const repo = requireIdentifier(input?.repo, "repo");
     const issueNumber = requireIssueNumber(input?.issue_number ?? input?.number);
     const title = requireString(input?.title, "title");
+    const inputProfile = requireInputProfile(input, options);
+    const sourceFetch = sourceFetchMetadata(input, options, "github-issue");
     const body = String(input?.body ?? "");
     const comments = normalizeComments(input?.comments);
     const sourceRef = input?.url ?? `https://github.com/${owner}/${repo}/issues/${issueNumber}`;
@@ -73,20 +62,15 @@ export function normalizeGitHubIssue(input, options = {}) {
         body,
         comments,
         authors: normalizeAuthors(input?.author, comments),
-        source_updated_at: input?.updatedAt ?? input?.source_updated_at ?? null,
-        fetched_at: options.fetchedAt ?? input?.fetched_at ?? null,
+        ...sourceFetch,
         branch: input?.branch ?? null,
         base_ref: input?.base_ref ?? input?.base ?? null,
-        input_profile: classifyInputProfile({
-            title,
-            body,
-            comments,
-            profile_hint: options.profileHint ?? input?.input_profile,
-        }),
+        input_profile: inputProfile,
     };
 }
 
 export function normalizeFileSource({filePath, repoRoot, fsOps = fs, options = {}} = {}) {
+    const inputProfile = requireInputProfile({}, options);
     const safePath = resolveSafePath(filePath, repoRoot, fsOps);
     let body;
     try {
@@ -107,17 +91,13 @@ export function normalizeFileSource({filePath, repoRoot, fsOps = fs, options = {
         comments: [],
         authors: [],
         repository_root: safePath.rootPath,
-        fetched_at: options.fetchedAt ?? null,
-        source_updated_at: options.sourceUpdatedAt ?? null,
-        input_profile: classifyInputProfile({
-            title,
-            body,
-            profile_hint: options.profileHint,
-        }),
+        ...sourceFetchMetadata({}, {...options, sourceFetchStatus: "not-required"}, "file"),
+        input_profile: inputProfile,
     };
 }
 
 export function normalizeUserInput(input = {}) {
+    const inputProfile = requireInputProfile(input);
     const title = String(input.title ?? "").trim();
     const body = String(input.body ?? "");
     if (title === "" && body.trim() === "") {
@@ -134,14 +114,8 @@ export function normalizeUserInput(input = {}) {
         repository_root: input.repository_root ?? null,
         branch: input.branch ?? null,
         base_ref: input.base_ref ?? null,
-        fetched_at: input.fetched_at ?? null,
-        source_updated_at: input.source_updated_at ?? null,
-        input_profile: classifyInputProfile({
-            title,
-            body,
-            comments: input.comments,
-            profile_hint: input.profile_hint,
-        }),
+        ...sourceFetchMetadata(input, {sourceFetchStatus: "not-required"}, "user-input"),
+        input_profile: inputProfile,
     };
 }
 
@@ -153,6 +127,9 @@ export function fetchGitHubIssue({
     execCommand,
     resolveCommand,
     fetchedAt,
+    clock,
+    profileHint,
+    inputProfile,
     branch,
     base,
     baseRef,
@@ -190,14 +167,26 @@ export function fetchGitHubIssue({
         });
     }
 
+    const normalizedFetchedAt = requireTimestamp(
+        fetchedAt ?? (typeof clock?.now === "function" ? clock.now() : null),
+        "fetched_at",
+    );
+    const sourceUpdatedAt = requireTimestamp(payload.updatedAt ?? payload.source_updated_at, "source_updated_at");
+
     return normalizeGitHubIssue({
         ...payload,
         owner: normalizedOwner,
         repo: normalizedRepo,
         issue_number: normalizedIssue,
+        source_updated_at: sourceUpdatedAt,
+        source_fetch_status: "complete",
         branch,
         base_ref: baseRef ?? base,
-    }, {fetchedAt: fetchedAt ?? null});
+    }, {
+        fetchedAt: normalizedFetchedAt,
+        profileHint: profileHint ?? inputProfile,
+        sourceFetchStatus: "complete",
+    });
 }
 
 export function refreshSource({currentSource, fetchSource, explicit = false} = {}) {
@@ -319,6 +308,69 @@ function normalizeAuthors(author, comments) {
     return authors;
 }
 
+function sourceFetchMetadata(input, options, kind) {
+    const explicitStatus = options.sourceFetchStatus
+        ?? options.source_fetch_status
+        ?? input?.source_fetch_status;
+    const status = explicitStatus ?? (kind === "github-issue" ? "pending" : "not-required");
+    if (!SOURCE_FETCH_STATUSES.includes(status)) {
+        throw new SourceError("INVALID_SOURCE_FETCH_STATUS", `Unsupported source_fetch_status: ${status}.`);
+    }
+    if (kind === "github-issue" && status === "not-required") {
+        throw new SourceError("INVALID_SOURCE_FETCH_STATUS", "github-issue sources must use source_fetch_status pending, complete or failed.");
+    }
+    if (kind !== "github-issue" && status !== "not-required") {
+        throw new SourceError("INVALID_SOURCE_FETCH_STATUS", `${kind} sources must use source_fetch_status not-required.`);
+    }
+
+    const fetchedAt = options.fetchedAt ?? options.fetched_at ?? input?.fetched_at ?? null;
+    const sourceUpdatedAt = options.sourceUpdatedAt
+        ?? options.source_updated_at
+        ?? input?.source_updated_at
+        ?? input?.updatedAt
+        ?? null;
+    const sourceFetchError = options.sourceFetchError
+        ?? options.source_fetch_error
+        ?? input?.source_fetch_error
+        ?? input?.error
+        ?? null;
+    const sourceFetchFailedAt = options.sourceFetchFailedAt
+        ?? options.source_fetch_failed_at
+        ?? input?.source_fetch_failed_at
+        ?? null;
+
+    if (status === "not-required" || status === "pending") {
+        if ([fetchedAt, sourceUpdatedAt, sourceFetchError, sourceFetchFailedAt].some((value) => value !== null && typeof value !== "undefined")) {
+            throw new SourceError("INVALID_SOURCE_FETCH_STATUS", `${status} source must not contain fetch metadata.`);
+        }
+        return {
+            source_fetch_status: status,
+            fetched_at: null,
+            source_updated_at: null,
+            source_fetch_error: null,
+            source_fetch_failed_at: null,
+        };
+    }
+
+    if (status === "complete") {
+        return {
+            source_fetch_status: status,
+            fetched_at: requireTimestamp(fetchedAt, "fetched_at"),
+            source_updated_at: requireTimestamp(sourceUpdatedAt, "source_updated_at"),
+            source_fetch_error: null,
+            source_fetch_failed_at: null,
+        };
+    }
+
+    return {
+        source_fetch_status: status,
+        fetched_at: null,
+        source_updated_at: null,
+        source_fetch_error: requireString(sourceFetchError, "source_fetch_error"),
+        source_fetch_failed_at: requireTimestamp(sourceFetchFailedAt, "source_fetch_failed_at"),
+    };
+}
+
 function firstMarkdownHeading(body) {
     const match = String(body).match(/^#\s+(.+)$/m);
     return match ? match[1].trim() : null;
@@ -355,6 +407,14 @@ function requirePath(value, name) {
     return requireString(value, name);
 }
 
+function requireTimestamp(value, name) {
+    const result = requireString(value, name);
+    if (Number.isNaN(Date.parse(result))) {
+        throw new SourceError("INVALID_SOURCE", `${name} must be a valid timestamp.`);
+    }
+    return result;
+}
+
 function stableJson(value) {
     return JSON.stringify(value ?? null);
 }
@@ -384,7 +444,7 @@ function cliResult(parsed) {
         return normalizeFileSource({
             filePath: parsed.values.path,
             repoRoot: parsed.values.root,
-            options: {title: parsed.values.title},
+            options: {title: parsed.values.title, profileHint: parsed.values.profile},
         });
     }
     if (parsed.command === "normalize-user") {
@@ -392,6 +452,7 @@ function cliResult(parsed) {
             title: parsed.values.title,
             body: parsed.values.body,
             source_ref: parsed.values["source-ref"],
+            profile_hint: parsed.values.profile,
         });
     }
     if (parsed.command === "fetch-github") {
@@ -401,6 +462,7 @@ function cliResult(parsed) {
             issueNumber: parsed.values.issue,
             repoRoot: parsed.values.root ?? process.cwd(),
             fetchedAt: new Date().toISOString(),
+            profileHint: parsed.values.profile,
             branch: parsed.values.branch,
             baseRef: parsed.values["base-ref"] ?? parsed.values.base,
         });
@@ -410,7 +472,7 @@ function cliResult(parsed) {
 
 function main(args) {
     if (args[0] === "--help") {
-        process.stdout.write("Usage: source.mjs normalize-file --root <repo> --path <file> | normalize-user --title <title> [--body <body>] | fetch-github --root <repo> --owner <owner> --repo <repo> --issue <number> [--branch <branch>] [--base-ref <ref>]\n");
+        process.stdout.write("Usage: source.mjs normalize-file --root <repo> --path <file> --profile <profile> | normalize-user --title <title> --profile <profile> [--body <body>] | fetch-github --root <repo> --owner <owner> --repo <repo> --issue <number> --profile <profile> [--branch <branch>] [--base-ref <ref>]\n");
         return 0;
     }
     try {

@@ -19,6 +19,7 @@ import {
 } from "../../../.agents/skills/task-plan/scripts/state.mjs";
 import {loadState, updateState} from "../../../.agents/skills/task-plan/scripts/state-store.mjs";
 import {validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate-plan.mjs";
+import {createValidPlanState} from "./task-plan-test-helpers.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../");
 const QUESTIONS = JSON.parse(fs.readFileSync(path.join(ROOT, "tests/fixtures/task-plan/questions.json"), "utf8"));
@@ -110,14 +111,14 @@ describe("task-plan question contract", () => {
             expect(validateOwnershipRedundancyReview(scenario.review, scenario.findings), state.id).toEqual([]);
         }
         const incompleteScenario = OWNERSHIP_REVIEW_SCENARIOS.get(incomplete.scenario_id);
-        const markdown = renderQuestionSections({...QUESTIONS, package_decision_gate: "closed"});
+        const markdown = renderQuestionSections({...QUESTIONS, derived_state: {package_decision_gate: "closed"}});
 
         expect(incompleteScenario.review.status).toBe("pending");
         expect(incompleteScenario.review.subjects[0].id).toBe("OR9");
         expect(markdown).toContain("package_decision_gate` jest zamknięta");
         expect(markdown).not.toContain("### WP1 — Kontrakt backendu");
 
-        const openMarkdown = renderQuestionSections({...QUESTIONS, package_decision_gate: "open"});
+        const openMarkdown = renderQuestionSections({...QUESTIONS, derived_state: {package_decision_gate: "open"}});
         expect(openMarkdown).toContain("### WP1 — Kontrakt backendu");
         expect(openMarkdown).toContain("WP1-Q1");
     });
@@ -128,8 +129,15 @@ describe("task-plan question contract", () => {
             repo_root: directory,
             state_root: path.join(directory, "var", "agent", "task-plan"),
             plan_id: "question-propagation",
-            draft_path: "docs/draft/question-propagation.md",
+            draft_path: "docs/plan/question-propagation.md",
             source_identity: "user:question-propagation",
+            source: {
+                source_kind: "user-input",
+                source_ref: "user:question-propagation",
+                title: "Question propagation",
+                input_profile: "brief-request",
+                source_fetch_status: "not-required",
+            },
             scope_questions: [{
                 id: "SQ1",
                 prompt: "Czy źródło jest kompletne?",
@@ -159,6 +167,16 @@ describe("task-plan question contract", () => {
         });
 
         updateState(plan, {
+            type: "checkpoint",
+            payload: {
+                reason: "refresh checkpoint after question decision",
+                next_phase: "source/context",
+                next_allowed_action: "start source intake",
+                forbidden_actions: ["review", "package decisions", "approval"],
+            },
+        }, {clock: fixedClock("2026-01-01T00:00:01Z")});
+
+        updateState(plan, {
             type: "workflow-phase-transition",
             payload: {to: "source/context", reason: "start source intake"},
         }, {clock: fixedClock("2026-01-01T00:00:02Z")});
@@ -172,6 +190,7 @@ describe("task-plan question contract", () => {
             payload: {
                 packages: current.packages,
                 findings: current.findings,
+                scope_questions: current.scope_questions,
                 session_strategy: {...current.session_strategy, rationale: "Source completeness confirmed."},
                 reason: "Apply the source decision.",
                 propagated_decision_ref: "D1",
@@ -185,6 +204,7 @@ describe("task-plan question contract", () => {
 
     it("rejects aggregate legacy question paragraphs and duplicate IDs", () => {
         expect(() => renderQuestionSections({
+            derived_state: {package_decision_gate: "open"},
             scope_questions: [],
             packages: [{
                 id: "WP1",
@@ -216,7 +236,10 @@ describe("task-plan question contract", () => {
             "## Decisions and open questions",
             "## Decisions and open questions\n\n**Pytania:** Czy A? Czy B?",
         );
-        expect(validateDraftDocument(legacyDraft, {kind: "main"}).errors).toContain(
+        expect(validateDraftDocument(legacyDraft, {
+            kind: "main",
+            derived_state: {package_decision_gate: "closed"},
+        }).errors).toContain(
             "Questions must be rendered as separate structured records, not an aggregate Pytania paragraph.",
         );
 
@@ -230,24 +253,36 @@ describe("task-plan question contract", () => {
         })).toThrow("Package decision gate cannot open");
     });
 
+    it("requires derived state for gate-sensitive rendering and validation", () => {
+        expect(() => renderQuestionSections({scope_questions: [], packages: []})).toThrow(
+            expect.objectContaining({code: "DERIVED_STATE_REQUIRED"}),
+        );
+
+        expect(validateDraftDocument(MAIN_DRAFT, {kind: "main"})).toMatchObject({
+            valid: false,
+            errors: expect.arrayContaining([
+                expect.stringContaining("DERIVED_STATE_REQUIRED"),
+            ]),
+        });
+    });
+
     it("validates the full rendered package layout in a draft", () => {
         const openDraft = MAIN_DRAFT
             .replace("plan_status: review-pending", "plan_status: awaiting-package-decisions")
-            .replace("package_decision_gate: closed", "package_decision_gate: open")
             .replace(
                 /## Decisions and open questions[\s\S]*?(?=\n## Evidence, risks and review)/,
                 `${EXPECTED_MARKDOWN}\n`,
             );
-        expect(validateDraftDocument(openDraft, {kind: "main"}).valid).toBe(true);
+        expect(validateDraftDocument(openDraft, {kind: "main", derived_state: {package_decision_gate: "open"}}).valid).toBe(true);
 
         const malformed = openDraft.replace("#### Pytania nieblokujące", "#### Brakująca sekcja");
-        expect(validateDraftDocument(malformed, {kind: "main"}).errors).toContain(
+        expect(validateDraftDocument(malformed, {kind: "main", derived_state: {package_decision_gate: "open"}}).errors).toContain(
             "WP1 is missing #### Pytania nieblokujące.",
         );
     });
 
     it("does not expose package decisions while the gate is closed", () => {
-        const markdown = renderQuestionSections({...QUESTIONS, package_decision_gate: "closed"});
+        const markdown = renderQuestionSections({...QUESTIONS, derived_state: {package_decision_gate: "closed"}});
 
         expect(markdown).toContain("### Decyzje pakietowe");
         expect(markdown).toContain("package_decision_gate` jest zamknięta");
@@ -268,47 +303,17 @@ describe("task-plan question contract", () => {
     });
 
     it("rejects draft and state lifecycle mismatches", () => {
-        const state = {
+        const state = createValidPlanState({
             plan_status: "review-pending",
-            package_decision_gate: "closed",
             plan_version: 1,
             packages: [],
             findings: [],
             review_history: [],
             decisions: [],
             simplification: {result: "pending"},
-            simplification_status: "pending",
             blockers: [],
             scope_questions: [],
-            session_strategy: {
-                mode: "staged",
-                rationale: "Initial review is separate from package decisions.",
-                stages: [{
-                    id: "S1",
-                    title: "Review",
-                    rationale: "Complete review before package decisions.",
-                    work_package_ids: [],
-                    dependencies: [],
-                    session_boundary: "same-session",
-                    entry_criteria: ["Draft exists."],
-                    exit_criteria: ["Review complete."],
-                }],
-                session_boundary_recommendation: "Continue after review.",
-                dependencies: [],
-                entry_criteria: ["Intent confirmed."],
-                exit_criteria: ["Questions are explicit."],
-            },
-            ownership_redundancy_review: {
-                required: false,
-                requirement_basis: "not-applicable",
-                requirement_decision_ref: "",
-                status: "not-required",
-                subjects: [],
-            },
-            review_complete: false,
-            critical_review_complete: false,
-            simplification_control_review_complete: false,
-        };
+        });
         const parsed = parseDraftDocument(MAIN_DRAFT);
         const projectedDraft = serializeFrontMatter(parsed.metadata)
             + replaceSessionStrategySection(parsed.body, renderSessionStrategyProjection(state.session_strategy));
@@ -320,12 +325,10 @@ describe("task-plan question contract", () => {
         expect(mismatch.valid).toBe(false);
         expect(mismatch.errors).toContain("Draft/state plan_status mismatch: draft=review-pending, state=needs-clarification.");
 
-        const gateMismatch = validatePlanDocument(projectedDraft, {
+        expect(validatePlanDocument(projectedDraft, {
             kind: "main",
-            state: {...state, package_decision_gate: "open"},
-        });
-        expect(gateMismatch.valid).toBe(false);
-        expect(gateMismatch.errors).toContain("Plan state package_decision_gate must be closed for review-pending.");
+            state,
+        }).valid).toBe(true);
     });
 });
 

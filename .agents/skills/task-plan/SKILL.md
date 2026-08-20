@@ -26,7 +26,7 @@ shared_files:
 ## Status i zakres
 
 Task-plan jest właścicielem analizy, review i akceptacji planu realizacji. Jego
-wynikiem jest dokument Markdown w `docs/draft/`, a nie wykonanie funkcjonalności.
+wynikiem jest dokument Markdown w `docs/plan/`, a nie wykonanie funkcjonalności.
 Skill zachowuje kontrakty bloków A–E: rozdzielenie źródła od workflow, profile
 materiału, work packages, review, auto-uproszczenie, jawne decyzje użytkownika,
 deterministyczne drafty oraz integrację z `$gh-issue-start`.
@@ -50,6 +50,22 @@ Task-plan nie wykonuje:
 - tworzenia, modyfikowania ani zamykania issue GitHub;
 - tworzenia nowych issue dla wydzielonych pakietów;
 - uznania planu za ukończony bez terminalnej decyzji użytkownika dla każdego WP.
+
+### Krótka procedura operacyjna
+
+1. Ustal trigger, source identity i jawny `input_profile`, a następnie zapisz
+   minimalny draft w `docs/plan/` przez state store.
+2. Wykonaj source/context wyłącznie według `context_requirements.blocking`;
+   pusty zbiór kończy bramkę bez scouta, a niepusty wymaga jednego canonical
+   hybrid lifecycle.
+3. Zapisuj review, findings, pytania i decyzje w canonical state. Do sprawdzania
+   gotowości używaj `canOpenPackageDecisions(state)` i `canApprovePlan(state)`;
+   nie ustawiaj wartości pochodnych bezpośrednio.
+4. Po każdej mutacji zapisz projekcję draftu i checkpoint. Pytanie można pokazać
+   dopiero po jego zapisie; po `PROJECTION_STALE` dozwolone jest wyłącznie
+   `retryProjection` albo jawny restart.
+5. Po terminalnych decyzjach wszystkich WP przejdź do handoffu i pokaż jawny
+   wybór dalszego działania. Task-plan nie uruchamia implementacji.
 
 ## Zasada nadrzędna i granice danych
 
@@ -96,6 +112,9 @@ intake → initial-draft → source/context → review → decisions → handoff
 Dozwolone przejścia są liniowe. `review` może wrócić do `source/context`, gdy
 zmieniły się kryteria blocking albo strategia. `decisions` może wrócić do
 `review`, gdy decyzja zmienia zakres, kryteria, zależności lub strategię.
+Domyślne checkpointy zawsze wskazują kierunek forward z diagramu, czyli
+`review → decisions` oraz `decisions → handoff`; rollback wymaga jawnego
+`next_phase` i nie wynika z kolejności wpisów w tabeli dozwolonych przejść.
 Pozostałe cofnięcia wymagają jawnego restartu planu z nową tożsamością
 wykonania; nie wolno cicho odtwarzać niekompletnej pary artefaktów ani udawać
 resume po utracie danych.
@@ -142,6 +161,16 @@ Wykonano: <obserwowalne operacje i wynik>
 Następny dozwolony krok: <jedna dozwolona akcja albo restart>
 Niedozwolone jeszcze: <akcje zablokowane przez kontrakt>
 ```
+
+`state.mjs` jest jedynym właścicielem semantyki checkpointu i przejścia fazy.
+Ogólna walidacja dopuszcza checkpoint starszy od `state.revision` podczas pracy
+wewnątrz fazy, ale zmiana fazy wymaga dokładnie:
+`checkpoint.phase == workflow_phase`, `checkpoint.next_phase == target`,
+`checkpoint.state_revision == state.revision` oraz `workflow_outcome == running`.
+Zwykła mutacja zwiększa tylko `state.revision` i przez to unieważnia poprzedni
+checkpoint; revision checkpointu ustawiają wyłącznie mutacje, które faktycznie
+zapisują checkpoint, w tym `create-initial`, `checkpoint` i
+`workflow-phase-transition`.
 
 `workflow_outcome` jest osobnym wynikiem sterowania wykonaniem i przyjmuje
 wyłącznie:
@@ -259,8 +288,11 @@ Profil opisuje kompletność materiału, nie autorytet autora:
 
 `title-only` od initial state używa statusu `needs-clarification` i nie zawiera
 work packages gotowych do akceptacji. Nie wolno wymyślać przyczyny, kryteriów ani
-szczegółowych zmian. Brak body lub komentarzy jest profilem `title-only`, a nie
-błędem technicznym.
+szczegółowych zmian. Profil jest jawną decyzją orkiestratora. Adaptery wymagają
+`input_profile` albo `profile_hint`, sprawdzają wartość względem tego enumu i nie
+wybierają profilu na podstawie długości body, nagłówków, słów kluczowych ani
+komentarzy. Brak profilu jest błędem kontraktu przed `create-initial`; agent pyta
+zamiast ustawiać domyślny `brief-request`.
 
 ### Ocena materiału
 
@@ -292,7 +324,7 @@ nie może ukrywać pytań ani przedstawiać hipotez jako zaakceptowanych wymaga�
 ## Draft jako żywy artefakt
 
 Po przejściu bramki intencji task-plan najpierw tworzy atomowo główny draft w
-`docs/draft/`, a dopiero potem pobiera źródło lub wykonuje rozpoznanie. Kolejność
+`docs/plan/`, a dopiero potem pobiera źródło lub wykonuje rozpoznanie. Kolejność
 jest obowiązkowa:
 
 1. ustal stabilną tożsamość wejścia i ścieżkę;
@@ -309,14 +341,25 @@ zmaterializowane w drafcie. Draft jest artefaktem roboczym, nie kopią źródła
 
 ### Stabilna ścieżka, metadane i sekcje
 
+Przed utworzeniem initial draftu ustalane są wyłącznie dane minimalnego source
+envelope: `source_kind`, `source_ref`, istniejący `title`, jawny `input_profile`
+oraz — jeśli dotyczy — `repository_root`, `branch` i `base_ref`. Status transportu
+jest ustawiany jawnie: `user-input` i `file` mają `not-required`, a zewnętrzny
+GitHub issue przed fetch ma `pending`. Pełne czytanie pliku, fetch i discovery
+należą dopiero do `source/context`.
+
 Nazwy draftów wynikają wyłącznie ze stabilnej tożsamości:
 
 ```text
-github issue:       docs/draft/issue-<id>-plan.md
-derived package:    docs/draft/issue-<id>-wp-<wpid>-plan.md
-file source:        docs/draft/task-file-<slug>-plan.md
-user input:         docs/draft/task-<slug>-plan.md
+ github issue:       docs/plan/issue-<id>-plan.md
+ derived package:    docs/plan/issue-<id>-wp-<wpid>-plan.md
+ file source:        docs/plan/task-file-<slug>-plan.md
+ user input:         docs/plan/task-<slug>-plan.md
 ```
+
+`docs/plan/` jest domyślnym `draftRoot` zarówno dla API, jak i CLI. Integracja
+może przekazać jawny, względny `draftRoot` pozostający wewnątrz repozytorium;
+override nie zmienia formatu draftu ani własności state store.
 
 Slugowanie dla file/user-input korzysta z:
 
@@ -327,12 +370,21 @@ Slugowanie dla file/user-input korzysta z:
 
 Minimalny front matter głównego draftu zawiera `source_kind`, `source_ref`,
 `issue` (jeśli dotyczy), `title`, `input_profile`, `plan_status`,
-`package_decision_gate`, `plan_version`, `simplification_status` i
-`source_fetch_status`. Pola `fetched_at` i `source_updated_at` występują dopiero
+`plan_version` i `source_fetch_status`. `package_decision_gate`,
+`review_complete`, `critical_review_complete`, `simplification_status` oraz
+`simplification_control_review_complete` są wartościami wyliczanymi i nie mogą
+trafić do front matter. Pola `fetched_at` i `source_updated_at` występują dopiero
 przy `source_fetch_status: complete`. Draft pochodny dodaje `parent_draft` oraz
 `work_package_id` i zachowuje `source_kind: derived-work-package`.
-Brak `source_fetch_status` jest błędem schema v2; walidator nie wnioskuje
-historycznego statusu z obecności timestampów.
+Canonical state schema v3 przechowuje jawne `source_kind`; brak `source_kind`
+albo `source_fetch_status` jest błędem. Status `not-required` dotyczy wyłącznie
+`user-input`, `file` i `derived-work-package`, nie zawiera timestampów ani pól
+błędu. `github-issue` używa wyłącznie `pending`, `complete` albo `failed`, a
+mutacje source-fetch dla innych rodzajów źródła są odrzucane przed zapisem.
+Walidator nie wnioskuje rodzaju ani statusu z tożsamości lub timestampów.
+Wartości bramki, kompletności review i wyniku uproszczenia są wyliczane przez
+selektory `state.mjs` i pozostają widoczne wyłącznie w generated state section;
+nie powstają jako drugie źródło prawdy w state ani front matter.
 
 Poza front matter finalny draft ma każdą z poniższych sekcji dokładnie raz:
 
@@ -424,6 +476,24 @@ Zasady:
 
 Nie istnieje bezpośrednia ścieżka do scouta. Scout nie uruchamia helpera,
 innego agenta, QA, review ani implementacji.
+
+### Jedyna bramka `source/context`
+
+Decyzja o repository-context nie wynika z `source_kind`, profilu ani słów
+kluczowych. W fazie `source/context` obowiązuje jeden algorytm:
+
+1. jeśli `source_fetch_status == pending`, pobierz zewnętrzne źródło;
+2. błąd fetchu zapisuje `failed`, checkpoint i `workflow_outcome: blocked`, po
+   czym przebieg się zatrzymuje;
+3. oceń, jakich dowodów repozytorium wymaga uczciwy plan i zapisz je w
+   `context_requirements.blocking`;
+4. puste `blocking` oznacza brak scouta i pozwala przejść do review;
+5. niepuste `blocking` wymaga dokładnie jednego canonical hybrid lifecycle;
+6. do review przejdź dopiero po spełnieniu bramki źródła, dowodów i świeżego
+   checkpointu bieżącej fazy.
+
+`context_requirements.follow_up` pozostaje długiem dowodowym i nie trafia do
+kryteriów bieżącego hybrid runu ani nie blokuje przejścia.
 
 ### Granica blocking i follow-up
 
@@ -569,12 +639,12 @@ separate: WP5
 `pending` i tworzy osobny rekord decyzji dla każdego. Pakiet terminalny nie
 pokazuje zwykłych akcji decyzyjnych.
 
-`package_decision_gate` jest `closed` dla `review-pending` i
-`needs-clarification`, a `open` dopiero po kompletnym critical review,
-kontrolnym review uproszczenia, usunięciu blockerów, zakończeniu pytań
-zakresowych oraz wymaganym `ownership_redundancy_review`. Przed `approved`
-wymagany jest terminalny (`accepted`, `excluded` albo `separated`) stan każdego
-pakietu. Zależności zapisuj jako graf, np.:
+Wyliczony `package_decision_gate` jest `open` wyłącznie wtedy, gdy selector
+`canOpenPackageDecisions(state)` nie zwraca powodów blokady: review bieżącego
+`plan_version`, kontrolny review uproszczenia, blockerów, pytań zakresowych i
+wymaganego `ownership_redundancy_review`. `plan_status` pozostaje osobnym polem;
+przejście do `awaiting-package-decisions` jest dopiero jawnym otwarciem tej
+gotowej bramki. Przed `approved` wymagany jest terminalny (`accepted`, `excluded` albo `separated`) stan każdego pakietu. Zależności zapisuj jako graf, np.:
 
 ```text
 WP2 depends_on WP1
@@ -587,7 +657,7 @@ wpływem na zakres, kryteria lub testowanie. Przy niepewności zapisz pytanie.
 Po jawnej decyzji `separate` task-plan tworzy osobny draft, nie issue:
 
 ```text
-docs/draft/issue-<id>-wp-<wpid>-plan.md
+docs/plan/issue-<id>-wp-<wpid>-plan.md
 ```
 
 ```yaml
@@ -617,7 +687,8 @@ status                   # open | resolved | accepted | reopened
 
 Review obejmuje zgodność z intencją i kryteriami, techniczny scope, edge cases,
 weryfikację, ryzyka rozszerzenia zakresu oraz wpływ security, migracji i
-zależności.
+zależności. Critical review ma także obowiązkowe checki `direction-and-simplicity`
+oraz `backward-compatibility`.
 
 Pierwszy review jest `critical-review` i musi zawierać `complete: true` oraz
 wszystkie checki:
@@ -627,10 +698,32 @@ intent-and-acceptance
 technical-scope
 edge-cases-and-verification
 risks-and-dependencies
+direction-and-simplicity
+backward-compatibility
 ```
 
-Stan zapisuje `critical_review_complete: true`. Nie wystarcza niepusty draft,
-sekcja `Evidence, risks and review` ani pozytywna walidacja struktury.
+`direction-and-simplicity` odpowiada na pytania: czy kierunek rozwiązuje cel,
+czy każda abstrakcja jest konieczna, czy mniejsza zmiana osiągnęłaby ten sam
+rezultat oraz dlaczego odrzucono prostszy wariant. Jeśli prostszy wariant istnieje,
+agent przedstawia go przed decyzjami pakietowymi i aktualizuje plan; jeśli pozostaje
+wariant złożony, review zapisuje konkretne uzasadnienie. Ten check ocenia kierunek,
+a późniejsze auto-uproszczenie usuwa wyłącznie duplikaty i nadmiarowe szczegóły.
+
+`backward-compatibility` potwierdza ocenę potrzeby kompatybilności. Jeśli poza samą
+migracją bazy danych pozostaje nierozstrzygnięta potrzeba zachowania starego
+kontraktu, agent zapisuje granicę, koszt i warianty, a następnie tworzy istniejącym
+mechanizmem blokujące `scope_question`. Pytanie brzmi:
+
+> Czy dana funkcjonalność ma zachować kompatybilność wsteczną, czy rozwiązanie ma
+> być jednolite i bez migracji kompatybilności, fallbacków, adapterów legacy ani
+> równoległych ścieżek starego kontraktu?
+
+Sama migracja bazy danych nie uruchamia pytania. Fallback odpornościowy, retry i
+canonical hybrid fallback również nie są sygnałem kompatybilności. Istniejąca
+decyzja użytkownika jest materializowana jako resolved `scope_question` i
+`user_decision`, bez ponownego pytania. Nierozstrzygnięte pytanie zamyka bramkę
+decyzji pakietowych. Stan ukończenia review wynika z kompletnego wpisu historii
+dla bieżącego `plan_version`; nie zapisuj osobnej flagi `critical_review_complete`.
 
 ### Limit i historia review
 
@@ -695,8 +788,9 @@ brak `affected_refs` albo `pending` blokuje kolejne pytania, bramkę i approval.
 
 Semantyczna zmiana planu przechodzi przez jedną mutację `plan-revision`,
 dozwoloną wyłącznie w fazie `review`. Mutacja przyjmuje pełny, walidowany snapshot
-`packages`, `findings` i `session_strategy`, wymaga powodu i zwiększa
-`plan_version` tylko przy rzeczywistej zmianie. Opcjonalny
+`packages`, `findings`, `scope_questions` i `session_strategy`, wymaga powodu i
+zwiększa `plan_version` tylko przy rzeczywistej zmianie. Snapshot pytań jest
+projekowany do draftu przed emisją pytania. Opcjonalny
 `propagated_decision_ref` atomowo oznacza decyzję jako `propagated`, ale tylko
 gdy snapshot pokrywa jej referencje `WP<number>.*` i `session_strategy`.
 Nieobsługiwane referencje są błędem; nie stosuj dynamicznych patchy ścieżek.
@@ -719,9 +813,10 @@ i ograniczenia bezpieczeństwa. Wynik kontrolnego review to:
 no-change | simplified | needs-user-decision
 ```
 
-Zapisz `simplification_control_review_complete: true`. `needs-user-decision`
-blokuje bramkę; nowy actionable finding wraca do zwykłego review, bez kolejnego
-auto-uproszczenia dla tej samej wersji.
+`no-change` albo `simplified` wylicza ukończony control review z
+`simplification.result`; `needs-user-decision` blokuje bramkę. Nowy actionable
+finding wraca do zwykłego review, bez kolejnego auto-uproszczenia dla tej samej
+wersji.
 
 ## Warunkowy review ownership i redundancji
 
@@ -888,8 +983,8 @@ Ich odpowiedzialności są rozdzielone:
 - `atomic-file.mjs`: bezpieczny zapis i rename pojedynczego artefaktu;
 - `draft.mjs`: tożsamość, ścieżka, front matter, initial draft, sekcje,
   pytania, resume i atomowy zapis;
-- `state.mjs`: przejścia statusów, bramka WP, strategia, pytania, decyzje i
-  `plan-revision` oraz czyste mutacje i walidacja kanonicznego state;
+- `state.mjs`: przejścia statusów, bramka WP, strategia, pytania, decyzje,
+  `plan-revision`, canonical state schema v3 oraz czyste mutacje i walidacja;
 - `state-store.mjs`: lifecycle `virtual-initial`/`persisted`, materializacja
   state, revision preconditions, projekcja draftu, jawny retry projekcji i zapis
   checkpointów;
@@ -930,14 +1025,23 @@ node <skill_dir>/scripts/state-store.mjs update \
   --plan ./var/agent/task-plan/plan-input.json \
   --type create-initial --payload '{}'
 node <skill_dir>/scripts/draft.mjs validate \
-  --file ./docs/draft/issue-123-plan.md
+   --file ./docs/plan/issue-123-plan.md \
+   --state ./var/agent/task-plan/issue-123/state.json
 node <skill_dir>/scripts/state.mjs parse-command \
   --value "accept-selected: WP1, WP2"
 node <skill_dir>/scripts/draft.mjs render-questions \
   --file ./tests/fixtures/task-plan/questions.json
 node <skill_dir>/scripts/validate-plan.mjs validate \
-  --file ./docs/draft/issue-123-plan.md
+   --file ./docs/plan/issue-123-plan.md \
+   --state ./var/agent/task-plan/issue-123/state.json
 ```
+
+Walidacja układu pytań wymaga canonical state albo jawnego `derived_state`;
+brak tej informacji zwraca `DERIVED_STATE_REQUIRED`, zamiast pomijać kontrolę
+`package_decision_gate`. Wejście `render-questions` musi zawierać
+`derived_state.package_decision_gate`. `STALE_CHECKPOINT` i
+`SOURCE_FETCH_NOT_APPLICABLE` są odrzuceniami kontraktowymi CLI z kodem wyjścia
+`1`, nie błędami środowiska.
 
 Operacje zapisu wywołuj przez eksportowane funkcje z kontrolą atomowości.
 `writeSeparatedDraft` przy błędzie zapisu rodzica zwraca `package_status:
@@ -945,7 +1049,9 @@ pending` i nie nadpisuje rodzica. `refreshSource` wymaga `explicit: true`.
 State store jest jedyną produkcyjną ścieżką tworzenia initial state i draftu.
 Initial projection używa profilu state, zachowuje trzy sekcje profilu
 `detailed-plan`, renderuje kanoniczne `state.session_strategy` i jest walidowana
-przed atomowym zapisem.
+przed atomowym zapisem. Projekcja przyjmuje znormalizowany source envelope;
+brak `source_kind` albo źródłowej tożsamości jest błędem, a state store nie
+wnioskuje profilu ani statusu transportu z treści źródła.
 Nie odtwarza pojedynczego artefaktu: obecność tylko draftu albo tylko state
 zwraca `ARTIFACT_SET_INCOMPLETE` i wymaga jawnego restartu. Nieudana projekcja
 zwraca `PROJECTION_STALE`, blokuje kolejne pytania/review/decyzje i może zostać

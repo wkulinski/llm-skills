@@ -11,10 +11,12 @@ import {
     createInitialState,
     parseDecisionCommand,
     validateTaskPlanState,
+    REQUIRED_REVIEW_CHECKS,
     WORKFLOW_OUTCOMES,
 } from "../../../.agents/skills/task-plan/scripts/state.mjs";
 import {normalizeGitHubIssue} from "../../../.agents/skills/task-plan/scripts/source.mjs";
 import {validateFinalApproval} from "../../../.agents/skills/task-plan/scripts/validate-plan.mjs";
+import {createCompletedCriticalReview} from "./task-plan-test-helpers.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../");
 const SKILL_PATH = path.join(ROOT, ".agents/skills/task-plan/SKILL.md");
@@ -136,7 +138,7 @@ describe("task-plan workflow scenarios", () => {
             comments: trigger.input.comments,
             branch: "issue/123-add-support",
             base: "origin/main",
-        }, {fetchedAt: "2026-01-01T00:00:00Z"});
+        }, {profileHint: "title-only", sourceFetchStatus: "pending"});
         const metadata = buildDraftMetadata(source, {now: "2026-01-01T00:00:00Z"});
 
         expect(source.input_profile).toBe(trigger.expected.profile);
@@ -166,23 +168,8 @@ describe("task-plan workflow scenarios", () => {
                 decision_source: "user",
                 decided_at: "2026-01-01T00:00:00Z",
             }],
-            review_history: [{
-                iteration: 1,
-                plan_version: 1,
-                stage: "critical-review",
-                complete: true,
-                checks: [
-                    "intent-and-acceptance",
-                    "technical-scope",
-                    "edge-cases-and-verification",
-                    "risks-and-dependencies",
-                ],
-            }],
-            review_complete: true,
-            critical_review_complete: true,
-            simplification_status: "no-change",
+            review_history: [createCompletedCriticalReview()],
             simplification: {result: "no-change"},
-            simplification_control_review_complete: true,
             blockers: [],
             findings: [],
             scope_questions: [],
@@ -232,7 +219,7 @@ describe("task-plan workflow scenarios", () => {
             comments: [],
             branch: "issue/458-async-grid-actions",
             base: "origin/main",
-        }, {fetchedAt: "2026-01-01T00:00:00Z"});
+        }, {profileHint: "specification", sourceFetchStatus: "pending"});
 
         expect(buildDraftMetadata(source, {now: "2026-01-01T00:00:00Z"}).plan_status).toBe("review-pending");
     });
@@ -272,7 +259,7 @@ describe("task-plan status transitions", () => {
 
 describe("task-plan draft operations", () => {
     it("builds the stable main draft path from the issue number and title", () => {
-        const pathName = `docs/draft/issue-${DRAFT_OPERATIONS.main.issue}-plan.md`;
+        const pathName = `docs/plan/issue-${DRAFT_OPERATIONS.main.issue}-plan.md`;
 
         expect(pathName).toBe(DRAFT_OPERATIONS.main.expected_path);
     });
@@ -287,9 +274,7 @@ describe("task-plan draft operations", () => {
             title: "Original issue title",
             input_profile: "brief-request",
             plan_status: "review-pending",
-            package_decision_gate: "closed",
             plan_version: "1",
-            simplification_status: "pending",
         });
         expect(DRAFT_OPERATIONS.main.source_identity).toBe("acme/demo/123");
         expectDraftSections(MAIN_DRAFT);
@@ -297,7 +282,7 @@ describe("task-plan draft operations", () => {
     });
 
     it("builds the stable derived draft path and keeps the separate-work-package contract", () => {
-        const pathName = `docs/draft/issue-${DRAFT_OPERATIONS.derived.issue}-wp-${DRAFT_OPERATIONS.derived.work_package_id.toLowerCase()}-plan.md`;
+        const pathName = `docs/plan/issue-${DRAFT_OPERATIONS.derived.issue}-wp-${DRAFT_OPERATIONS.derived.work_package_id.toLowerCase()}-plan.md`;
         const metadata = parseFrontMatter(DERIVED_DRAFT);
 
         expect(pathName).toBe(DRAFT_OPERATIONS.derived.expected_path);
@@ -452,14 +437,31 @@ describe("task-plan WP1 phase contract", () => {
         expect(sourceContextTransition).toBeGreaterThan(firstWrite);
         expect(draftContract).toContain("nie dopracowuj provisional WP");
     });
+
+    it("uses one source/context gate based on blocking requirements", () => {
+        expect(normalizedSkill).toContain("Decyzja o repository-context nie wynika z `source_kind`");
+        expect(normalizedSkill).toContain("puste `blocking` oznacza brak scouta");
+        expect(normalizedSkill).toContain("niepuste `blocking` wymaga dokładnie jednego canonical hybrid lifecycle");
+        expect(normalizedSkill).toContain("`context_requirements.follow_up` pozostaje długiem dowodowym");
+    });
 });
 
 describe("task-plan canonical state contract", () => {
+    it("requires direction and compatibility checks in the canonical critical review gate", () => {
+        expect(REQUIRED_REVIEW_CHECKS).toEqual(expect.arrayContaining([
+            "direction-and-simplicity",
+            "backward-compatibility",
+        ]));
+    });
+
     it("keeps workflow outcome separate from the domain plan status", () => {
         const state = createInitialState({
             plan_id: "contract-state",
-            draft_path: "docs/draft/contract-state.md",
+            draft_path: "docs/plan/contract-state.md",
             source_identity: "user:contract-state",
+            source_kind: "user-input",
+            input_profile: "brief-request",
+            source_fetch_status: "not-required",
         }, {now: "2026-01-01T00:00:00Z"});
         state.workflow_outcome = "blocked";
 
@@ -471,16 +473,19 @@ describe("task-plan canonical state contract", () => {
     it("keeps the four version concepts explicit in the contract", () => {
         const state = createInitialState({
             plan_id: "contract-versions",
-            draft_path: "docs/draft/contract-versions.md",
+            draft_path: "docs/plan/contract-versions.md",
             source_identity: "user:contract-versions",
+            source_kind: "user-input",
             plan_version: 7,
+            input_profile: "brief-request",
+            source_fetch_status: "not-required",
         }, {now: "2026-01-01T00:00:00Z"});
 
         expect(state).toHaveProperty("schema_version");
         expect(state).toHaveProperty("revision");
         expect(state).toHaveProperty("plan_version");
         expect(state).toHaveProperty("checkpoint.state_revision");
-        expect(state.schema_version).toBe(2);
+        expect(state.schema_version).toBe(3);
         expect(state.revision).toBe(0);
         expect(state.plan_version).toBe(7);
         expect(state.checkpoint.state_revision).toBe(state.revision);

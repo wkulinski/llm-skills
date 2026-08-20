@@ -10,9 +10,11 @@ import {
     buildDraftMetadata,
     parseDraftDocument,
     replaceGeneratedStateSection,
+    replaceQuestionSection,
     replaceSessionStrategySection,
     renderGeneratedStateSection,
     renderInitialDraftDocument,
+    renderQuestionSections,
     renderSessionStrategyProjection,
     serializeFrontMatter,
     validateDraftDocument,
@@ -21,6 +23,8 @@ import {
     applyStateMutation,
     MUTATION_TYPES,
     createInitialState,
+    selectDerivedState,
+    StateError,
     validateTaskPlanState,
 } from "./state.mjs";
 
@@ -37,6 +41,8 @@ const CLI_CONTRACT_REJECTIONS = new Set([
     "INVALID_MUTATION",
     "EXPECTED_REVISION_REQUIRED",
     "STALE_REVISION",
+    "STALE_CHECKPOINT",
+    "SOURCE_FETCH_NOT_APPLICABLE",
     "WORKFLOW_BLOCKED",
     "PROJECTION_STALE",
     "RESTART_REQUIRED",
@@ -314,9 +320,6 @@ function assertExpectedRevision(plan, state, mutation) {
 function updateMutationBookkeeping(nextState, current, now) {
     nextState.revision = current.revision + 1;
     nextState.updated_at = now;
-    if (nextState.checkpoint) {
-        nextState.checkpoint.state_revision = nextState.revision;
-    }
 }
 
 function projectAndFinalize(plan, state, initial, now, options) {
@@ -414,7 +417,7 @@ function projectDraft(plan, state, initial, paths, options) {
 }
 
 function renderInitialProjection(plan, state) {
-    const source = projectionSource(plan);
+    const source = projectionSource(plan, state);
     const metadata = buildDraftMetadata(source, {
         source_fetch_status: state.source_fetch_status,
         fetched_at: state.fetched_at,
@@ -426,7 +429,7 @@ function renderInitialProjection(plan, state) {
         {...metadata, ...projectionMetadata(state)},
         {state, source},
     );
-    const validation = validateDraftDocument(content, {kind: "main"});
+    const validation = validateDraftDocument(content, {kind: "main", state});
     if (!validation.valid) {
         throw new StateStoreError("INVALID_DRAFT_PROJECTION", validation.errors.join(" "), {errors: validation.errors});
     }
@@ -449,41 +452,73 @@ function renderStateProjection(plan, state, paths) {
     const source = plan.fsOps.readFileSync(paths.draftPath, "utf8");
     const parsed = parseDraftDocument(source);
     const metadata = {...parsed.metadata};
-    for (const key of ["fetched_at", "source_updated_at", "source_fetch_error", "source_fetch_failed_at"]) {
+    for (const key of [
+        "fetched_at",
+        "source_updated_at",
+        "source_fetch_error",
+        "source_fetch_failed_at",
+        "package_decision_gate",
+        "simplification_status",
+        "review_complete",
+        "critical_review_complete",
+        "simplification_control_review_complete",
+    ]) {
         delete metadata[key];
     }
     Object.assign(metadata, projectionMetadata(state));
     const generatedBody = replaceGeneratedStateSection(parsed.body, renderGeneratedStateSection(state));
-    const body = replaceSessionStrategySection(generatedBody, renderSessionStrategyProjection(state.session_strategy));
+    const questionBody = replaceQuestionSection(generatedBody, renderQuestionSections({
+        ...state,
+        derived_state: selectDerivedState(state),
+    }));
+    const body = replaceSessionStrategySection(questionBody, renderSessionStrategyProjection(state.session_strategy));
     return `${serializeFrontMatter(metadata)}${body}`;
 }
 
-function projectionSource(plan) {
-    if (plan.source && typeof plan.source === "object") {
-        return plan.source;
+function projectionSource(plan, state) {
+    const source = plan.source && typeof plan.source === "object"
+        ? {...plan.source}
+        : {
+            source_kind: plan.source_kind,
+            source_ref: plan.source_ref,
+            title: plan.title,
+            issue_number: plan.issue_number,
+            owner: plan.owner,
+            repo: plan.repo,
+        };
+    const hasSourceRef = typeof source.source_ref === "string" && source.source_ref.trim() !== "";
+    const canDeriveGitHubRef = source.source_kind === "github-issue"
+        && typeof source.owner === "string" && source.owner.trim() !== ""
+        && typeof source.repo === "string" && source.repo.trim() !== ""
+        && typeof (source.issue_number ?? source.issue) !== "undefined";
+    if (typeof source.source_kind !== "string" || source.source_kind.trim() === ""
+        || (!hasSourceRef && !canDeriveGitHubRef)) {
+        throw new StateStoreError(
+            "INVALID_SOURCE_ENVELOPE",
+            "Initial draft projection requires source_kind and a source_ref or derivable GitHub source identity from the normalized source envelope.",
+        );
     }
     return {
-        source_kind: plan.source_kind ?? "user-input",
-        source_ref: plan.source_ref ?? serializeIdentity(plan.source_identity),
-        title: plan.title ?? "Pending title",
-        input_profile: plan.input_profile ?? "brief-request",
-        issue_number: plan.issue_number,
-        owner: plan.owner,
-        repo: plan.repo,
+        ...source,
+        input_profile: state.input_profile,
+        source_fetch_status: state.source_fetch_status,
+        fetched_at: state.fetched_at,
+        source_updated_at: state.source_updated_at,
+        source_fetch_error: state.source_fetch_error,
+        source_fetch_failed_at: state.source_fetch_failed_at,
     };
 }
 
 function projectionMetadata(state) {
     const metadata = {
         source_identity: serializeIdentity(state.source_identity),
+        input_profile: state.input_profile,
         workflow_phase: state.workflow_phase,
         workflow_outcome: state.workflow_outcome,
         state_revision: String(state.revision),
         source_fetch_status: state.source_fetch_status,
         plan_status: state.plan_status,
-        package_decision_gate: state.package_decision_gate,
         plan_version: String(state.plan_version),
-        simplification_status: state.simplification_status,
     };
     if (state.source_fetch_status === "complete") {
         metadata.fetched_at = state.fetched_at;
@@ -491,9 +526,7 @@ function projectionMetadata(state) {
     }
     if (state.source_fetch_status === "failed") {
         metadata.source_fetch_error = state.source_fetch_error;
-        if (state.source_fetch_failed_at) {
-            metadata.source_fetch_failed_at = state.source_fetch_failed_at;
-        }
+        metadata.source_fetch_failed_at = state.source_fetch_failed_at;
     }
     return metadata;
 }
@@ -644,7 +677,7 @@ function main(args) {
         process.stdout.write(`${JSON.stringify(result)}\n`);
         return result.ok === false || result.code === ARTIFACT_SET_INCOMPLETE ? 1 : 0;
     } catch (error) {
-        const result = error instanceof StateStoreError
+        const result = error instanceof StateStoreError || error instanceof StateError
             ? {valid: false, code: error.code, message: error.message}
             : {valid: false, code: "UNEXPECTED_ERROR", message: String(error)};
         process.stdout.write(`${JSON.stringify(result)}\n`);
