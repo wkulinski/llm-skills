@@ -8,9 +8,11 @@ import {writeFileAtomic} from "./atomic-file.mjs";
 import {slugifyTitle} from "../../_shared/scripts/slugify-title.mjs";
 import {
     DEFAULT_SESSION_STRATEGY,
+    INPUT_PROFILES,
     PLAN_STATUSES,
-    SIMPLIFICATION_STATUSES,
+    selectDerivedState,
     SOURCE_FETCH_STATUSES,
+    SOURCE_KINDS,
     TERMINAL_PACKAGE_STATUSES,
     validateQuestionRecords,
     validateSessionStrategy,
@@ -52,21 +54,10 @@ export const DETAILED_PLAN_SECTIONS = Object.freeze([
     "## Revised plan",
 ]);
 
-export const SOURCE_KINDS = Object.freeze([
-    "github-issue",
-    "file",
-    "user-input",
-    "derived-work-package",
-]);
-
-export const INPUT_PROFILES = Object.freeze([
-    "title-only",
-    "brief-request",
-    "specification",
-    "detailed-plan",
-]);
+export {INPUT_PROFILES, SOURCE_KINDS};
 
 const CLI_CONTRACT_REJECTIONS = Object.freeze([
+    "DERIVED_STATE_REQUIRED",
     "UNSAFE_PATH",
 ]);
 
@@ -176,7 +167,11 @@ export function validateDraftDocument(document, options = {}) {
     if (missingSections.length > 0) {
         errors.push(`Missing draft sections: ${missingSections.join(", ")}.`);
     }
-    errors.push(...validateQuestionPresentation(parsed.body, parsed.metadata));
+    errors.push(...validateQuestionPresentation(
+        parsed.body,
+        parsed.metadata,
+        options.derived_state ?? options.derivedState ?? (options.state ? selectDerivedState(options.state) : null),
+    ));
     errors.push(...validateSessionStrategyPresentation(parsed.body));
 
     return {
@@ -194,8 +189,21 @@ export function validateDraftMetadata(metadata, options = {}) {
         ...validateMetadataEnums(metadata),
         ...validateMetadataTimestamps(metadata),
         ...validateProfileMetadata(metadata),
+        ...validateDerivedMetadataFields(metadata),
         ...validateKindMetadata(metadata, kind),
     ];
+}
+
+function validateDerivedMetadataFields(metadata) {
+    return [
+        "package_decision_gate",
+        "simplification_status",
+        "review_complete",
+        "critical_review_complete",
+        "simplification_control_review_complete",
+    ]
+        .filter((field) => Object.hasOwn(metadata ?? {}, field))
+        .map((field) => `Derived metadata field must not be stored: ${field}.`);
 }
 
 export function buildSourceIdentity(source) {
@@ -223,7 +231,7 @@ export function buildSourceIdentity(source) {
 }
 
 export function buildDraftPath(source, options = {}) {
-    const draftRoot = safeRelativePath(options.draftRoot ?? "docs/draft", "draftRoot");
+    const draftRoot = safeRelativePath(options.draftRoot ?? "docs/plan", "draftRoot");
     const maxLength = options.maxSlugLength ?? 80;
     const kind = source?.source_kind;
     let filename;
@@ -256,11 +264,9 @@ export function buildDraftMetadata(source, options = {}) {
     const metadata = {
         source_kind: kind,
         source_ref: requireValue(deriveSourceRef(source, kind), "source_ref"),
-        input_profile: source.input_profile ?? "brief-request",
+        input_profile: requireValue(source.input_profile, "input_profile"),
         plan_status: options.planStatus ?? (source.input_profile === "title-only" ? "needs-clarification" : "review-pending"),
-        package_decision_gate: options.packageDecisionGate ?? "closed",
         plan_version: String(options.planVersion ?? 1),
-        simplification_status: options.simplificationStatus ?? "pending",
         source_fetch_status: sourceFetchStatus,
     };
 
@@ -278,11 +284,14 @@ export function buildDraftMetadata(source, options = {}) {
             source.source_fetch_error ?? source.error ?? options.source_fetch_error ?? options.sourceFetchError,
             "source_fetch_error",
         );
+        metadata.source_fetch_failed_at = requireTimestamp(
+            source.source_fetch_failed_at ?? options.source_fetch_failed_at ?? options.sourceFetchFailedAt,
+            "source_fetch_failed_at",
+        );
     }
 
     if (metadata.input_profile === "title-only") {
         metadata.plan_status = "needs-clarification";
-        metadata.package_decision_gate = "closed";
     }
     if (kind === "github-issue") {
         metadata.issue = requireIssueId(source.issue_number ?? source.issue);
@@ -295,7 +304,6 @@ export function buildDraftMetadata(source, options = {}) {
         metadata.parent_issue = requireIssueId(source.issue_number ?? source.issue);
         metadata.work_package_id = requirePackageId(source.work_package_id);
         metadata.plan_status = "needs-clarification";
-        metadata.package_decision_gate = "closed";
     }
 
     return metadata;
@@ -304,9 +312,16 @@ export function buildDraftMetadata(source, options = {}) {
 export function renderQuestionSections(input = {}) {
     const scopeQuestions = input.scope_questions ?? input.scopeQuestions ?? [];
     const packages = input.packages ?? [];
-    const packageDecisionGate = input.package_decision_gate
-        ?? input.packageDecisionGate
-        ?? (["awaiting-package-decisions", "approved"].includes(input.plan_status) ? "open" : "closed");
+    const packageDecisionGate = input.derived_state?.package_decision_gate
+        ?? input.derivedState?.package_decision_gate
+        ?? input.package_decision_gate
+        ?? input.packageDecisionGate;
+    if (typeof packageDecisionGate === "undefined" || packageDecisionGate === null) {
+        throw new DraftError(
+            "DERIVED_STATE_REQUIRED",
+            "Question rendering requires derived_state.package_decision_gate.",
+        );
+    }
     const errors = validateQuestionRecords(scopeQuestions, {scope: "scope"});
 
     if (!["open", "closed"].includes(packageDecisionGate)) {
@@ -460,6 +475,11 @@ export function renderSessionStrategySection(strategy) {
 export function renderInitialDraftDocument(metadata, options = {}) {
     const strategySection = renderSessionStrategyProjection(options.state?.session_strategy ?? DEFAULT_SESSION_STRATEGY).trimEnd();
     const generatedState = options.state ? renderGeneratedStateSection(options.state) : "";
+    const questionSection = renderQuestionSections({
+        scope_questions: options.state?.scope_questions ?? [],
+        packages: options.state?.packages ?? [],
+        derived_state: options.state ? selectDerivedState(options.state) : {package_decision_gate: "closed"},
+    }).trimEnd();
     const sourceBody = typeof options.source?.body === "string" && options.source.body.trim() !== ""
         ? options.source.body.trim()
         : "- Original source material is pending intake.";
@@ -479,10 +499,13 @@ export function renderInitialDraftDocument(metadata, options = {}) {
             "",
         ]
         : [];
+    const sourceStatusLine = metadata.source_fetch_status === "not-required"
+        ? "- Source material is supplied locally or from the conversation; assess it after initial draft creation."
+        : "- Source fetch pending; provenance is recorded after intake.";
     const body = [
         "## Source",
         "",
-        "- Source fetch pending; provenance is recorded after intake.",
+        sourceStatusLine,
         "",
         ...detailedPlanSections,
         strategySection,
@@ -495,15 +518,7 @@ export function renderInitialDraftDocument(metadata, options = {}) {
         "",
         "- None yet.",
         "",
-        "## Decisions and open questions",
-        "",
-        "### Decyzje zakresowe przed decyzjami pakietowymi",
-        "",
-        "- Brak.",
-        "",
-        "### Decyzje pakietowe",
-        "",
-        "- Niedostępne: `package_decision_gate` jest zamknięta. Najpierw zakończ review, uproszczenie i decyzje zakresowe.",
+        questionSection,
         "",
         "## Evidence, risks and review",
         "",
@@ -527,14 +542,23 @@ export function renderInitialDraftDocument(metadata, options = {}) {
 
 export function renderGeneratedStateSection(state) {
     const checkpoint = state?.checkpoint ?? {};
+    const derived = selectDerivedState(state);
     const lines = [
         GENERATED_STATE_START,
         "### Task-plan generated state",
         `- Workflow phase: \`${markdownInline(state?.workflow_phase ?? "unknown")}\``,
         `- Workflow outcome: \`${markdownInline(state?.workflow_outcome ?? "unknown")}\``,
+        `- Input profile: \`${markdownInline(state?.input_profile ?? "unknown")}\``,
         `- Plan status: \`${markdownInline(state?.plan_status ?? "unknown")}\``,
         `- Plan version: \`${markdownInline(state?.plan_version ?? "unknown")}\``,
         `- State revision: \`${markdownInline(state?.revision ?? "unknown")}\``,
+        `- Source fetch status: \`${markdownInline(state?.source_fetch_status ?? "unknown")}\``,
+        `- Package decision gate: \`${markdownInline(derived.package_decision_gate)}\``,
+        `- Package gate reasons: ${derived.package_decision_gate_reasons.length > 0 ? derived.package_decision_gate_reasons.map(markdownInline).join(", ") : "none"}`,
+        `- Review complete: \`${markdownInline(derived.review_complete)}\``,
+        `- Critical review complete: \`${markdownInline(derived.critical_review_complete)}\``,
+        `- Simplification result: \`${markdownInline(derived.simplification_status)}\``,
+        `- Simplification control review complete: \`${markdownInline(derived.simplification_control_review_complete)}\``,
         `- Checkpoint: ${markdownInline(checkpoint.reason ?? "not recorded")}`,
     ];
     if (state?.source_fetch_error) {
@@ -565,6 +589,25 @@ export function replaceSessionStrategySection(body, strategySection) {
 
 export function replaceGeneratedStateSection(body, generatedSection) {
     return replaceMarkedSection(body, generatedSection, GENERATED_STATE_START, GENERATED_STATE_END, "Generated state", true);
+}
+
+export function replaceQuestionSection(body, questionSection) {
+    if (typeof body !== "string" || typeof questionSection !== "string") {
+        throw new DraftError("INVALID_QUESTION_SECTION", "Question projection requires string content.");
+    }
+
+    const heading = "## Decisions and open questions";
+    const startIndex = body.indexOf(heading);
+    if (startIndex < 0) {
+        const separator = body.endsWith("\n") ? "\n" : "\n\n";
+        return `${body}${separator}${questionSection.trimEnd()}\n`;
+    }
+
+    const nextHeadingIndex = body.indexOf("\n## ", startIndex + heading.length);
+    const endIndex = nextHeadingIndex >= 0 ? nextHeadingIndex + 1 : body.length;
+    const prefix = body.slice(0, startIndex);
+    const suffix = body.slice(endIndex);
+    return `${prefix}${questionSection.trimEnd()}\n\n${suffix}`;
 }
 
 function replaceMarkedSection(body, generatedSection, startMarker, endMarker, label, allowMissing = false) {
@@ -603,9 +646,7 @@ function validateRequiredMetadata(metadata) {
         "source_ref",
         "input_profile",
         "plan_status",
-        "package_decision_gate",
         "plan_version",
-        "simplification_status",
         "source_fetch_status",
     ];
 
@@ -628,25 +669,8 @@ function validateMetadataEnums(metadata) {
     if (!PLAN_STATUSES.includes(metadata?.plan_status)) {
         errors.push(`Invalid plan_status: ${metadata?.plan_status ?? ""}.`);
     }
-    if (!SIMPLIFICATION_STATUSES.includes(metadata?.simplification_status)) {
-        errors.push(`Invalid simplification_status: ${metadata?.simplification_status ?? ""}.`);
-    }
     if (!SOURCE_FETCH_STATUSES.includes(metadata?.source_fetch_status)) {
         errors.push(`Invalid source_fetch_status: ${metadata.source_fetch_status ?? ""}.`);
-    }
-    if (Object.hasOwn(metadata, "package_decision_gate")
-        && !["open", "closed"].includes(metadata.package_decision_gate)) {
-        errors.push(`Invalid package_decision_gate: ${metadata.package_decision_gate ?? ""}.`);
-    }
-    if (Object.hasOwn(metadata, "package_decision_gate")) {
-        const packageDecisionStatuses = ["awaiting-package-decisions", "approved"];
-        const reviewStatuses = ["review-pending", "needs-clarification", "review-limit-reached"];
-        if (packageDecisionStatuses.includes(metadata.plan_status) && metadata.package_decision_gate !== "open") {
-            errors.push("Package decision gate must be open before package decisions or approval.");
-        }
-        if (reviewStatuses.includes(metadata.plan_status) && metadata.package_decision_gate !== "closed") {
-            errors.push("Package decision gate must be closed before review is complete.");
-        }
     }
     if (!isPositiveInteger(metadata?.plan_version)) {
         errors.push("plan_version must be a positive integer.");
@@ -670,10 +694,10 @@ function validateSourceMetadata(metadata) {
         return errors;
     }
 
-    if (status === "pending") {
+    if (status === "not-required" || status === "pending") {
         for (const key of ["fetched_at", "source_updated_at", "source_fetch_error", "source_fetch_failed_at"]) {
             if (Object.hasOwn(metadata, key)) {
-                errors.push(`Pending source fetch must not contain ${key}.`);
+                errors.push(`${status} source must not contain ${key}.`);
             }
         }
         return errors;
@@ -696,10 +720,14 @@ function validateSourceMetadata(metadata) {
     if (typeof metadata?.source_fetch_error !== "string" || metadata.source_fetch_error.trim() === "") {
         errors.push("Failed source fetch requires source_fetch_error.");
     }
-    for (const key of ["fetched_at", "source_updated_at", "source_fetch_failed_at"]) {
-        if (typeof metadata?.[key] === "string" && metadata[key].trim() !== ""
-            && Number.isNaN(Date.parse(metadata[key]))) {
-            errors.push(`${key} must be a valid timestamp.`);
+    if (typeof metadata?.source_fetch_failed_at !== "string" || metadata.source_fetch_failed_at.trim() === "") {
+        errors.push("Failed source fetch requires source_fetch_failed_at.");
+    } else if (Number.isNaN(Date.parse(metadata.source_fetch_failed_at))) {
+        errors.push("source_fetch_failed_at must be a valid timestamp.");
+    }
+    for (const key of ["fetched_at", "source_updated_at"]) {
+        if (Object.hasOwn(metadata, key)) {
+            errors.push(`Failed source fetch must not contain ${key}.`);
         }
     }
     return errors;
@@ -713,12 +741,21 @@ function defaultSourceFetchStatus(source, options = {}) {
         if (!SOURCE_FETCH_STATUSES.includes(explicit)) {
             throw new DraftError("INVALID_METADATA", `Invalid source_fetch_status: ${explicit}.`);
         }
+        if (source?.source_kind === "github-issue" && explicit === "not-required") {
+            throw new DraftError("INVALID_METADATA", "github-issue sources must use source_fetch_status pending, complete or failed.");
+        }
+        if (source?.source_kind !== "github-issue" && explicit !== "not-required") {
+            throw new DraftError("INVALID_METADATA", `${source?.source_kind ?? "source"} sources must use source_fetch_status not-required.`);
+        }
         return explicit;
     }
-    if (source?.source_fetch_error || source?.error || options.source_fetch_error || options.sourceFetchError) {
-        return "failed";
+    if (["file", "user-input", "derived-work-package"].includes(source?.source_kind)) {
+        return "not-required";
     }
-    return source?.fetched_at && source?.source_updated_at ? "complete" : "pending";
+    if (source?.source_kind === "github-issue") {
+        return "pending";
+    }
+    throw new DraftError("INVALID_METADATA", "source_fetch_status must be explicit for an unknown source kind.");
 }
 
 function validateProfileMetadata(metadata) {
@@ -760,7 +797,7 @@ function validateSessionStrategyPresentation(body) {
         .map((label) => `Session strategy section is missing ${label}`);
 }
 
-function validateQuestionPresentation(body, metadata = {}) {
+function validateQuestionPresentation(body, metadata = {}, derivedState = null) {
     const headingMatch = /^##\s+Decisions and open questions\s*$/m.exec(body);
     if (!headingMatch) {
         return [];
@@ -774,7 +811,12 @@ function validateQuestionPresentation(body, metadata = {}) {
         errors.push("Question section must contain the scope questions subsection.");
     }
     const packageHeadings = [...section.matchAll(/^###\s+(WP[1-9][0-9]*)\s+—\s+.+$/gm)];
-    const packageDecisionGate = metadata.package_decision_gate;
+    const packageDecisionGate = derivedState?.package_decision_gate ?? metadata.package_decision_gate;
+
+    if (typeof packageDecisionGate === "undefined" || packageDecisionGate === null) {
+        errors.push("DERIVED_STATE_REQUIRED: Question validation requires state or derived_state to validate the package decision gate layout.");
+        return errors;
+    }
 
     if (packageDecisionGate === "closed") {
         if (packageHeadings.length > 0) {
@@ -983,12 +1025,16 @@ function cliResult(parsed) {
                 title: parsed.values.title,
                 work_package_id: parsed.values["work-package-id"],
                 package_title: parsed.values["package-title"],
-            }, {draftRoot: parsed.values.root ?? "docs/draft"}),
+            }, {draftRoot: parsed.values.root ?? "docs/plan"}),
         };
     }
     if (parsed.command === "validate") {
+        if (!parsed.values.state) {
+            throw new DraftError("DERIVED_STATE_REQUIRED", "validate requires --state <state.json>.");
+        }
         const source = fs.readFileSync(path.resolve(parsed.values.file), "utf8");
-        return validateDraftDocument(source, {kind: parsed.values.kind ?? "main"});
+        const state = JSON.parse(fs.readFileSync(path.resolve(parsed.values.state), "utf8"));
+        return validateDraftDocument(source, {kind: parsed.values.kind ?? "main", state});
     }
     if (parsed.command === "render-questions") {
         const source = JSON.parse(fs.readFileSync(path.resolve(parsed.values.file), "utf8"));
@@ -999,7 +1045,7 @@ function cliResult(parsed) {
 
 function main(args) {
     if (args[0] === "--help") {
-        process.stdout.write("Usage: draft.mjs path --source-kind <kind> [--issue <id>] [--title <title>] | validate --file <path> [--kind <main|derived>] | render-questions --file <json>\n");
+        process.stdout.write("Usage: draft.mjs path --source-kind <kind> [--issue <id>] [--title <title>] [--root <relative-dir>] | validate --file <path> --state <state.json> [--kind <main|derived>] | render-questions --file <json>\n");
         return 0;
     }
     try {

@@ -1,7 +1,7 @@
 {
   "plan": {
     "plan_id": "state-projection-retry",
-    "draft_path": "docs/draft/state-projection-retry.md",
+    "draft_path": "docs/plan/state-projection-retry.md",
     "source_identity": "user:state-projection-retry"
   },
   "mutation": {

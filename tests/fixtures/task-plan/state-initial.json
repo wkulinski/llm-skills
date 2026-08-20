@@ -1,7 +1,7 @@
 {
   "plan": {
     "plan_id": "state-initial",
-    "draft_path": "docs/draft/state-initial.md",
+    "draft_path": "docs/plan/state-initial.md",
     "source_identity": "user:state-initial",
     "plan_version": 4
   },
@@ -12,7 +12,7 @@
   "expected": {
     "revision": 1,
     "workflow_phase": "initial-draft",
-    "source_fetch_status": "pending",
+    "source_fetch_status": "not-required",
     "state_revision": 1
   }
 }

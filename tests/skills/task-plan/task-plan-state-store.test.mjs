@@ -17,7 +17,7 @@ import {
     updateState,
 } from "../../../.agents/skills/task-plan/scripts/state-store.mjs";
 import {parseDraftDocument} from "../../../.agents/skills/task-plan/scripts/draft.mjs";
-import {canOpenPackageDecisions, canTransition} from "../../../.agents/skills/task-plan/scripts/state.mjs";
+import {canOpenPackageDecisions, canTransition, selectDerivedState} from "../../../.agents/skills/task-plan/scripts/state.mjs";
 import {validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate-plan.mjs";
 import {
     abortHybrid,
@@ -27,6 +27,7 @@ import {
     prepareHybrid,
 } from "../../../.agents/skills/_shared/scripts/context-scout-hybrid-run.mjs";
 import {enrichContextManifest} from "../../../.agents/skills/_shared/scripts/context-manifest.mjs";
+import {createCompletedCriticalReview} from "./task-plan-test-helpers.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../");
 const STATE_STORE_SCRIPT = path.join(ROOT, ".agents/skills/task-plan/scripts/state-store.mjs");
@@ -46,6 +47,42 @@ afterEach(() => {
 });
 
 describe("task-plan canonical state store", () => {
+    it("rejects a phase transition after an ordinary mutation until a fresh checkpoint is recorded", () => {
+        const directory = makeTemporaryDirectory();
+        const plan = makePlan(directory);
+        updateState(plan, createMutation(), {clock: fixedClock()});
+
+        const mutated = updateState(plan, {
+            type: "context-requirements-update",
+            payload: {blocking: [], follow_up: []},
+        }, {clock: fixedClock("2026-01-01T00:00:01Z")});
+        expect(mutated.state.revision).toBe(2);
+        expect(mutated.state.checkpoint.state_revision).toBe(1);
+        expect(() => updateState(plan, {
+            type: "workflow-phase-transition",
+            payload: {to: "source/context", reason: "stale transition must fail"},
+        }, {clock: fixedClock("2026-01-01T00:00:02Z")})).toThrowError(
+            expect.objectContaining({code: "STALE_CHECKPOINT"}),
+        );
+
+        const checkpointed = updateState(plan, {
+            type: "checkpoint",
+            payload: {
+                reason: "refresh source/context checkpoint",
+                next_phase: "source/context",
+                next_allowed_action: "start source intake",
+                forbidden_actions: ["review", "package decisions", "approval"],
+            },
+        }, {clock: fixedClock("2026-01-01T00:00:03Z")});
+        expect(checkpointed.state.checkpoint.state_revision).toBe(checkpointed.state.revision);
+
+        const transitioned = updateState(plan, {
+            type: "workflow-phase-transition",
+            payload: {to: "source/context", reason: "fresh checkpoint allows transition"},
+        }, {clock: fixedClock("2026-01-01T00:00:04Z")});
+        expect(transitioned.state.workflow_phase).toBe("source/context");
+    });
+
     it("returns virtual-initial without creating state and builds complete memory state", () => {
         const directory = makeTemporaryDirectory();
         const plan = makePlan(directory, STATE_ABSENT.plan);
@@ -60,10 +97,11 @@ describe("task-plan canonical state store", () => {
         expect(fs.existsSync(loaded.paths.state_path)).toBe(STATE_ABSENT.expected.state_file);
         expect(fs.existsSync(loaded.paths.draft_path)).toBe(STATE_ABSENT.expected.draft_file);
         expect(state).toMatchObject({
-            schema_version: 2,
+            schema_version: 3,
             workflow_phase: "intake",
             workflow_outcome: "running",
-            source_fetch_status: "pending",
+            input_profile: "brief-request",
+            source_fetch_status: "not-required",
             context_requirements: {blocking: [], follow_up: []},
         });
         expect(state).toEqual(expect.objectContaining({
@@ -84,6 +122,11 @@ describe("task-plan canonical state store", () => {
             "max_wall_clock_ms",
             "budget_status",
             "applied_mutations",
+            "package_decision_gate",
+            "review_complete",
+            "critical_review_complete",
+            "simplification_status",
+            "simplification_control_review_complete",
         ]) {
             expect(state).not.toHaveProperty(removedField);
         }
@@ -121,6 +164,9 @@ describe("task-plan canonical state store", () => {
         expect(draft).toContain("state_revision: \"1\"");
         expect(draft).toContain("<!-- task-plan:generated:start -->");
         expect(draft).toContain("<!-- task-plan:generated:end -->");
+        expect(draft).toContain("Input profile: `brief-request`");
+        expect(draft).toContain("Package decision gate: `closed`");
+        expect(draft).toContain("Simplification result: `pending`");
         expect(validatePlanDocument(draft, {
             kind: "main",
             state: JSON.parse(fs.readFileSync(result.paths.state_path, "utf8")),
@@ -242,7 +288,7 @@ describe("task-plan canonical state store", () => {
 
         expect(applied.state.revision).toBe(STATE_REVISION.expected.first_revision);
         expect(applied.state.plan_version).toBe(STATE_REVISION.expected.plan_version);
-        expect(applied.state.schema_version).toBe(2);
+        expect(applied.state.schema_version).toBe(3);
         expect(parseDraftDocument(fs.readFileSync(applied.paths.draft_path, "utf8")).metadata.state_revision).toBe("2");
         expect(() => updateState(plan, STATE_REVISION.stale_mutation, {clock: fixedClock()})).toThrowError(
             expect.objectContaining({code: STATE_REVISION.expected.stale_code}),
@@ -329,6 +375,16 @@ describe("task-plan canonical state store", () => {
         expect(decision.state.user_decisions[0].propagation_status).toBe("pending");
 
         updateState(plan, {
+            type: "checkpoint",
+            payload: {
+                reason: "refresh checkpoint after source decision",
+                next_phase: "source/context",
+                next_allowed_action: "start source intake",
+                forbidden_actions: ["review", "package decisions", "approval"],
+            },
+        }, {clock: fixedClock("2026-01-01T00:00:01Z")});
+
+        updateState(plan, {
             type: "workflow-phase-transition",
             payload: {to: "source/context", reason: "source intake starts"},
         }, {clock: fixedClock("2026-01-01T00:00:02Z")});
@@ -342,6 +398,7 @@ describe("task-plan canonical state store", () => {
             payload: {
                 packages: current.packages,
                 findings: current.findings,
+                scope_questions: current.scope_questions,
                 session_strategy: {...current.session_strategy, rationale: "Source completeness was confirmed."},
                 reason: "Propagate the source decision.",
                 propagated_decision_ref: "D1",
@@ -354,7 +411,17 @@ describe("task-plan canonical state store", () => {
 
     it("records source fetch completion and failure through dedicated mutations", () => {
         const directory = makeTemporaryDirectory();
-        const plan = makePlan(directory);
+        const plan = makePlan(directory, {
+            source_identity: "github:acme/demo#123",
+            source: {
+                source_kind: "github-issue",
+                source_ref: "https://github.com/acme/demo/issues/123",
+                owner: "acme",
+                repo: "demo",
+                issue_number: "123",
+                source_fetch_status: "pending",
+            },
+        });
         updateState(plan, createMutation(), {clock: fixedClock()});
 
         const complete = updateState(plan, {
@@ -400,6 +467,29 @@ describe("task-plan canonical state store", () => {
         }, {clock: fixedClock("2026-01-01T00:00:03Z")})).toThrowError(
             expect.objectContaining({code: "INVALID_STATE"}),
         );
+    });
+
+    it("rejects source fetch mutations for non-GitHub sources before persistence", () => {
+        const directory = makeTemporaryDirectory();
+        const plan = makePlan(directory);
+        const created = updateState(plan, createMutation(), {clock: fixedClock()});
+
+        expect(() => updateState(plan, {
+            type: "source-fetch-complete",
+            payload: {
+                fetched_at: "2026-01-01T00:00:01Z",
+                source_updated_at: "2025-12-31T23:59:00Z",
+            },
+        }, {clock: fixedClock("2026-01-01T00:00:01Z")})).toThrowError(
+            expect.objectContaining({code: "SOURCE_FETCH_NOT_APPLICABLE"}),
+        );
+
+        expect(loadState(plan).state).toMatchObject({
+            revision: created.state.revision,
+            source_kind: "user-input",
+            source_fetch_status: "not-required",
+            projection_status: PROJECTED,
+        });
     });
 
     it("keeps blocking and follow-up context requirements distinct and unique", () => {
@@ -535,7 +625,7 @@ describe("task-plan canonical state store", () => {
         const directory = makeTemporaryDirectory();
         const plan = makePlan(directory, {
             plan_id: "known-mutations",
-            draft_path: "docs/draft/known-mutations.md",
+            draft_path: "docs/plan/known-mutations.md",
             source_identity: "user:known-mutations",
             packages: [statePackage()],
             scope_questions: [stateQuestion()],
@@ -590,6 +680,7 @@ describe("task-plan canonical state store", () => {
             payload: {
                 packages: beforeRevision.packages,
                 findings: beforeRevision.findings,
+                scope_questions: beforeRevision.scope_questions,
                 session_strategy: {...beforeRevision.session_strategy, rationale: "Scope was confirmed by the user."},
                 reason: "Apply the scope decision.",
                 propagated_decision_ref: "D1",
@@ -599,16 +690,7 @@ describe("task-plan canonical state store", () => {
             type: "review-record",
             payload: {
                 review: {
-                    iteration: 1,
-                    plan_version: 3,
-                    stage: "critical-review",
-                    complete: true,
-                    checks: [
-                        "intent-and-acceptance",
-                        "technical-scope",
-                        "edge-cases-and-verification",
-                        "risks-and-dependencies",
-                    ],
+                    ...createCompletedCriticalReview({iteration: 1, plan_version: 3, stage: "critical-review"}),
                 },
             },
         }, {clock: fixedClock("2026-01-01T00:00:07Z")}));
@@ -639,9 +721,9 @@ describe("task-plan canonical state store", () => {
         expect(reopened.state.plan_version).toBe(2);
         expect(results[6].state.user_decisions[0].propagation_status).toBe("pending");
         expect(results[7].state.user_decisions[0].propagation_status).toBe("propagated");
-        expect(results[8].state.review_complete).toBe(true);
+        expect(selectDerivedState(results[8].state).review_complete).toBe(true);
         expect(results[9].state.findings[0].id).toBe("F1");
-        expect(results.at(-1).state.simplification_status).toBe("no-change");
+        expect(selectDerivedState(results.at(-1).state).simplification_status).toBe("no-change");
         expect(results.at(-1).state).not.toHaveProperty("steps_used");
         expect(results.map((result) => result.state.revision)).toEqual(
             results.map((_, index) => index + 1),
@@ -745,16 +827,18 @@ describe("task-plan canonical state store", () => {
             type: "workflow-phase-transition",
             payload: {to: "source/context", reason: "start source intake"},
         }, {clock: fixedClock("2026-01-01T00:00:01Z")});
-        updateState(plan, {
+        const enteredReview = updateState(plan, {
             type: "workflow-phase-transition",
             payload: {to: "review", reason: "source intake complete"},
         }, {clock: fixedClock("2026-01-01T00:00:02Z")});
+        expect(enteredReview.state.checkpoint.next_phase).toBe("decisions");
         const beforeRevision = loadState(plan).state;
         const revised = updateState(plan, {
             type: "plan-revision",
             payload: {
                 packages: [statePackage()],
                 findings: [],
+                scope_questions: [],
                 session_strategy: strategyForPackages(["WP1"]),
                 reason: "Define the reviewed implementation package.",
             },
@@ -768,20 +852,30 @@ describe("task-plan canonical state store", () => {
 
         updateState(plan, {
             type: "review-record",
-            payload: {review: completeReview(1, revised.state.plan_version, "critical-review")},
+            payload: {review: createCompletedCriticalReview({iteration: 1, plan_version: revised.state.plan_version, stage: "critical-review"})},
         }, {clock: fixedClock("2026-01-01T00:00:04Z")});
         updateState(plan, {
             type: "simplification-record",
             payload: {result: "no-change", control_review_complete: true},
         }, {clock: fixedClock("2026-01-01T00:00:05Z")});
         const readyForDecisions = loadState(plan).state;
-        expect(readyForDecisions.package_decision_gate).toBe("closed");
+        expect(selectDerivedState(readyForDecisions).package_decision_gate).toBe("open");
         expect(canOpenPackageDecisions(readyForDecisions)).toEqual({ready: true, reasons: []});
         expect(canTransition("plan", "review-pending", "awaiting-package-decisions", readyForDecisions)).toBe(true);
         updateState(plan, {
+            type: "checkpoint",
+            payload: {
+                reason: "refresh checkpoint after review",
+                next_phase: "decisions",
+                next_allowed_action: "collect package decisions",
+                forbidden_actions: ["approval", "implementation"],
+            },
+        }, {clock: fixedClock("2026-01-01T00:00:05Z")});
+        const enteredDecisions = updateState(plan, {
             type: "workflow-phase-transition",
             payload: {to: "decisions", reason: "review complete"},
         }, {clock: fixedClock("2026-01-01T00:00:06Z")});
+        expect(enteredDecisions.state.checkpoint.next_phase).toBe("handoff");
         updateState(plan, {
             type: "plan-transition",
             payload: {to: "awaiting-package-decisions", reason: "open package decisions"},
@@ -802,6 +896,35 @@ describe("task-plan canonical state store", () => {
         expect(approved.state.plan_status).toBe("approved");
     });
 
+    it("projects a plan-revision scope question before the user is asked", () => {
+        const directory = makeTemporaryDirectory();
+        const plan = makePlan(directory);
+        updateState(plan, createMutation(), {clock: fixedClock()});
+        updateState(plan, {
+            type: "workflow-phase-transition",
+            payload: {to: "source/context", reason: "start source intake"},
+        }, {clock: fixedClock("2026-01-01T00:00:01Z")});
+        updateState(plan, {
+            type: "workflow-phase-transition",
+            payload: {to: "review", reason: "source intake complete"},
+        }, {clock: fixedClock("2026-01-01T00:00:02Z")});
+
+        const revised = updateState(plan, {
+            type: "plan-revision",
+            payload: {
+                packages: [statePackage()],
+                findings: [],
+                scope_questions: [stateQuestion()],
+                session_strategy: strategyForPackages(["WP1"]),
+                reason: "Compatibility strategy requires an explicit user decision.",
+            },
+        }, {clock: fixedClock("2026-01-01T00:00:03Z")});
+
+        expect(revised.state.scope_questions).toEqual([stateQuestion()]);
+        expect(canOpenPackageDecisions(revised.state).reasons).toContain("unresolved_scope_questions");
+        expect(fs.readFileSync(revised.paths.draft_path, "utf8")).toContain("Czy źródło jest wystarczające?");
+    });
+
     it("rejects invalid or no-op plan revisions without propagating decisions", () => {
         const directory = makeTemporaryDirectory();
         const plan = makePlan(directory, {scope_questions: [stateQuestion()]});
@@ -812,6 +935,7 @@ describe("task-plan canonical state store", () => {
             payload: {
                 packages: initial.packages,
                 findings: initial.findings,
+                scope_questions: initial.scope_questions,
                 session_strategy: initial.session_strategy,
                 reason: "not in review",
             },
@@ -825,6 +949,7 @@ describe("task-plan canonical state store", () => {
             payload: {
                 packages: reviewState.packages,
                 findings: reviewState.findings,
+                scope_questions: reviewState.scope_questions,
                 session_strategy: reviewState.session_strategy,
                 reason: "no semantic change",
             },
@@ -909,12 +1034,12 @@ describe("task-plan canonical state store", () => {
         for (let iteration = 1; iteration <= 3; iteration += 1) {
             updateState(plan, {
                 type: "review-record",
-                payload: {review: completeReview(iteration, iteration, "critical-review")},
+                payload: {review: createCompletedCriticalReview({iteration, plan_version: iteration, stage: "critical-review"})},
             }, {clock: fixedClock(`2026-01-01T00:00:0${iteration + 2}Z`)});
         }
         expect(() => updateState(plan, {
             type: "review-record",
-            payload: {review: completeReview(4, 4, "critical-review")},
+            payload: {review: createCompletedCriticalReview({iteration: 4, plan_version: 4, stage: "critical-review"})},
         }, {clock: fixedClock("2026-01-01T00:00:06Z")})).toThrowError(expect.objectContaining({code: "REVIEW_LIMIT_REACHED"}));
         updateState(plan, {
             type: "plan-transition",
@@ -937,7 +1062,7 @@ describe("task-plan canonical state store", () => {
             encoding: "utf8",
         });
         expect(ensureResult.status).toBe(0);
-        expect(JSON.parse(ensureResult.stdout)).toMatchObject({schema_version: 2, workflow_phase: "intake"});
+        expect(JSON.parse(ensureResult.stdout)).toMatchObject({schema_version: 3, workflow_phase: "intake"});
 
         const retryResult = spawnSync(process.execPath, [
             STATE_STORE_SCRIPT,
@@ -961,16 +1086,67 @@ describe("task-plan canonical state store", () => {
         expect(updateResult.status).toBe(1);
         expect(JSON.parse(updateResult.stdout).code).toBe("UNKNOWN_MUTATION");
     });
+
+    it("preserves STALE_CHECKPOINT as a contract rejection in the CLI", () => {
+        const directory = makeTemporaryDirectory();
+        const planPath = path.join(directory, "plan.json");
+        fs.writeFileSync(planPath, JSON.stringify(makePlan(directory)), "utf8");
+
+        const runUpdate = (name, mutation) => {
+            const mutationPath = path.join(directory, `${name}.json`);
+            fs.writeFileSync(mutationPath, JSON.stringify(mutation), "utf8");
+            return spawnSync(process.execPath, [
+                STATE_STORE_SCRIPT,
+                "update",
+                "--plan",
+                planPath,
+                "--mutation",
+                mutationPath,
+            ], {cwd: ROOT, encoding: "utf8"});
+        };
+
+        expect(runUpdate("create", createMutation()).status).toBe(0);
+        expect(runUpdate("ordinary", {
+            type: "context-requirements-update",
+            payload: {blocking: [], follow_up: []},
+        }).status).toBe(0);
+
+        const stale = runUpdate("transition", {
+            type: "workflow-phase-transition",
+            payload: {to: "source/context", reason: "stale transition"},
+        });
+        expect(stale.status).toBe(1);
+        expect(JSON.parse(stale.stdout)).toMatchObject({
+            valid: false,
+            code: "STALE_CHECKPOINT",
+        });
+    });
 });
 
 function makePlan(repoRoot, overrides = {}) {
+    const {source: sourceOverride, ...planOverrides} = overrides;
+    const source = {
+        source_kind: "user-input",
+        source_ref: "user:state-store-demo",
+        title: "State store demo",
+        input_profile: "brief-request",
+        source_fetch_status: "not-required",
+        ...(sourceOverride ?? {}),
+    };
+    if (planOverrides.input_profile) {
+        source.input_profile = planOverrides.input_profile;
+    }
+    if (planOverrides.source_fetch_status) {
+        source.source_fetch_status = planOverrides.source_fetch_status;
+    }
     return {
         repo_root: repoRoot,
         state_root: path.join(repoRoot, "var", "agent", "task-plan"),
         plan_id: "state-store-demo",
-        draft_path: "docs/draft/state-store-demo.md",
+        draft_path: "docs/plan/state-store-demo.md",
         source_identity: "user:state-store-demo",
-        ...overrides,
+        source,
+        ...planOverrides,
     };
 }
 
@@ -1056,21 +1232,6 @@ function strategyForPackages(packageIds) {
         dependencies: [],
         entry_criteria: ["Scope is confirmed."],
         exit_criteria: ["Package is complete."],
-    };
-}
-
-function completeReview(iteration, planVersion, stage) {
-    return {
-        iteration,
-        plan_version: planVersion,
-        stage,
-        complete: true,
-        checks: [
-            "intent-and-acceptance",
-            "technical-scope",
-            "edge-cases-and-verification",
-            "risks-and-dependencies",
-        ],
     };
 }
 

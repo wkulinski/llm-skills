@@ -6,12 +6,8 @@ parent_issue: 123
 parent_draft: issue-123-plan.md
 work_package_id: WP2
 plan_status: needs-clarification
-package_decision_gate: closed
 plan_version: 1
-simplification_status: pending
-source_fetch_status: complete
-fetched_at: 2026-01-01T00:00:00Z
-source_updated_at: 2026-01-01T00:00:00Z
+source_fetch_status: not-required
 ---
 
 ## Source

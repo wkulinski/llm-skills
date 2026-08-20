@@ -19,39 +19,25 @@ import {
     validateSessionStrategy,
     validateUserDecisionRecords,
     PLAN_STATUSES,
-    readSimplificationResult,
+    REVIEW_LIMIT,
     REDUNDANT_DESIGN_ELEMENT,
-    SIMPLIFICATION_STATUSES,
-    SOURCE_FETCH_STATUSES,
+    SIMPLIFICATION_RESULTS,
+    STATE_LIFECYCLES,
     TERMINAL_PACKAGE_STATUSES,
     WORKFLOW_PHASES,
     WORKFLOW_OUTCOMES,
+    isCanonicalState,
     validateQuestionRecords,
     validateOwnershipRedundancyReview,
+    validateStateSourceMetadata,
+    validateStateLifecycle,
     validateTaskPlanState,
 } from "./state.mjs";
 
+export {STATE_LIFECYCLES, validateStateLifecycle};
+
 export const FINDING_SEVERITIES = Object.freeze(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
 export const FINDING_STATUSES = Object.freeze(["open", "resolved", "accepted", "reopened"]);
-export const REVIEW_LIMIT = 3;
-export const SIMPLIFICATION_RESULTS = Object.freeze([
-    "no-change",
-    "simplified",
-    "needs-user-decision",
-]);
-export const STATE_LIFECYCLES = Object.freeze([
-    "absent",
-    "virtual-initial",
-    "persisted",
-]);
-
-const INCOMPLETE_ARTIFACT_LIFECYCLE = "ARTIFACT_SET_INCOMPLETE";
-const CANONICAL_STATE_FIELDS = Object.freeze([
-    "schema_version",
-    "workflow_phase",
-    "context_requirements",
-]);
-
 const OWNERSHIP_SNAPSHOT_FIELDS = Object.freeze(["ownership_redundancy_review"]);
 
 const REQUIRED_FINDING_FIELDS = Object.freeze([
@@ -295,13 +281,12 @@ export function validatePlanState(input) {
     const errors = [...lifecycle.errors];
 
     if (errors.length === 0 && lifecycle.lifecycle !== "absent") {
-        const stateErrors = isCanonicalState(state)
+        const canonical = isCanonicalState(state);
+        const stateErrors = canonical
             ? [
                 ...validateTaskPlanState(state).errors,
-                ...validateStateMetadata(state),
-                ...validateStateSourceMetadata(state),
-                ...validateStatePackages(state),
-                ...validateStateRecords(state),
+                ...validateStatePackages(state, {canonical}),
+                ...validateStateRecords(state, {canonical}),
             ]
             : [
                 ...validateStateMetadata(state),
@@ -310,12 +295,12 @@ export function validatePlanState(input) {
                 ...validateStateRecords(state),
             ];
         errors.push(...stateErrors);
-        if (!isCanonicalState(state)
+        if (!canonical
             && Object.hasOwn(state, "workflow_outcome")
             && !WORKFLOW_OUTCOMES.includes(state.workflow_outcome)) {
             errors.push(`Invalid workflow_outcome: ${state.workflow_outcome ?? ""}.`);
         }
-        if (isCanonicalState(state)) {
+        if (canonical) {
             errors.push(...validateCanonicalProjection(state));
             errors.push(...validateCanonicalHybridAttempt(state));
         }
@@ -329,73 +314,6 @@ export function validatePlanState(input) {
         errors,
         approval,
     };
-}
-
-export function validateStateLifecycle(input) {
-    if (!isRecord(input)) {
-        return {
-            valid: false,
-            errors: ["Plan state must be an object."],
-            lifecycle: null,
-            state: null,
-        };
-    }
-
-    if (!Object.hasOwn(input, "lifecycle") && !Object.hasOwn(input, "state")) {
-        return {valid: true, errors: [], lifecycle: null, state: input};
-    }
-
-    const lifecycle = input.lifecycle ?? input.status;
-    if (lifecycle === INCOMPLETE_ARTIFACT_LIFECYCLE) {
-        return {
-            valid: false,
-            errors: ["Draft and state form an incomplete artifact pair; explicit restart is required."],
-            lifecycle,
-            state: null,
-        };
-    }
-    if (!STATE_LIFECYCLES.includes(lifecycle)) {
-        return {
-            valid: false,
-            errors: [`Invalid state lifecycle: ${lifecycle ?? ""}.`],
-            lifecycle,
-            state: null,
-        };
-    }
-
-    const state = input.state ?? null;
-    if (lifecycle === "absent") {
-        if (state !== null) {
-            return {
-                valid: false,
-                errors: ["Absent state lifecycle must not contain state data."],
-                lifecycle,
-                state,
-            };
-        }
-        return {valid: true, errors: [], lifecycle, state: null};
-    }
-    if (!isRecord(state)) {
-        return {
-            valid: false,
-            errors: [`${lifecycle} state lifecycle requires a state object.`],
-            lifecycle,
-            state,
-        };
-    }
-    if (!isCanonicalState(state)) {
-        return {
-            valid: false,
-            errors: [`${lifecycle} state lifecycle requires the complete canonical state.`],
-            lifecycle,
-            state,
-        };
-    }
-    return {valid: true, errors: [], lifecycle, state};
-}
-
-function isCanonicalState(state) {
-    return isRecord(state) && CANONICAL_STATE_FIELDS.some((field) => Object.hasOwn(state, field));
 }
 
 function validateCanonicalProjection(state) {
@@ -470,45 +388,6 @@ function buildApprovalResult(state) {
     return {approved: reasons.length === 0, reasons};
 }
 
-function validateStateSourceMetadata(state) {
-    if (!Object.hasOwn(state, "source_fetch_status")) {
-        return [];
-    }
-
-    const errors = [];
-    if (!SOURCE_FETCH_STATUSES.includes(state.source_fetch_status)) {
-        return [`Invalid source_fetch_status: ${state.source_fetch_status ?? ""}.`];
-    }
-    if (state.source_fetch_status === "pending") {
-        if (state.fetched_at !== null
-            || state.source_updated_at !== null
-            || state.source_fetch_error !== null
-            || state.source_fetch_failed_at !== null) {
-            errors.push("Pending source fetch cannot contain completion timestamps, an error or a failure timestamp.");
-        }
-    }
-    if (state.source_fetch_status === "complete") {
-        for (const field of ["fetched_at", "source_updated_at"]) {
-            if (typeof state[field] !== "string" || Number.isNaN(Date.parse(state[field]))) {
-                errors.push(`Complete source fetch requires valid ${field}.`);
-            }
-        }
-        if (state.source_fetch_error !== null) {
-            errors.push("Complete source fetch cannot contain source_fetch_error.");
-        }
-    }
-    if (state.source_fetch_status === "failed") {
-        if (!isMeaningfulString(state.source_fetch_error)) {
-            errors.push("Failed source fetch requires source_fetch_error.");
-        }
-        if (typeof state.source_fetch_failed_at !== "string"
-            || Number.isNaN(Date.parse(state.source_fetch_failed_at))) {
-            errors.push("Failed source fetch requires a valid source_fetch_failed_at.");
-        }
-    }
-    return errors;
-}
-
 function validateStateMetadata(state) {
     const errors = [];
     if (!Number.isInteger(state.plan_version) || state.plan_version < 1) {
@@ -517,23 +396,8 @@ function validateStateMetadata(state) {
     if (!PLAN_STATUSES.includes(state.plan_status)) {
         errors.push(`Invalid plan_status: ${state.plan_status ?? ""}.`);
     }
-    if (Object.hasOwn(state, "simplification_status")
-        && !SIMPLIFICATION_STATUSES.includes(state.simplification_status)) {
-        errors.push(`Invalid simplification_status: ${state.simplification_status ?? ""}.`);
-    }
-    const nestedSimplificationResult = readSimplificationResult(state);
-    if (nestedSimplificationResult !== null
-        && Object.hasOwn(state, "simplification_status")
-        && nestedSimplificationResult !== state.simplification_status) {
-        errors.push("Simplification status does not match its nested result.");
-    }
     if (Object.hasOwn(state, "blockers") && !Array.isArray(state.blockers)) {
         errors.push("Plan state blockers must be an array.");
-    }
-    for (const field of ["review_complete", "critical_review_complete", "simplification_control_review_complete"]) {
-        if (Object.hasOwn(state, field) && typeof state[field] !== "boolean") {
-            errors.push(`Plan state ${field} must be boolean.`);
-        }
     }
     if (Object.hasOwn(state, "scope_questions") && !Array.isArray(state.scope_questions)) {
         errors.push("Plan state scope_questions must be an array.");
@@ -542,30 +406,19 @@ function validateStateMetadata(state) {
             return `scope_questions: ${error}`;
         }));
     }
-    if (Object.hasOwn(state, "package_decision_gate")
-        && !["open", "closed"].includes(state.package_decision_gate)) {
-        errors.push("Plan state package_decision_gate must be open or closed.");
-    } else if (Object.hasOwn(state, "package_decision_gate")) {
-        const expectedGate = ["awaiting-package-decisions", "approved"].includes(state.plan_status)
-            ? "open"
-            : ["review-pending", "needs-clarification", "review-limit-reached"].includes(state.plan_status)
-                ? "closed"
-                : null;
-        if (expectedGate && state.package_decision_gate !== expectedGate) {
-            errors.push(`Plan state package_decision_gate must be ${expectedGate} for ${state.plan_status}.`);
-        }
-    }
     return errors;
 }
 
-function validateStatePackages(state) {
+function validateStatePackages(state, options = {}) {
     const errors = [];
     if (!Array.isArray(state.packages)) {
         errors.push("Plan state must contain a packages array.");
     } else if (["awaiting-package-decisions", "approved"].includes(state.plan_status) && state.packages.length === 0) {
         errors.push("Plan state must contain at least one work package before package decisions or approval.");
     }
-    errors.push(...validatePackageRecords(state.packages).errors);
+    if (!options.canonical) {
+        errors.push(...validatePackageRecords(state.packages).errors);
+    }
     for (const [index, item] of (Array.isArray(state.packages) ? state.packages : []).entries()) {
         if (!item || typeof item !== "object") {
             continue;
@@ -582,10 +435,12 @@ function validateStatePackages(state) {
     return errors;
 }
 
-function validateStateRecords(state) {
+function validateStateRecords(state, options = {}) {
     const errors = [];
     const decisions = state.decisions ?? [];
-    errors.push(...validateDecisionHistory(decisions));
+    if (!options.canonical) {
+        errors.push(...validateDecisionHistory(decisions));
+    }
     if (Array.isArray(state.packages) && Array.isArray(decisions)) {
         for (const item of state.packages) {
             if (item && TERMINAL_PACKAGE_STATUSES.includes(item.decision_status)
@@ -595,21 +450,21 @@ function validateStateRecords(state) {
         }
     }
     errors.push(...validateFindings(state.findings ?? []));
-    errors.push(...validateOwnershipRedundancyReview(state.ownership_redundancy_review, state.findings));
+    if (!options.canonical) {
+        errors.push(...validateOwnershipRedundancyReview(state.ownership_redundancy_review, state.findings));
+    }
     errors.push(...validateReviewHistory(state.review_history ?? []));
-    errors.push(...validateSimplification(state.simplification ?? {
-        result: state.simplification_status,
-        before: state.simplification_before,
-        after: state.simplification_after,
-    }, {
+    errors.push(...validateSimplification(state.simplification, {
         requireOwnershipReview: true,
     }));
-    errors.push(...validateSessionStrategy(state.session_strategy).map((error) => {
-        return `session_strategy: ${error}`;
-    }));
-    errors.push(...validateUserDecisionRecords(state.user_decisions ?? [], {packages: state.packages}).map((error) => {
-        return `user_decisions: ${error}`;
-    }));
+    if (!options.canonical) {
+        errors.push(...validateSessionStrategy(state.session_strategy).map((error) => {
+            return `session_strategy: ${error}`;
+        }));
+        errors.push(...validateUserDecisionRecords(state.user_decisions ?? [], {packages: state.packages}).map((error) => {
+            return `user_decisions: ${error}`;
+        }));
+    }
     errors.push(...validateQuestionDecisionPropagation(state));
     return errors;
 }
@@ -635,9 +490,13 @@ function validateStateApproval(state, approval) {
 }
 
 export function validatePlanDocument(document, options = {}) {
+    const draftOptions = {
+        kind: options.kind ?? "main",
+        ...(options.state ? {state: validateStateLifecycle(options.state).state} : {}),
+    };
     const draftResult = typeof document === "string"
-        ? validateDraftDocument(document, {kind: options.kind ?? "main"})
-        : validateDraftObject(document, options);
+        ? validateDraftDocument(document, draftOptions)
+        : validateDraftObject(document, draftOptions);
     const errors = [...draftResult.errors];
     let draftBody = typeof document?.body === "string" ? document.body : "";
     if (typeof document === "string" && draftResult.errors.length === 0) {
@@ -676,19 +535,15 @@ function validateDraftStateConsistency(metadata, state, body = "") {
         && Number(state.plan_version) !== Number(metadata.plan_version)) {
         errors.push(`Draft/state plan_version mismatch: draft=${metadata.plan_version}, state=${state.plan_version}.`);
     }
-    const expectedGate = ["awaiting-package-decisions", "approved"].includes(state.plan_status)
-        ? "open"
-        : ["review-pending", "needs-clarification", "review-limit-reached"].includes(state.plan_status)
-            ? "closed"
-            : null;
-    const stateGate = state.package_decision_gate ?? expectedGate;
-    if (stateGate && metadata?.package_decision_gate && stateGate !== metadata.package_decision_gate) {
-        errors.push(`Draft/state package_decision_gate mismatch: draft=${metadata.package_decision_gate}, state=${stateGate}.`);
-    }
     if (typeof state.source_ref === "string"
         && typeof metadata?.source_ref === "string"
         && state.source_ref !== metadata.source_ref) {
         errors.push("Draft/state source_ref mismatch.");
+    }
+    if (typeof state.input_profile === "string"
+        && typeof metadata?.input_profile === "string"
+        && state.input_profile !== metadata.input_profile) {
+        errors.push("Draft/state input_profile mismatch.");
     }
     if (typeof state.issue !== "undefined" && typeof metadata?.issue !== "undefined"
         && String(state.issue) !== String(metadata.issue)) {
@@ -745,9 +600,9 @@ function validateDraftObject(document, options) {
     }
     if (typeof document.source === "string") {
         const draft = parseDraftDocument(document.source);
-        return validateDraftDocument(draft, {kind: options.kind ?? "main"});
+        return validateDraftDocument(draft, {kind: options.kind ?? "main", state: options.state});
     }
-    return validateDraftDocument(document, {kind: options.kind ?? "main"});
+    return validateDraftDocument(document, {kind: options.kind ?? "main", state: options.state});
 }
 
 function hasMeaningfulValue(value) {

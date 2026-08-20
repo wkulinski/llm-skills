@@ -60,8 +60,15 @@ import {
     validateStateLifecycle,
     validateSimplification,
 } from "../../../.agents/skills/task-plan/scripts/validate-plan.mjs";
+import {
+    createCompletedCriticalReview,
+    createValidPlanState,
+} from "./task-plan-test-helpers.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../");
+const CLOSED_GATE_OPTIONS = Object.freeze({
+    derived_state: Object.freeze({package_decision_gate: "closed"}),
+});
 const MAIN_FIXTURE = fs.readFileSync(path.join(ROOT, "tests/fixtures/task-plan/draft-main.md"), "utf8");
 const DERIVED_FIXTURE = fs.readFileSync(path.join(ROOT, "tests/fixtures/task-plan/draft-derived.md"), "utf8");
 const OWNERSHIP_FIXTURE = JSON.parse(fs.readFileSync(path.join(ROOT, "tests/fixtures/task-plan/ownership-redundancy-scenarios.json"), "utf8"));
@@ -90,15 +97,20 @@ describe("task-plan draft module", () => {
             source_kind: "github-issue",
             issue: "123",
             title: "Zażółć gęślą jaźń!",
-        })).toBe("docs/draft/issue-123-plan.md");
+        })).toBe("docs/plan/issue-123-plan.md");
         expect(buildDraftPath({
             source_kind: "user-input",
             title: "!!!",
-        })).toBe("docs/draft/task-task-plan.md");
+        })).toBe("docs/plan/task-task-plan.md");
         expect(buildDraftPath({
             source_kind: "file",
             source_ref: "docs/task.md",
-        })).toBe("docs/draft/task-file-docstaskmd-plan.md");
+        })).toBe("docs/plan/task-file-docstaskmd-plan.md");
+        expect(buildDraftPath({
+            source_kind: "github-issue",
+            issue: "123",
+            title: "Original title",
+        }, {draftRoot: "var/custom-plans"})).toBe("var/custom-plans/issue-123-plan.md");
         expect(buildDraftPath({
             source_kind: "github-issue",
             issue: "123",
@@ -120,13 +132,15 @@ describe("task-plan draft module", () => {
             repo_root: directory,
             state_root: path.join(directory, "state"),
             plan_id: "issue-123",
-            draft_path: "docs/draft/issue-123-plan.md",
+            draft_path: "docs/plan/issue-123-plan.md",
             source_identity: "github:acme/demo#123",
             source: {
                 source_kind: "github-issue",
                 owner: "acme",
                 repo: "demo",
                 issue_number: "123",
+                input_profile: "brief-request",
+                source_fetch_status: "pending",
             },
         };
         const result = updateState(plan, {type: "create-initial", payload: {}}, {
@@ -134,8 +148,8 @@ describe("task-plan draft module", () => {
         });
         const content = fs.readFileSync(result.paths.draft_path, "utf8");
 
-        expect(path.relative(directory, result.paths.draft_path)).toBe("docs/draft/issue-123-plan.md");
-        expect(validateDraftDocument(content, {kind: "main"}).valid).toBe(true);
+        expect(path.relative(directory, result.paths.draft_path)).toBe("docs/plan/issue-123-plan.md");
+        expect(validateDraftDocument(content, {kind: "main", state: result.state}).valid).toBe(true);
         expect(parseDraftDocument(content).metadata).toMatchObject({
             title: "Pending title",
             source_fetch_status: "pending",
@@ -151,9 +165,16 @@ describe("task-plan draft module", () => {
             repo_root: directory,
             state_root: path.join(directory, "state"),
             plan_id: "issue-123",
-            draft_path: "docs/draft/issue-123-plan.md",
+            draft_path: "docs/plan/issue-123-plan.md",
             source_identity: "github:acme/demo#123",
-            source: {source_kind: "github-issue", owner: "acme", repo: "demo", issue_number: "123"},
+            source: {
+                source_kind: "github-issue",
+                owner: "acme",
+                repo: "demo",
+                issue_number: "123",
+                input_profile: "brief-request",
+                source_fetch_status: "pending",
+            },
         };
         const initial = updateState(plan, {type: "create-initial", payload: {}}, {
             clock: {now: () => "2026-01-01T00:00:00Z"},
@@ -169,35 +190,35 @@ describe("task-plan draft module", () => {
 
         const draftPath = initial.paths.draft_path;
         const savedDraft = fs.readFileSync(draftPath, "utf8");
-        expect(validateDraftDocument(savedDraft, {kind: "main"}).valid).toBe(true);
+        expect(validateDraftDocument(savedDraft, {kind: "main", state: initial.state}).valid).toBe(true);
         expect(draftPath).toBe(initial.paths.draft_path);
     });
 
     it("validates fixture documents and parses scalar front matter", () => {
         const parsed = parseDraftDocument(MAIN_FIXTURE);
-        const result = validateDraftDocument(MAIN_FIXTURE, {kind: "main"});
+        const result = validateDraftDocument(MAIN_FIXTURE, {kind: "main", ...CLOSED_GATE_OPTIONS});
 
         expect(parsed.metadata.source_kind).toBe("github-issue");
         expect(parsed.metadata.plan_version).toBe("1");
         expect(result.valid).toBe(true);
         expect(result.missingSections).toEqual([]);
-        expect(validateDraftDocument(MAIN_FIXTURE.replace("source_fetch_status: complete\n", ""), {kind: "main"}).valid).toBe(false);
-        expect(validateDraftDocument(MAIN_FIXTURE.replace("<!-- task-plan:session-strategy:end -->", ""), {kind: "main"}).errors)
+        expect(validateDraftDocument(MAIN_FIXTURE.replace("source_fetch_status: complete\n", ""), {kind: "main", ...CLOSED_GATE_OPTIONS}).valid).toBe(false);
+        expect(validateDraftDocument(MAIN_FIXTURE.replace("<!-- task-plan:session-strategy:end -->", ""), {kind: "main", ...CLOSED_GATE_OPTIONS}).errors)
             .toContain("Session strategy markers must contain exactly one complete block.");
     });
 
     it("enforces profile-specific draft invariants and validates the derived fixture", () => {
         const detailedWithoutHistory = MAIN_FIXTURE.replace("input_profile: brief-request", "input_profile: detailed-plan");
-        expect(validateDraftDocument(detailedWithoutHistory, {kind: "main"}).valid).toBe(false);
+        expect(validateDraftDocument(detailedWithoutHistory, {kind: "main", ...CLOSED_GATE_OPTIONS}).valid).toBe(false);
 
         const detailed = `${detailedWithoutHistory}\n## Source plan\nOriginal plan\n## Review findings\nNone\n## Revised plan\nUpdated plan\n`;
-        expect(validateDraftDocument(detailed, {kind: "main"}).valid).toBe(true);
+        expect(validateDraftDocument(detailed, {kind: "main", ...CLOSED_GATE_OPTIONS}).valid).toBe(true);
 
         const titleOnly = MAIN_FIXTURE
             .replace("input_profile: brief-request", "input_profile: title-only")
             .replace("plan_status: review-pending", "plan_status: approved");
-        expect(validateDraftDocument(titleOnly, {kind: "main"}).valid).toBe(false);
-        expect(validateDraftDocument(DERIVED_FIXTURE, {kind: "derived"}).valid).toBe(true);
+        expect(validateDraftDocument(titleOnly, {kind: "main", ...CLOSED_GATE_OPTIONS}).valid).toBe(false);
+        expect(validateDraftDocument(DERIVED_FIXTURE, {kind: "derived", ...CLOSED_GATE_OPTIONS}).valid).toBe(true);
     });
 
     it("keeps the original target when an atomic write fails", () => {
@@ -218,12 +239,17 @@ describe("task-plan draft module", () => {
 
     it("validates pending, complete and failed source-fetch metadata conditionally", () => {
         const source = {
-            source_kind: "user-input",
-            source_ref: "conditional-source",
+            source_kind: "github-issue",
+            source_ref: "https://github.com/acme/demo/issues/123",
+            owner: "acme",
+            repo: "demo",
+            issue: "123",
+            title: "Conditional source",
             input_profile: "brief-request",
         };
-        const pending = buildDraftMetadata(source, {now: "2026-01-01T00:00:00Z"});
-        expect(validateDraftDocument(renderInitialDraftDocument(pending), {kind: "main"}).valid).toBe(true);
+        const pending = buildDraftMetadata({...source, source_fetch_status: "pending"}, {now: "2026-01-01T00:00:00Z"});
+        expectErrorCode(() => buildDraftMetadata({...source, source_fetch_status: "not-required"}), "INVALID_METADATA");
+        expect(validateDraftDocument(renderInitialDraftDocument(pending), {kind: "main", ...CLOSED_GATE_OPTIONS}).valid).toBe(true);
 
         const complete = buildDraftMetadata({
             ...source,
@@ -231,22 +257,23 @@ describe("task-plan draft module", () => {
             fetched_at: "2026-01-01T00:00:00Z",
             source_updated_at: "2025-12-31T23:59:00Z",
         }, {now: "2026-01-01T00:00:00Z"});
-        expect(validateDraftDocument(renderInitialDraftDocument(complete), {kind: "main"}).valid).toBe(true);
+        expect(validateDraftDocument(renderInitialDraftDocument(complete), {kind: "main", ...CLOSED_GATE_OPTIONS}).valid).toBe(true);
 
         const failed = buildDraftMetadata({
             ...source,
             source_fetch_status: "failed",
             source_fetch_error: "network unavailable",
+            source_fetch_failed_at: "2026-01-01T00:00:00Z",
         }, {now: "2026-01-01T00:00:00Z"});
-        expect(validateDraftDocument(renderInitialDraftDocument(failed), {kind: "main"}).valid).toBe(true);
+        expect(validateDraftDocument(renderInitialDraftDocument(failed), {kind: "main", ...CLOSED_GATE_OPTIONS}).valid).toBe(true);
 
         expect(validateDraftDocument(renderInitialDraftDocument({
             ...pending,
             fetched_at: "2026-01-01T00:00:00Z",
-        }), {kind: "main"}).errors).toContain("Pending source fetch must not contain fetched_at.");
+        }), {kind: "main", ...CLOSED_GATE_OPTIONS}).errors).toContain("pending source must not contain fetched_at.");
         const incompleteComplete = {...complete};
         delete incompleteComplete.source_updated_at;
-        expect(validateDraftDocument(renderInitialDraftDocument(incompleteComplete), {kind: "main"}).valid).toBe(false);
+        expect(validateDraftDocument(renderInitialDraftDocument(incompleteComplete), {kind: "main", ...CLOSED_GATE_OPTIONS}).valid).toBe(false);
     });
 
     it("leaves the parent pending when the derived or parent write fails", () => {
@@ -340,12 +367,8 @@ describe("task-plan state module", () => {
         const incomplete = {
             ...baseState(),
             plan_status: "review-pending",
-            review_complete: false,
-            critical_review_complete: false,
             review_history: [],
-            simplification_status: "pending",
             simplification: {result: "pending"},
-            simplification_control_review_complete: false,
         };
 
         expect(canOpenPackageDecisions(incomplete).ready).toBe(false);
@@ -397,6 +420,7 @@ describe("task-plan state module", () => {
         const complete = {
             ...baseState(),
             plan_version: 3,
+            review_history: [{...createCompletedCriticalReview(), plan_version: 3}],
             ownership_redundancy_review: source.review,
         };
 
@@ -425,6 +449,7 @@ describe("task-plan state module", () => {
             const state = {
                 ...baseState(),
                 plan_version: 3,
+                review_history: [{...createCompletedCriticalReview(), plan_version: 3}],
                 findings: scenario.findings,
                 ownership_redundancy_review: scenario.review,
             };
@@ -450,6 +475,7 @@ describe("task-plan state module", () => {
         const state = {
             ...baseState(),
             plan_version: 3,
+            review_history: [{...createCompletedCriticalReview(), plan_version: 3}],
             ownership_redundancy_review: source.review,
         };
         const before = structuredClone(state);
@@ -603,12 +629,8 @@ describe("task-plan state module", () => {
         const ready = {
             ...accepted,
             plan_status: "awaiting-package-decisions",
-            review_complete: true,
-            critical_review_complete: true,
-            review_history: [criticalReview()],
-            simplification_status: "no-change",
+            review_history: [createCompletedCriticalReview()],
             simplification: {result: "no-change"},
-            simplification_control_review_complete: true,
             blockers: [],
             findings: [],
             scope_questions: [],
@@ -648,12 +670,8 @@ describe("task-plan state module", () => {
         const ready = {
             ...accepted,
             plan_status: "awaiting-package-decisions",
-            review_complete: true,
-            critical_review_complete: true,
-            review_history: [criticalReview()],
-            simplification_status: "no-change",
+            review_history: [createCompletedCriticalReview()],
             simplification: {result: "no-change"},
-            simplification_control_review_complete: true,
             blockers: [],
             findings: [],
             scope_questions: [],
@@ -682,6 +700,19 @@ describe("task-plan state module", () => {
 });
 
 describe("task-plan source module", () => {
+    it("requires an explicit profile and preserves every declared profile", () => {
+        expectErrorCode(() => normalizeUserInput({title: "Missing profile"}), "INVALID_PROFILE");
+        for (const input_profile of ["title-only", "brief-request", "specification", "detailed-plan"]) {
+            const source = normalizeUserInput({
+                title: "Declared profile",
+                body: "Body shape must not select a different profile.",
+                input_profile,
+            });
+            expect(source.input_profile).toBe(input_profile);
+        }
+        expectErrorCode(() => normalizeUserInput({title: "Unsupported", input_profile: "quick-plan"}), "INVALID_PROFILE");
+    });
+
     it("normalizes title-only GitHub input without inventing content", () => {
         const source = normalizeGitHubIssue({
             owner: "acme",
@@ -692,7 +723,7 @@ describe("task-plan source module", () => {
             comments: [],
             branch: "issue/123-add-support",
             base: "origin/main",
-        }, {fetchedAt: "2026-01-01T00:00:00Z"});
+        }, {profileHint: "title-only", sourceFetchStatus: "pending"});
 
         expect(source).toMatchObject({
             source_kind: "github-issue",
@@ -700,10 +731,18 @@ describe("task-plan source module", () => {
             input_profile: "title-only",
             body: "",
             comments: [],
-            fetched_at: "2026-01-01T00:00:00Z",
+            fetched_at: null,
             branch: "issue/123-add-support",
             base_ref: "origin/main",
         });
+        expectErrorCode(() => normalizeGitHubIssue({
+            owner: "acme",
+            repo: "demo",
+            number: 123,
+            title: "Add support",
+            body: "",
+            comments: [],
+        }, {profileHint: "title-only", sourceFetchStatus: "not-required"}), "INVALID_SOURCE_FETCH_STATUS");
     });
 
     it("reads files only inside the supplied repository root", () => {
@@ -713,21 +752,22 @@ describe("task-plan source module", () => {
         const source = normalizeFileSource({
             filePath: "task.md",
             repoRoot: directory,
-            options: {fetchedAt: "2026-01-01T00:00:00Z"},
+            options: {profileHint: "brief-request"},
         });
         expect(source).toMatchObject({
             source_kind: "file",
             source_ref: "task.md",
             title: "Task",
             input_profile: "brief-request",
+            source_fetch_status: "not-required",
         });
         expect(() => resolveSafePath("../outside.md", directory)).toThrow(SourceError);
     });
 
     it("normalizes user input and compares snapshots without refreshing implicitly", () => {
-        const source = normalizeUserInput({title: "Goal", body: "Details", source_ref: "conversation-1"});
+        const source = normalizeUserInput({title: "Goal", body: "Details", source_ref: "conversation-1", input_profile: "brief-request"});
         expect(source).toMatchObject({source_kind: "user-input", source_ref: "conversation-1"});
-        expect(normalizeUserInput({title: "Stable title"}).source_ref).toBe("stable-title");
+        expect(normalizeUserInput({title: "Stable title", input_profile: "title-only"}).source_ref).toBe("stable-title");
         expect(compareSourceSnapshots(source, {...source, body: "Changed"})).toEqual({
             changed: true,
             changed_fields: ["body"],
@@ -746,9 +786,10 @@ describe("task-plan source module", () => {
             resolveCommand: () => "gh",
             branch: "issue/123-add-support",
             base: "origin/main",
+            profileHint: "title-only",
             execCommand: (command, args) => ({
                 status: command === "gh" && args.includes("issue") ? 0 : 1,
-                stdout: JSON.stringify({number: 123, title: "Add support", body: "", comments: []}),
+                stdout: JSON.stringify({number: 123, title: "Add support", body: "", comments: [], updatedAt: "2026-01-01T00:00:00Z"}),
                 stderr: "",
             }),
         });
@@ -757,6 +798,7 @@ describe("task-plan source module", () => {
             source_kind: "github-issue",
             issue_number: "123",
             input_profile: "title-only",
+            source_fetch_status: "complete",
             fetched_at: "2026-01-01T00:00:00Z",
             branch: "issue/123-add-support",
             base_ref: "origin/main",
@@ -917,12 +959,8 @@ describe("task-plan validation module", () => {
         const complete = {
             ...accepted,
             plan_status: "approved",
-            review_complete: true,
-            critical_review_complete: true,
-            review_history: [criticalReview()],
-            simplification_status: "no-change",
+            review_history: [createCompletedCriticalReview()],
             simplification: {result: "no-change"},
-            simplification_control_review_complete: true,
             blockers: [],
             findings: [],
             scope_questions: [],
@@ -959,12 +997,8 @@ describe("task-plan validation module", () => {
             ...accepted,
             plan_status: "approved",
             plan_version: 3,
-            review_complete: true,
-            critical_review_complete: true,
-            review_history: [criticalReview()],
-            simplification_status: "no-change",
+            review_history: [createCompletedCriticalReview()],
             simplification: {result: "no-change"},
-            simplification_control_review_complete: true,
             blockers: [],
             findings: source.findings,
             scope_questions: [],
@@ -977,7 +1011,10 @@ describe("task-plan validation module", () => {
     });
 
     it("validates the draft fixture and rejects an approved state with blockers", () => {
-        expect(validatePlanDocument(MAIN_FIXTURE, {kind: "main"}).valid).toBe(true);
+        expect(validatePlanDocument(MAIN_FIXTURE, {kind: "main"})).toMatchObject({
+            valid: false,
+            errors: expect.arrayContaining([expect.stringContaining("DERIVED_STATE_REQUIRED")]),
+        });
         expect(validatePlanState({
             plan_status: "needs-clarification",
             plan_version: 1,
@@ -986,8 +1023,8 @@ describe("task-plan validation module", () => {
             review_history: [],
             decisions: [],
             simplification: {result: "pending"},
-            session_strategy: sessionStrategy(),
-            ownership_redundancy_review: notRequiredOwnershipReview(),
+            session_strategy: createValidPlanState().session_strategy,
+            ownership_redundancy_review: createValidPlanState().ownership_redundancy_review,
         }).valid).toBe(true);
         const invalid = validatePlanState({...baseState(), plan_status: "approved", blockers: ["B1"]});
         expect(invalid.valid).toBe(false);
@@ -1001,12 +1038,8 @@ describe("task-plan validation module", () => {
         expect(validatePlanState({
             ...approved,
             plan_status: "approved",
-            review_complete: true,
-            critical_review_complete: true,
-            review_history: [criticalReview()],
-            simplification_status: "no-change",
+            review_history: [createCompletedCriticalReview()],
             simplification: {result: "no-change"},
-            simplification_control_review_complete: true,
             blockers: [],
             findings: [],
             scope_questions: [],
@@ -1018,7 +1051,8 @@ describe("task-plan validation module", () => {
         const state = {
             ...baseState(),
             plan_status: "review-pending",
-            package_decision_gate: "closed",
+            review_history: [],
+            simplification: {result: "pending"},
             revision: 2,
             source_fetch_status: "complete",
             fetched_at: "2026-01-01T00:00:00Z",
@@ -1091,8 +1125,11 @@ describe("task-plan validation module", () => {
     it("validates canonical state lifecycle, execution invariants and projection guards", () => {
         const state = createInitialState({
             plan_id: "validator-demo",
-            draft_path: "docs/draft/validator-demo.md",
+            draft_path: "docs/plan/validator-demo.md",
             source_identity: "user:validator-demo",
+            source_kind: "user-input",
+            input_profile: "brief-request",
+            source_fetch_status: "not-required",
         }, {now: "2026-01-01T00:00:00Z"});
 
         expect(validateStateLifecycle({lifecycle: "absent", state: null})).toMatchObject({
@@ -1152,7 +1189,6 @@ describe("task-plan validation module", () => {
         const blockedApproval = validatePlanState({
             ...state,
             plan_status: "approved",
-            package_decision_gate: "open",
             workflow_phase: "handoff",
             workflow_outcome: "blocked",
         });
@@ -1163,12 +1199,15 @@ describe("task-plan validation module", () => {
     it("requires canonical projection metadata to match the state identity and workflow", () => {
         const state = createInitialState({
             plan_id: "validator-projection",
-            draft_path: "docs/draft/validator-projection.md",
+            draft_path: "docs/plan/validator-projection.md",
             source_identity: "user:validator-projection",
+            source_kind: "user-input",
+            input_profile: "brief-request",
+            source_fetch_status: "not-required",
         }, {now: "2026-01-01T00:00:00Z"});
         const parsed = parseDraftDocument(MAIN_FIXTURE);
         const metadata = {...parsed.metadata,
-            source_fetch_status: "pending",
+            source_fetch_status: "not-required",
             source_identity: "user:validator-projection",
             workflow_phase: state.workflow_phase,
             workflow_outcome: state.workflow_outcome,
@@ -1182,6 +1221,10 @@ describe("task-plan validation module", () => {
         );
 
         expect(validatePlanDocument(projected, {kind: "main", state}).valid).toBe(true);
+        expect(validatePlanDocument(parseDraftDocument(projected), {
+            kind: "main",
+            state: {lifecycle: "persisted", state},
+        }).valid).toBe(true);
         const mismatch = validatePlanDocument(projected, {
             kind: "main",
             state: {...state, source_identity: "user:other", workflow_outcome: "blocked"},
@@ -1203,13 +1246,37 @@ describe("task-plan CLI contract", () => {
 
         const draftResult = runCli(DRAFT_SCRIPT, ["validate", "--file", invalidDraft]);
         expect(draftResult.status).toBe(1);
-        expect(JSON.parse(draftResult.stdout).valid).toBe(false);
+        expect(JSON.parse(draftResult.stdout)).toMatchObject({
+            valid: false,
+            code: "DERIVED_STATE_REQUIRED",
+        });
+
+        const validDraft = path.join(directory, "valid.md");
+        const validationState = path.join(directory, "validation-state.json");
+        fs.writeFileSync(validDraft, MAIN_FIXTURE, "utf8");
+        fs.writeFileSync(validationState, JSON.stringify({
+            plan_version: 1,
+            packages: [],
+            review_history: [],
+            simplification: {result: "pending"},
+        }), "utf8");
+        const validDraftResult = runCli(DRAFT_SCRIPT, [
+            "validate", "--file", validDraft, "--state", validationState,
+        ]);
+        expect(validDraftResult.status).toBe(0);
+        expect(JSON.parse(validDraftResult.stdout).valid).toBe(true);
+
+        const questionsWithoutState = path.join(directory, "questions-without-state.json");
+        fs.writeFileSync(questionsWithoutState, JSON.stringify({scope_questions: [], packages: []}), "utf8");
+        const questionsResult = runCli(DRAFT_SCRIPT, ["render-questions", "--file", questionsWithoutState]);
+        expect(questionsResult.status).toBe(1);
+        expect(JSON.parse(questionsResult.stdout).code).toBe("DERIVED_STATE_REQUIRED");
 
         const stateResult = runCli(STATE_SCRIPT, ["parse-command", "--value", "accept-all"]);
         expect(stateResult.status).toBe(1);
         expect(JSON.parse(stateResult.stdout).code).toBe("INVALID_DECISION_COMMAND");
 
-        const sourceResult = runCli(SOURCE_SCRIPT, ["normalize-file", "--root", ROOT, "--path", "../outside.md"]);
+        const sourceResult = runCli(SOURCE_SCRIPT, ["normalize-file", "--root", ROOT, "--path", "../outside.md", "--profile", "brief-request"]);
         expect(sourceResult.status).toBe(1);
         expect(JSON.parse(sourceResult.stdout).code).toBe("UNSAFE_SOURCE_PATH");
 
@@ -1250,49 +1317,24 @@ describe("task-plan CLI contract", () => {
         ]);
 
         expect(result.status).toBe(0);
-        expect(JSON.parse(result.stdout).path).toBe("docs/draft/issue-123-plan.md");
+        expect(JSON.parse(result.stdout).path).toBe("docs/plan/issue-123-plan.md");
+
+        const override = runCli(DRAFT_SCRIPT, [
+            "path",
+            "--source-kind",
+            "github-issue",
+            "--issue",
+            "123",
+            "--root",
+            "var/custom-plans",
+        ]);
+        expect(override.status).toBe(0);
+        expect(JSON.parse(override.stdout).path).toBe("var/custom-plans/issue-123-plan.md");
     });
 });
 
 function baseState() {
-    return {
-        plan_status: "awaiting-package-decisions",
-        plan_version: 1,
-        packages: [
-            {
-                id: "WP1",
-                goal: "Core",
-                scope: "Core scope",
-                dependencies: [],
-                acceptance_criteria: ["C1"],
-                risks: [],
-                questions: [],
-                decision_status: "pending",
-            },
-            {
-                id: "WP2",
-                goal: "Dependent",
-                scope: "Dependent scope",
-                dependencies: ["WP1"],
-                acceptance_criteria: ["C2"],
-                risks: [],
-                questions: [],
-                decision_status: "pending",
-            },
-        ],
-        findings: [],
-        review_history: [criticalReview()],
-        simplification: {result: "no-change"},
-        simplification_status: "no-change",
-        critical_review_complete: true,
-        simplification_control_review_complete: true,
-        blockers: [],
-        review_complete: true,
-        scope_questions: [],
-        decisions: [],
-        session_strategy: sessionStrategy(),
-        ownership_redundancy_review: notRequiredOwnershipReview(),
-    };
+    return createValidPlanState();
 }
 
 function materializeOwnershipNegativeScenario(scenario) {
@@ -1328,52 +1370,6 @@ function setPath(value, pathValue, replacement) {
     const field = parts.pop();
     const parent = parts.reduce((current, key) => current[key], value);
     parent[field] = replacement;
-}
-
-function notRequiredOwnershipReview() {
-    return {
-        required: false,
-        requirement_basis: "not-applicable",
-        requirement_decision_ref: "",
-        status: "not-required",
-        subjects: [],
-    };
-}
-
-function sessionStrategy() {
-    return {
-        mode: "staged",
-        rationale: "WP1 precedes dependent work.",
-        stages: [{
-            id: "S1",
-            title: "Core",
-            rationale: "Stabilize the core contract first.",
-            work_package_ids: ["WP1"],
-            dependencies: [],
-            session_boundary: "same-session",
-            entry_criteria: ["Scope confirmed."],
-            exit_criteria: ["Core contract documented."],
-        }],
-        session_boundary_recommendation: "Review dependent work in a new session.",
-        dependencies: ["WP2 depends_on WP1"],
-        entry_criteria: ["Intent confirmed."],
-        exit_criteria: ["Every stage has a terminal result."],
-    };
-}
-
-function criticalReview() {
-    return {
-        iteration: 1,
-        plan_version: 1,
-        stage: "critical-review",
-        complete: true,
-        checks: [
-            "intent-and-acceptance",
-            "technical-scope",
-            "edge-cases-and-verification",
-            "risks-and-dependencies",
-        ],
-    };
 }
 
 function makeTemporaryDirectory() {

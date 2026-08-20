@@ -1,5 +1,7 @@
 {
-  "package_decision_gate": "open",
+  "derived_state": {
+    "package_decision_gate": "open"
+  },
   "scope_questions": [
     {
       "id": "SQ1",
