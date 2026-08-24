@@ -5,7 +5,7 @@ import path from "node:path";
 
 const MAX_REQUIRED_EVIDENCE = 4;
 const MAX_REQUIRED_ANCHORS = 4;
-const DECLARED_SURFACE_FIELDS = Object.freeze(["required_tests", "required_symbols"]);
+const DECLARED_SURFACE_FIELDS = Object.freeze(["required_files", "required_tests", "required_symbols"]);
 const DEFAULT_TEST_BUDGET = 2;
 const DEFAULT_SYMBOL_BUDGET = 3;
 export const CRITERIA_SCHEMA_VERSION = 2;
@@ -278,8 +278,8 @@ function collectRequiredEntries(criteria, field, selector) {
     return entries;
 }
 
-function scopeError(resource, entries, hardBudget) {
-    if (entries.length <= hardBudget) { return null; }
+function scopeError(resource, entries, hardBudget, minimum = entries.length) {
+    if (minimum <= hardBudget) { return null; }
     const overflow = entries.slice(hardBudget);
     const criterionIds = [...new Set(overflow.map((entry) => entry.criterion_id))];
     return {
@@ -288,7 +288,7 @@ function scopeError(resource, entries, hardBudget) {
         criterion_ids: criterionIds,
         criteria: criterionIds,
         items: overflow.map((entry) => entry.value),
-        minimum_budget: entries.length,
+        minimum_budget: minimum,
         hard_budget: hardBudget,
         message: `${resource} requirements exceed the hard discovery budget`,
     };
@@ -312,7 +312,9 @@ export function calculateCriteriaBudget(document, options = {}) {
 
     const hardFileBudget = budgetValue(options.hard_file_budget, 10);
     const defaultFileBudget = Math.min(budgetValue(options.default_file_budget, hardFileBudget), hardFileBudget);
-    const minimumFileBudget = requiredPaths.length;
+    const requiredFiles = collectRequiredEntries(criteria, "required_files", (value) => `file:${value}`);
+    const minimumFileBudget = Math.max(requiredPaths.length, requiredFiles.length);
+    const fileBudgetEntries = requiredPaths.length >= requiredFiles.length ? requiredPaths : requiredFiles;
     const verificationMargin = Math.min(
         budgetValue(options.verification_margin, 2),
         Math.max(0, hardFileBudget - minimumFileBudget),
@@ -343,10 +345,11 @@ export function calculateCriteriaBudget(document, options = {}) {
         effective_symbol_budget: Math.min(hardSymbolBudget, Math.max(defaultSymbolBudget, minimumSymbolBudget)),
         hard_symbol_budget: hardSymbolBudget,
         required_paths: requiredPaths.map((entry) => entry.value),
+        required_files: requiredFiles.map((entry) => entry.value),
         required_tests: requiredTests.map((entry) => entry.value),
         required_symbols: requiredSymbols.map((entry) => entry.value),
         scope_errors: [
-            scopeError("files", requiredPaths, hardFileBudget),
+            scopeError("files", fileBudgetEntries, hardFileBudget, minimumFileBudget),
             scopeError("tests", requiredTests, hardTestBudget),
             scopeError("symbols", requiredSymbols, hardSymbolBudget),
         ].filter(Boolean),

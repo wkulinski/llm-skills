@@ -93,6 +93,9 @@ Kryterium może opcjonalnie zawierać deterministyczną bramkę evidence:
   "id": "C1",
   "description": "Map the primary agent definition.",
   "forbid_negative_claims": true,
+  "required_files": 2,
+  "required_symbols": 1,
+  "required_tests": 0,
   "required_evidence": [
     {
       "path": ".opencode/agent/context-scout-fast.md",
@@ -109,6 +112,12 @@ evidence findingu z tym samym `criterion_id`. `forbid_negative_claims` odrzuca
 w raporcie `COMPLETE` absolutne twierdzenia o braku lub wyłączności. Pola te
 stosuj tylko wtedy, gdy wynikający z zadania target albo rola evidence są znane;
 nie zgaduj ścieżek tylko po to, aby utworzyć bramkę.
+
+Opcjonalne `required_files`, `required_symbols` i `required_tests` przyjmują
+nieujemną liczbę albo listę nazw. Deklarują minimalną powierzchnię potrzebną do
+uczciwego pokrycia criterion. Preflight używa większej wartości z jawnej
+deklaracji plików i konkretnych selectorów `required_evidence`; przekroczenie
+hard budget kończy się `SCOPE_TOO_BROAD` przed delegacją.
 
 Scout waliduje wejście w tej kolejności:
 
@@ -290,3 +299,9 @@ nie może wystąpić w `COMPLETE`. Opcjonalne `required_evidence` i
 pełnej semantycznej oceny prawdziwości claimów.
 Agent główny nie powtarza szerokiego rekonesansu, chyba że raport jest
 niekompletny albo sprzeczny z repo.
+
+Schema-valid `INCOMPLETE` albo `BLOCKED` pozostaje niezaakceptowanym wynikiem,
+ale helper zachowuje go jako `partialReportPath`. Brak raportu pozostaje jawną
+klasą `REPORT_MISSING` w state i final metadata; helper nie tworzy wtedy
+sztucznego evidence artifact. `partialReportPath` nie jest równoważny
+`reportPath` raportu `COMPLETE` i nie ustawia `hybrid_final`.

@@ -1,27 +1,11 @@
 #!/usr/bin/env node
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import {spawnSync} from "node:child_process";
 import {pathToFileURL} from "node:url";
 
-import {slugifyTitle} from "../../_shared/scripts/slugify-title.mjs";
-import {
-    INPUT_PROFILES,
-    normalizeEvidenceRefs,
-    SOURCE_FETCH_STATUSES,
-    SOURCE_KINDS,
-} from "./state.mjs";
-
-export {INPUT_PROFILES, SOURCE_KINDS};
-
-const CLI_CONTRACT_REJECTIONS = Object.freeze([
-    "UNSAFE_SOURCE_PATH",
-    "EMPTY_USER_INPUT",
-    "INVALID_PROFILE",
-    "INVALID_PROVENANCE",
-    "INVALID_SOURCE_FETCH_STATUS",
-]);
+import {writeFileAtomic} from "./atomic-file.mjs";
 
 export class SourceError extends Error {
     constructor(code, message, details = {}) {
@@ -32,501 +16,345 @@ export class SourceError extends Error {
     }
 }
 
-function requireInputProfile(input = {}, options = {}) {
-    const profile = options.input_profile
-        ?? options.inputProfile
-        ?? options.profileHint
-        ?? input.input_profile
-        ?? input.profile_hint;
-    if (typeof profile !== "string" || profile.trim() === "") {
-        throw new SourceError("INVALID_PROFILE", "An explicit input_profile or profile_hint is required.");
-    }
-    if (!INPUT_PROFILES.includes(profile)) {
-        throw new SourceError("INVALID_PROFILE", `Unsupported input profile: ${profile}.`);
-    }
-    return profile;
-}
+export function normalizeGitHubIssue(input = {}, options = {}) {
+    const owner = requiredString(input.owner, "owner");
+    const repo = requiredString(input.repo, "repo");
+    const issueNumber = positiveInteger(input.issue_number ?? input.issue, "issue_number");
+    const body = optionalString(input.body);
+    const comments = normalizeComments(input.comments);
+    const title = optionalString(input.title);
+    const fetchedAt = timestamp(options.fetched_at ?? input.fetched_at ?? new Date().toISOString(), "fetched_at");
+    const updatedAt = nullableTimestamp(input.source_updated_at ?? input.updated_at, "source_updated_at");
 
-export function normalizeGitHubIssue(input, options = {}) {
-    const owner = requireIdentifier(input?.owner, "owner");
-    const repo = requireIdentifier(input?.repo, "repo");
-    const issueNumber = requireIssueNumber(input?.issue_number ?? input?.number);
-    const title = requireString(input?.title, "title");
-    const inputProfile = requireInputProfile(input, options);
-    const sourceFetch = sourceFetchMetadata(input, options, "github-issue");
-    const body = String(input?.body ?? "");
-    const comments = normalizeComments(input?.comments);
-    const sourceRef = input?.url ?? `https://github.com/${owner}/${repo}/issues/${issueNumber}`;
-
-    return {
+    return freezeSource({
         source_kind: "github-issue",
-        source_ref: sourceRef,
-        owner,
-        repo,
-        issue_number: String(issueNumber),
+        source_ref: input.source_ref ?? `https://github.com/${owner}/${repo}/issues/${issueNumber}`,
+        identity: `${owner}/${repo}#${issueNumber}`,
         title,
         body,
         comments,
-        authors: normalizeAuthors(input?.author, comments),
-        ...sourceFetch,
-        branch: input?.branch ?? null,
-        base_ref: input?.base_ref ?? input?.base ?? null,
-        input_profile: inputProfile,
-        provenance: normalizeProvenance(input, {
-            source_kind: "github-issue",
-            source_ref: sourceRef,
-        }),
-    };
+        authors: normalizeAuthors(input.authors ?? [input.author ?? input.user].filter(Boolean)),
+        fetched_at: fetchedAt,
+        source_updated_at: updatedAt,
+        owner,
+        repo,
+        issue_number: issueNumber,
+    });
 }
 
-export function normalizeFileSource({filePath, repoRoot, fsOps = fs, options = {}} = {}) {
-    const inputProfile = requireInputProfile({}, options);
-    const safePath = resolveSafePath(filePath, repoRoot, fsOps);
+export function normalizeFileSource({filePath, repoRoot = process.cwd(), fsOps = fs, options = {}} = {}) {
+    const absolute = resolveSafePath(filePath, repoRoot);
     let body;
     try {
-        body = fsOps.readFileSync(safePath.absolutePath, "utf8");
+        body = fsOps.readFileSync(absolute, "utf8");
     } catch (error) {
-        throw new SourceError("SOURCE_FILE_READ_FAILED", `Could not read source file ${safePath.relativePath}.`, {
-            path: safePath.relativePath,
+        throw new SourceError("SOURCE_READ_FAILED", `Could not read ${absolute}.`, {
             cause: error instanceof Error ? error.message : String(error),
+            path: absolute,
         });
     }
-
-    const title = options.title ?? firstMarkdownHeading(body) ?? "";
-    return {
+    const relative = path.relative(path.resolve(repoRoot), absolute).split(path.sep).join("/");
+    const contentHash = sha256(body);
+    return freezeSource({
         source_kind: "file",
-        source_ref: safePath.relativePath,
-        title,
+        source_ref: `./${relative}`,
+        identity: `file:${relative}:${contentHash.slice(0, 12)}`,
+        title: optionalString(options.title) || path.basename(relative),
         body,
         comments: [],
-        authors: [],
-        repository_root: safePath.rootPath,
-        ...sourceFetchMetadata({}, {...options, sourceFetchStatus: "not-required"}, "file"),
-        input_profile: inputProfile,
-        provenance: normalizeProvenance(options, {
-            source_kind: "file",
-            source_ref: safePath.relativePath,
-        }),
-    };
+        authors: normalizeAuthors(options.authors),
+        fetched_at: timestamp(options.fetched_at ?? new Date().toISOString(), "fetched_at"),
+        source_updated_at: nullableTimestamp(options.source_updated_at, "source_updated_at"),
+    });
 }
 
-export function normalizeUserInput(input = {}) {
-    const inputProfile = requireInputProfile(input);
-    const title = String(input.title ?? "").trim();
-    const body = String(input.body ?? "");
-    if (title === "" && body.trim() === "") {
-        throw new SourceError("EMPTY_USER_INPUT", "User input must contain a title or body.");
-    }
-
-    return {
+export function normalizeUserInput(input = {}, options = {}) {
+    const body = requiredString(input.body ?? input.text, "body");
+    const explicitIdentity = optionalString(input.identity ?? options.identity);
+    const identity = explicitIdentity || `user-input:${sha256(body).slice(0, 12)}`;
+    return freezeSource({
         source_kind: "user-input",
-        source_ref: input.source_ref ?? (slugifyTitle(title || body) || "conversation"),
-        title,
+        source_ref: optionalString(input.source_ref) || identity,
+        identity,
+        title: optionalString(input.title),
         body,
         comments: normalizeComments(input.comments),
-        authors: normalizeAuthors(input.author, input.comments),
-        repository_root: input.repository_root ?? null,
-        branch: input.branch ?? null,
-        base_ref: input.base_ref ?? null,
-        ...sourceFetchMetadata(input, {sourceFetchStatus: "not-required"}, "user-input"),
-        input_profile: inputProfile,
-        provenance: normalizeProvenance(input, {
-            source_kind: "user-input",
-            source_ref: input.source_ref ?? (slugifyTitle(title || body) || "conversation"),
-        }),
-    };
-}
-
-export function fetchGitHubIssue({
-    owner,
-    repo,
-    issueNumber,
-    repoRoot = process.cwd(),
-    execCommand,
-    resolveCommand,
-    fetchedAt,
-    clock,
-    profileHint,
-    inputProfile,
-    branch,
-    base,
-    baseRef,
-} = {}) {
-    const normalizedOwner = requireIdentifier(owner, "owner");
-    const normalizedRepo = requireIdentifier(repo, "repo");
-    const normalizedIssue = requireIssueNumber(issueNumber);
-    const command = resolveCommand
-        ? resolveCommand(repoRoot)
-        : resolveGhCommand(repoRoot);
-    const executor = execCommand ?? createExecutor(repoRoot);
-    const result = executor(command, [
-        "issue",
-        "view",
-        normalizedIssue,
-        "--repo",
-        `${normalizedOwner}/${normalizedRepo}`,
-        "--json",
-        "number,title,body,comments,author,updatedAt,url",
-    ]);
-
-    if (!result || result.status !== 0) {
-        throw new SourceError("SOURCE_GITHUB_COMMAND_FAILED", "GitHub issue fetch failed.", {
-            status: result?.status ?? null,
-            stderr: result?.stderr ?? "",
-        });
-    }
-
-    let payload;
-    try {
-        payload = JSON.parse(result.stdout);
-    } catch (error) {
-        throw new SourceError("SOURCE_GITHUB_INVALID_JSON", "GitHub issue output was not valid JSON.", {
-            cause: error instanceof Error ? error.message : String(error),
-        });
-    }
-
-    const normalizedFetchedAt = requireTimestamp(
-        fetchedAt ?? (typeof clock?.now === "function" ? clock.now() : null),
-        "fetched_at",
-    );
-    const sourceUpdatedAt = requireTimestamp(payload.updatedAt ?? payload.source_updated_at, "source_updated_at");
-
-    return normalizeGitHubIssue({
-        ...payload,
-        owner: normalizedOwner,
-        repo: normalizedRepo,
-        issue_number: normalizedIssue,
-        source_updated_at: sourceUpdatedAt,
-        source_fetch_status: "complete",
-        branch,
-        base_ref: baseRef ?? base,
-    }, {
-        fetchedAt: normalizedFetchedAt,
-        profileHint: profileHint ?? inputProfile,
-        sourceFetchStatus: "complete",
+        authors: normalizeAuthors(input.authors),
+        fetched_at: timestamp(options.fetched_at ?? input.fetched_at ?? new Date().toISOString(), "fetched_at"),
+        source_updated_at: nullableTimestamp(input.source_updated_at, "source_updated_at"),
     });
 }
 
-export function refreshSource({currentSource, fetchSource, explicit = false} = {}) {
-    if (explicit !== true) {
-        throw new SourceError("EXPLICIT_REFRESH_REQUIRED", "Refreshing source material requires an explicit request.");
+export function validateNormalizedSource(source) {
+    const errors = [];
+    if (!source || typeof source !== "object" || Array.isArray(source)) {
+        return {valid: false, errors: ["Source must be an object."]};
     }
-    if (typeof fetchSource !== "function") {
-        throw new SourceError("INVALID_REFRESH_HANDLER", "fetchSource must be a function.");
+    if (!["github-issue", "file", "user-input"].includes(source.source_kind)) {
+        errors.push("source_kind is invalid.");
     }
-
-    const nextSource = fetchSource();
-    return {
-        ...compareSourceSnapshots(currentSource, nextSource),
-        source: nextSource,
-    };
-}
-
-export function compareSourceSnapshots(previous, next) {
-    const fields = ["title", "body", "comments", "source_updated_at", "source_ref"];
-    const changedFields = fields.filter((field) => stableJson(previous?.[field]) !== stableJson(next?.[field]));
-    return {
-        changed: changedFields.length > 0,
-        changed_fields: changedFields,
-    };
-}
-
-export function resolveSafePath(filePath, repoRoot, fsOps = fs) {
-    const rootPath = requirePath(repoRoot, "repoRoot");
-    const requestedPath = requirePath(filePath, "filePath");
-    const absoluteRoot = path.resolve(rootPath);
-    const candidate = path.resolve(absoluteRoot, requestedPath);
-    const relativeCandidate = path.relative(absoluteRoot, candidate);
-    if (relativeCandidate === ".." || relativeCandidate.startsWith(`..${path.sep}`) || path.isAbsolute(relativeCandidate)) {
-        throw new SourceError("UNSAFE_SOURCE_PATH", "Source file must remain inside repository root.", {
-            filePath: requestedPath,
-            repoRoot: absoluteRoot,
-        });
-    }
-
-    let realRoot = absoluteRoot;
-    let realCandidate = candidate;
-    try {
-        if (typeof fsOps.realpathSync === "function") {
-            realRoot = fsOps.realpathSync(absoluteRoot);
-            realCandidate = fsOps.realpathSync(candidate);
+    for (const field of ["source_ref", "identity", "fetched_at"]) {
+        if (typeof source[field] !== "string" || source[field].trim() === "") {
+            errors.push(`${field} must be a non-empty string.`);
         }
-    } catch (error) {
-        throw new SourceError("SOURCE_FILE_READ_FAILED", `Could not resolve source path ${requestedPath}.`, {
-            cause: error instanceof Error ? error.message : String(error),
-        });
     }
-
-    const realRelative = path.relative(realRoot, realCandidate);
-    if (realRelative === ".." || realRelative.startsWith(`..${path.sep}`) || path.isAbsolute(realRelative)) {
-        throw new SourceError("UNSAFE_SOURCE_PATH", "Symlinked source file must remain inside repository root.", {
-            filePath: requestedPath,
-            repoRoot: realRoot,
-        });
+    if (typeof source.body !== "string") {
+        errors.push("body must be a string.");
+    } else if (source.body.trim() === ""
+        && (source.source_kind !== "github-issue" || typeof source.title !== "string" || source.title.trim() === "")) {
+        errors.push("body must be non-empty unless a GitHub issue has a non-empty title.");
     }
+    if (typeof source.fetched_at === "string" && Number.isNaN(Date.parse(source.fetched_at))) {
+        errors.push("fetched_at must be a valid timestamp.");
+    }
+    if (!Array.isArray(source.comments)) {
+        errors.push("comments must be an array.");
+    }
+    if (!Array.isArray(source.authors)) {
+        errors.push("authors must be an array.");
+    }
+    return {valid: errors.length === 0, errors};
+}
 
+export function sourceArtifact(source) {
+    const result = validateNormalizedSource(source);
+    if (!result.valid) {
+        throw new SourceError("INVALID_SOURCE", result.errors.join(" "), {errors: result.errors});
+    }
+    const content = `${stableStringify(source, 2)}\n`;
+    return {content, sha256: sha256(content)};
+}
+
+export function buildPlanId(sourceIdentity) {
+    const identity = requiredString(sourceIdentity, "source_identity");
+    const hash = sha256(identity).slice(0, 8);
+    const issue = identity.match(/#([1-9][0-9]*)$/)?.[1];
+    if (issue) {
+        return `v2-issue-${issue}-${hash}`;
+    }
+    const slug = identity
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 48) || "plan";
+    return `v2-${slug}-${hash}`;
+}
+
+export function resolveSourceArtifactPath({repoRoot = process.cwd(), sourceIdentity} = {}) {
+    const root = path.resolve(requiredString(repoRoot, "repo_root"));
+    const planId = buildPlanId(sourceIdentity);
+    const artifactPath = path.resolve(root, "var", "agent", "task-plan", planId, "source.json");
+    return {repoRoot: root, planId, artifactPath};
+}
+
+export function persistSource(source, options = {}) {
+    const fsOps = options.fsOps ?? fs;
+    const paths = resolveSourceArtifactPath({repoRoot: options.repoRoot ?? process.cwd(), sourceIdentity: source?.identity});
+    const artifact = sourceArtifact(source);
+    writeFileAtomic(paths.artifactPath, artifact.content, {rootDir: paths.repoRoot, fsOps});
     return {
-        absolutePath: realCandidate,
-        relativePath: realRelative.split(path.sep).join("/"),
-        rootPath: realRoot,
+        ok: true,
+        plan_id: paths.planId,
+        source_identity: source.identity,
+        source_artifact: relativePath(paths.repoRoot, paths.artifactPath),
+        source_sha256: artifact.sha256,
     };
 }
 
-export function resolveGhCommand(repoRoot) {
-    const root = path.resolve(requirePath(repoRoot, "repoRoot"));
-    const envLoader = path.join(root, ".agents/skills/_shared/scripts/env-load.sh");
-    const result = spawnSync("bash", ["-lc", `source ${shellQuote(envLoader)} && resolve_tool_cmd gh gh`], {
-        cwd: root,
-        encoding: "utf8",
-    });
-    if (result.status !== 0 || result.stdout.trim() === "") {
-        throw new SourceError("TOOL_RESOLUTION_FAILED", "Could not resolve gh through env-load.sh.", {
-            stderr: result.stderr,
+export function loadPersistedSource({repoRoot = process.cwd(), sourceIdentity, fsOps = fs} = {}) {
+    const paths = resolveSourceArtifactPath({repoRoot, sourceIdentity});
+    if (!fsOps.existsSync(paths.artifactPath)) {
+        throw new SourceError("SOURCE_ARTIFACT_MISSING", `Source artifact does not exist: ${paths.artifactPath}.`);
+    }
+    const content = fsOps.readFileSync(paths.artifactPath, "utf8");
+    let source;
+    try {
+        source = JSON.parse(content);
+    } catch (error) {
+        throw new SourceError("SOURCE_ARTIFACT_INVALID", "Source artifact is not valid JSON.", {
+            cause: error instanceof Error ? error.message : String(error),
         });
     }
-    return result.stdout.trim();
+    const result = validateNormalizedSource(source);
+    if (!result.valid || source.identity !== sourceIdentity) {
+        throw new SourceError("SOURCE_ARTIFACT_INVALID", "Source artifact does not match the requested identity.", {
+            errors: result.errors,
+        });
+    }
+    return {
+        source,
+        content,
+        plan_id: paths.planId,
+        source_artifact: relativePath(paths.repoRoot, paths.artifactPath),
+        source_sha256: sha256(content),
+    };
 }
 
-export function createExecutor(repoRoot) {
-    return (command, args) => spawnSync(command, args, {
-        cwd: path.resolve(repoRoot),
-        encoding: "utf8",
-        shell: false,
-    });
+export function resolveSafePath(filePath, repoRoot) {
+    const root = path.resolve(requiredString(repoRoot, "repoRoot"));
+    const absolute = path.resolve(root, requiredString(filePath, "filePath"));
+    const relative = path.relative(root, absolute);
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        throw new SourceError("UNSAFE_PATH", "Source file must remain inside repository root.", {root, path: absolute});
+    }
+    return absolute;
 }
 
-function normalizeComments(comments) {
-    if (!Array.isArray(comments)) {
+function freezeSource(source) {
+    const result = validateNormalizedSource(source);
+    if (!result.valid) {
+        throw new SourceError("INVALID_SOURCE", result.errors.join(" "), {errors: result.errors});
+    }
+    return Object.freeze(source);
+}
+
+function normalizeComments(value) {
+    if (typeof value === "undefined" || value === null) {
         return [];
     }
-    return comments.map((comment) => {
+    if (!Array.isArray(value)) {
+        throw new SourceError("INVALID_SOURCE", "comments must be an array.");
+    }
+    return value.map((comment, index) => {
         if (typeof comment === "string") {
-            return {body: comment};
+            return {body: comment, author: null, created_at: null};
+        }
+        if (!comment || typeof comment !== "object" || Array.isArray(comment)) {
+            throw new SourceError("INVALID_SOURCE", `comment ${index + 1} must be a string or object.`);
         }
         return {
-            body: String(comment?.body ?? ""),
-            author: comment?.author?.login ?? comment?.author ?? null,
-            created_at: comment?.createdAt ?? comment?.created_at ?? null,
-            updated_at: comment?.updatedAt ?? comment?.updated_at ?? null,
+            body: requiredString(comment.body, `comments[${index}].body`),
+            author: optionalString(comment.author ?? comment.user) || null,
+            created_at: nullableTimestamp(comment.created_at, `comments[${index}].created_at`),
         };
     });
 }
 
-function normalizeAuthors(author, comments) {
-    const authors = [];
-    const issueAuthor = typeof author === "string" ? author : author?.login;
-    if (issueAuthor) {
-        authors.push(issueAuthor);
+function normalizeAuthors(value) {
+    if (typeof value === "undefined" || value === null) {
+        return [];
     }
-    for (const comment of normalizeComments(comments)) {
-        if (comment.author && !authors.includes(comment.author)) {
-            authors.push(comment.author);
+    const records = Array.isArray(value) ? value : [value];
+    return [...new Set(records.map((item) => {
+        if (typeof item === "string") {
+            return item.trim();
         }
-    }
-    return authors;
-}
-
-function sourceFetchMetadata(input, options, kind) {
-    const explicitStatus = options.sourceFetchStatus
-        ?? options.source_fetch_status
-        ?? input?.source_fetch_status;
-    const status = explicitStatus ?? (kind === "github-issue" ? "pending" : "not-required");
-    if (!SOURCE_FETCH_STATUSES.includes(status)) {
-        throw new SourceError("INVALID_SOURCE_FETCH_STATUS", `Unsupported source_fetch_status: ${status}.`);
-    }
-    if (kind === "github-issue" && status === "not-required") {
-        throw new SourceError("INVALID_SOURCE_FETCH_STATUS", "github-issue sources must use source_fetch_status pending, complete or failed.");
-    }
-    if (kind !== "github-issue" && status !== "not-required") {
-        throw new SourceError("INVALID_SOURCE_FETCH_STATUS", `${kind} sources must use source_fetch_status not-required.`);
-    }
-
-    const fetchedAt = options.fetchedAt ?? options.fetched_at ?? input?.fetched_at ?? null;
-    const sourceUpdatedAt = options.sourceUpdatedAt
-        ?? options.source_updated_at
-        ?? input?.source_updated_at
-        ?? input?.updatedAt
-        ?? null;
-    const sourceFetchError = options.sourceFetchError
-        ?? options.source_fetch_error
-        ?? input?.source_fetch_error
-        ?? input?.error
-        ?? null;
-    const sourceFetchFailedAt = options.sourceFetchFailedAt
-        ?? options.source_fetch_failed_at
-        ?? input?.source_fetch_failed_at
-        ?? null;
-
-    if (status === "not-required" || status === "pending") {
-        if ([fetchedAt, sourceUpdatedAt, sourceFetchError, sourceFetchFailedAt].some((value) => value !== null && typeof value !== "undefined")) {
-            throw new SourceError("INVALID_SOURCE_FETCH_STATUS", `${status} source must not contain fetch metadata.`);
+        if (item && typeof item === "object") {
+            return optionalString(item.login ?? item.name ?? item.username);
         }
-        return {
-            source_fetch_status: status,
-            fetched_at: null,
-            source_updated_at: null,
-            source_fetch_error: null,
-            source_fetch_failed_at: null,
-        };
-    }
-
-    if (status === "complete") {
-        return {
-            source_fetch_status: status,
-            fetched_at: requireTimestamp(fetchedAt, "fetched_at"),
-            source_updated_at: requireTimestamp(sourceUpdatedAt, "source_updated_at"),
-            source_fetch_error: null,
-            source_fetch_failed_at: null,
-        };
-    }
-
-    return {
-        source_fetch_status: status,
-        fetched_at: null,
-        source_updated_at: null,
-        source_fetch_error: requireString(sourceFetchError, "source_fetch_error"),
-        source_fetch_failed_at: requireTimestamp(sourceFetchFailedAt, "source_fetch_failed_at"),
-    };
+        return "";
+    }).filter(Boolean))];
 }
 
-function normalizeProvenance(input = {}, fallback = {}) {
-    const candidate = input?.provenance ?? input ?? {};
-    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
-        throw new SourceError("INVALID_PROVENANCE", "provenance must be an object.");
+function requiredString(value, name) {
+    if (typeof value !== "string" || value.trim() === "") {
+        throw new SourceError("INVALID_SOURCE", `${name} must be a non-empty string.`);
     }
-    try {
-        return {
-            source_kind: fallback.source_kind,
-            source_ref: fallback.source_ref,
-            evidence_refs: normalizeEvidenceRefs(
-                candidate.evidence_refs ?? input?.evidence_refs,
-                "provenance.evidence_refs",
-            ),
-        };
-    } catch (error) {
-        throw new SourceError(
-            "INVALID_PROVENANCE",
-            error instanceof Error ? error.message : String(error),
-        );
-    }
+    return value.trim();
 }
 
-function firstMarkdownHeading(body) {
-    const match = String(body).match(/^#\s+(.+)$/m);
-    return match ? match[1].trim() : null;
+function optionalString(value) {
+    return typeof value === "string" ? value.trim() : "";
 }
 
-function requireIdentifier(value, name) {
-    const result = requireString(value, name);
-    if (!/^[A-Za-z0-9_.-]+$/.test(result)) {
-        throw new SourceError("INVALID_IDENTIFIER", `${name} contains unsupported characters.`);
+function positiveInteger(value, name) {
+    const number = Number(value);
+    if (!Number.isInteger(number) || number < 1) {
+        throw new SourceError("INVALID_SOURCE", `${name} must be a positive integer.`);
     }
-    return result;
+    return number;
 }
 
-function requireIssueNumber(value) {
-    const result = requireString(value, "issueNumber");
-    if (!/^[1-9][0-9]*$/.test(result)) {
-        throw new SourceError("INVALID_ISSUE_NUMBER", "Issue number must be a positive integer.");
-    }
-    return result;
-}
-
-function requireString(value, name) {
-    if (typeof value !== "string" && typeof value !== "number") {
-        throw new SourceError("INVALID_SOURCE", `${name} is required.`);
-    }
-    const result = String(value).trim();
-    if (result === "") {
-        throw new SourceError("INVALID_SOURCE", `${name} is required.`);
-    }
-    return result;
-}
-
-function requirePath(value, name) {
-    return requireString(value, name);
-}
-
-function requireTimestamp(value, name) {
-    const result = requireString(value, name);
-    if (Number.isNaN(Date.parse(result))) {
+function timestamp(value, name) {
+    const candidate = requiredString(value, name);
+    if (Number.isNaN(Date.parse(candidate))) {
         throw new SourceError("INVALID_SOURCE", `${name} must be a valid timestamp.`);
     }
+    return candidate;
+}
+
+function nullableTimestamp(value, name) {
+    if (typeof value === "undefined" || value === null || value === "") {
+        return null;
+    }
+    return timestamp(value, name);
+}
+
+function sha256(value) {
+    return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function stableStringify(value, space = 0) {
+    return JSON.stringify(sortObject(value), null, space);
+}
+
+function relativePath(root, candidate) {
+    return path.relative(root, candidate).split(path.sep).join("/");
+}
+
+function sortObject(value) {
+    if (Array.isArray(value)) {
+        return value.map(sortObject);
+    }
+    if (!value || typeof value !== "object") {
+        return value;
+    }
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortObject(value[key])]));
+}
+
+function parseArgs(argv) {
+    const result = {_: []};
+    for (let index = 0; index < argv.length; index += 1) {
+        const token = argv[index];
+        if (!token.startsWith("--")) {
+            result._.push(token);
+            continue;
+        }
+        const key = token.slice(2).replaceAll("-", "_");
+        const next = argv[index + 1];
+        if (typeof next === "undefined" || next.startsWith("--")) {
+            result[key] = true;
+        } else {
+            result[key] = next;
+            index += 1;
+        }
+    }
     return result;
 }
 
-function stableJson(value) {
-    return JSON.stringify(value ?? null);
+function readJson(filePath) {
+    const content = filePath === "-" ? fs.readFileSync(0, "utf8") : fs.readFileSync(path.resolve(filePath), "utf8");
+    return JSON.parse(content);
 }
 
-function shellQuote(value) {
-    return `'${String(value).replaceAll("'", "'\\''")}'`;
-}
-
-function parseArgs(args) {
-    const parsed = {command: args.shift() ?? null, values: {}};
-    while (args.length > 0) {
-        const key = args.shift();
-        if (!key.startsWith("--")) {
-            throw new SourceError("INVALID_ARGUMENT", `Unexpected argument: ${key}.`);
+async function main(argv) {
+    const args = parseArgs(argv);
+    const command = args._[0];
+    let result;
+    if (command === "normalize-file") {
+        result = normalizeFileSource({filePath: args.path, repoRoot: args.root ?? process.cwd()});
+    } else if (command === "normalize-user") {
+        result = normalizeUserInput(readJson(args.input));
+    } else if (command === "normalize-github") {
+        result = normalizeGitHubIssue(readJson(args.input));
+    } else if (command === "persist") {
+        result = persistSource(readJson(args.input), {repoRoot: args.root ?? process.cwd()});
+    } else if (command === "validate") {
+        result = validateNormalizedSource(readJson(args.input));
+        if (!result.valid) {
+            process.exitCode = 1;
         }
-        const value = args.shift();
-        if (typeof value !== "string") {
-            throw new SourceError("INVALID_ARGUMENT", `Missing value for ${key}.`);
-        }
-        parsed.values[key.slice(2)] = value;
+    } else {
+        throw new SourceError("INVALID_ARGUMENT", "Usage: source.mjs normalize-file|normalize-user|normalize-github|persist|validate ...");
     }
-    return parsed;
-}
-
-function cliResult(parsed) {
-    if (parsed.command === "normalize-file") {
-        return normalizeFileSource({
-            filePath: parsed.values.path,
-            repoRoot: parsed.values.root,
-            options: {title: parsed.values.title, profileHint: parsed.values.profile},
-        });
-    }
-    if (parsed.command === "normalize-user") {
-        return normalizeUserInput({
-            title: parsed.values.title,
-            body: parsed.values.body,
-            source_ref: parsed.values["source-ref"],
-            profile_hint: parsed.values.profile,
-        });
-    }
-    if (parsed.command === "fetch-github") {
-        return fetchGitHubIssue({
-            owner: parsed.values.owner,
-            repo: parsed.values.repo,
-            issueNumber: parsed.values.issue,
-            repoRoot: parsed.values.root ?? process.cwd(),
-            fetchedAt: new Date().toISOString(),
-            profileHint: parsed.values.profile,
-            branch: parsed.values.branch,
-            baseRef: parsed.values["base-ref"] ?? parsed.values.base,
-        });
-    }
-    throw new SourceError("INVALID_COMMAND", "Use normalize-file, normalize-user, or fetch-github.");
-}
-
-function main(args) {
-    if (args[0] === "--help") {
-        process.stdout.write("Usage: source.mjs normalize-file --root <repo> --path <file> --profile <profile> | normalize-user --title <title> --profile <profile> [--body <body>] | fetch-github --root <repo> --owner <owner> --repo <repo> --issue <number> --profile <profile> [--branch <branch>] [--base-ref <ref>]\n");
-        return 0;
-    }
-    try {
-        process.stdout.write(`${JSON.stringify(cliResult(parseArgs(args)))}\n`);
-        return 0;
-    } catch (error) {
-        const result = error instanceof SourceError
-            ? {valid: false, code: error.code, message: error.message}
-            : {valid: false, code: "UNEXPECTED_ERROR", message: String(error)};
-        process.stdout.write(`${JSON.stringify(result)}\n`);
-        return CLI_CONTRACT_REJECTIONS.includes(result.code) ? 1 : 2;
-    }
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-    process.exitCode = main(process.argv.slice(2));
+    main(process.argv.slice(2)).catch((error) => {
+        process.stderr.write(`${JSON.stringify({error: error.code ?? "SOURCE_ERROR", message: error.message, details: error.details ?? {}})}\n`);
+        process.exitCode = error.code === "INVALID_ARGUMENT" ? 2 : 1;
+    });
 }
