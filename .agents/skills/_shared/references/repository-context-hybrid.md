@@ -37,7 +37,9 @@ becomes `anchor_mode: required-literal`, while an entry without anchors becomes
 `anchor_mode: scout-selected`. New criteria should declare `anchor_mode`
 explicitly. Preflight still validates the exact path or path prefix, relation and
 required literals before creating a claimable run, so legacy fixtures do not need
-a mass rewrite.
+a mass rewrite. Kryterium może dodatkowo zadeklarować `required_files` jako
+minimalną liczbę albo listę plików potrzebnych do uczciwego discovery; preflight
+porównuje ją z hard file budget i zwraca `SCOPE_TOO_BROAD` przed dispatch.
 
 Manifests remain schema version `1`, but `prepare`, `validate` and `verify`
 require repository, branch, HEAD and a complete worktree fingerprint. A legacy
@@ -98,8 +100,13 @@ requires a fresh manifest and a new run.
     metadata; preflight failures carry the class on the structured error because
     no claimable state is created. The helper does not infer timeout from elapsed
     duration: `durationMs` is an observational metric. An external harness may
-    pass an explicit timeout acknowledgement after actually interrupting a task;
-    the helper remains authoritative for classification.
+     pass an explicit timeout acknowledgement after actually interrupting a task;
+     the helper remains authoritative for classification.
+   Schema-valid `INCOMPLETE` i `BLOCKED` pozostają niezaakceptowane, ale są
+   zachowywane pod `partialReportPath` zamiast przenoszenia do `discarded`.
+   Claimed attempt bez raportu pozostaje `REPORT_MISSING`; helper nie tworzy
+   sztucznego raportu bez evidence i zachowuje normalną decyzję o pojedynczym
+   fallbacku.
 6. Delegate exactly one `context-scout` fallback through native `task` only when
    `settle` returns `CLAIM_FALLBACK`, then call `claim --attempt fallback` to
    obtain its dispatch token and prompt. The fallback receives the same immutable
@@ -107,9 +114,12 @@ requires a fresh manifest and a new run.
 7. Call `settle --attempt fallback --token <dispatch-token>` with the same
    immutable inputs. A rejected fallback always finalizes the run and never
    creates another fallback.
-8. Return the valid final report, or the actual failure status if both attempts
-   fail. Never create a second fallback. `finalize` records `fast_first_pass`,
+8. Return the valid final report, or the actual failure status plus
+   `partialReportPath` if an attempt produced a schema-valid partial report.
+   Never create a second fallback. `finalize` records `fast_first_pass`,
    `fallback_count`, `hybrid_final`, and the failure class for each attempt.
+   Partial artifacts do not set `hybrid_final` and downstream remains blocked
+   unless the active skill explicitly permits using bounded partial evidence.
 9. After a successful `prepare`, always end through `settle` or `abort`, also
    when task delegation or report writing fails. `evaluate` and `finalize`
    remain low-level diagnostic operations, not a second canonical happy path.
@@ -125,9 +135,10 @@ requires a fresh manifest and a new run.
   comments, or execute `$context-refresh`.
 - The main agent owns orchestration, validation and metrics.
 - The fallback is an independent retry, not a continuation of primary context.
-- Invalid report files are moved to a run-scoped discarded artifact before
-  fallback delegation; fallback receives only its own report path, while the
-  original artifact remains available for audit.
+- Schema-invalid, mode-mismatched or unreadable reports are moved to a run-scoped
+  discarded artifact before fallback delegation. Schema-valid `INCOMPLETE` and
+  `BLOCKED` reports remain at their original path as partial artifacts. Fallback
+  still receives only its own report path.
 - If the helper cannot be started or a phase/token check fails, stop and report
   the blocker; do not bypass the primary.
 - After a validated final report, the main agent may perform targeted reads for
@@ -171,15 +182,18 @@ failure_class
 primary.valid
 primary.status
 primary.failure_class
+primary.partialReportPath
 primary.durationMs
 fallback.used
 fallback.valid
 fallback.status
 fallback.failure_class
+fallback.partialReportPath
 fallback.durationMs
 final.agent
 final.status
 final.failure_class
+final.partialReportPath
 ```
 
 Durations are measured automatically from delegation readiness to `settle`;

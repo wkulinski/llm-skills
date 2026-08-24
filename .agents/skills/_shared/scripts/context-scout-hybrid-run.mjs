@@ -647,8 +647,8 @@ function prepareHybridUnchecked(args, cwd) {
             failure_class: null,
             snapshot_changed: false,
             report_written: false,
-            primary: {agent: PRIMARY_AGENT, reportPath: primaryReportPath, ledgerPath: primaryLedgerPath, claimed: false, dispatchToken: null, evaluated: false, startedAtMs: null, failure_class: null},
-            fallback: {agent: FALLBACK_AGENT, reportPath: fallbackReportPath, ledgerPath: fallbackLedgerPath, used: false, claimed: false, dispatchToken: null, evaluated: false, failure_class: null},
+            primary: {agent: PRIMARY_AGENT, reportPath: primaryReportPath, ledgerPath: primaryLedgerPath, claimed: false, dispatchToken: null, evaluated: false, startedAtMs: null, failure_class: null, partialReportPath: null},
+            fallback: {agent: FALLBACK_AGENT, reportPath: fallbackReportPath, ledgerPath: fallbackLedgerPath, used: false, claimed: false, dispatchToken: null, evaluated: false, failure_class: null, partialReportPath: null},
         };
         writeJson(statePath, state);
         return {
@@ -683,6 +683,21 @@ function discardReport(attemptState) {
     const discardedPath = `${attemptState.reportPath.replace(/\.report\.json$/, "")}-discarded-${Date.now()}-${process.pid}.report.json`;
     fs.renameSync(attemptState.reportPath, discardedPath);
     return {...attemptState, reportDiscarded: true, reportDiscardedPath: discardedPath};
+}
+
+function retainPartialOrDiscard(attemptState, validation) {
+    const partial = validation.reportExists
+        && !validation.ioFailure
+        && validation.schemaValid
+        && validation.modeMatches
+        && (validation.status === "INCOMPLETE" || validation.status === "BLOCKED");
+    if (!partial) { return discardReport(attemptState); }
+    return {
+        ...attemptState,
+        reportDiscarded: false,
+        reportDiscardedPath: null,
+        partialReportPath: attemptState.reportPath,
+    };
 }
 
 export function claimAttempt(args) {
@@ -794,6 +809,7 @@ export function evaluateAttempt(args) {
             modeMatches: validation.modeMatches,
         });
     }
+
     const accepted = validation.valid && !timedOut;
     const reportWritten = validation.reportExists && !validation.ioFailure;
     validation.failure_class = failureClass;
@@ -838,7 +854,7 @@ export function evaluateAttempt(args) {
         next = {action: "FINALIZE", failure_class: null};
     } else if (attempt === "primary") {
         if (isRetryableFailureClass(failureClass)) {
-            state.primary = discardReport(state.primary);
+            state.primary = retainPartialOrDiscard(state.primary, validation);
             state.phase = "FALLBACK_PENDING";
             state.fallback.used = true;
             state.fallback.startedAtMs = Date.now();
@@ -855,7 +871,7 @@ export function evaluateAttempt(args) {
             next = {action: "FINALIZE", failure_class: failureClass};
         }
     } else {
-        if (!accepted) { state.fallback = discardReport(state.fallback); }
+        if (!accepted) { state.fallback = retainPartialOrDiscard(state.fallback, validation); }
         state.phase = accepted ? "FALLBACK_ACCEPTED" : "FALLBACK_FAILED";
         next = {action: "FINALIZE", failure_class: failureClass};
     }
@@ -894,6 +910,7 @@ function attemptMetadata(attemptState, attempt, valid) {
         report_written: attemptState.report_written ?? false,
         reportSha256: attemptState.reportSha256 ?? null,
         reportPath: valid ? attemptState.reportPath : null,
+        partialReportPath: attemptState.partialReportPath ?? null,
         reportDiscardedPath: attemptState.reportDiscardedPath ?? null,
     };
 }
@@ -903,6 +920,11 @@ function finalMetadata(state) {
     const fallbackValid = state.fallback.validation?.valid === true;
     const fallbackCount = state.fallback.used ? 1 : 0;
     const finalAttempt = primaryValid || !state.fallback.used ? state.primary : state.fallback;
+    const partialAttempt = primaryValid || fallbackValid
+        ? null
+        : state.fallback.partialReportPath != null
+            ? state.fallback
+            : state.primary.partialReportPath != null ? state.primary : null;
     const primaryDurationMs = state.primary.durationMs ?? 0;
     const fallbackDurationMs = state.fallback.durationMs ?? 0;
     const discoveryCostMs = primaryDurationMs + (state.fallback.used ? fallbackDurationMs : 0);
@@ -953,6 +975,7 @@ function finalMetadata(state) {
             failure_class: finalAttempt.failure_class ?? null,
             next_action: nextActionForFailureClass(finalAttempt.failure_class, finalAttempt === state.primary ? "primary" : "fallback"),
             reportPath: primaryValid || fallbackValid ? finalAttempt.reportPath : null,
+            partialReportPath: partialAttempt?.partialReportPath ?? null,
         },
         dispatch_audit: {
             primary: state.primary.dispatchAudit ?? null,
