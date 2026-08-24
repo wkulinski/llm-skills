@@ -9,10 +9,12 @@ import {writeFileAtomic} from "./atomic-file.mjs";
 import {
     buildDraftMetadata,
     parseDraftDocument,
+    replaceExecutionHandoffSection,
     replaceGeneratedStateSection,
     replaceQuestionSection,
     replaceSessionStrategySection,
     renderGeneratedStateSection,
+    renderExecutionHandoff,
     renderInitialDraftDocument,
     renderQuestionSections,
     renderSessionStrategyProjection,
@@ -23,9 +25,11 @@ import {
     applyStateMutation,
     MUTATION_TYPES,
     createInitialState,
+    planSnapshotFingerprint,
+    preflightDecisionBatch as preflightStateDecisionBatch,
     selectDerivedState,
     StateError,
-    validateTaskPlanState,
+    validateRuntimeState,
 } from "./state.mjs";
 
 export {MUTATION_TYPES};
@@ -44,6 +48,12 @@ const CLI_CONTRACT_REJECTIONS = new Set([
     "STALE_CHECKPOINT",
     "SOURCE_FETCH_NOT_APPLICABLE",
     "WORKFLOW_BLOCKED",
+    "DUPLICATE_PROPAGATION_REF",
+    "INVALID_PROPAGATION",
+    "INVALID_PROPAGATION_SNAPSHOT",
+    "LEGACY_PROPAGATION_PAYLOAD",
+    "PLAN_STALE",
+    "INVALID_DRAFT_PROJECTION",
     "PROJECTION_STALE",
     "RESTART_REQUIRED",
 ]);
@@ -161,11 +171,78 @@ export function updateState(plan, mutation, options = {}) {
 
     const now = clockNow(normalized.clock);
     const nextState = applyStateMutation(current, mutation, {now});
+    if (mutation.type === "propagate-decisions"
+        && stableStringify(nextState) === stableStringify(current)) {
+        return {
+            ok: true,
+            code: "NOOP",
+            projection_status: current.projection_status,
+            state: current,
+            paths: publicPaths(resolveArtifactPaths(normalized)),
+        };
+    }
     updateMutationBookkeeping(nextState, current, now);
     assertValidState(nextState);
     writeState(normalized, nextState, options);
 
     return projectAndFinalize(normalized, nextState, mutation.type === "create-initial", now, options);
+}
+
+/**
+ * Run the question-group preflight against the persisted state and its draft.
+ * This is deliberately read-only: no checkpoint, decision, or projection is
+ * written when the path is blocked.
+ */
+export function preflightDecisionBatch(plan, questionIds, options = {}) {
+    try {
+        const normalized = normalizePlan(plan, options);
+        const loaded = loadState(normalized, options);
+        if (loaded.code === ARTIFACT_SET_INCOMPLETE) {
+            return blockedPreflightResult(ARTIFACT_SET_INCOMPLETE, loaded, "Draft and state form an incomplete artifact pair.");
+        }
+        if (loaded.status === "virtual-initial") {
+            return blockedPreflightResult("INITIAL_MUTATION_REQUIRED", loaded, "Initial state and draft must be materialized before questions can be shown.");
+        }
+
+        const current = loaded.state;
+        const projectionFresh = current.projection_status === PROJECTED
+            && isDraftRevisionCurrent(normalized, current);
+        const result = preflightStateDecisionBatch(current, questionIds, {
+            ...options,
+            projection_fresh: projectionFresh,
+            projection_status: current.projection_status,
+        });
+        return {
+            ...result,
+            state: current,
+            lifecycle: loaded.lifecycle,
+            status: loaded.status,
+            paths: loaded.paths,
+        };
+    } catch (error) {
+        const code = error?.code ?? "PREFLIGHT_FAILED";
+        return {
+            ready: false,
+            ok: false,
+            code,
+            reasons: ["preflight_error"],
+            errors: [error instanceof Error ? error.message : String(error)],
+        };
+    }
+}
+
+function blockedPreflightResult(code, loaded, message) {
+    return {
+        ready: false,
+        ok: false,
+        code,
+        reasons: [code === ARTIFACT_SET_INCOMPLETE ? "artifact_set_incomplete" : "state_not_materialized"],
+        errors: [message],
+        state: loaded.state ?? null,
+        lifecycle: loaded.lifecycle,
+        status: loaded.status,
+        paths: loaded.paths,
+    };
 }
 
 export function retryProjection(plan, options = {}) {
@@ -408,6 +485,19 @@ function projectDraft(plan, state, initial, paths, options) {
     const content = initial
         ? renderInitialProjection(plan, state)
         : renderStateProjection(plan, state, paths);
+    const validation = validateDraftDocument(content, {
+        kind: "main",
+        state,
+        requireProjectionFingerprint: true,
+    });
+    if (!validation.valid) {
+        const stale = validation.errors.some((error) => error.startsWith("PLAN_STALE"));
+        throw new StateStoreError(
+            stale ? "PLAN_STALE" : "INVALID_DRAFT_PROJECTION",
+            validation.errors.join(" "),
+            {errors: validation.errors},
+        );
+    }
     const customWriter = options.writeDraft ?? plan.writeDraft;
     if (typeof customWriter === "function") {
         customWriter(paths.draftPath, content, {initial, state});
@@ -429,26 +519,39 @@ function renderInitialProjection(plan, state) {
         {...metadata, ...projectionMetadata(state)},
         {state, source},
     );
-    const validation = validateDraftDocument(content, {kind: "main", state});
+    const validation = validateDraftDocument(content, {
+        kind: "main",
+        state,
+        requireProjectionFingerprint: true,
+    });
     if (!validation.valid) {
-        throw new StateStoreError("INVALID_DRAFT_PROJECTION", validation.errors.join(" "), {errors: validation.errors});
+        const stale = validation.errors.some((error) => error.startsWith("PLAN_STALE"));
+        throw new StateStoreError(
+            stale ? "PLAN_STALE" : "INVALID_DRAFT_PROJECTION",
+            validation.errors.join(" "),
+            {errors: validation.errors},
+        );
     }
     return content;
 }
 
-function isDraftRevisionCurrent(plan, state, paths = resolveArtifactPaths(plan)) {
+export function isDraftRevisionCurrent(plan, state, paths = resolveArtifactPaths(plan)) {
     try {
         if (!plan.fsOps.existsSync(paths.draftPath)) {
             return false;
         }
         const draft = parseDraftDocument(plan.fsOps.readFileSync(paths.draftPath, "utf8"));
-        return Number(draft.metadata?.state_revision) === state.revision;
+        const expectedFingerprint = `- Plan snapshot fingerprint: \`${planSnapshotFingerprint(state)}\``;
+        const fingerprints = draft.body.match(/^- Plan snapshot fingerprint: `[^`]+`$/gm) ?? [];
+        return Number(draft.metadata?.state_revision) === state.revision
+            && fingerprints.length === 1
+            && fingerprints[0] === expectedFingerprint;
     } catch {
         return false;
     }
 }
 
-function renderStateProjection(plan, state, paths) {
+export function renderStateProjection(plan, state, paths) {
     const source = plan.fsOps.readFileSync(paths.draftPath, "utf8");
     const parsed = parseDraftDocument(source);
     const metadata = {...parsed.metadata};
@@ -472,7 +575,8 @@ function renderStateProjection(plan, state, paths) {
         derived_state: selectDerivedState(state),
     }));
     const body = replaceSessionStrategySection(questionBody, renderSessionStrategyProjection(state.session_strategy));
-    return `${serializeFrontMatter(metadata)}${body}`;
+    const handoffBody = replaceExecutionHandoffSection(body, renderExecutionHandoff(state));
+    return `${serializeFrontMatter(metadata)}${handoffBody}`;
 }
 
 function projectionSource(plan, state) {
@@ -551,7 +655,7 @@ function writeState(plan, state, options) {
 }
 
 function assertValidState(state) {
-    const result = validateTaskPlanState(state);
+    const result = validateRuntimeState(state);
     if (!result.valid) {
         throw new StateStoreError("INVALID_STATE", result.errors.join(" "), {errors: result.errors});
     }

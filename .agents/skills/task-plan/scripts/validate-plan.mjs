@@ -29,9 +29,12 @@ import {
     isCanonicalState,
     validateQuestionRecords,
     validateOwnershipRedundancyReview,
+    validateApprovalState,
     validateStateSourceMetadata,
     validateStateLifecycle,
-    validateTaskPlanState,
+    validateRuntimeState,
+    validateIntakeAssessment,
+    validateProvenance,
 } from "./state.mjs";
 
 export {STATE_LIFECYCLES, validateStateLifecycle};
@@ -275,7 +278,16 @@ function containsOwnershipSubject(afterSubjects, beforeSubject) {
     });
 }
 
-export function validatePlanState(input) {
+export function validatePlanState(input, options = {}) {
+    const mode = options.mode ?? "runtime";
+    if (!["runtime", "approval"].includes(mode)) {
+        return {
+            valid: false,
+            errors: [`Invalid validation mode: ${mode}. Use runtime or approval.`],
+            approval: {approved: false, reasons: ["invalid_validation_mode"]},
+            mode,
+        };
+    }
     const lifecycle = validateStateLifecycle(input);
     const state = lifecycle.state;
     const errors = [...lifecycle.errors];
@@ -283,11 +295,11 @@ export function validatePlanState(input) {
     if (errors.length === 0 && lifecycle.lifecycle !== "absent") {
         const canonical = isCanonicalState(state);
         const stateErrors = canonical
-            ? [
-                ...validateTaskPlanState(state).errors,
-                ...validateStatePackages(state, {canonical}),
-                ...validateStateRecords(state, {canonical}),
-            ]
+            ? mode === "runtime"
+                ? [...validateRuntimeState(state).errors]
+                : [
+                    ...validateApprovalState(state).errors,
+                ]
             : [
                 ...validateStateMetadata(state),
                 ...validateStateSourceMetadata(state),
@@ -307,12 +319,15 @@ export function validatePlanState(input) {
     }
 
     const approval = buildApprovalResult(state);
-    errors.push(...validateStateApproval(state, approval));
+    if (mode !== "runtime" && !isCanonicalState(state)) {
+        errors.push(...validateStateApproval(state, approval));
+    }
 
     return {
         valid: errors.length === 0,
         errors,
         approval,
+        mode,
     };
 }
 
@@ -406,6 +421,12 @@ function validateStateMetadata(state) {
             return `scope_questions: ${error}`;
         }));
     }
+    if (Object.hasOwn(state, "intake_assessment")) {
+        errors.push(...validateIntakeAssessment(state.intake_assessment));
+    }
+    if (Object.hasOwn(state, "provenance")) {
+        errors.push(...validateProvenance(state.provenance));
+    }
     return errors;
 }
 
@@ -417,7 +438,9 @@ function validateStatePackages(state, options = {}) {
         errors.push("Plan state must contain at least one work package before package decisions or approval.");
     }
     if (!options.canonical) {
-        errors.push(...validatePackageRecords(state.packages).errors);
+        errors.push(...validatePackageRecords(state.packages, {
+            evidence_refs: state.provenance?.evidence_refs,
+        }).errors);
     }
     for (const [index, item] of (Array.isArray(state.packages) ? state.packages : []).entries()) {
         if (!item || typeof item !== "object") {
@@ -490,24 +513,36 @@ function validateStateApproval(state, approval) {
 }
 
 export function validatePlanDocument(document, options = {}) {
+    const lifecycleState = options.state
+        ? validateStateLifecycle(options.state).state
+        : null;
     const draftOptions = {
         kind: options.kind ?? "main",
-        ...(options.state ? {state: validateStateLifecycle(options.state).state} : {}),
+        ...(lifecycleState ? {state: lifecycleState} : {}),
+        requireProjectionFingerprint: options.requireProjectionFingerprint
+            ?? (((options.kind ?? "main") !== "derived")
+                && lifecycleState?.projection_status === "PROJECTED"),
     };
     const draftResult = typeof document === "string"
         ? validateDraftDocument(document, draftOptions)
         : validateDraftObject(document, draftOptions);
     const errors = [...draftResult.errors];
     let draftBody = typeof document?.body === "string" ? document.body : "";
-    if (typeof document === "string" && draftResult.errors.length === 0) {
-        draftBody = parseDraftDocument(document).body;
+    if (typeof document === "string") {
+        try {
+            draftBody = parseDraftDocument(document).body;
+        } catch {
+            draftBody = "";
+        }
     }
 
     if (options.state) {
-        errors.push(...validatePlanState(options.state).errors);
+        errors.push(...validatePlanState(options.state, {
+            mode: options.validation_mode ?? options.validationMode ?? "runtime",
+        }).errors);
         errors.push(...validateDraftStateConsistency(
             draftResult.metadata,
-            validateStateLifecycle(options.state).state,
+            lifecycleState,
             draftBody,
         ));
     }
@@ -586,7 +621,7 @@ function validateDraftStateConsistency(metadata, state, body = "") {
 }
 
 export function validateFinalApproval(state) {
-    const result = validatePlanState(state);
+    const result = validatePlanState(state, {mode: "approval"});
     if (!result.approval.approved) {
         result.errors.push(`Final approval blocked: ${result.approval.reasons.join(", ")}.`);
         result.valid = false;
@@ -600,9 +635,17 @@ function validateDraftObject(document, options) {
     }
     if (typeof document.source === "string") {
         const draft = parseDraftDocument(document.source);
-        return validateDraftDocument(draft, {kind: options.kind ?? "main", state: options.state});
+        return validateDraftDocument(draft, {
+            kind: options.kind ?? "main",
+            state: options.state,
+            requireProjectionFingerprint: options.requireProjectionFingerprint,
+        });
     }
-    return validateDraftDocument(document, {kind: options.kind ?? "main", state: options.state});
+    return validateDraftDocument(document, {
+        kind: options.kind ?? "main",
+        state: options.state,
+        requireProjectionFingerprint: options.requireProjectionFingerprint,
+    });
 }
 
 function hasMeaningfulValue(value) {
@@ -683,18 +726,22 @@ function cliResult(parsed) {
         const state = parsed.values.state
             ? JSON.parse(fs.readFileSync(path.resolve(parsed.values.state), "utf8"))
             : null;
-        return validatePlanDocument(source, {kind: parsed.values.kind ?? "main", state});
+        return validatePlanDocument(source, {
+            kind: parsed.values.kind ?? "main",
+            state,
+            validation_mode: parsed.values.mode ?? "runtime",
+        });
     }
     if (parsed.command === "validate-state") {
         const state = JSON.parse(fs.readFileSync(path.resolve(parsed.values.file), "utf8"));
-        return validatePlanState(state);
+        return validatePlanState(state, {mode: parsed.values.mode ?? "runtime"});
     }
     throw new Error("Use validate or validate-state.");
 }
 
 function main(args) {
     if (args[0] === "--help") {
-        process.stdout.write("Usage: validate-plan.mjs validate --file <draft> [--state <json>] | validate-state --file <json>\n");
+        process.stdout.write("Usage: validate-plan.mjs validate --file <draft> [--state <json>] [--mode <runtime|approval>] | validate-state --file <json> [--mode <runtime|approval>]\n");
         return 0;
     }
     try {

@@ -10,6 +10,7 @@ import {
     DEFAULT_SESSION_STRATEGY,
     INPUT_PROFILES,
     PLAN_STATUSES,
+    planSnapshotFingerprint,
     selectDerivedState,
     SOURCE_FETCH_STATUSES,
     SOURCE_KINDS,
@@ -47,6 +48,8 @@ export const GENERATED_STATE_START = "<!-- task-plan:generated:start -->";
 export const GENERATED_STATE_END = "<!-- task-plan:generated:end -->";
 export const SESSION_STRATEGY_START = "<!-- task-plan:session-strategy:start -->";
 export const SESSION_STRATEGY_END = "<!-- task-plan:session-strategy:end -->";
+export const EXECUTION_HANDOFF_START = "<!-- task-plan:execution-handoff:start -->";
+export const EXECUTION_HANDOFF_END = "<!-- task-plan:execution-handoff:end -->";
 
 export const DETAILED_PLAN_SECTIONS = Object.freeze([
     "## Source plan",
@@ -76,7 +79,7 @@ export function parseFrontMatter(source) {
     }
 
     const normalized = source.replace(/\r\n/g, "\n");
-    const match = normalized.match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
+    const match = normalized.match(/^---\n([\s\S]*?)\n---(?:\n(?:\n)?|$)/);
     if (!match) {
         throw new DraftError("MISSING_FRONT_MATTER", "Draft document must start with YAML front matter.");
     }
@@ -103,7 +106,7 @@ export function parseFrontMatter(source) {
 
     return {
         metadata,
-        body: normalized.slice(match[0].length),
+        body: normalized.slice(match[0].length).replace(/^\n+/, ""),
     };
 }
 
@@ -123,8 +126,8 @@ export function serializeFrontMatter(metadata) {
         }
         lines.push(`${key}: ${formatScalar(value)}`);
     }
-    lines.push("---", "");
-    return `${lines.join("\n")}\n`;
+    lines.push("---");
+    return `${lines.join("\n")}\n\n`;
 }
 
 export function parseDraftDocument(source) {
@@ -173,6 +176,15 @@ export function validateDraftDocument(document, options = {}) {
         options.derived_state ?? options.derivedState ?? (options.state ? selectDerivedState(options.state) : null),
     ));
     errors.push(...validateSessionStrategyPresentation(parsed.body));
+    if (options.requireProjectionFingerprint
+        && options.state
+        && typeof options.state === "object"
+        && Object.hasOwn(options.state, "intake_assessment")) {
+        errors.push(...validateEvidenceProjection(parsed.body, options.state));
+    }
+    if (options.requireProjectionFingerprint) {
+        errors.push(...validateProjectionFingerprint(parsed.body, options.state));
+    }
 
     return {
         valid: errors.length === 0,
@@ -180,6 +192,60 @@ export function validateDraftDocument(document, options = {}) {
         metadata: parsed.metadata,
         missingSections,
     };
+}
+
+function validateEvidenceProjection(body, state) {
+    const errors = [];
+    for (const marker of [
+        "Intake assessment task_type:",
+        "Intake intent_authority:",
+        "Intake diagnosis_reliability:",
+        "Intake requirements_completeness:",
+        "Intake technical_certainty:",
+        "Provenance source_ref:",
+        "confirmed_files:",
+        "candidate_paths:",
+        "discovery_required:",
+        "not execution-handoff evidence",
+        "not current blocking criteria",
+        EXECUTION_HANDOFF_START,
+        EXECUTION_HANDOFF_END,
+    ]) {
+        if (!body.includes(marker)) {
+            errors.push(`Draft/state evidence projection is missing ${marker}.`);
+        }
+    }
+    for (const item of state.packages ?? []) {
+        if (item?.id && !body.includes(`${item.id}: confirmed_files:`)) {
+            errors.push(`Draft/state evidence projection is missing package ${item.id}.`);
+        }
+    }
+    return errors;
+}
+
+function validateProjectionFingerprint(body, state) {
+    if (!state || typeof state !== "object") {
+        return ["PLAN_STALE: projection fingerprint requires canonical state."];
+    }
+
+    const generatedStart = "<!-- task-plan:generated:start -->";
+    const generatedEnd = "<!-- task-plan:generated:end -->";
+    const startCount = body.split(generatedStart).length - 1;
+    const endCount = body.split(generatedEnd).length - 1;
+    if (startCount !== 1 || endCount !== 1) {
+        return ["PROJECTION_STALE: generated state markers must contain exactly one complete block."];
+    }
+
+    const expected = planSnapshotFingerprint(state);
+    const matches = body.match(/^- Plan snapshot fingerprint: `([^`]+)`$/gm) ?? [];
+    if (matches.length !== 1) {
+        return ["PROJECTION_STALE: generated state must contain exactly one plan snapshot fingerprint."];
+    }
+
+    const actual = matches[0].match(/`([^`]+)`/)?.[1] ?? "";
+    return actual === expected
+        ? []
+        : [`PLAN_STALE: draft snapshot fingerprint ${actual} does not match state ${expected}.`];
 }
 
 export function validateDraftMetadata(metadata, options = {}) {
@@ -523,6 +589,9 @@ export function renderInitialDraftDocument(metadata, options = {}) {
         "## Evidence, risks and review",
         "",
         "- No evidence is collected before source fetch.",
+        "- confirmed_files are empty until direct evidence_refs are recorded.",
+        "- candidate_paths remain hypotheses and do not become execution-handoff paths.",
+        "- discovery_required records the owner and target phase for unresolved evidence debt.",
         "",
         "## Acceptance and verification",
         "",
@@ -534,7 +603,11 @@ export function renderInitialDraftDocument(metadata, options = {}) {
         "",
         "## Execution handoff (when implementation is requested)",
         "",
-        "- Not applicable for an initial draft.",
+        EXECUTION_HANDOFF_START,
+        renderExecutionHandoff(options.state),
+        EXECUTION_HANDOFF_END,
+        "",
+        "- Handoff becomes actionable only when implementation is explicitly requested.",
         "",
     ].join("\n");
     return `${serializeFrontMatter(metadata)}${generatedState}${generatedState ? "\n" : ""}${body}`;
@@ -552,7 +625,10 @@ export function renderGeneratedStateSection(state) {
         `- Plan status: \`${markdownInline(state?.plan_status ?? "unknown")}\``,
         `- Plan version: \`${markdownInline(state?.plan_version ?? "unknown")}\``,
         `- State revision: \`${markdownInline(state?.revision ?? "unknown")}\``,
+        `- Plan snapshot fingerprint: \`${planSnapshotFingerprint(state)}\``,
         `- Source fetch status: \`${markdownInline(state?.source_fetch_status ?? "unknown")}\``,
+        ...renderIntakeAssessmentLines(state),
+        ...renderEvidenceStateLines(state),
         `- Package decision gate: \`${markdownInline(derived.package_decision_gate)}\``,
         `- Package gate reasons: ${derived.package_decision_gate_reasons.length > 0 ? derived.package_decision_gate_reasons.map(markdownInline).join(", ") : "none"}`,
         `- Review complete: \`${markdownInline(derived.review_complete)}\``,
@@ -566,6 +642,109 @@ export function renderGeneratedStateSection(state) {
     }
     lines.push(GENERATED_STATE_END, "");
     return lines.join("\n");
+}
+
+function renderIntakeAssessmentLines(state) {
+    const assessment = state?.intake_assessment ?? {};
+    const lines = [
+        `- Intake assessment task_type: \`${markdownInline(assessment.task_type ?? "unknown")}\``,
+    ];
+    for (const axis of [
+        "intent_authority",
+        "diagnosis_reliability",
+        "requirements_completeness",
+        "technical_certainty",
+    ]) {
+        const record = assessment[axis] ?? {};
+        const refs = Array.isArray(record.evidence_refs) && record.evidence_refs.length > 0
+            ? record.evidence_refs.map(markdownInline).join(", ")
+            : "none";
+        lines.push(`- Intake ${axis}: \`${markdownInline(record.level ?? "unknown")}\` — ${markdownInline(record.rationale ?? "No intake evidence has been assessed.")}; evidence_refs: ${refs}`);
+    }
+    return lines;
+}
+
+function renderEvidenceStateLines(state) {
+    const provenance = state?.provenance ?? {};
+    const sourceRef = markdownInline(provenance.source_ref ?? state?.source_ref ?? "unknown");
+    const refs = Array.isArray(provenance.evidence_refs) && provenance.evidence_refs.length > 0
+        ? provenance.evidence_refs.map(markdownInline).join(", ")
+        : "none";
+    const packages = Array.isArray(state?.packages) ? state.packages : [];
+    const followUp = Array.isArray(state?.context_requirements?.follow_up)
+        ? state.context_requirements.follow_up
+        : [];
+    const packageLines = packages.length > 0
+        ? packages.map((item) => {
+            const confirmed = formatEvidenceList(item?.confirmed_files);
+            const candidates = formatEvidenceList(item?.candidate_paths);
+            const required = formatDiscoveryList(item?.discovery_required);
+            const packageRefs = formatEvidenceList(item?.evidence_refs);
+            return `- ${markdownInline(item?.id ?? "unknown")}: confirmed_files: ${confirmed}; candidate_paths: ${candidates}; discovery_required: ${required}; evidence_refs: ${packageRefs}`;
+        })
+        : ["- none: confirmed_files: none; candidate_paths: none; discovery_required: none; evidence_refs: none"];
+    return [
+        `- Provenance source_ref: \`${sourceRef}\`; evidence_refs: ${refs}`,
+        "- Work-package evidence separation:",
+        ...packageLines,
+        "- Candidate paths are hypotheses and are not execution-handoff evidence.",
+        `- Follow-up evidence debt: ${followUp.length > 0
+            ? followUp.map((item) => `${markdownInline(item.id ?? "unknown")} — ${markdownInline(item.reason ?? "")}; owner=${markdownInline(item.owner ?? "")}; phase=${markdownInline(item.target_phase ?? "")}`).join(", ")
+            : "none"}; not current blocking criteria.`,
+    ];
+}
+
+export function renderExecutionHandoff(state = {}) {
+    return renderExecutionHandoffLines(state).join("\n");
+}
+
+function renderExecutionHandoffLines(state = {}) {
+    const packages = Array.isArray(state.packages) ? state.packages : [];
+    const assessment = state.intake_assessment ?? {};
+    const provenance = state.provenance ?? {};
+    const assessmentSummary = [
+        "intent_authority",
+        "diagnosis_reliability",
+        "requirements_completeness",
+        "technical_certainty",
+    ].map((axis) => `${axis}=${markdownInline(assessment[axis]?.level ?? "unknown")}`).join(", ");
+    const packageLines = packages.length > 0
+        ? packages.map((item) => [
+            `- ${markdownInline(item?.id ?? "unknown")} confirmed_files: ${formatEvidenceList(item?.confirmed_files)}`,
+            `- ${markdownInline(item?.id ?? "unknown")} candidate_paths (hypotheses; not handoff): ${formatEvidenceList(item?.candidate_paths)}`,
+            `- ${markdownInline(item?.id ?? "unknown")} discovery_required: ${formatDiscoveryList(item?.discovery_required)}`,
+        ]).flat()
+        : ["- No work-package evidence recorded."];
+    const followUp = state.context_requirements?.follow_up ?? [];
+    const followUpLines = followUp.length > 0
+        ? followUp.map((item) => `- ${markdownInline(item.id)} — ${markdownInline(item.reason)} — owner: ${markdownInline(item.owner)} — target_phase: ${markdownInline(item.target_phase)}`)
+        : ["- none"];
+    return [
+        `- Intake assessment: task_type=${markdownInline(assessment.task_type ?? "unknown")}; ${assessmentSummary}`,
+        `- Provenance: source_ref=${markdownInline(provenance.source_ref ?? state.source_ref ?? "unknown")}; evidence_refs=${formatEvidenceList(provenance.evidence_refs)}`,
+        "- Adapter values are not semantic assessment.",
+        ...packageLines,
+        "- Unresolved follow-up (not verified by the blocking report and not current criteria):",
+        ...followUpLines,
+    ];
+}
+
+function formatEvidenceList(value) {
+    return Array.isArray(value) && value.length > 0
+        ? value.map((item) => `\`${markdownInline(item)}\``).join(", ")
+        : "none";
+}
+
+function formatDiscoveryList(value) {
+    if (!Array.isArray(value) || value.length === 0) {
+        return "none";
+    }
+    return value.map((item) => {
+        if (!item || typeof item !== "object") {
+            return `\`${markdownInline(item)}\``;
+        }
+        return `\`${markdownInline(item.id ?? "unknown")} — ${markdownInline(item.reason ?? "")}; owner=${markdownInline(item.owner ?? "")}; phase=${markdownInline(item.target_phase ?? "")}\``;
+    }).join(", ");
 }
 
 export function renderSessionStrategyProjection(strategy) {
@@ -584,6 +763,16 @@ export function replaceSessionStrategySection(body, strategySection) {
         SESSION_STRATEGY_START,
         SESSION_STRATEGY_END,
         "Session strategy",
+    );
+}
+
+export function replaceExecutionHandoffSection(body, handoffSection) {
+    return replaceMarkedSection(
+        body,
+        `${EXECUTION_HANDOFF_START}\n${handoffSection}\n${EXECUTION_HANDOFF_END}`,
+        EXECUTION_HANDOFF_START,
+        EXECUTION_HANDOFF_END,
+        "Execution handoff",
     );
 }
 
@@ -633,8 +822,15 @@ function replaceMarkedSection(body, generatedSection, startMarker, endMarker, la
         throw new DraftError("INVALID_GENERATED_SECTION", `${label} markers must contain exactly one complete block.`);
     }
 
-    const replacement = generatedSection.endsWith("\n") ? generatedSection : `${generatedSection}\n`;
-    return `${body.slice(0, startIndex)}${replacement}${body.slice(endIndex + endMarker.length)}`;
+    const prefix = body.slice(0, startIndex);
+    const suffix = body.slice(endIndex + endMarker.length);
+    const normalizedPrefix = prefix === ""
+        ? ""
+        : `${prefix.replace(/\n+$/, "")}\n\n`;
+    const normalizedSuffix = suffix === ""
+        ? ""
+        : `\n\n${suffix.replace(/^\n+/, "")}`;
+    return `${normalizedPrefix}${generatedSection.trimEnd()}${normalizedSuffix}`;
 }
 
 

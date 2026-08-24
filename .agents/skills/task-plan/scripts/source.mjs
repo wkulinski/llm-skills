@@ -6,7 +6,12 @@ import {spawnSync} from "node:child_process";
 import {pathToFileURL} from "node:url";
 
 import {slugifyTitle} from "../../_shared/scripts/slugify-title.mjs";
-import {INPUT_PROFILES, SOURCE_FETCH_STATUSES, SOURCE_KINDS} from "./state.mjs";
+import {
+    INPUT_PROFILES,
+    normalizeEvidenceRefs,
+    SOURCE_FETCH_STATUSES,
+    SOURCE_KINDS,
+} from "./state.mjs";
 
 export {INPUT_PROFILES, SOURCE_KINDS};
 
@@ -14,6 +19,7 @@ const CLI_CONTRACT_REJECTIONS = Object.freeze([
     "UNSAFE_SOURCE_PATH",
     "EMPTY_USER_INPUT",
     "INVALID_PROFILE",
+    "INVALID_PROVENANCE",
     "INVALID_SOURCE_FETCH_STATUS",
 ]);
 
@@ -66,6 +72,10 @@ export function normalizeGitHubIssue(input, options = {}) {
         branch: input?.branch ?? null,
         base_ref: input?.base_ref ?? input?.base ?? null,
         input_profile: inputProfile,
+        provenance: normalizeProvenance(input, {
+            source_kind: "github-issue",
+            source_ref: sourceRef,
+        }),
     };
 }
 
@@ -93,6 +103,10 @@ export function normalizeFileSource({filePath, repoRoot, fsOps = fs, options = {
         repository_root: safePath.rootPath,
         ...sourceFetchMetadata({}, {...options, sourceFetchStatus: "not-required"}, "file"),
         input_profile: inputProfile,
+        provenance: normalizeProvenance(options, {
+            source_kind: "file",
+            source_ref: safePath.relativePath,
+        }),
     };
 }
 
@@ -116,6 +130,10 @@ export function normalizeUserInput(input = {}) {
         base_ref: input.base_ref ?? null,
         ...sourceFetchMetadata(input, {sourceFetchStatus: "not-required"}, "user-input"),
         input_profile: inputProfile,
+        provenance: normalizeProvenance(input, {
+            source_kind: "user-input",
+            source_ref: input.source_ref ?? (slugifyTitle(title || body) || "conversation"),
+        }),
     };
 }
 
@@ -369,6 +387,28 @@ function sourceFetchMetadata(input, options, kind) {
         source_fetch_error: requireString(sourceFetchError, "source_fetch_error"),
         source_fetch_failed_at: requireTimestamp(sourceFetchFailedAt, "source_fetch_failed_at"),
     };
+}
+
+function normalizeProvenance(input = {}, fallback = {}) {
+    const candidate = input?.provenance ?? input ?? {};
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+        throw new SourceError("INVALID_PROVENANCE", "provenance must be an object.");
+    }
+    try {
+        return {
+            source_kind: fallback.source_kind,
+            source_ref: fallback.source_ref,
+            evidence_refs: normalizeEvidenceRefs(
+                candidate.evidence_refs ?? input?.evidence_refs,
+                "provenance.evidence_refs",
+            ),
+        };
+    } catch (error) {
+        throw new SourceError(
+            "INVALID_PROVENANCE",
+            error instanceof Error ? error.message : String(error),
+        );
+    }
 }
 
 function firstMarkdownHeading(body) {

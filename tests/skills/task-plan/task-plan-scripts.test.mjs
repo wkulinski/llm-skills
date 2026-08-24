@@ -13,6 +13,7 @@ import {
     parseDraftDocument,
     replaceSessionStrategySection,
     renderInitialDraftDocument,
+    renderExecutionHandoff,
     renderSessionStrategyProjection,
     renderSessionStrategySection,
     serializeFrontMatter,
@@ -33,13 +34,21 @@ import {
     createInitialState,
     getImpactedPackageIds,
     parseDecisionCommand,
+    planSnapshotFingerprint,
     reopenPackage,
     validateDependencyGraph,
     validateOwnershipRedundancyReview,
     validateSessionStrategy,
     validateUserDecisionRecords,
     validateQuestionDecisionPropagation,
+    validateApprovalState,
+    validateRuntimeState,
     applyQuestionDecision,
+    applyStateMutation,
+    createUnknownIntakeAssessment,
+    normalizeIntakeAssessment,
+    routeDecisionBatch,
+    validateIntakeAssessment,
 } from "../../../.agents/skills/task-plan/scripts/state.mjs";
 import {
     compareSourceSnapshots,
@@ -205,6 +214,24 @@ describe("task-plan draft module", () => {
         expect(validateDraftDocument(MAIN_FIXTURE.replace("source_fetch_status: complete\n", ""), {kind: "main", ...CLOSED_GATE_OPTIONS}).valid).toBe(false);
         expect(validateDraftDocument(MAIN_FIXTURE.replace("<!-- task-plan:session-strategy:end -->", ""), {kind: "main", ...CLOSED_GATE_OPTIONS}).errors)
             .toContain("Session strategy markers must contain exactly one complete block.");
+    });
+
+    it("normalizes front matter boundaries for repeated projection and EOF input", () => {
+        const metadata = {
+            source_kind: "user-input",
+            source_ref: "user:front-matter",
+            input_profile: "brief-request",
+            plan_status: "review-pending",
+            plan_version: "1",
+            source_fetch_status: "not-required",
+        };
+        const canonical = `${serializeFrontMatter(metadata)}## Source\n\nBody\n`;
+        const parsed = parseDraftDocument(canonical);
+        expect(`${serializeFrontMatter(parsed.metadata)}${parsed.body}`).toBe(canonical);
+
+        const crlf = canonical.replace(/\n/g, "\r\n");
+        expect(parseDraftDocument(crlf).body).toBe("## Source\n\nBody\n");
+        expect(parseDraftDocument(serializeFrontMatter(metadata).trimEnd()).metadata).toEqual(metadata);
     });
 
     it("enforces profile-specific draft invariants and validates the derived fixture", () => {
@@ -377,7 +404,7 @@ describe("task-plan state module", () => {
             reason: "premature package decision request",
             changed_at: "2026-01-02T00:00:00Z",
         }), "PACKAGE_DECISION_GATE_FAILED");
-        expect(validatePlanState({...incomplete, plan_status: "awaiting-package-decisions"}).valid).toBe(false);
+        expect(validatePlanState({...incomplete, plan_status: "awaiting-package-decisions"}, {mode: "approval"}).valid).toBe(false);
 
         const ready = {
             ...baseState(),
@@ -554,10 +581,20 @@ describe("task-plan state module", () => {
         expect(validateQuestionDecisionPropagation(pending)).toContain("user_decisions propagation incomplete for D1.");
         expect(canOpenPackageDecisions(pending).reasons).toContain("question_decision_propagation_incomplete");
         const propagated = structuredClone(pending);
-        propagated.user_decisions[0].propagation_status = "propagated";
+        propagated.user_decisions[0] = {
+            ...propagated.user_decisions[0],
+            propagation_status: "propagated",
+            propagated_at: "2026-01-02T00:00:01Z",
+            propagated_snapshot_fingerprint: "a".repeat(64),
+        };
         expect(validateUserDecisionRecords(propagated.user_decisions, {packages: propagated.packages})).toEqual([]);
         expect(validateQuestionDecisionPropagation(propagated)).toEqual([]);
         expect(canApprovePlan(pending).reasons).toContain("question_decision_propagation_incomplete");
+        const missingPropagationAudit = structuredClone(propagated);
+        delete missingPropagationAudit.user_decisions[0].propagated_at;
+        expect(validateUserDecisionRecords(missingPropagationAudit.user_decisions, {
+            packages: missingPropagationAudit.packages,
+        })).toContain("user_decision 1 propagated status requires propagated_at and propagated_snapshot_fingerprint.");
 
         const missingRecord = structuredClone(propagated);
         missingRecord.user_decisions = [];
@@ -697,6 +734,84 @@ describe("task-plan state module", () => {
             simplification: {result: "pending"},
         }).valid).toBe(false);
     });
+
+    it("separates runtime validation from approval for pending propagation", () => {
+        const state = createInitialState({
+            plan_id: "runtime-approval-boundary",
+            draft_path: "docs/plan/runtime-approval-boundary.md",
+            source_identity: "user:runtime-approval-boundary",
+            source_kind: "user-input",
+            input_profile: "brief-request",
+            source_fetch_status: "not-required",
+            scope_questions: [{
+                id: "SQ1",
+                prompt: "Czy zakres jest kompletny?",
+                impact: "Zmienia zakres planu.",
+                decision_needed: "Potwierdzić zakres.",
+                blocking: true,
+                resolved: false,
+            }],
+        }, {now: "2026-01-01T00:00:00Z"});
+        const pending = applyQuestionDecision(state, {
+            question_id: "SQ1",
+            decision_ref: "D1",
+            answer: "yes",
+            decision_source: "user",
+            decided_at: "2026-01-01T00:00:01Z",
+            affected_refs: ["session_strategy"],
+        });
+
+        expect(validateRuntimeState(pending).valid).toBe(true);
+        expect(validateApprovalState(pending)).toMatchObject({valid: false});
+        expect(validateApprovalState(pending).errors.join(" ")).toContain("unpropagated");
+    });
+
+    it("keeps the semantic snapshot fingerprint stable across technical state changes", () => {
+        const state = createInitialState({
+            plan_id: "snapshot-fingerprint",
+            draft_path: "docs/plan/snapshot-fingerprint.md",
+            source_identity: "user:snapshot-fingerprint",
+            source_kind: "user-input",
+            input_profile: "brief-request",
+            source_fetch_status: "not-required",
+        }, {now: "2026-01-01T00:00:00Z"});
+
+        const fingerprint = planSnapshotFingerprint(state);
+        expect(planSnapshotFingerprint({
+            ...state,
+            revision: 4,
+            updated_at: "2026-01-01T00:00:04Z",
+            workflow_outcome: "blocked",
+        })).toBe(fingerprint);
+        expect(planSnapshotFingerprint({
+            ...state,
+            session_strategy: {
+                ...state.session_strategy,
+                rationale: "The semantic strategy changed.",
+            },
+        })).not.toBe(fingerprint);
+
+        const questionState = createInitialState({
+            ...state,
+            scope_questions: [{
+                id: "SQ1",
+                prompt: "Czy zakres jest kompletny?",
+                impact: "Wpływa na późniejszą rewizję.",
+                decision_needed: "Potwierdzić zakres.",
+                blocking: true,
+                resolved: false,
+            }],
+        }, {now: "2026-01-01T00:00:00Z"});
+        const answered = applyQuestionDecision(questionState, {
+            question_id: "SQ1",
+            decision_ref: "D1",
+            answer: "yes",
+            decision_source: "user",
+            decided_at: "2026-01-01T00:00:01Z",
+            affected_refs: ["session_strategy"],
+        });
+        expect(planSnapshotFingerprint(answered)).toBe(planSnapshotFingerprint(questionState));
+    });
 });
 
 describe("task-plan source module", () => {
@@ -767,6 +882,13 @@ describe("task-plan source module", () => {
     it("normalizes user input and compares snapshots without refreshing implicitly", () => {
         const source = normalizeUserInput({title: "Goal", body: "Details", source_ref: "conversation-1", input_profile: "brief-request"});
         expect(source).toMatchObject({source_kind: "user-input", source_ref: "conversation-1"});
+        expect(source).not.toHaveProperty("intake_assessment");
+        expect(source).not.toHaveProperty("task_type");
+        expect(source.provenance).toEqual({
+            source_kind: "user-input",
+            source_ref: "conversation-1",
+            evidence_refs: [],
+        });
         expect(normalizeUserInput({title: "Stable title", input_profile: "title-only"}).source_ref).toBe("stable-title");
         expect(compareSourceSnapshots(source, {...source, body: "Changed"})).toEqual({
             changed: true,
@@ -803,6 +925,133 @@ describe("task-plan source module", () => {
             branch: "issue/123-add-support",
             base_ref: "origin/main",
         });
+    });
+
+    it("keeps intake assessment explicit and defaults every axis to unknown", () => {
+        const source = normalizeUserInput({title: "Goal", body: "Details", input_profile: "brief-request"});
+        const state = createInitialState({
+            plan_id: "intake-assessment",
+            draft_path: "docs/plan/intake-assessment.md",
+            source_identity: "user:intake-assessment",
+            source,
+        }, {now: "2026-01-01T00:00:00Z"});
+
+        expect(state.intake_assessment).toEqual(createUnknownIntakeAssessment());
+        expect(validateIntakeAssessment(state.intake_assessment)).toEqual([]);
+        expect(() => normalizeIntakeAssessment({
+            intent_authority: {level: "high", rationale: "No direct source.", evidence_refs: []},
+        })).toThrow("requires evidence_refs");
+
+        const assessed = normalizeIntakeAssessment({
+            intent_authority: {level: "high", rationale: "User statement E1.", evidence_refs: ["E1"]},
+            task_type: "bug",
+        });
+        expect(assessed).toMatchObject({
+            intent_authority: {level: "high", evidence_refs: ["E1"]},
+            diagnosis_reliability: {level: "unknown"},
+            task_type: "bug",
+        });
+    });
+
+    it("separates confirmed files, candidate paths and discovery debt", () => {
+        expect(() => createInitialState({
+            plan_id: "missing-evidence",
+            draft_path: "docs/plan/missing-evidence.md",
+            source_identity: "user:missing-evidence",
+            source_kind: "user-input",
+            input_profile: "brief-request",
+            source_fetch_status: "not-required",
+            packages: [{
+                id: "WP1",
+                goal: "Inspect the source",
+                scope: "Bounded scope",
+                dependencies: [],
+                acceptance_criteria: ["Evidence is explicit."],
+                risks: [],
+                questions: [],
+                decision_status: "pending",
+                confirmed_files: ["src/Unknown.mjs"],
+            }],
+        })).toThrow("confirmed_files requires direct evidence_refs");
+
+        const state = createInitialState({
+            plan_id: "evidence-separation",
+            draft_path: "docs/plan/evidence-separation.md",
+            source_identity: "user:evidence-separation",
+            source_kind: "user-input",
+            input_profile: "brief-request",
+            source_fetch_status: "not-required",
+            packages: [{
+                id: "WP1",
+                goal: "Inspect the source",
+                scope: "Bounded scope",
+                dependencies: [],
+                acceptance_criteria: ["Evidence is explicit."],
+                risks: [],
+                questions: [],
+                decision_status: "pending",
+                confirmed_files: ["src/Confirmed.mjs"],
+                candidate_paths: ["src/Candidate.mjs"],
+                discovery_required: [{
+                    id: "D1",
+                    reason: "Confirm the candidate implementation.",
+                    owner: "planner",
+                    target_phase: "source/context",
+                }],
+                evidence_refs: ["repo:E1"],
+            }],
+        }, {now: "2026-01-01T00:00:00Z"});
+        expect(state.packages[0]).toMatchObject({
+            confirmed_files: ["src/Confirmed.mjs"],
+            candidate_paths: ["src/Candidate.mjs"],
+            discovery_required: [{id: "D1", owner: "planner", target_phase: "source/context"}],
+            evidence_refs: ["repo:E1"],
+        });
+        const handoff = renderExecutionHandoff(state);
+        expect(handoff).toContain("confirmed_files: `src/Confirmed.mjs`");
+        expect(handoff).toContain("candidate_paths (hypotheses; not handoff)");
+        expect(handoff).toContain("discovery_required: `D1");
+    });
+
+    it("keeps technical certainty unknown after an incomplete blocking context result", () => {
+        const state = createInitialState({
+            plan_id: "incomplete-intake",
+            draft_path: "docs/plan/incomplete-intake.md",
+            source_identity: "user:incomplete-intake",
+            source_kind: "user-input",
+            input_profile: "brief-request",
+            source_fetch_status: "not-required",
+        }, {now: "2026-01-01T00:00:00Z"});
+        const incomplete = applyStateMutation(state, {
+            type: "hybrid-attempt",
+            payload: {
+                run_id: "run-incomplete",
+                attempt_id: "attempt-incomplete",
+                attempt_hash: "hash-incomplete",
+                criteria_hash: "criteria-hash",
+                strategy_hash: "strategy-hash",
+                status: "INCOMPLETE",
+            },
+        }, {now: "2026-01-01T00:00:01Z"});
+
+        expect(incomplete.intake_assessment.technical_certainty).toMatchObject({level: "unknown"});
+        expect(incomplete.plan_status).toBe("needs-clarification");
+        expect(incomplete.workflow_outcome).toBe("blocked");
+    });
+
+    it("routes explicit scope expansion back to source/context and known descriptions to review", () => {
+        const state = {scope_questions: [{id: "SQ1"}]};
+        expect(routeDecisionBatch(state, ["SQ1"], {scope_change: "inventory/evidence-expansion"})).toMatchObject({
+            route: "source/context",
+            transition_path: ["review", "source/context"],
+        });
+        expect(routeDecisionBatch(state, ["SQ1"], {scope_change: "known-scope-description"})).toMatchObject({
+            route: "review",
+            transition_path: ["review"],
+        });
+        expect(routeDecisionBatch(state, ["SQ1"], {scope_change: "semantic-guess"}).reasons).toContain(
+            "invalid_scope_change_type",
+        );
     });
 });
 
@@ -1026,7 +1275,7 @@ describe("task-plan validation module", () => {
             session_strategy: createValidPlanState().session_strategy,
             ownership_redundancy_review: createValidPlanState().ownership_redundancy_review,
         }).valid).toBe(true);
-        const invalid = validatePlanState({...baseState(), plan_status: "approved", blockers: ["B1"]});
+        const invalid = validatePlanState({...baseState(), plan_status: "approved", blockers: ["B1"]}, {mode: "approval"});
         expect(invalid.valid).toBe(false);
         expect(invalid.errors.join(" ")).toContain("approval guard");
         expect(validateFinalApproval(baseState()).valid).toBe(false);
@@ -1297,6 +1546,48 @@ describe("task-plan CLI contract", () => {
         const validateStateResult = runCli(VALIDATE_PLAN_SCRIPT, ["validate-state", "--file", validStatePath]);
         expect(validateStateResult.status).toBe(0);
         expect(JSON.parse(validateStateResult.stdout).valid).toBe(true);
+
+        const invalidModeResult = runCli(VALIDATE_PLAN_SCRIPT, [
+            "validate-state", "--file", validStatePath, "--mode", "unsupported",
+        ]);
+        expect(invalidModeResult.status).toBe(1);
+        expect(JSON.parse(invalidModeResult.stdout).errors[0]).toContain("Invalid validation mode");
+
+        const pendingStatePath = path.join(directory, "pending-state.json");
+        const pendingState = applyQuestionDecision(createInitialState({
+            plan_id: "pending-cli-state",
+            draft_path: "docs/plan/pending-cli-state.md",
+            source_identity: "user:pending-cli-state",
+            source_kind: "user-input",
+            input_profile: "brief-request",
+            source_fetch_status: "not-required",
+            scope_questions: [{
+                id: "SQ1",
+                prompt: "Czy zakres jest kompletny?",
+                impact: "Zmienia zakres.",
+                decision_needed: "Potwierdzić zakres.",
+                blocking: true,
+                resolved: false,
+            }],
+        }, {now: "2026-01-01T00:00:00Z"}), {
+            question_id: "SQ1",
+            decision_ref: "D1",
+            answer: "yes",
+            decision_source: "user",
+            decided_at: "2026-01-01T00:00:01Z",
+            affected_refs: ["session_strategy"],
+        });
+        fs.writeFileSync(pendingStatePath, JSON.stringify(pendingState), "utf8");
+        const runtimePending = runCli(VALIDATE_PLAN_SCRIPT, [
+            "validate-state", "--file", pendingStatePath,
+        ]);
+        expect(runtimePending.status).toBe(0);
+        expect(JSON.parse(runtimePending.stdout).valid).toBe(true);
+        const approvalPending = runCli(VALIDATE_PLAN_SCRIPT, [
+            "validate-state", "--file", pendingStatePath, "--mode", "approval",
+        ]);
+        expect(approvalPending.status).toBe(1);
+        expect(JSON.parse(approvalPending.stdout).valid).toBe(false);
 
         const invalidState = baseState();
         delete invalidState.ownership_redundancy_review;
