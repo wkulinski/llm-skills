@@ -172,6 +172,47 @@
         "ownership_redundancy_review_incomplete",
         "package_decision_gate"
       ]
+    },
+    {
+      "id": "response-to-approval",
+      "description": "A deterministic user-answer batch reaches approval with one synchronized state/draft pair.",
+      "input": {
+        "source_kind": "user-input",
+        "title": "Confirm the reviewed plan",
+        "body": "Confirm the scope and execution strategy for the reviewed plan.",
+        "answers": [
+          {
+            "question_id": "SQ1",
+            "decision_ref": "D1",
+            "answer": "yes",
+            "affected_refs": ["WP1.scope"]
+          },
+          {
+            "question_id": "SQ2",
+            "decision_ref": "D2",
+            "answer": "yes",
+            "affected_refs": ["session_strategy"]
+          }
+        ]
+      },
+      "expected": {
+        "plan_status": "approved",
+        "workflow_phase": "decisions",
+        "workflow_outcome": "running",
+        "plan_version": 2,
+        "answer_count": 2,
+        "propagated_count": 2,
+        "review_count": 2,
+        "implementation_started": false
+      },
+      "required_anchors": [
+        "Integracyjna regresja i handoff (WP5)",
+        "response-to-approval",
+        "state/draft",
+        "propagated_decision_refs[]",
+        "PROJECTION_STALE",
+        "issue #421"
+      ]
     }
   ]
 }

@@ -7,6 +7,7 @@ import {afterEach, describe, expect, it} from "vitest";
 
 import {
     parseDraftDocument,
+    renderExecutionHandoff,
     replaceSessionStrategySection,
     renderQuestionSections,
     renderSessionStrategyProjection,
@@ -14,6 +15,7 @@ import {
     validateDraftDocument,
 } from "../../../.agents/skills/task-plan/scripts/draft.mjs";
 import {
+    createInitialState,
     validateQuestionRecords,
     validateOwnershipRedundancyReview,
 } from "../../../.agents/skills/task-plan/scripts/state.mjs";
@@ -123,6 +125,32 @@ describe("task-plan question contract", () => {
         expect(openMarkdown).toContain("WP1-Q1");
     });
 
+    it("keeps follow-up evidence debt out of the current blocking criteria", () => {
+        const state = createInitialState({
+            plan_id: "follow-up-isolation",
+            draft_path: "docs/plan/follow-up-isolation.md",
+            source_identity: "user:follow-up-isolation",
+            source_kind: "user-input",
+            input_profile: "brief-request",
+            source_fetch_status: "not-required",
+            context_requirements: {
+                blocking: [],
+                follow_up: [{
+                    id: "F1",
+                    reason: "Confirm the downstream example.",
+                    owner: "planner",
+                    target_phase: "review",
+                }],
+            },
+        }, {now: "2026-01-01T00:00:00Z"});
+
+        expect(state.context_requirements.blocking).toEqual([]);
+        expect(state.context_requirements.follow_up).toEqual([expect.objectContaining({id: "F1"})]);
+        const handoff = renderExecutionHandoff(state);
+        expect(handoff).toContain("F1");
+        expect(handoff).toContain("not current criteria");
+    });
+
     it("propagates a question decision through known state-store mutations", () => {
         const directory = makeTemporaryDirectory();
         const plan = {
@@ -193,7 +221,7 @@ describe("task-plan question contract", () => {
                 scope_questions: current.scope_questions,
                 session_strategy: {...current.session_strategy, rationale: "Source completeness confirmed."},
                 reason: "Apply the source decision.",
-                propagated_decision_ref: "D1",
+                propagated_decision_refs: ["D1"],
             },
         }, {clock: fixedClock("2026-01-01T00:00:04Z")});
         expect(propagated.state.user_decisions[0]).toMatchObject({

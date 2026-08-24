@@ -58,6 +58,18 @@ Zautomatyzować start pracy nad issue: ustalenie numeru issue, utworzenie/checko
    kroku kończy start dla bieżącego uruchomienia: raportuj kod, miejsce i przyczynę
    oraz nie uruchamiaj task-plan na podstawie częściowego sukcesu.
 
+   Przy standalone starcie, po obu sukcesach, pokaż dokładnie jedno pytanie:
+
+   ```text
+   Czy utworzyć plan wykonawczy?
+   - Utwórz plan wykonawczy
+   - Nie teraz
+   ```
+
+   `Utwórz plan wykonawczy` jest jedyną zgodą na uruchomienie `$task-plan` i
+   przekazuje wyłącznie `owner`, `repo`, `issue_number`, `branch` oraz `base`.
+   `Nie teraz` kończy bieżący workflow bez planu i bez ponownego pytania.
+
 ### Granica z `$task-plan`
 
 - `start.mjs` ustala stabilną tożsamość issue (`owner`, `repo`, `issue_number`,
@@ -69,6 +81,8 @@ Zautomatyzować start pracy nad issue: ustalenie numeru issue, utworzenie/checko
 - Niepowodzenie startu albo ustawienia statusu jest jawnie raportowane i blokuje
   dalszy workflow. Nie wolno uruchamiać task-plan ani tworzyć planu z niepełnych
   danych.
+- `start.mjs` pozostaje adapterem stabilnej tożsamości i brancha: nie pyta
+  użytkownika, nie pobiera body ani komentarzy i nie uruchamia `$task-plan`.
 
 ### Następne działanie po sukcesie
 
@@ -80,8 +94,8 @@ przygotowania planu:
   „rozpocznij issue 123 i przygotuj plan realizacji”), po sukcesie `start.mjs`
   oraz `$gh-issue-status-set` uruchom `$task-plan`;
 - jeśli użytkownik poprosił tylko o start issue, nie uruchamiaj `$task-plan`
-  bez pytania. Pokaż gotową stabilną tożsamość issue i zaproponuj następny
-  krok, np. `$task-plan --source github-issue --issue-number <ID>`;
+  bez pytania. Po sukcesie statusu pokaż pytanie `Czy utworzyć plan
+  wykonawczy?` z opcjami `Utwórz plan wykonawczy` i `Nie teraz`;
 - sam tytuł lub opis issue nie jest wystarczającym dowodem intencji planowania.
 
 W przypadku automatycznego przejścia przekaż do `$task-plan` stabilną tożsamość
@@ -129,8 +143,9 @@ Jeśli użytkownik podał `--issue-number`, a issue nie istnieje lub jest zamkni
 
 ## Format odpowiedzi
 - Wynik: issue + branch utworzone/przełączone, status ustawiony.
-- Następny krok: `$task-plan` uruchomiony po jednoznacznej intencji planowania
-  albo zaproponowany użytkownikowi, jeśli wykonano tylko start.
+- Następny krok: po obu sukcesach pokaż `Czy utworzyć plan wykonawczy?` z
+  opcjami `Utwórz plan wykonawczy` i `Nie teraz`; tylko pierwsza uruchamia
+  `$task-plan`, a druga kończy workflow bez planu.
 - Uwagi: brakujące dane, konflikty oraz ewentualny błąd ustawienia statusu (jeśli dotyczy).
 
 ## Przykłady wejścia

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import crypto from "node:crypto";
 import {pathToFileURL} from "node:url";
 
 export const PLAN_STATUSES = Object.freeze([
@@ -101,6 +102,33 @@ export const INPUT_PROFILES = Object.freeze([
     "detailed-plan",
 ]);
 
+export const INTAKE_CERTAINTY_LEVELS = Object.freeze(["high", "medium", "low", "unknown"]);
+
+export const INTAKE_TASK_TYPES = Object.freeze([
+    "bug",
+    "feature",
+    "refactor",
+    "documentation",
+    "configuration",
+    "operational",
+    "unknown",
+]);
+
+export const SCOPE_CHANGE_TYPES = Object.freeze([
+    "inventory/evidence-expansion",
+    "known-scope-description",
+]);
+
+export const HYBRID_ATTEMPT_STATUSES = Object.freeze([
+    "started",
+    "complete",
+    "incomplete",
+    "blocked",
+    "COMPLETE",
+    "INCOMPLETE",
+    "BLOCKED",
+]);
+
 export const STATE_SCHEMA_VERSION = 3;
 
 export const STATE_LIFECYCLES = Object.freeze([
@@ -155,10 +183,12 @@ export const MUTATION_TYPES = Object.freeze([
     "package-decision",
     "package-reopen",
     "question-decision",
+    "propagate-decisions",
     "review-record",
     "finding-record",
     "simplification-record",
     "context-requirements-update",
+    "intake-assessment",
     "hybrid-attempt",
     "source-fetch-complete",
     "source-fetch-failed",
@@ -224,6 +254,7 @@ export const REQUIRED_REVIEW_CHECKS = Object.freeze([
 
 const QUESTION_FIELDS = Object.freeze(["prompt", "impact", "decision_needed"]);
 const QUESTION_RESOLUTION_FIELDS = Object.freeze(["answer", "decision_source", "decided_at"]);
+const PREFLIGHT_DECISION_TIMESTAMP = "1970-01-01T00:00:00.000Z";
 
 export const PLAN_TRANSITIONS = Object.freeze({
     "review-pending": Object.freeze(["awaiting-package-decisions", "needs-clarification", "review-limit-reached"]),
@@ -272,6 +303,222 @@ export class StateError extends Error {
     }
 }
 
+const INTAKE_ASSESSMENT_AXES = Object.freeze([
+    "intent_authority",
+    "diagnosis_reliability",
+    "requirements_completeness",
+    "technical_certainty",
+]);
+
+const UNKNOWN_INTAKE_RATIONALE = "No intake evidence has been assessed.";
+
+export function createUnknownIntakeAssessment() {
+    return {
+        ...Object.fromEntries(INTAKE_ASSESSMENT_AXES.map((axis) => [axis, {
+            level: "unknown",
+            rationale: UNKNOWN_INTAKE_RATIONALE,
+            evidence_refs: [],
+        }])),
+        task_type: "unknown",
+    };
+}
+
+export function normalizeEvidenceRefs(value, name = "evidence_refs") {
+    if (typeof value === "undefined" || value === null) {
+        return [];
+    }
+    if (!Array.isArray(value)) {
+        throw new StateError("INVALID_EVIDENCE_REFS", `${name} must be an array.`);
+    }
+
+    const refs = value.map((item, index) => {
+        if (isNonEmptyString(item)) {
+            return item.trim();
+        }
+        if (isRecord(item)) {
+            const ref = item.ref ?? item.id ?? item.evidence_ref;
+            if (isNonEmptyString(ref)) {
+                return ref.trim();
+            }
+        }
+        throw new StateError("INVALID_EVIDENCE_REFS", `${name}[${index}] must be a non-empty reference.`);
+    });
+    if (new Set(refs).size !== refs.length) {
+        throw new StateError("INVALID_EVIDENCE_REFS", `${name} must contain unique references.`);
+    }
+    return refs;
+}
+
+export function normalizeIntakeAssessment(input) {
+    const defaults = createUnknownIntakeAssessment();
+    if (typeof input === "undefined" || input === null) {
+        return defaults;
+    }
+    if (!isRecord(input)) {
+        throw new StateError("INVALID_INTAKE_ASSESSMENT", "intake_assessment must be an object.");
+    }
+
+    const assessment = {};
+    for (const axis of INTAKE_ASSESSMENT_AXES) {
+        const candidate = input[axis];
+        if (typeof candidate === "undefined" || candidate === null) {
+            assessment[axis] = defaults[axis];
+            continue;
+        }
+        if (!isRecord(candidate)) {
+            throw new StateError("INVALID_INTAKE_ASSESSMENT", `${axis} must be an object.`);
+        }
+        const level = candidate.level ?? "unknown";
+        if (!INTAKE_CERTAINTY_LEVELS.includes(level)) {
+            throw new StateError("INVALID_INTAKE_ASSESSMENT", `${axis}.level is invalid: ${level}.`);
+        }
+        const rationale = candidate.rationale ?? UNKNOWN_INTAKE_RATIONALE;
+        if (!isNonEmptyString(rationale)) {
+            throw new StateError("INVALID_INTAKE_ASSESSMENT", `${axis}.rationale must be a non-empty string.`);
+        }
+        assessment[axis] = {
+            level,
+            rationale: rationale.trim(),
+            evidence_refs: normalizeEvidenceRefs(candidate.evidence_refs ?? candidate.evidenceRefs, `${axis}.evidence_refs`),
+        };
+        if (level === "high" && assessment[axis].evidence_refs.length === 0) {
+            throw new StateError("INVALID_INTAKE_ASSESSMENT", `${axis}.level high requires evidence_refs.`);
+        }
+    }
+
+    const taskType = input.task_type ?? "unknown";
+    if (!INTAKE_TASK_TYPES.includes(taskType)) {
+        throw new StateError("INVALID_INTAKE_ASSESSMENT", `task_type is invalid: ${taskType}.`);
+    }
+    assessment.task_type = taskType;
+    return assessment;
+}
+
+export function validateIntakeAssessment(assessment) {
+    if (!isRecord(assessment)) {
+        return ["intake_assessment must be an object."];
+    }
+    try {
+        normalizeIntakeAssessment(assessment);
+        return [];
+    } catch (error) {
+        return [error instanceof StateError ? error.message : String(error)];
+    }
+}
+
+export function normalizeProvenance(input, fallback = {}) {
+    const candidate = typeof input === "undefined" || input === null ? {} : input;
+    if (!isRecord(candidate)) {
+        throw new StateError("INVALID_PROVENANCE", "provenance must be an object.");
+    }
+    const sourceKind = candidate.source_kind ?? fallback.source_kind ?? null;
+    const sourceRef = candidate.source_ref ?? fallback.source_ref ?? null;
+    if (sourceKind !== null && !SOURCE_KINDS.includes(sourceKind)) {
+        throw new StateError("INVALID_PROVENANCE", `provenance.source_kind is invalid: ${sourceKind}.`);
+    }
+    if (sourceRef !== null && !isNonEmptyString(sourceRef)) {
+        throw new StateError("INVALID_PROVENANCE", "provenance.source_ref must be a non-empty string or null.");
+    }
+    return {
+        source_kind: sourceKind,
+        source_ref: sourceRef === null ? null : sourceRef.trim(),
+        evidence_refs: normalizeEvidenceRefs(
+            candidate.evidence_refs ?? fallback.evidence_refs,
+            "provenance.evidence_refs",
+        ),
+    };
+}
+
+export function validateProvenance(provenance) {
+    if (!isRecord(provenance)) {
+        return ["provenance must be an object."];
+    }
+    try {
+        normalizeProvenance(provenance);
+        return [];
+    } catch (error) {
+        return [error instanceof StateError ? error.message : String(error)];
+    }
+}
+
+function normalizePathList(value, name) {
+    if (typeof value === "undefined" || value === null) {
+        return [];
+    }
+    if (!Array.isArray(value)) {
+        throw new StateError("INVALID_EVIDENCE_SCOPE", `${name} must be an array.`);
+    }
+    const paths = value.map((item, index) => {
+        if (!isNonEmptyString(item)) {
+            throw new StateError("INVALID_EVIDENCE_SCOPE", `${name}[${index}] must be a non-empty path.`);
+        }
+        return item.trim();
+    });
+    if (new Set(paths).size !== paths.length) {
+        throw new StateError("INVALID_EVIDENCE_SCOPE", `${name} must contain unique paths.`);
+    }
+    return paths;
+}
+
+function normalizeDiscoveryRequirements(value, name) {
+    if (typeof value === "undefined" || value === null) {
+        return [];
+    }
+    if (!Array.isArray(value)) {
+        throw new StateError("INVALID_DISCOVERY_REQUIREMENTS", `${name} must be an array.`);
+    }
+    const ids = new Set();
+    return value.map((item, index) => {
+        if (!isRecord(item)) {
+            throw new StateError("INVALID_DISCOVERY_REQUIREMENTS", `${name}[${index}] must be an object with owner and target_phase.`);
+        }
+        const id = requireStateString(item.id, `${name}[${index}].id`);
+        const reason = requireStateString(item.reason ?? item.description, `${name}[${index}].reason`);
+        const owner = requireStateString(item.owner, `${name}[${index}].owner`);
+        const targetPhase = requireStateString(item.target_phase ?? item.phase, `${name}[${index}].target_phase`);
+        if (ids.has(id)) {
+            throw new StateError("INVALID_DISCOVERY_REQUIREMENTS", `${name} contains duplicate id: ${id}.`);
+        }
+        ids.add(id);
+        const normalized = {id, reason, owner, target_phase: targetPhase};
+        if (typeof item.path !== "undefined") {
+            normalized.path = requireStateString(item.path, `${name}[${index}].path`);
+        }
+        if (typeof item.evidence_refs !== "undefined") {
+            normalized.evidence_refs = normalizeEvidenceRefs(item.evidence_refs, `${name}[${index}].evidence_refs`);
+        }
+        return normalized;
+    });
+}
+
+function normalizeWorkPackage(item, index) {
+    if (!isRecord(item)) {
+        return item;
+    }
+    const packageProvenance = normalizeProvenance(item.provenance);
+    return {
+        ...clone(item),
+        confirmed_files: normalizePathList(item.confirmed_files, `packages[${index}].confirmed_files`),
+        candidate_paths: normalizePathList(item.candidate_paths, `packages[${index}].candidate_paths`),
+        discovery_required: normalizeDiscoveryRequirements(item.discovery_required, `packages[${index}].discovery_required`),
+        evidence_refs: normalizeEvidenceRefs(
+            item.evidence_refs ?? packageProvenance.evidence_refs,
+            `packages[${index}].evidence_refs`,
+        ),
+        provenance: packageProvenance,
+    };
+}
+
+function normalizeWorkPackages(packages) {
+    if (typeof packages === "undefined" || packages === null) {
+        return [];
+    }
+    if (!Array.isArray(packages)) {
+        throw new StateError("INVALID_STATE", "packages must be an array.");
+    }
+    return packages.map(normalizeWorkPackage);
+}
+
 export function createInitialState(plan, options = {}) {
     const input = requirePlanStateInput(plan);
     const now = requireStateTimestamp(toTimestamp(options.now ?? input.now ?? new Date().toISOString()), "now");
@@ -286,6 +533,15 @@ export function createInitialState(plan, options = {}) {
     }
 
     const sourceMetadata = initialSourceMetadata(sourceEnvelope);
+    const provenance = normalizeProvenance(
+        input.provenance ?? sourceEnvelope.provenance,
+        {
+            ...sourceEnvelope,
+            source_ref: input.source_ref
+                ?? sourceEnvelope.source_ref
+                ?? (isNonEmptyString(input.source_identity) ? input.source_identity : null),
+        },
+    );
     const initial = {
         schema_version: STATE_SCHEMA_VERSION,
         revision: 0,
@@ -309,11 +565,13 @@ export function createInitialState(plan, options = {}) {
             state_revision: 0,
         }),
         ...sourceMetadata,
+        intake_assessment: normalizeIntakeAssessment(input.intake_assessment ?? sourceEnvelope.intake_assessment),
+        provenance,
         hybrid_attempt_id: null,
         hybrid_attempt_hash: null,
         hybrid_attempt: null,
         context_requirements: normalizeContextRequirements(input.context_requirements),
-        packages: Array.isArray(input.packages) ? clone(input.packages) : [],
+        packages: normalizeWorkPackages(input.packages),
         findings: Array.isArray(input.findings) ? clone(input.findings) : [],
         review_history: Array.isArray(input.review_history) ? clone(input.review_history) : [],
         decisions: Array.isArray(input.decisions) ? clone(input.decisions) : [],
@@ -344,10 +602,107 @@ export function validateTaskPlanState(state) {
     const errors = [
         ...validateStateEnvelope(state),
         ...validateStateSource(state),
+        ...(Object.hasOwn(state, "intake_assessment")
+            ? validateIntakeAssessment(state.intake_assessment)
+            : ["State must contain intake_assessment."]),
+        ...(Object.hasOwn(state, "provenance")
+            ? validateProvenance(state.provenance)
+            : ["State must contain provenance."]),
+        ...validateHybridAttemptState(state),
         ...validateContextRequirements(state.context_requirements),
         ...validateStateRecordsForStore(state),
     ];
     return {valid: errors.length === 0, errors};
+}
+
+/**
+ * Validate a state that is allowed to exist while the workflow is running.
+ * Pending user-decision propagation is intentionally a valid intermediate
+ * state; approval has a stricter validator below.
+ */
+export function validateRuntimeState(state) {
+    return validateTaskPlanState(state);
+}
+
+/**
+ * Validate the state required to enter the approval/handoff gate.
+ */
+export function validateApprovalState(state) {
+    const runtime = validateRuntimeState(state);
+    const errors = [...runtime.errors];
+    if (!isRecord(state)) {
+        return {valid: false, errors};
+    }
+
+    const propagationErrors = validateQuestionDecisionPropagation(state);
+    errors.push(...propagationErrors);
+    const approval = canApprovePlan(state);
+    if (!approval.approved) {
+        const reasons = approval.reasons.filter((reason) => {
+            return !(reason === "question_decision_propagation_incomplete" && propagationErrors.length > 0);
+        });
+        if (reasons.length > 0) {
+            errors.push(`Approval state failed: ${reasons.join(", ")}.`);
+        }
+    }
+    if (state.workflow_outcome === "blocked") {
+        errors.push("Approval state cannot be blocked.");
+    }
+
+    return {valid: errors.length === 0, errors, approval};
+}
+
+/**
+ * Return the semantic plan snapshot. Technical revisions such as state
+ * revision timestamps and decision propagation status are deliberately absent.
+ */
+export function planSnapshot(state) {
+    const candidate = isRecord(state) ? state : {};
+    const packages = Array.isArray(candidate.packages)
+        ? candidate.packages.map((item) => isRecord(item)
+            ? {
+                ...item,
+                questions: Array.isArray(item.questions)
+                    ? item.questions.map(semanticQuestionSnapshot)
+                    : item.questions,
+            }
+            : item)
+        : [];
+    const findings = Array.isArray(candidate.findings)
+        ? candidate.findings.map((finding) => {
+            if (!isRecord(finding)) {
+                return finding;
+            }
+            const {decided_at: _decidedAt, ...semanticFinding} = finding;
+            return semanticFinding;
+        })
+        : [];
+    return clone({
+        packages,
+        findings,
+        scope_questions: Array.isArray(candidate.scope_questions)
+            ? candidate.scope_questions.map(semanticQuestionSnapshot)
+            : [],
+        session_strategy: candidate.session_strategy ?? null,
+    });
+}
+
+function semanticQuestionSnapshot(question) {
+    if (!isRecord(question)) {
+        return question;
+    }
+    const semanticQuestion = {...question};
+    delete semanticQuestion.answer;
+    delete semanticQuestion.decided_at;
+    delete semanticQuestion.decision_source;
+    delete semanticQuestion.resolved;
+    return semanticQuestion;
+}
+
+export function planSnapshotFingerprint(state) {
+    return crypto.createHash("sha256")
+        .update(stableStringify(planSnapshot(state)))
+        .digest("hex");
 }
 
 export function validateStateLifecycle(input) {
@@ -443,6 +798,8 @@ export function applyStateMutation(state, mutation, context = {}) {
             return applyPackageReopenMutation(current, payload);
         case "question-decision":
             return applyQuestionMutation(current, payload);
+        case "propagate-decisions":
+            return applyPropagateDecisions(current, payload, now);
         case "plan-revision":
             return applyPlanRevision(current, payload, now);
         case "review-record":
@@ -453,6 +810,8 @@ export function applyStateMutation(state, mutation, context = {}) {
             return applySimplificationMutation(current, payload);
         case "context-requirements-update":
             return applyContextRequirementsMutation(current, payload);
+        case "intake-assessment":
+            return applyIntakeAssessmentMutation(current, payload);
         case "hybrid-attempt":
             return applyHybridAttemptMutation(current, payload, now);
         case "source-fetch-complete":
@@ -620,6 +979,11 @@ function normalizeBlockingRequirements(items) {
         }
         if (!isRecord(item)) {
             throw new StateError("INVALID_CONTEXT_REQUIREMENTS", `Blocking requirement ${index + 1} must be an object.`);
+        }
+        if (Object.hasOwn(item, "owner")
+            || Object.hasOwn(item, "target_phase")
+            || Object.hasOwn(item, "follow_up")) {
+            throw new StateError("INVALID_CONTEXT_REQUIREMENTS", `Blocking requirement ${index + 1} must not contain follow-up metadata.`);
         }
         return {
             id: requireStateString(item.id, `blocking requirement ${index + 1}.id`),
@@ -789,6 +1153,56 @@ function validateStateSource(state) {
     return errors;
 }
 
+function validateHybridAttemptState(state) {
+    const errors = [];
+    if (!Object.hasOwn(state, "hybrid_attempt")) {
+        return ["State must contain hybrid_attempt."];
+    }
+    if (state.hybrid_attempt === null || typeof state.hybrid_attempt === "undefined") {
+        if (state.hybrid_attempt_id !== null || state.hybrid_attempt_hash !== null) {
+            errors.push("Empty hybrid_attempt must have null reference fields.");
+        }
+        return errors;
+    }
+    if (!isRecord(state.hybrid_attempt)) {
+        return ["hybrid_attempt must be an object or null."];
+    }
+    const attempt = state.hybrid_attempt;
+    for (const field of [
+        "run_id",
+        "attempt_id",
+        "attempt_hash",
+        "criteria_hash",
+        "strategy_hash",
+        "phase",
+        "status",
+    ]) {
+        if (!isNonEmptyString(attempt[field])) {
+            errors.push(`hybrid_attempt is missing ${field}.`);
+        }
+    }
+    if (isNonEmptyString(attempt.phase) && !WORKFLOW_PHASES.includes(attempt.phase)) {
+        errors.push(`hybrid_attempt has invalid phase: ${attempt.phase}.`);
+    }
+    if (isNonEmptyString(attempt.status) && !HYBRID_ATTEMPT_STATUSES.includes(attempt.status)) {
+        errors.push(`hybrid_attempt has invalid status: ${attempt.status}.`);
+    }
+    if (typeof attempt.started_at !== "string" || Number.isNaN(Date.parse(attempt.started_at))) {
+        errors.push("hybrid_attempt.started_at must be a valid timestamp.");
+    }
+    if (state.hybrid_attempt_id !== attempt.attempt_id) {
+        errors.push("hybrid_attempt_id must match hybrid_attempt.attempt_id.");
+    }
+    if (state.hybrid_attempt_hash !== attempt.attempt_hash) {
+        errors.push("hybrid_attempt_hash must match hybrid_attempt.attempt_hash.");
+    }
+    if (["incomplete", "INCOMPLETE", "blocked", "BLOCKED"].includes(attempt.status)
+        && state.intake_assessment?.technical_certainty?.level !== "unknown") {
+        errors.push("INCOMPLETE hybrid context requires technical_certainty unknown.");
+    }
+    return errors;
+}
+
 function validateContextRequirements(requirements) {
     if (!isRecord(requirements)) {
         return ["context_requirements must be an object."];
@@ -805,6 +1219,11 @@ function validateContextRequirements(requirements) {
         if (!isRecord(item) || !isNonEmptyString(item.id) || !isNonEmptyString(item.criterion)) {
             errors.push(`Blocking requirement ${index + 1} must contain id and criterion.`);
             continue;
+        }
+        if (Object.hasOwn(item, "owner")
+            || Object.hasOwn(item, "target_phase")
+            || Object.hasOwn(item, "follow_up")) {
+            errors.push(`Blocking requirement ${item.id} must not contain follow-up metadata.`);
         }
         addUniqueId(ids, item.id, errors, "context requirement");
     }
@@ -835,7 +1254,9 @@ function addUniqueId(ids, value, errors, label) {
 
 function validateStateRecordsForStore(state) {
     const errors = [];
-    errors.push(...validatePackageRecords(state.packages).errors);
+    errors.push(...validatePackageRecords(state.packages, {
+        evidence_refs: state.provenance?.evidence_refs,
+    }).errors);
     errors.push(...validateDecisionHistory(state.decisions));
     errors.push(...validateSessionStrategy(state.session_strategy));
     errors.push(...validateOwnershipRedundancyReview(state.ownership_redundancy_review, state.findings));
@@ -994,6 +1415,7 @@ function applyPlanRevision(state, payload, now) {
         throw new StateError("REVIEW_LIMIT_REACHED", "The review limit is terminal for this plan identity; explicitly restart.");
     }
     requireStateString(payload.reason, "plan-revision reason");
+    const propagatedDecisionRefs = readPropagatedDecisionRefs(payload, {required: false});
     if (!Array.isArray(payload.packages)
         || !Array.isArray(payload.findings)
         || !Array.isArray(payload.scope_questions)
@@ -1001,11 +1423,13 @@ function applyPlanRevision(state, payload, now) {
         throw new StateError("INVALID_PLAN_REVISION", "plan-revision requires packages, findings, scope_questions and session_strategy.");
     }
 
-    const packages = clone(payload.packages);
+    const packages = normalizeWorkPackages(payload.packages);
     const findings = clone(payload.findings);
     const scopeQuestions = clone(payload.scope_questions);
     const sessionStrategy = clone(payload.session_strategy);
-    const packageValidation = validatePackageRecords(packages);
+    const packageValidation = validatePackageRecords(packages, {
+        evidence_refs: state.provenance?.evidence_refs,
+    });
     const scopeQuestionErrors = validateQuestionRecords(scopeQuestions, {scope: "scope"});
     const strategyErrors = validateSessionStrategy(sessionStrategy);
     if (!packageValidation.valid
@@ -1021,16 +1445,23 @@ function applyPlanRevision(state, payload, now) {
         throw new StateError("INVALID_PLAN_REVISION", errors.join(" "), {errors});
     }
 
-    const previousSnapshot = JSON.stringify({
-        packages: state.packages,
-        findings: state.findings,
-        scope_questions: state.scope_questions,
-        session_strategy: state.session_strategy,
-    });
-    const nextSnapshot = JSON.stringify({packages, findings, scope_questions: scopeQuestions, session_strategy: sessionStrategy});
-    if (previousSnapshot === nextSnapshot) {
+    const previousFingerprint = planSnapshotFingerprint(state);
+    const candidateState = {
+        ...state,
+        packages,
+        findings,
+        scope_questions: scopeQuestions,
+        session_strategy: sessionStrategy,
+    };
+    const nextFingerprint = planSnapshotFingerprint(candidateState);
+    if (previousFingerprint === nextFingerprint) {
         throw new StateError("PLAN_REVISION_NO_CHANGE", "plan-revision must change the semantic plan snapshot.");
     }
+
+    const propagation = validateDecisionPropagationBatch(state, propagatedDecisionRefs, candidateState, {
+        requireChanged: true,
+        requirePending: true,
+    });
 
     const nextState = clone(state);
     nextState.packages = packages;
@@ -1041,9 +1472,20 @@ function applyPlanRevision(state, payload, now) {
     nextState.plan_status = "review-pending";
     nextState.simplification = {result: "pending"};
 
-    if (typeof payload.propagated_decision_ref !== "undefined") {
-        propagateDecisionThroughPlanRevision(nextState, state, payload.propagated_decision_ref, now);
+    if (propagation.records.length > 0) {
+        markDecisionsPropagated(nextState, propagation.refs, nextFingerprint, now);
     }
+    appendPlanHistory(nextState, {
+        type: "plan-revision",
+        from_version: state.plan_version,
+        to_version: nextState.plan_version,
+        reason: payload.reason,
+        decision_refs: propagation.refs,
+        affected_refs: propagation.affectedRefs,
+        previous_fingerprint: previousFingerprint,
+        next_fingerprint: nextFingerprint,
+        changed_at: now,
+    });
 
     const validation = validateTaskPlanState(nextState);
     if (!validation.valid) {
@@ -1052,39 +1494,323 @@ function applyPlanRevision(state, payload, now) {
     return nextState;
 }
 
-function propagateDecisionThroughPlanRevision(state, previousState, decisionRefValue, now) {
-    const decisionRef = requireStateString(decisionRefValue, "propagated_decision_ref");
-    const index = state.user_decisions.findIndex((record) => record.decision_ref === decisionRef);
-    if (index < 0) {
-        throw new StateError("DECISION_NOT_FOUND", `Decision ${decisionRef} was not found.`);
+export function applyPropagateDecisions(state, payload, now) {
+    const nextState = prepareState(state);
+    requireStateString(payload.reason, "propagation reason");
+    const refs = readPropagatedDecisionRefs(payload, {required: true});
+    const snapshot = requirePropagationSnapshot(payload.snapshot);
+    const snapshotFingerprint = planSnapshotFingerprint(snapshot);
+    const currentFingerprint = planSnapshotFingerprint(nextState);
+    if (snapshotFingerprint !== currentFingerprint) {
+        throw new StateError(
+            "PLAN_STALE",
+            `Propagation snapshot fingerprint ${snapshotFingerprint} does not match current plan ${currentFingerprint}.`,
+            {expected: currentFingerprint, actual: snapshotFingerprint},
+        );
     }
-    const record = state.user_decisions[index];
-    if (record.propagation_status === "propagated") {
-        throw new StateError("DECISION_ALREADY_PROPAGATED", `Decision ${decisionRef} is already propagated.`);
+
+    const propagation = validateDecisionPropagationBatch(nextState, refs, snapshot, {
+        requireChanged: false,
+        semanticCandidate: true,
+    });
+    const selectedRecords = propagation.records;
+    const alreadyPropagated = selectedRecords.every((record) => record.propagation_status === "propagated");
+    if (alreadyPropagated) {
+        const fingerprintMismatch = selectedRecords.some((record) => {
+            return record.propagated_snapshot_fingerprint !== snapshotFingerprint;
+        });
+        if (fingerprintMismatch) {
+            throw new StateError(
+                "PLAN_STALE",
+                "Already propagated decisions belong to a different plan snapshot.",
+                {expected: snapshotFingerprint},
+            );
+        }
+        return nextState;
     }
-    const refErrors = validateAffectedRefs(record.affected_refs, state.packages);
-    if (refErrors.length > 0) {
-        throw new StateError("INVALID_PROPAGATION", refErrors.join(" "), {errors: refErrors});
+    if (selectedRecords.some((record) => record.propagation_status === "propagated")) {
+        throw new StateError(
+            "INVALID_PROPAGATION",
+            "A propagation batch cannot mix already-propagated and pending decisions.",
+        );
     }
-    for (const ref of record.affected_refs) {
+
+    markDecisionsPropagated(nextState, refs, snapshotFingerprint, now);
+    appendPlanHistory(nextState, {
+        type: "decision-propagation",
+        from_version: nextState.plan_version,
+        to_version: nextState.plan_version,
+        reason: payload.reason,
+        decision_refs: propagation.refs,
+        affected_refs: propagation.affectedRefs,
+        previous_fingerprint: snapshotFingerprint,
+        next_fingerprint: snapshotFingerprint,
+        changed_at: now,
+    });
+    return nextState;
+}
+
+function readPropagatedDecisionRefs(payload, options = {}) {
+    if (Object.hasOwn(payload, "propagated_decision_ref")) {
+        throw new StateError(
+            "LEGACY_PROPAGATION_PAYLOAD",
+            "Use propagated_decision_refs[]; the singular propagated_decision_ref field is not supported.",
+        );
+    }
+    if (!Object.hasOwn(payload, "propagated_decision_refs")) {
+        if (options.required) {
+            throw new StateError("INVALID_PROPAGATION", "propagated_decision_refs must be a non-empty array.");
+        }
+        return [];
+    }
+    if (!Array.isArray(payload.propagated_decision_refs)
+        || (options.required && payload.propagated_decision_refs.length === 0)) {
+        throw new StateError("INVALID_PROPAGATION", "propagated_decision_refs must be a non-empty array.");
+    }
+    const refs = [];
+    const seen = new Set();
+    for (const [index, value] of payload.propagated_decision_refs.entries()) {
+        if (!isNonEmptyString(value)) {
+            throw new StateError("INVALID_PROPAGATION", `propagated_decision_refs[${index}] must be a non-empty string.`);
+        }
+        if (seen.has(value)) {
+            throw new StateError("DUPLICATE_PROPAGATION_REF", `propagated_decision_refs contains duplicate ref: ${value}.`);
+        }
+        seen.add(value);
+        refs.push(value);
+    }
+    return refs;
+}
+
+function requirePropagationSnapshot(snapshot) {
+    const errors = validatePropagationSnapshot(snapshot);
+    if (errors.length > 0) {
+        throw new StateError("INVALID_PROPAGATION_SNAPSHOT", errors.join(" "), {errors});
+    }
+    return clone(snapshot);
+}
+
+function validatePropagationSnapshot(snapshot) {
+    if (!isRecord(snapshot)) {
+        return ["propagation snapshot must be an object."];
+    }
+    const requiredFields = ["packages", "findings", "scope_questions", "session_strategy"];
+    const missingFields = requiredFields
+        .filter((field) => !Object.hasOwn(snapshot, field))
+        .map((field) => `propagation snapshot is missing ${field}.`);
+    if (missingFields.length > 0) {
+        return missingFields;
+    }
+    const packages = Array.isArray(snapshot.packages)
+        ? snapshot.packages.map((item) => isRecord(item)
+            ? {...item, questions: normalizeSemanticQuestionsForValidation(item.questions)}
+            : item)
+        : null;
+    const scopeQuestions = Array.isArray(snapshot.scope_questions)
+        ? normalizeSemanticQuestionsForValidation(snapshot.scope_questions)
+        : null;
+    const packageErrors = packages
+        ? validatePackageRecords(packages, {evidence_refs: snapshot.provenance?.evidence_refs}).errors
+        : ["packages must be an array."];
+    const scopeQuestionErrors = scopeQuestions
+        ? validateQuestionRecords(scopeQuestions, {scope: "scope"})
+        : ["scope_questions must be an array."];
+    const strategyErrors = isRecord(snapshot.session_strategy)
+        ? validateSessionStrategy(snapshot.session_strategy)
+        : ["session_strategy must be an object."];
+    const findingErrors = Array.isArray(snapshot.findings)
+        ? (snapshot.findings.some((finding) => !isRecord(finding)) ? ["Every finding must be an object."] : [])
+        : ["findings must be an array."];
+    return [
+        ...packageErrors,
+        ...scopeQuestionErrors,
+        ...strategyErrors,
+        ...findingErrors,
+    ];
+}
+
+function normalizeSemanticQuestionsForValidation(questions) {
+    if (!Array.isArray(questions)) {
+        return questions;
+    }
+    return questions.map((question) => {
+        if (!isRecord(question) || typeof question.resolved === "boolean") {
+            return question;
+        }
+        return {...question, resolved: false};
+    });
+}
+
+function validateDecisionPropagationBatch(state, refs, candidate, options = {}) {
+    const records = [];
+    const errors = [];
+    for (const decisionRef of refs) {
+        const record = state.user_decisions.find((item) => item?.decision_ref === decisionRef);
+        if (!record) {
+            errors.push(`Decision ${decisionRef} was not found.`);
+            continue;
+        }
+        records.push(record);
+        if (record.propagation_status !== "pending" && record.propagation_status !== "propagated") {
+            errors.push(`Decision ${decisionRef} has an invalid propagation status.`);
+        }
+        if (options.requirePending && record.propagation_status !== "pending") {
+            errors.push(`Decision ${decisionRef} has already been propagated.`);
+        }
+        const question = findQuestion(state, record.question_id);
+        if (!question || question.resolved !== true) {
+            errors.push(`Decision ${decisionRef} requires a resolved question.`);
+        } else {
+            errors.push(...validateDecisionQuestionRecord(record, question).map((error) => {
+                return `Decision ${decisionRef}: ${error}`;
+            }));
+        }
+        const candidateQuestion = findQuestion(candidate, record.question_id);
+        if (!candidateQuestion || (!options.semanticCandidate && candidateQuestion.resolved !== true)) {
+            errors.push(`Decision ${decisionRef} is not covered by the candidate snapshot.`);
+        } else if (!options.semanticCandidate) {
+            errors.push(...validateDecisionQuestionRecord(record, candidateQuestion).map((error) => {
+                return `Decision ${decisionRef}: ${error}`;
+            }));
+        }
+        const affectedErrors = validateAffectedRefs(record.affected_refs, candidate.packages);
+        errors.push(...affectedErrors.map((error) => `Decision ${decisionRef}: ${error}`));
+        errors.push(...validateCoveredAffectedRefs(candidate, record.affected_refs).map((error) => {
+            return `Decision ${decisionRef}: ${error}`;
+        }));
+    }
+
+    const affectedRefs = uniqueStrings(records.flatMap((record) => record.affected_refs ?? []));
+    let staleErrors = [];
+    if (options.requireChanged && refs.length > 0) {
+        errors.push(...validateChangedAffectedRefs(state, candidate, affectedRefs));
+        staleErrors = validateSemanticChangesCovered(state, candidate, affectedRefs);
+        errors.push(...staleErrors);
+    }
+    if (errors.length > 0) {
+        throw new StateError(staleErrors.length > 0 ? "PLAN_STALE" : "INVALID_PROPAGATION", errors.join(" "), {errors});
+    }
+    return {refs: [...refs], records, affectedRefs};
+}
+
+function validateDecisionQuestionRecord(record, question) {
+    if (Array.isArray(question.options) && question.options.length > 0) {
+        if (!isNonEmptyString(record.selected_option)) {
+            return ["resolved question requires selected_option."];
+        }
+        if (!question.options.some((option) => option?.id === record.selected_option)) {
+            return ["selected_option is not declared by the resolved question."];
+        }
+        return record.selected_option === question.answer
+            ? []
+            : ["selected_option does not match the resolved question answer."];
+    }
+    if (!isNonEmptyString(record.answer)) {
+        return ["resolved question requires answer."];
+    }
+    return record.answer === question.answer
+        ? []
+        : ["answer does not match the resolved question answer."];
+}
+
+function validateCoveredAffectedRefs(candidate, refs) {
+    const errors = [];
+    for (const ref of refs ?? []) {
         if (ref === "session_strategy") {
-            if (JSON.stringify(previousState.session_strategy) === JSON.stringify(state.session_strategy)) {
-                throw new StateError("INVALID_PROPAGATION", "Affected session_strategy was not changed by plan-revision.");
+            if (!isRecord(candidate.session_strategy)) {
+                errors.push("affected_ref session_strategy is not covered by the snapshot.");
             }
             continue;
         }
-        const packageId = /^(WP[1-9][0-9]*)(?:\.|$)/.exec(ref)?.[1];
-        const previousPackage = previousState.packages.find((item) => item.id === packageId);
-        const revisedPackage = state.packages.find((item) => item.id === packageId);
-        if (!revisedPackage || JSON.stringify(previousPackage) === JSON.stringify(revisedPackage)) {
-            throw new StateError("INVALID_PROPAGATION", `Unsupported or uncovered affected_ref: ${ref}.`);
+        const match = /^(WP[1-9][0-9]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$/.exec(ref);
+        const packageRecord = candidate.packages.find((item) => item?.id === match?.[1]);
+        if (!packageRecord || (match[2] && !Object.hasOwn(packageRecord, match[2]))) {
+            errors.push(`Unsupported or uncovered affected_ref: ${ref}.`);
         }
     }
-    state.user_decisions[index] = {
-        ...record,
-        propagation_status: "propagated",
-        propagated_at: now,
-    };
+    return errors;
+}
+
+function validateChangedAffectedRefs(previousState, nextState, refs) {
+    return refs.flatMap((ref) => {
+        if (ref === "session_strategy") {
+            return stableStringify(previousState.session_strategy) === stableStringify(nextState.session_strategy)
+                ? [`Affected session_strategy was not changed by plan-revision.`]
+                : [];
+        }
+        const match = /^(WP[1-9][0-9]*)(?:\.([A-Za-z][A-Za-z0-9_]*))?$/.exec(ref);
+        if (!match) {
+            return [`Unsupported or uncovered affected_ref: ${ref}.`];
+        }
+        const previousPackage = previousState.packages.find((item) => item?.id === match?.[1]);
+        const nextPackage = nextState.packages.find((item) => item?.id === match?.[1]);
+        const previousValue = match[2] ? previousPackage?.[match[2]] : previousPackage;
+        const nextValue = match[2] ? nextPackage?.[match[2]] : nextPackage;
+        return stableStringify(previousValue) === stableStringify(nextValue)
+            ? [`Affected ${ref} was not changed by plan-revision.`]
+            : [];
+    });
+}
+
+function validateSemanticChangesCovered(previousState, nextState, refs) {
+    const previous = planSnapshot(previousState);
+    const next = planSnapshot(nextState);
+    const errors = [];
+    if (stableStringify(previous.findings) !== stableStringify(next.findings)) {
+        errors.push("findings changed outside propagated affected_refs.");
+    }
+    if (stableStringify(previous.scope_questions) !== stableStringify(next.scope_questions)) {
+        errors.push("scope_questions changed outside propagated affected_refs.");
+    }
+    if (stableStringify(previous.session_strategy) !== stableStringify(next.session_strategy)
+        && !refs.includes("session_strategy")) {
+        errors.push("session_strategy changed outside propagated affected_refs.");
+    }
+
+    const packageIds = uniqueStrings([
+        ...previous.packages.map((item) => item?.id),
+        ...next.packages.map((item) => item?.id),
+    ]);
+    for (const packageId of packageIds) {
+        const previousPackage = previous.packages.find((item) => item?.id === packageId);
+        const nextPackage = next.packages.find((item) => item?.id === packageId);
+        const fields = uniqueStrings([
+            ...Object.keys(previousPackage ?? {}),
+            ...Object.keys(nextPackage ?? {}),
+        ]);
+        for (const field of fields) {
+            if (stableStringify(previousPackage?.[field]) === stableStringify(nextPackage?.[field])) {
+                continue;
+            }
+            if (!refs.includes(packageId) && !refs.includes(`${packageId}.${field}`)) {
+                errors.push(`${packageId}.${field} changed outside propagated affected_refs.`);
+            }
+        }
+    }
+    return errors;
+}
+
+function markDecisionsPropagated(state, refs, fingerprint, now) {
+    const refSet = new Set(refs);
+    state.user_decisions = state.user_decisions.map((record) => refSet.has(record.decision_ref)
+        ? {
+            ...record,
+            propagation_status: "propagated",
+            propagated_at: now,
+            propagated_snapshot_fingerprint: fingerprint,
+        }
+        : record);
+}
+
+function appendPlanHistory(state, record) {
+    if (!Array.isArray(state.plan_history)) {
+        state.plan_history = [];
+    }
+    state.plan_history.push(clone(record));
+}
+
+function uniqueStrings(values) {
+    return [...new Set(values.filter(isNonEmptyString))];
 }
 
 function appendReviewRecord(state, payload) {
@@ -1134,6 +1860,22 @@ function applyContextRequirementsMutation(state, payload) {
     return nextState;
 }
 
+function applyIntakeAssessmentMutation(state, payload) {
+    const nextState = clone(state);
+    nextState.intake_assessment = normalizeIntakeAssessment(
+        payload.intake_assessment ?? payload.assessment ?? payload,
+    );
+    if (typeof payload.provenance !== "undefined" || typeof payload.evidence_refs !== "undefined") {
+        const current = isRecord(nextState.provenance) ? nextState.provenance : {};
+        nextState.provenance = normalizeProvenance({
+            ...current,
+            ...(typeof payload.provenance === "object" && payload.provenance !== null ? payload.provenance : {}),
+            ...(typeof payload.evidence_refs !== "undefined" ? {evidence_refs: payload.evidence_refs} : {}),
+        }, current);
+    }
+    return nextState;
+}
+
 function applyHybridAttemptMutation(state, payload, now) {
     const phase = requireStateString(payload.phase ?? state.workflow_phase, "hybrid_attempt.phase");
     const runId = requireStateString(payload.run_id, "hybrid_attempt.run_id");
@@ -1141,6 +1883,10 @@ function applyHybridAttemptMutation(state, payload, now) {
     const criteriaHash = requireStateString(payload.criteria_hash, "hybrid_attempt.criteria_hash");
     const strategyHash = requireStateString(payload.strategy_hash, "hybrid_attempt.strategy_hash");
     const attemptHash = requireStateString(payload.attempt_hash ?? payload.hash, "hybrid_attempt.hash");
+    const status = requireStateString(payload.status ?? "started", "hybrid_attempt.status");
+    if (!HYBRID_ATTEMPT_STATUSES.includes(status)) {
+        throw new StateError("INVALID_HYBRID_ATTEMPT", `Unsupported hybrid attempt status: ${status}.`);
+    }
     const nextState = clone(state);
     nextState.hybrid_attempt = {
         run_id: runId,
@@ -1149,11 +1895,30 @@ function applyHybridAttemptMutation(state, payload, now) {
         criteria_hash: criteriaHash,
         strategy_hash: strategyHash,
         phase,
-        status: payload.status ?? "started",
+        status,
         started_at: payload.started_at ?? now,
     };
     nextState.hybrid_attempt_id = attemptId;
     nextState.hybrid_attempt_hash = attemptHash;
+    if (["incomplete", "INCOMPLETE", "blocked", "BLOCKED"].includes(status)) {
+        const currentAssessment = normalizeIntakeAssessment(nextState.intake_assessment);
+        nextState.intake_assessment = {
+            ...currentAssessment,
+            technical_certainty: {
+                ...currentAssessment.technical_certainty,
+                level: "unknown",
+                rationale: `Blocking context report ${status.toUpperCase()} did not establish complete technical evidence.`,
+            },
+        };
+        nextState.plan_status = "needs-clarification";
+        nextState.workflow_outcome = "blocked";
+        nextState.checkpoint = {
+            ...nextState.checkpoint,
+            completed_at: now,
+            next_allowed_action: "provide missing evidence or explicitly restart",
+            reason: `Canonical blocking context report returned ${status.toUpperCase()}.`,
+        };
+    }
     return nextState;
 }
 
@@ -1295,6 +2060,284 @@ export function selectDerivedState(state) {
         package_decision_gate_reasons: gateReasons,
         simplification_status: simplificationStatus,
         simplification_control_review_complete: isSimplificationControlReviewComplete(candidate),
+    };
+}
+
+/**
+ * Decide where a completed decision batch must continue.  A source/context
+ * route still passes through review because the workflow phase graph does not
+ * permit a direct decisions → source/context transition.
+ */
+export function normalizeScopeChangeType(value) {
+    const candidate = isRecord(value)
+        ? value.type ?? value.classification ?? value.kind ?? value.scope_change_type
+        : value;
+    if (!isNonEmptyString(candidate)) {
+        return null;
+    }
+    const normalized = candidate.trim().toLowerCase();
+    if ([
+        "inventory/evidence-expansion",
+        "inventory-expansion",
+        "evidence-expansion",
+        "scope-expansion",
+        "global-expansion",
+        "inventory",
+        "evidence",
+    ].includes(normalized)) {
+        return "inventory/evidence-expansion";
+    }
+    if ([
+        "known-scope-description",
+        "known-scope",
+        "description-change",
+        "scope-description",
+        "description",
+    ].includes(normalized)) {
+        return "known-scope-description";
+    }
+    return null;
+}
+
+export function routeScopeChange(value) {
+    const type = normalizeScopeChangeType(value);
+    if (type === "inventory/evidence-expansion") {
+        return "source/context";
+    }
+    if (type === "known-scope-description") {
+        return "review";
+    }
+    return null;
+}
+
+function declaredScopeChange(question, questionId, options) {
+    const optionValue = options.scope_change_type
+        ?? options.scopeChangeType
+        ?? options.scope_change_classification
+        ?? options.scopeChangeClassification
+        ?? options.scope_change
+        ?? options.scopeChange;
+    if (typeof optionValue !== "undefined") {
+        return {present: true, value: optionValue, source: `options:${questionId}`};
+    }
+    for (const field of [
+        "scope_change_type",
+        "scopeChangeType",
+        "scope_change_classification",
+        "scopeChangeClassification",
+        "scope_change",
+        "scopeChange",
+    ]) {
+        if (typeof question?.[field] !== "undefined") {
+            return {present: true, value: question[field], source: `question:${questionId}`};
+        }
+    }
+    return {present: false, value: null, source: null};
+}
+
+export function routeDecisionBatch(state, questionIds, options = {}) {
+    const ids = normalizePreflightQuestionIds(state, questionIds).ids;
+    const scopeChanges = ids.map((questionId) => {
+        const question = findQuestion(state, questionId);
+        const declaration = declaredScopeChange(question, questionId, options);
+        return {
+            ...declaration,
+            type: declaration.present ? normalizeScopeChangeType(declaration.value) : null,
+        };
+    });
+    const routes = ids.map((questionId) => {
+        const question = findQuestion(state, questionId);
+        return configuredDecisionRoute(question, questionId, options);
+    });
+    const reasons = [];
+    if (ids.length === 0) {
+        reasons.push("no_questions_to_route");
+    }
+    if (routes.some((route) => !["review", "source/context"].includes(route))) {
+        reasons.push("invalid_decision_route");
+    }
+    if (scopeChanges.some((change) => change.present && change.type === null)) {
+        reasons.push("invalid_scope_change_type");
+    }
+    if (new Set(routes.filter(Boolean)).size > 1) {
+        reasons.push("mixed_decision_routes");
+    }
+
+    const route = reasons.length === 0 ? (routes[0] ?? "review") : null;
+    const transitionPath = route === "source/context"
+        ? ["review", "source/context"]
+        : route === "review" ? ["review"] : [];
+    return {
+        route,
+        target_phase: route,
+        next_phase: transitionPath[0] ?? null,
+        transition_path: transitionPath,
+        scope_change_types: [...new Set(scopeChanges.map((change) => change.type).filter(Boolean))],
+        scope_change_type: [...new Set(scopeChanges.map((change) => change.type).filter(Boolean))].length === 1
+            ? scopeChanges.find((change) => change.type)?.type ?? null
+            : null,
+        reasons,
+    };
+}
+
+/**
+ * Pure gate before a question group is shown to the user.  It does not write
+ * a decision or checkpoint.  The state-store wrapper adds the persisted
+ * draft/fingerprint check which cannot be performed from state alone.
+ */
+export function preflightDecisionBatch(state, questionIds, options = {}) {
+    const candidate = state && typeof state === "object" ? state : {};
+    const reasons = [];
+    const addReason = (reason) => {
+        if (!reasons.includes(reason)) {
+            reasons.push(reason);
+        }
+    };
+    const runtime = validateRuntimeState(candidate);
+    const requested = normalizePreflightQuestionIds(candidate, questionIds);
+    const ids = requested.ids;
+    const projectionStatus = options.projection_status ?? candidate.projection_status;
+    const projectionFresh = projectionStatus !== "PROJECTION_STALE"
+        && (options.projection_fresh === true
+            || (options.projection_fresh !== false && projectionStatus === "PROJECTED"));
+    const checkpointFresh = isDecisionCheckpointFresh(candidate);
+    const pendingDecisionRefs = pendingDecisionReferences(candidate);
+    const availableMutations = Array.isArray(options.available_mutations)
+        ? options.available_mutations
+        : MUTATION_TYPES;
+    const batchPropagationAvailable = options.batch_propagation_available !== false
+        && availableMutations.includes("propagate-decisions");
+    const semanticRevisionAvailable = options.semantic_revision_available !== false
+        && availableMutations.includes("plan-revision");
+    const reviewHistoryLength = Array.isArray(candidate.review_history)
+        ? candidate.review_history.length
+        : 0;
+    const reviewBudgetRemaining = Math.max(0, REVIEW_LIMIT - reviewHistoryLength);
+
+    if (!runtime.valid) {
+        addReason("invalid_runtime_state");
+    }
+    if (candidate.workflow_outcome !== "running") {
+        addReason("workflow_not_running");
+    }
+    if (candidate.workflow_phase !== "decisions") {
+        addReason("decision_phase_required");
+    }
+    if (!checkpointFresh) {
+        addReason("stale_checkpoint");
+    }
+    if (!projectionFresh) {
+        addReason(projectionStatus === "PROJECTION_STALE" ? "projection_stale" : "projection_not_current");
+    }
+    if (!batchPropagationAvailable) {
+        addReason("batch_propagation_unavailable");
+    }
+    if (!semanticRevisionAvailable) {
+        addReason("semantic_revision_unavailable");
+    }
+    if (requested.invalid) {
+        addReason("invalid_question_ids");
+    }
+    if (ids.length === 0) {
+        addReason("no_questions_to_emit");
+    }
+    if (pendingDecisionRefs.length > 0) {
+        addReason("unpropagated_user_decisions");
+    }
+    if (reviewBudgetRemaining === 0 || candidate.plan_status === "review-limit-reached") {
+        addReason("review_budget_exhausted");
+    }
+
+    const maxBatchSize = options.max_batch_size ?? options.maxBatchSize;
+    if (typeof maxBatchSize !== "undefined"
+        && (!Number.isInteger(maxBatchSize) || maxBatchSize < 1)) {
+        addReason("invalid_decision_batch_budget");
+    } else if (Number.isInteger(maxBatchSize) && ids.length > maxBatchSize) {
+        addReason("decision_batch_budget_exceeded");
+    }
+
+    const questions = [];
+    const affectedRefsByQuestion = {};
+    for (const questionId of ids) {
+        const question = findQuestion(candidate, questionId);
+        if (!question) {
+            addReason("unknown_question");
+            continue;
+        }
+        if (question.resolved === true) {
+            addReason("question_already_resolved");
+            continue;
+        }
+        const affectedRefs = preflightAffectedRefs(question, questionId, options);
+        const affectedErrors = [
+            ...validateAffectedRefs(affectedRefs, candidate.packages),
+            ...validateCoveredAffectedRefs(candidate, affectedRefs),
+        ];
+        if (affectedErrors.length > 0) {
+            addReason("question_affected_refs_invalid");
+        } else {
+            affectedRefsByQuestion[questionId] = affectedRefs;
+        }
+        questions.push(question);
+    }
+
+    const routing = routeDecisionBatch(candidate, ids, {
+        ...options,
+        affected_refs_by_question: affectedRefsByQuestion,
+    });
+    for (const reason of routing.reasons) {
+        addReason(reason);
+    }
+
+    let afterBatch = {ready: false, reasons: ["batch_simulation_unavailable"]};
+    let approval = {approved: false, reasons: ["batch_simulation_unavailable"]};
+    let semanticAfterReview = {ready: false, reasons: ["semantic_simulation_unavailable"]};
+    let semanticApproval = {approved: false, reasons: ["semantic_simulation_unavailable"]};
+    if (questions.length === ids.length && Object.keys(affectedRefsByQuestion).length === ids.length) {
+        const simulated = simulateDecisionBatch(candidate, questions, affectedRefsByQuestion, options);
+        afterBatch = canOpenPackageDecisions(simulated);
+        approval = canApprovePlan(simulateApprovalPath(simulated));
+        const reviewedSemanticPath = simulateSemanticReviewPath(simulated);
+        semanticAfterReview = canOpenPackageDecisions(reviewedSemanticPath);
+        semanticApproval = canApprovePlan(simulateApprovalPath(reviewedSemanticPath));
+        if (!afterBatch.ready) {
+            addReason("package_decision_gate_unavailable");
+        }
+        if (!approval.approved) {
+            addReason("approval_gate_unavailable");
+        }
+        if (!semanticAfterReview.ready) {
+            addReason("semantic_review_gate_unavailable");
+        }
+        if (!semanticApproval.approved) {
+            addReason("semantic_approval_path_unavailable");
+        }
+    }
+
+    return {
+        ready: reasons.length === 0,
+        ok: reasons.length === 0,
+        code: reasons.length === 0 ? "READY" : "DECISION_PREFLIGHT_BLOCKED",
+        reasons,
+        runtime_errors: runtime.errors,
+        question_ids: ids,
+        pending_decision_count: pendingDecisionRefs.length,
+        pending_decision_refs: pendingDecisionRefs,
+        review_budget_remaining: reviewBudgetRemaining,
+        batch_propagation_available: batchPropagationAvailable,
+        semantic_revision_available: semanticRevisionAvailable,
+        checkpoint_fresh: checkpointFresh,
+        projection_fresh: projectionFresh,
+        route: routing.route,
+        target_phase: routing.target_phase,
+        next_phase: routing.next_phase,
+        transition_path: routing.transition_path,
+        gates: {
+            after_batch: afterBatch,
+            approval: approval,
+            semantic_after_review: semanticAfterReview,
+            semantic_approval: semanticApproval,
+        },
     };
 }
 
@@ -1728,6 +2771,196 @@ function isUnresolvedScopeQuestion(question) {
         && question.resolved !== true;
 }
 
+function normalizePreflightQuestionIds(state, questionIds) {
+    const source = typeof questionIds === "undefined"
+        ? allQuestions(state).filter((question) => question.resolved !== true).map((question) => question.id)
+        : typeof questionIds === "string" ? [questionIds] : questionIds;
+    if (!Array.isArray(source)) {
+        return {ids: [], invalid: true};
+    }
+
+    const ids = [];
+    let invalid = false;
+    const seen = new Set();
+    for (const questionId of source) {
+        if (!isNonEmptyString(questionId) || seen.has(questionId)) {
+            invalid = true;
+            continue;
+        }
+        seen.add(questionId);
+        ids.push(questionId);
+    }
+    return {ids, invalid};
+}
+
+function allQuestions(state) {
+    const questions = [];
+    appendQuestionRecords(questions, state?.scope_questions);
+    for (const packageRecord of state?.packages ?? []) {
+        appendQuestionRecords(questions, packageRecord?.questions);
+    }
+    return questions;
+}
+
+function isDecisionCheckpointFresh(state) {
+    return isRecord(state?.checkpoint)
+        && state.checkpoint.phase === state.workflow_phase
+        && state.checkpoint.state_revision === state.revision;
+}
+
+function pendingDecisionReferences(state) {
+    if (!Array.isArray(state?.user_decisions)) {
+        return [];
+    }
+    return state.user_decisions
+        .filter((record) => record && record.propagation_status !== "propagated")
+        .map((record) => record.decision_ref)
+        .filter(isNonEmptyString);
+}
+
+function preflightAffectedRefs(question, questionId, options) {
+    const byQuestion = options.affected_refs_by_question
+        ?? options.affectedRefsByQuestion
+        ?? options.question_affected_refs
+        ?? {};
+    if (isRecord(byQuestion) && Object.hasOwn(byQuestion, questionId)) {
+        return byQuestion[questionId];
+    }
+    if (Array.isArray(options.affected_refs)) {
+        return options.affected_refs;
+    }
+    return question.affected_refs;
+}
+
+function configuredDecisionRoute(question, questionId, options) {
+    const scopeChange = declaredScopeChange(question, questionId, options);
+    if (scopeChange.present) {
+        return routeScopeChange(scopeChange.value);
+    }
+    const routes = options.routes ?? options.route_by_question ?? options.routeByQuestion;
+    if (isRecord(routes) && Object.hasOwn(routes, questionId)) {
+        return routes[questionId];
+    }
+    if (typeof options.route === "string") {
+        return options.route;
+    }
+    if (typeof question?.route === "string") {
+        return question.route;
+    }
+    if (question?.requires_context_refresh === true || question?.next_phase === "source/context") {
+        return "source/context";
+    }
+    return "review";
+}
+
+function simulateDecisionBatch(state, questions, affectedRefsByQuestion, options) {
+    const simulated = clone(state);
+    const fingerprint = planSnapshotFingerprint(state);
+    simulated.user_decisions = Array.isArray(simulated.user_decisions)
+        ? clone(simulated.user_decisions)
+        : [];
+    const existingRefs = new Set(simulated.user_decisions.map((record) => record?.decision_ref));
+
+    questions.forEach((question, index) => {
+        const simulatedQuestion = findQuestion(simulated, question.id);
+        const answer = preflightAnswer(question, question.id, options);
+        const record = {
+            decision_ref: uniquePreflightDecisionRef(existingRefs, question.id, index),
+            question_id: question.id,
+            ...answer.recordValue,
+            decision_source: "preflight",
+            decided_at: PREFLIGHT_DECISION_TIMESTAMP,
+            affected_refs: affectedRefsByQuestion[question.id],
+            propagation_status: "propagated",
+            propagated_at: PREFLIGHT_DECISION_TIMESTAMP,
+            propagated_snapshot_fingerprint: fingerprint,
+        };
+        simulatedQuestion.resolved = true;
+        simulatedQuestion.answer = answer.answer;
+        simulatedQuestion.decision_source = "preflight";
+        simulatedQuestion.decided_at = PREFLIGHT_DECISION_TIMESTAMP;
+        simulated.user_decisions.push(record);
+    });
+
+    return simulated;
+}
+
+function preflightAnswer(question, questionId, options) {
+    const answers = options.answers ?? options.simulated_answers ?? options.simulatedAnswers ?? {};
+    const configured = isRecord(answers) ? answers[questionId] ?? null : null;
+    if (Array.isArray(question.options) && question.options.length > 0) {
+        const selectedOption = isRecord(configured) ? configured.selected_option : configured;
+        const option = question.options.find((candidate) => candidate?.id === selectedOption)
+            ?? question.options[0];
+        return {
+            answer: option.id,
+            recordValue: {selected_option: option.id},
+        };
+    }
+    const answer = isRecord(configured) ? configured.answer : configured;
+    const normalized = isNonEmptyString(answer)
+        ? answer
+        : isNonEmptyString(question.answer) ? question.answer : "__preflight__";
+    return {answer: normalized, recordValue: {answer: normalized}};
+}
+
+function uniquePreflightDecisionRef(existingRefs, questionId, index) {
+    const base = `__preflight__${questionId}__${index + 1}`;
+    let candidate = base;
+    let suffix = 1;
+    while (existingRefs.has(candidate)) {
+        candidate = `${base}__${suffix}`;
+        suffix += 1;
+    }
+    existingRefs.add(candidate);
+    return candidate;
+}
+
+function simulateApprovalPath(state) {
+    const candidate = clone(state);
+    candidate.plan_status = "awaiting-package-decisions";
+    candidate.packages = (candidate.packages ?? []).map((item) => {
+        if (TERMINAL_PACKAGE_STATUSES.includes(item?.decision_status)) {
+            return item;
+        }
+        return {...item, decision_status: "accepted"};
+    });
+    candidate.decisions = Array.isArray(candidate.decisions) ? clone(candidate.decisions) : [];
+    for (const packageRecord of candidate.packages) {
+        if (!candidate.decisions.some((decision) => {
+            return decision?.package_id === packageRecord.id
+                && decision.decision === packageRecord.decision_status;
+        })) {
+            candidate.decisions.push({
+                package_id: packageRecord.id,
+                decision: packageRecord.decision_status,
+                decision_source: "preflight",
+            });
+        }
+    }
+    return candidate;
+}
+
+function simulateSemanticReviewPath(state) {
+    const candidate = clone(state);
+    candidate.plan_version += 1;
+    candidate.plan_status = "review-pending";
+    candidate.simplification = {result: "no-change"};
+    const history = Array.isArray(candidate.review_history) ? clone(candidate.review_history) : [];
+    const iterations = history
+        .map((review) => review?.iteration)
+        .filter((iteration) => Number.isInteger(iteration));
+    history.push({
+        iteration: Math.max(0, ...iterations) + 1,
+        plan_version: candidate.plan_version,
+        stage: "critical-review",
+        complete: true,
+        checks: [...REQUIRED_REVIEW_CHECKS],
+    });
+    candidate.review_history = history;
+    return candidate;
+}
+
 export function readSimplificationResult(state) {
     const simplification = state && typeof state === "object" ? state.simplification : null;
     if (!simplification || typeof simplification !== "object" || Array.isArray(simplification)) {
@@ -1736,11 +2969,11 @@ export function readSimplificationResult(state) {
     return typeof simplification.result === "string" ? simplification.result : null;
 }
 
-export function validatePackageRecords(packages) {
+export function validatePackageRecords(packages, options = {}) {
     const errors = [];
     const records = Array.isArray(packages) ? packages : [];
 
-    for (const item of records) {
+    for (const [index, item] of records.entries()) {
         if (!item || typeof item !== "object") {
             errors.push("Every package must be an object.");
             continue;
@@ -1758,11 +2991,94 @@ export function validatePackageRecords(packages) {
                 return `${item.id ?? "Unknown package"}: ${error}`;
             }));
         }
+
+        const packageLabel = item.id ?? `Package ${index + 1}`;
+        for (const field of ["confirmed_files", "candidate_paths"]) {
+            if (Object.hasOwn(item, field)) {
+                errors.push(...validateStringList(item[field], `${packageLabel}.${field}`));
+            }
+        }
+        if (Object.hasOwn(item, "discovery_required")) {
+            errors.push(...validateDiscoveryRequirementRecords(item.discovery_required, `${packageLabel}.discovery_required`));
+        }
+        if (Object.hasOwn(item, "evidence_refs")) {
+            errors.push(...validateEvidenceRefList(item.evidence_refs, `${packageLabel}.evidence_refs`));
+        }
+        if (Object.hasOwn(item, "provenance")) {
+            errors.push(...validateProvenance(item.provenance).map((error) => `${packageLabel}: ${error}`));
+        }
+
+        const confirmedFiles = Array.isArray(item.confirmed_files) ? item.confirmed_files : [];
+        const candidatePaths = Array.isArray(item.candidate_paths) ? item.candidate_paths : [];
+        const overlap = confirmedFiles.filter((file) => candidatePaths.includes(file));
+        if (overlap.length > 0) {
+            errors.push(`${packageLabel} cannot classify a path as both confirmed_files and candidate_paths: ${overlap.join(", ")}.`);
+        }
+        const evidenceRefs = Array.isArray(item.evidence_refs) && item.evidence_refs.length > 0
+            ? item.evidence_refs
+            : Array.isArray(item.provenance?.evidence_refs) && item.provenance.evidence_refs.length > 0
+                ? item.provenance.evidence_refs
+                : options.evidence_refs;
+        if (confirmedFiles.length > 0 && (!Array.isArray(evidenceRefs) || evidenceRefs.length === 0)) {
+            errors.push(`${packageLabel}.confirmed_files requires direct evidence_refs.`);
+        }
     }
 
     const graphResult = validateDependencyGraph(records);
     errors.push(...graphResult.errors);
     return {valid: errors.length === 0, errors};
+}
+
+function validateStringList(value, name) {
+    if (!Array.isArray(value)) {
+        return [`${name} must be an array.`];
+    }
+    const errors = [];
+    const values = new Set();
+    for (const [index, item] of value.entries()) {
+        if (!isNonEmptyString(item)) {
+            errors.push(`${name}[${index}] must be a non-empty string.`);
+            continue;
+        }
+        if (values.has(item)) {
+            errors.push(`${name} contains duplicate value: ${item}.`);
+        }
+        values.add(item);
+    }
+    return errors;
+}
+
+function validateEvidenceRefList(value, name) {
+    return validateStringList(value, name);
+}
+
+function validateDiscoveryRequirementRecords(value, name) {
+    if (!Array.isArray(value)) {
+        return [`${name} must be an array.`];
+    }
+    const errors = [];
+    const ids = new Set();
+    for (const [index, item] of value.entries()) {
+        if (!isRecord(item)
+            || !isNonEmptyString(item.id)
+            || !isNonEmptyString(item.reason)
+            || !isNonEmptyString(item.owner)
+            || !isNonEmptyString(item.target_phase)) {
+            errors.push(`${name}[${index}] must contain id, reason, owner and target_phase.`);
+            continue;
+        }
+        if (ids.has(item.id)) {
+            errors.push(`${name} contains duplicate id: ${item.id}.`);
+        }
+        ids.add(item.id);
+        if (Object.hasOwn(item, "path") && !isNonEmptyString(item.path)) {
+            errors.push(`${name}[${index}].path must be a non-empty string.`);
+        }
+        if (Object.hasOwn(item, "evidence_refs")) {
+            errors.push(...validateEvidenceRefList(item.evidence_refs, `${name}[${index}].evidence_refs`));
+        }
+    }
+    return errors;
 }
 
 export function validateQuestionRecords(questions, options = {}) {
@@ -1993,6 +3309,20 @@ export function validateUserDecisionRecords(records, options = {}) {
         errors.push(...validateAffectedRefs(record.affected_refs, options.packages).map((error) => `${label} ${error}`));
         if (!USER_DECISION_PROPAGATION_STATUSES.includes(record.propagation_status)) {
             errors.push(`${label} propagation_status is invalid.`);
+        }
+        if (typeof record.propagated_at !== "undefined"
+            && (typeof record.propagated_at !== "string" || Number.isNaN(Date.parse(record.propagated_at)))) {
+            errors.push(`${label} propagated_at must be a valid timestamp.`);
+        }
+        if (typeof record.propagated_snapshot_fingerprint !== "undefined"
+            && (!isNonEmptyString(record.propagated_snapshot_fingerprint)
+                || !/^[a-f0-9]{64}$/.test(record.propagated_snapshot_fingerprint))) {
+            errors.push(`${label} propagated_snapshot_fingerprint must be a SHA-256 fingerprint.`);
+        }
+        if (record.propagation_status === "propagated"
+            && (!isNonEmptyString(record.propagated_at)
+                || !isNonEmptyString(record.propagated_snapshot_fingerprint))) {
+            errors.push(`${label} propagated status requires propagated_at and propagated_snapshot_fingerprint.`);
         }
     }
     return errors;
@@ -2528,7 +3858,9 @@ function prepareState(state) {
     if (!Number.isInteger(state.plan_version) || state.plan_version < 1) {
         throw new StateError("INVALID_STATE", "State must contain a positive integer plan_version.");
     }
-    const packageResult = validatePackageRecords(state.packages);
+    const packageResult = validatePackageRecords(state.packages, {
+        evidence_refs: state.provenance?.evidence_refs,
+    });
     if (!packageResult.valid) {
         throw new StateError("INVALID_STATE", packageResult.errors.join(" "), {errors: packageResult.errors});
     }
@@ -2668,6 +4000,16 @@ function hasDependencyCycle(packages) {
     }
 
     return packages.some((item) => visit(item.id));
+}
+
+function stableStringify(value) {
+    if (Array.isArray(value)) {
+        return `[${value.map(stableStringify).join(",")}]`;
+    }
+    if (value && typeof value === "object") {
+        return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+    }
+    return JSON.stringify(value ?? null);
 }
 
 function clone(value) {

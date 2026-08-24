@@ -101,6 +101,29 @@ Własność informacji jest jawna:
   Follow-up nie jest dowodem zweryfikowanym przez sam raport `COMPLETE` i nie
   rozszerza kryteriów blocking przekazywanych do helpera.
 
+### Canonical intake assessment i provenance
+
+`intake_assessment` jest obowiązkowym rekordem canonical state. Adapter źródła
+normalizuje wyłącznie dane i pochodzenie; nie dopowiada `task_type` ani poziomu
+pewności na podstawie długości body, nagłówków, słów kluczowych, profilu wejścia
+albo rodzaju źródła. Przed bezpośrednim dowodem poprawne są `unknown` oraz jawna
+rationale bez `evidence_refs`:
+
+```yaml
+intake_assessment:
+  intent_authority: {level: high|medium|low|unknown, rationale: "...", evidence_refs: []}
+  diagnosis_reliability: {level: high|medium|low|unknown, rationale: "...", evidence_refs: []}
+  requirements_completeness: {level: high|medium|low|unknown, rationale: "...", evidence_refs: []}
+  technical_certainty: {level: high|medium|low|unknown, rationale: "...", evidence_refs: []}
+  task_type: bug|feature|refactor|documentation|configuration|operational|unknown
+```
+
+`high` wymaga jawnych `evidence_refs`. Każdy WP przechowuje osobno
+`confirmed_files` (wyłącznie ścieżki z bezpośrednim evidence), `candidate_paths`
+(hipotezy, nigdy finalny handoff) i `discovery_required` (dług z `id`, `reason`,
+`owner` oraz `target_phase`). `provenance` i `evidence_refs` wskazują źródło
+twierdzenia; brak evidence nie może utworzyć `confirmed_files`.
+
 ## Normatywny workflow i fazy
 
 Poniższy diagram jest jedynym normatywnym diagramem faz:
@@ -494,6 +517,17 @@ kluczowych. W fazie `source/context` obowiązuje jeden algorytm:
 
 `context_requirements.follow_up` pozostaje długiem dowodowym i nie trafia do
 kryteriów bieżącego hybrid runu ani nie blokuje przejścia.
+Follow-up nie trafia do kryteriów blocking bieżącego przebiegu.
+
+Klasyfikacja zmiany granicy zakresu jest jawna, nie wynika z heurystyki tekstu:
+
+- `inventory/evidence-expansion` oznacza zmianę wymaganego inventory albo
+  evidence scope i kieruje wynik przez `review → source/context`;
+- `known-scope-description` oznacza zmianę opisu w już znanym zakresie i kieruje
+  wynik do `review`.
+
+Nie tworzy się automatycznie nowego issue dla brakujących dowodów. Zmiana
+klasyfikacji bez jawnej wartości blokuje routing jako nieokreślony.
 
 ### Granica blocking i follow-up
 
@@ -782,18 +816,108 @@ referencja do nieistniejącego pakietu jest odrzucana przed rozstrzygnięciem
 pytania i zapisem decyzji.
 
 Przed następnym pytaniem agent musi zachować odpowiedź, zaktualizować wszystkie
-`affected_refs`, statusy, strategię i historię rewizji, atomowo zapisać draft
-oraz dopiero wtedy ustawić `propagation_status: propagated`. Brak rekordu,
-brak `affected_refs` albo `pending` blokuje kolejne pytania, bramkę i approval.
+`affected_refs`, statusy, strategię i historię rewizji oraz atomowo zapisać draft.
+Kilka odpowiedzi propaguj jedną mutacją `propagate-decisions`:
+
+```yaml
+propagated_decision_refs: [D1, D2, D3]
+snapshot:
+  packages: []
+  findings: []
+  scope_questions: []
+  session_strategy: {}
+reason: "Jedna grupa odpowiedzi użytkownika została zastosowana."
+```
+
+`snapshot` jest pełną semantyczną projekcją `planSnapshot(state)`: zawiera
+pakiety, findings, pytania i strategię, ale nie zawiera technicznych pól
+rozstrzygnięcia pytania (`resolved`, `answer`, `decision_source`, `decided_at`).
+Fingerprint musi odpowiadać aktualnemu canonical state.
+
+Mutacja waliduje cały batch przed zapisem, ustawia `propagation_status:
+propagated`, `propagated_at` i `propagated_snapshot_fingerprint`. Techniczna
+propagacja wymaga tego samego semantycznego fingerprintu i nie resetuje review;
+retry tego samego batchu jest prawdziwym no-opem: nie zwiększa `revision`, nie
+zmienia `updated_at` ani nie przepisuje state/draft. Brak rekordu, brak `affected_refs`
+albo `pending` blokuje kolejne pytania, bramkę i approval.
 
 Semantyczna zmiana planu przechodzi przez jedną mutację `plan-revision`,
 dozwoloną wyłącznie w fazie `review`. Mutacja przyjmuje pełny, walidowany snapshot
 `packages`, `findings`, `scope_questions` i `session_strategy`, wymaga powodu i
 zwiększa `plan_version` tylko przy rzeczywistej zmianie. Snapshot pytań jest
-projekowany do draftu przed emisją pytania. Opcjonalny
-`propagated_decision_ref` atomowo oznacza decyzję jako `propagated`, ale tylko
-gdy snapshot pokrywa jej referencje `WP<number>.*` i `session_strategy`.
-Nieobsługiwane referencje są błędem; nie stosuj dynamicznych patchy ścieżek.
+projekowany do draftu przed emisją pytania. Opcjonalne
+`propagated_decision_refs[]` atomowo oznacza wszystkie decyzje jako
+`propagated`, ale tylko gdy snapshot pokrywa ich referencje `WP<number>.*` i
+`session_strategy`; semantyczna rewizja zwiększa `plan_version` raz dla całego
+batchu i zapisuje jeden wpis audytowy. Historyczne pojedyncze pole
+`propagated_decision_ref` jest jawnie odrzucane. Nieobsługiwane referencje są
+błędem; nie stosuj dynamicznych patchy ścieżek.
+
+### Preflight grupy pytań i routing po decyzji
+
+Przed pokazaniem jakiegokolwiek pytania task-plan wykonuje czysty:
+
+```text
+preflightDecisionBatch(state, question_ids)
+```
+
+State store udostępnia ten sam preflight dla kompletnej pary state/draft przez
+`<skill_dir>/scripts/state-store.mjs`. Preflight niczego nie zapisuje i zwraca
+`ready: false` z powodami blokady, jeśli nie ma wykonalnej ścieżki. Sprawdza
+łącznie:
+
+- poprawność runtime state, fazę `decisions`, `workflow_outcome: running` oraz
+  checkpoint z `checkpoint.phase == workflow_phase` i
+  `checkpoint.state_revision == state.revision`;
+- świeżość projekcji (`projection_status: PROJECTED`, zgodny `state_revision` i
+  fingerprint draftu), dostępność mutacji `propagate-decisions` oraz
+  `plan-revision`;
+- niepustą, stabilną i walidowalną listę `affected_refs` dla każdego pytania,
+  brak wcześniejszej niepropagowanej grupy oraz limit batchu/review;
+- symulowaną propagację techniczną, semantyczną ścieżkę rewizji oraz późniejsze
+  `canOpenPackageDecisions()` i `canApprovePlan()`. Sam preflight nie udaje
+  odpowiedzi użytkownika i nie zmienia `plan_version`.
+
+Pytanie wolno wyemitować dopiero po `ready: true` i zapisaniu aktualnego draftu.
+Po odpowiedziach obowiązuje kolejność:
+
+```text
+question-decision × N
+→ preflight batch
+→ propagate-decisions albo jedna plan-revision z propagated_decision_refs[]
+→ candidate projection → semantic validation → checkpoint
+→ jeden review dla całej grupy → canOpenPackageDecisions
+→ terminalne decyzje WP → validateApprovalState / canApprovePlan
+```
+
+Routing wyniku prowadzi do `review` albo `source/context`. Druga ścieżka jest
+realizowana jako `decisions → review → source/context`, bo nie wolno dodawać
+bezpośredniego przejścia omijającego review. Stary checkpoint, niedostępny batch,
+wyczerpany budżet, błąd projekcji albo nieudana bramka zatrzymują workflow przed
+następnym pytaniem. Przy `ready: false` caller zapisuje checkpoint z powodem i
+`workflow_outcome: blocked`; sam preflight pozostaje bez zapisu. Nie uruchamiaj
+automatycznego retry, review ani drugiego hybridu.
+
+### Integracyjna regresja i handoff (WP5)
+
+Macierz regresji utrzymuje jeden deterministyczny scenariusz
+`response-to-approval` w `./tests/skills/task-plan/task-plan-state-store.test.mjs`.
+Scenariusz działa wyłącznie w katalogu tymczasowym i przechodzi od intake oraz
+odpowiedzi użytkownika przez batch pytań, jedną semantyczną `plan-revision`,
+review i terminalną decyzję pakietu do approval. Każda mutacja jest sprawdzana
+razem z aktualną parą `state/draft`; końcowa walidacja używa
+`validateApprovalState` i trybu `approval`.
+
+Regresję wspierają `./tests/skills/task-plan/task-plan-contract.test.mjs`,
+`./tests/skills/task-plan/task-plan-questions.test.mjs`,
+`./tests/skills/task-plan/task-plan-scripts.test.mjs`,
+`./tests/skills/task-plan/task-plan-state-store.test.mjs` oraz fixture
+`./tests/fixtures/task-plan/workflow-scenarios.json`. Testy obejmują runtime kontra
+approval, `propagated_decision_refs[]`, fingerprint i idempotencję projekcji,
+`PROJECTION_STALE`, preflight, intake/evidence i rozdział potwierdzonych ścieżek.
+Nie korzystają z live GitHub ani live model hybrid, nie wykonują implementacji i
+nie czytają ani nie zmieniają issue #421. Execution handoff wskazuje tylko
+zweryfikowane artefakty; candidate paths i follow-up pozostają długiem dowodowym.
 
 ### Auto-uproszczenie
 
@@ -912,6 +1036,13 @@ który wskazuje sekcje zamiast kopiować ich treść:
 - Decisions and constraints: `Decisions and open questions`
 - Acceptance and verification: `Acceptance and verification`
 - Evidence and risks: `Evidence, risks and review`
+- Intake assessment: canonical `intake_assessment` z czterema osiami pewności i
+  `task_type`; adapter nie jest źródłem oceny semantycznej
+- Provenance/evidence refs: jawne źródło i referencje dla każdego twierdzenia
+- Confirmed files: tylko bezpośrednio potwierdzone ścieżki z evidence
+- Candidate paths: hipotezy oznaczone jako `candidate_paths`, nie przekazuj ich
+  jako wykonawczego handoffu
+- Discovery required: każdy dług z `id`, `reason`, właścicielem i fazą docelową
 - Further considerations: `Further considerations`, jeśli istnieje
 - Unresolved follow-up: każdy wpis jako `<id>` — `<reason>` — właściciel
   `<owner>` — faza docelowa `<target_phase>`; nie przedstawiaj go jako
@@ -984,7 +1115,8 @@ Ich odpowiedzialności są rozdzielone:
 - `draft.mjs`: tożsamość, ścieżka, front matter, initial draft, sekcje,
   pytania, resume i atomowy zapis;
 - `state.mjs`: przejścia statusów, bramka WP, strategia, pytania, decyzje,
-  `plan-revision`, canonical state schema v3 oraz czyste mutacje i walidacja;
+  `plan-revision`, canonical state schema v3, runtime/approval validation,
+  semantic snapshot fingerprint oraz czyste mutacje i walidacja;
 - `state-store.mjs`: lifecycle `virtual-initial`/`persisted`, materializacja
   state, revision preconditions, projekcja draftu, jawny retry projekcji i zapis
   checkpointów;
@@ -1003,16 +1135,21 @@ Publiczny interfejs modułów obejmuje:
   `applyQuestionDecision`, `validateUserDecisionRecords`,
   `validateQuestionDecisionPropagation`, `applyDecisionCommand`,
   `applyPackageDecision`, `parseDecisionCommand`, `createInitialState`,
-  `validateTaskPlanState`, `applyStateMutation`; CLI `transition`, `parse-command`;
+  `validateTaskPlanState`, `validateRuntimeState`, `validateApprovalState`,
+  `planSnapshot`, `planSnapshotFingerprint`, `routeDecisionBatch`,
+  `preflightDecisionBatch`, `applyStateMutation`; CLI `transition`,
+  `parse-command`;
 - `<skill_dir>/scripts/state-store.mjs`: `loadState`, `ensureState`, `updateState`,
-  `retryProjection`, `buildPlanId`; CLI `load`, `ensure`, `update`,
+  `preflightDecisionBatch`, `isDraftRevisionCurrent`, `retryProjection`,
+  `buildPlanId`; CLI `load`, `ensure`, `update`,
   `retry-projection` z plikiem planu i jawną mutacją z listy `MUTATION_TYPES`;
 - `<skill_dir>/scripts/source.mjs`: `normalizeGitHubIssue`, `normalizeFileSource`,
   `normalizeUserInput`, `refreshSource`; CLI `normalize-file`, `normalize-user`,
   `fetch-github`;
 - `<skill_dir>/scripts/validate-plan.mjs`: `validateFinding`,
   `validateReviewHistory`, `validateSimplification`, `validatePlanDocument`,
-  `validateFinalApproval`; CLI `validate`, `validate-state`.
+  `validateFinalApproval`; CLI `validate`, `validate-state` with optional
+  `--mode runtime|approval` (default: `runtime`).
 
 Przykładowy przepływ:
 
@@ -1024,22 +1161,26 @@ node <skill_dir>/scripts/draft.mjs path \
 node <skill_dir>/scripts/state-store.mjs update \
   --plan ./var/agent/task-plan/plan-input.json \
   --type create-initial --payload '{}'
-node <skill_dir>/scripts/draft.mjs validate \
+node <skill_dir>/scripts/validate-plan.mjs validate \
    --file ./docs/plan/issue-123-plan.md \
-   --state ./var/agent/task-plan/issue-123/state.json
+   --state ./var/agent/task-plan/issue-123/state.json \
+   --mode runtime
 node <skill_dir>/scripts/state.mjs parse-command \
   --value "accept-selected: WP1, WP2"
 node <skill_dir>/scripts/draft.mjs render-questions \
   --file ./tests/fixtures/task-plan/questions.json
 node <skill_dir>/scripts/validate-plan.mjs validate \
    --file ./docs/plan/issue-123-plan.md \
-   --state ./var/agent/task-plan/issue-123/state.json
+   --state ./var/agent/task-plan/issue-123/state.json \
+   --mode runtime
 ```
 
 Walidacja układu pytań wymaga canonical state albo jawnego `derived_state`;
 brak tej informacji zwraca `DERIVED_STATE_REQUIRED`, zamiast pomijać kontrolę
 `package_decision_gate`. Wejście `render-questions` musi zawierać
-`derived_state.package_decision_gate`. `STALE_CHECKPOINT` i
+`derived_state.package_decision_gate`. Walidacja runtime dopuszcza poprawne
+stany pośrednie, natomiast approval wymaga jawnego `--mode approval` albo
+`validateFinalApproval`. `STALE_CHECKPOINT` i
 `SOURCE_FETCH_NOT_APPLICABLE` są odrzuceniami kontraktowymi CLI z kodem wyjścia
 `1`, nie błędami środowiska.
 

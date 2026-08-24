@@ -20,10 +20,12 @@ import {createCompletedCriticalReview} from "./task-plan-test-helpers.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../");
 const SKILL_PATH = path.join(ROOT, ".agents/skills/task-plan/SKILL.md");
+const GH_ISSUE_START_SKILL_PATH = path.join(ROOT, ".agents/skills/gh-issue-start/SKILL.md");
 const STATE_SCRIPT = path.join(ROOT, ".agents/skills/task-plan/scripts/state.mjs");
 const VALIDATE_PLAN_SCRIPT = path.join(ROOT, ".agents/skills/task-plan/scripts/validate-plan.mjs");
 const FIXTURE_ROOT = path.join(ROOT, "tests/fixtures/task-plan");
 const SKILL_SOURCE = fs.readFileSync(SKILL_PATH, "utf8");
+const GH_ISSUE_START_SKILL_SOURCE = fs.readFileSync(GH_ISSUE_START_SKILL_PATH, "utf8");
 
 const WORKFLOW_SCENARIOS = readJson("workflow-scenarios.json").scenarios;
 const OWNERSHIP_SCENARIOS = readJson("ownership-redundancy-scenarios.json").scenarios;
@@ -70,6 +72,7 @@ describe("task-plan workflow scenarios", () => {
             "integration-and-handoff",
             "ownership-review-not-required",
             "ownership-review-required",
+            "response-to-approval",
         ]);
     });
 
@@ -93,6 +96,21 @@ describe("task-plan workflow scenarios", () => {
         expect(required.expected.ownership_redundancy_review_required).toBe(true);
         expect(notRequired.required_anchors).toEqual(expect.arrayContaining(["required: false", "status: not-required"]));
         expect(required.required_anchors).toEqual(expect.arrayContaining(["required: true", "ownership_redundancy_review_incomplete"]));
+    });
+
+    it("keeps the response-to-approval scenario deterministic and outside the issue boundary", () => {
+        const scenario = WORKFLOW_SCENARIOS.find(({id}) => id === "response-to-approval");
+
+        expect(scenario.input.source_kind).toBe("user-input");
+        expect(scenario.input.answers).toHaveLength(2);
+        expect(scenario.expected).toMatchObject({
+            plan_status: "approved",
+            workflow_phase: "decisions",
+            plan_version: 2,
+            implementation_started: false,
+        });
+        expect(scenario.input).not.toHaveProperty("issue_number");
+        expect(SKILL_SOURCE).toContain("issue #421");
     });
 
     it("covers all bounded ownership kinds and preserves source-claim provenance", () => {
@@ -444,6 +462,59 @@ describe("task-plan WP1 phase contract", () => {
         expect(normalizedSkill).toContain("niepuste `blocking` wymaga dokładnie jednego canonical hybrid lifecycle");
         expect(normalizedSkill).toContain("`context_requirements.follow_up` pozostaje długiem dowodowym");
     });
+
+    it("requires a preflight before emitting a decision question", () => {
+        expect(normalizedSkill).toContain("preflightDecisionBatch(state, question_ids)");
+        expect(normalizedSkill).toContain("Pytanie wolno wyemitować dopiero po `ready: true`");
+        expect(normalizedSkill).toContain("checkpoint.state_revision == state.revision");
+        expect(normalizedSkill).toContain("dostępność mutacji `propagate-decisions`");
+        expect(normalizedSkill).toContain("`canOpenPackageDecisions()` i `canApprovePlan()`");
+        expect(normalizedSkill).toContain("Przy `ready: false` caller zapisuje checkpoint z powodem");
+        expect(normalizedSkill).toContain("Nie uruchamiaj automatycznego retry, review ani drugiego");
+    });
+
+    it("documents the explicit decision route and standalone start confirmation", () => {
+        expect(normalizedSkill).toContain("Routing wyniku prowadzi do `review` albo `source/context`");
+        expect(normalizedSkill).toContain("`decisions → review → source/context`");
+
+        const normalizedStartSkill = GH_ISSUE_START_SKILL_SOURCE.replace(/\s+/g, " ");
+        expect(normalizedStartSkill).toContain("Czy utworzyć plan wykonawczy?");
+        expect(normalizedStartSkill).toContain("Utwórz plan wykonawczy");
+        expect(normalizedStartSkill).toContain("Nie teraz");
+        expect(normalizedStartSkill).toContain("`Nie teraz` kończy bieżący workflow bez planu i bez ponownego pytania");
+        expect(normalizedStartSkill).toContain("`start.mjs` pozostaje adapterem stabilnej tożsamości i brancha");
+    });
+});
+
+describe("task-plan WP4 intake and evidence contract", () => {
+    const normalizedSkill = SKILL_SOURCE.replace(/\s+/g, " ");
+
+    it("documents the canonical intake assessment without adapter heuristics", () => {
+        for (const field of [
+            "intake_assessment",
+            "intent_authority",
+            "diagnosis_reliability",
+            "requirements_completeness",
+            "technical_certainty",
+            "task_type",
+            "evidence_refs",
+        ]) {
+            expect(normalizedSkill).toContain(field);
+        }
+        expect(normalizedSkill).toContain("Adapter źródła normalizuje wyłącznie dane i pochodzenie");
+        expect(normalizedSkill).toContain("nie dopowiada `task_type`");
+        expect(normalizedSkill).toContain("`high` wymaga jawnych `evidence_refs`");
+    });
+
+    it("documents the three-way evidence separation and scope routing", () => {
+        expect(normalizedSkill).toContain("confirmed_files");
+        expect(normalizedSkill).toContain("candidate_paths");
+        expect(normalizedSkill).toContain("discovery_required");
+        expect(normalizedSkill).toContain("inventory/evidence-expansion");
+        expect(normalizedSkill).toContain("known-scope-description");
+        expect(normalizedSkill).toContain("nie trafia do kryteriów blocking");
+        expect(normalizedSkill).toContain("`technical_certainty` pozostaje `unknown`");
+    });
 });
 
 describe("task-plan canonical state contract", () => {
@@ -468,6 +539,13 @@ describe("task-plan canonical state contract", () => {
         expect(WORKFLOW_OUTCOMES).toContain("blocked");
         expect(PLAN_STATUSES.has("blocked")).toBe(false);
         expect(validateTaskPlanState(state).valid).toBe(true);
+    });
+
+    it("documents the explicit runtime and approval validation modes", () => {
+        expect(SKILL_SOURCE).toContain("validateRuntimeState");
+        expect(SKILL_SOURCE).toContain("validateApprovalState");
+        expect(SKILL_SOURCE).toContain("--mode runtime|approval");
+        expect(SKILL_SOURCE).toContain("approval wymaga jawnego `--mode approval`");
     });
 
     it("keeps the four version concepts explicit in the contract", () => {
