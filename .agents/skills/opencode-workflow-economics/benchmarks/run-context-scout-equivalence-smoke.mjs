@@ -8,6 +8,7 @@ import {fileURLToPath, pathToFileURL} from "node:url";
 
 import {
     claimAttempt,
+    HYBRID_PROTOCOL_VERSION,
     prepareHybrid,
     settleAttempt,
 } from "../../../skills/_shared/scripts/context-scout-hybrid-run.mjs";
@@ -140,14 +141,15 @@ function parseEvents(raw) {
     };
 }
 
-async function controllerRun(options, taskPrompt, outputDir, title, attempt) {
+async function controllerRun(options, dispatch, outputDir, title, attempt) {
     const prompt = [
         "You are only a benchmark controller for one canonical repository-context attempt.",
         "Do not perform discovery, read source files, call the hybrid helper, edit files, or run QA yourself.",
-        "Use exactly one native task call to delegate the exact task prompt below.",
+        `Use exactly one native task call with subagent_type ${JSON.stringify(dispatch.subagent_type)} and description ${JSON.stringify(dispatch.description)}.`,
+        "Pass the exact task prompt below verbatim; do not summarize, wrap, or replace it.",
         "After the child task returns, respond with a compact acknowledgement only.",
         "BEGIN EXACT TASK PROMPT",
-        taskPrompt,
+        dispatch.prompt,
         "END EXACT TASK PROMPT",
     ].join("\n");
     const runDir = join(outputDir, attempt);
@@ -174,13 +176,13 @@ async function runCanonicalJob(options, inputs, variant, repetition) {
             title: `canonical-${variant}-${repetition}`,
         }, options.repoDir);
         let claim = claimAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary"});
-        let run = await controllerRun(options, claim.taskPrompt, outputDir, `canonical-${variant}-${repetition}-primary`, "primary");
+        let run = await controllerRun(options, claim.dispatch, outputDir, `canonical-${variant}-${repetition}-primary`, "primary");
         const primaryOutputObserved = existsSync(claim.reportPath) || existsSync(claim.ledgerPath);
         let settlement = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: claim.dispatchToken, "duration-ms": run.duration_ms, ack: {session_ids: run.session_ids, task_tools: run.task_tools, tool_events: run.tool_events, output_observed: primaryOutputObserved}});
         attempts.push({attempt: "primary", run, evaluation: settlement.evaluate, output_observed: primaryOutputObserved});
         if (settlement.evaluate.next.action === "CLAIM_FALLBACK") {
             claim = claimAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "fallback"});
-            run = await controllerRun(options, claim.taskPrompt, outputDir, `canonical-${variant}-${repetition}-fallback`, "fallback");
+            run = await controllerRun(options, claim.dispatch, outputDir, `canonical-${variant}-${repetition}-fallback`, "fallback");
             settlement = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "fallback", token: claim.dispatchToken, "duration-ms": run.duration_ms, ack: {session_ids: run.session_ids, task_tools: run.task_tools, tool_events: run.tool_events, output_observed: existsSync(claim.reportPath) || existsSync(claim.ledgerPath)}});
             attempts.push({attempt: "fallback", run, evaluation: settlement.evaluate, output_observed: existsSync(claim.reportPath) || existsSync(claim.ledgerPath)});
         }
@@ -277,7 +279,7 @@ export async function runSmoke(options) {
     const after = workspaceHash(options.repoDir);
     const summary = {
         harness_class: HARNESS_CLASS,
-        protocol_version: 3,
+        protocol_version: HYBRID_PROTOCOL_VERSION,
         source: inputs.metadata,
         workspace_snapshot: {before, after, unchanged: before.sha256 === after.sha256 && before.file_count === after.file_count},
         inputs: {root: inputs.inputRoot, hashes: inputHashes},

@@ -97,7 +97,7 @@ Kryterium może opcjonalnie zawierać deterministyczną bramkę evidence:
   "required_tests": 0,
   "required_evidence": [
     {
-      "path": ".opencode/agent/context-scout-fast.md",
+      "path": ".opencode/agents/context-scout-fast.md",
       "relation": "defines",
       "anchors": ["permission:"]
     }

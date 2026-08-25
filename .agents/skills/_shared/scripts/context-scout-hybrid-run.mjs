@@ -21,7 +21,7 @@ const VALIDATOR = path.join(SCRIPT_DIR, "context-scout-report.mjs");
 const REPORT_BUILDER = path.join(SCRIPT_DIR, "context-scout-report-builder.mjs");
 const MANIFEST_TOOL = path.join(SCRIPT_DIR, "context-manifest.mjs");
 const HANDOFF_TOOL = path.join(SCRIPT_DIR, "context-handoff.mjs");
-const PROTOCOL_VERSION = 3;
+export const HYBRID_PROTOCOL_VERSION = 4;
 const PRIMARY_AGENT = "context-scout-fast";
 const FALLBACK_AGENT = "context-scout";
 export const DISCOVERY_BUDGETS = Object.freeze({
@@ -186,7 +186,7 @@ function errorEnvelope(error, debug = false) {
         ...(error?.diagnostics !== undefined ? {diagnostics: error.diagnostics} : {}),
         ...(debug && error?.stack ? {stack: error.stack} : {}),
     };
-    return {protocolVersion: PROTOCOL_VERSION, ok: false, error: details};
+    return {protocolVersion: HYBRID_PROTOCOL_VERSION, ok: false, error: details};
 }
 
 function validateHandoff(handoffPath, cwd) {
@@ -351,7 +351,7 @@ function assertWorktreeUnchanged(state, statePath = null, attempt = null) {
 }
 
 function assertRun(state, runId, statePath = null, attempt = null) {
-    if (state.protocolVersion !== PROTOCOL_VERSION) { throw new Error("Unsupported hybrid protocol version"); }
+    if (state.protocolVersion !== HYBRID_PROTOCOL_VERSION) { throw new Error("Unsupported hybrid protocol version"); }
     if (state.runId !== runId) { throw new Error("Hybrid run-id does not match state"); }
     assertInputsUnchanged(state, statePath, attempt);
     assertWorktreeUnchanged(state, statePath, attempt);
@@ -558,7 +558,7 @@ function prepareHybridUnchecked(args, cwd) {
     const strategy = {
         lifecycle: "primary-first-single-fallback",
         mode: handoff.mode,
-        protocolVersion: PROTOCOL_VERSION,
+        protocolVersion: HYBRID_PROTOCOL_VERSION,
         primaryAgent: PRIMARY_AGENT,
         fallbackAgent: FALLBACK_AGENT,
     };
@@ -621,7 +621,7 @@ function prepareHybridUnchecked(args, cwd) {
         const fallbackLedgerPath = path.join(outputDir, `${artifactPrefix}-fallback.ledger.json`);
 
         const state = {
-            protocolVersion: PROTOCOL_VERSION,
+            protocolVersion: HYBRID_PROTOCOL_VERSION,
             runId,
             phase: "PRIMARY_PENDING",
             createdAt: new Date().toISOString(),
@@ -652,7 +652,7 @@ function prepareHybridUnchecked(args, cwd) {
         };
         writeJson(statePath, state);
         return {
-            protocolVersion: PROTOCOL_VERSION,
+            protocolVersion: HYBRID_PROTOCOL_VERSION,
             runId,
             statePath,
             phase: state.phase,
@@ -661,7 +661,6 @@ function prepareHybridUnchecked(args, cwd) {
             preflight,
             next: {
                 action: "CLAIM_PRIMARY",
-                agent: PRIMARY_AGENT,
                 reportPath: primaryReportPath,
                 ledgerPath: primaryLedgerPath,
                 claim: `node ${path.relative(state.cwd, SCRIPT_PATH)} claim --state ${statePath} --run-id ${runId} --attempt primary`,
@@ -732,24 +731,28 @@ export function claimAttempt(args) {
             },
         };
         writeJson(statePath, state);
+        const prompt = buildTaskPrompt({
+            agent: state[attempt].agent,
+            inputs: state.inputs,
+            reportPath: state[attempt].reportPath,
+            ledgerPath: state[attempt].ledgerPath,
+            mode: state.mode,
+            budget: state.budget,
+        });
         return {
-            protocolVersion: PROTOCOL_VERSION,
+            protocolVersion: HYBRID_PROTOCOL_VERSION,
             runId,
             statePath,
             attempt,
             phase: state.phase,
             dispatchToken,
-            agent: state[attempt].agent,
             reportPath: state[attempt].reportPath,
             ledgerPath: state[attempt].ledgerPath,
-            taskPrompt: buildTaskPrompt({
-                agent: state[attempt].agent,
-                inputs: state.inputs,
-                reportPath: state[attempt].reportPath,
-                ledgerPath: state[attempt].ledgerPath,
-                mode: state.mode,
-                budget: state.budget,
-            }),
+            dispatch: {
+                subagent_type: state[attempt].agent,
+                description: attempt === "primary" ? "Scout repository context" : "Retry repository context",
+                prompt,
+            },
         };
     });
 }
@@ -861,7 +864,6 @@ export function evaluateAttempt(args) {
             next = {
                 action: "CLAIM_FALLBACK",
                 failure_class: failureClass,
-                agent: FALLBACK_AGENT,
                 reportPath: state.fallback.reportPath,
                 ledgerPath: state.fallback.ledgerPath,
                 claim: `node ${path.relative(state.cwd, SCRIPT_PATH)} claim --state ${statePath} --run-id ${runId} --attempt fallback`,
@@ -876,7 +878,7 @@ export function evaluateAttempt(args) {
         next = {action: "FINALIZE", failure_class: failureClass};
     }
     writeJson(statePath, state);
-    return {protocolVersion: PROTOCOL_VERSION, runId, statePath, attempt, validation, failure_class: failureClass, phase: state.phase, next};
+    return {protocolVersion: HYBRID_PROTOCOL_VERSION, runId, statePath, attempt, validation, failure_class: failureClass, phase: state.phase, next};
 }
 
 export function settleAttempt(args) {
@@ -890,7 +892,7 @@ export function settleAttempt(args) {
         finalized = finalizeHybrid({state: statePath, "run-id": runId});
     }
     return {
-        protocolVersion: PROTOCOL_VERSION,
+        protocolVersion: HYBRID_PROTOCOL_VERSION,
         runId,
         statePath,
         attempt,
@@ -944,7 +946,7 @@ function finalMetadata(state) {
         },
     };
     return {
-        protocolVersion: PROTOCOL_VERSION,
+        protocolVersion: HYBRID_PROTOCOL_VERSION,
         runId: state.runId,
         logical_input_hash: state.logical_input_hash,
         rerun_of: state.rerun_of ?? null,
@@ -1008,11 +1010,11 @@ export function abortHybrid(args) {
     const state = readJson(statePath);
     if (state.runId !== runId) { throw new Error("Hybrid run-id does not match state"); }
     if (state.phase === "FINALIZED") { throw new Error("Cannot abort a finalized hybrid run"); }
-    if (state.phase === "ABORTED") { return {protocolVersion: PROTOCOL_VERSION, runId, statePath, phase: state.phase}; }
+    if (state.phase === "ABORTED") { return {protocolVersion: HYBRID_PROTOCOL_VERSION, runId, statePath, phase: state.phase}; }
     state.phase = "ABORTED";
     state.abortedAt = new Date().toISOString();
     writeJson(statePath, state);
-    return {protocolVersion: PROTOCOL_VERSION, runId, statePath, phase: state.phase};
+    return {protocolVersion: HYBRID_PROTOCOL_VERSION, runId, statePath, phase: state.phase};
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
