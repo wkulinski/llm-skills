@@ -37,9 +37,8 @@ becomes `anchor_mode: required-literal`, while an entry without anchors becomes
 `anchor_mode: scout-selected`. New criteria should declare `anchor_mode`
 explicitly. Preflight still validates the exact path or path prefix, relation and
 required literals before creating a claimable run, so legacy fixtures do not need
-a mass rewrite. Kryterium może dodatkowo zadeklarować `required_files` jako
-minimalną liczbę albo listę plików potrzebnych do uczciwego discovery; preflight
-porównuje ją z hard file budget i zwraca `SCOPE_TOO_BROAD` przed dispatch.
+a mass rewrite. File budget wynika z konkretnych `required_evidence.path`, a
+scout sam dobiera pozostałe minimalne evidence w stałym budżecie.
 
 Manifests remain schema version `1`, but `prepare`, `validate` and `verify`
 require repository, branch, HEAD and a complete worktree fingerprint. A legacy

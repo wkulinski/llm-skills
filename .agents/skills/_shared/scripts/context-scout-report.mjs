@@ -240,7 +240,7 @@ function validateCoverageEntry(entry, head, errors, index, criteria, evidenceBac
     if (entry.status === "covered") {
         if (!Array.isArray(entry.evidence) || entry.evidence.length === 0) {
             if (!evidenceBackedCriteria.has(entry.criterion_id)) {
-                errors.push(`coverage[${index}] with covered status needs evidence or a finding with evidence for the same criterion`);
+                errors.push(`coverage[${index}] with covered status needs direct evidence or an observed/structural finding with evidence for the same criterion`);
             }
         } else {
             entry.evidence.forEach((evidence, evidenceIndex) => validateEvidence(evidence, head, errors, `coverage[${index}]`, evidenceIndex));
@@ -369,8 +369,10 @@ export function validateScoutReport(report, {head = "", criteria = null} = {}) {
         });
     }
 
+    // Inferred findings are interpretations, not direct observations, so they
+    // must not back empty coverage evidence for a covered criterion.
     const evidenceBackedCriteria = new Set((report.findings ?? [])
-        .filter((finding) => finding && typeof finding.criterion_id === "string" && Array.isArray(finding.evidence) && finding.evidence.length > 0)
+        .filter((finding) => finding && finding.claim_type !== "inferred" && typeof finding.criterion_id === "string" && Array.isArray(finding.evidence) && finding.evidence.length > 0)
         .map((finding) => finding.criterion_id));
     if (!Array.isArray(report.coverage)) {
         errors.push("coverage must be an array");

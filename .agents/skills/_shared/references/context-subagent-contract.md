@@ -93,7 +93,6 @@ Kryterium może opcjonalnie zawierać deterministyczną bramkę evidence:
   "id": "C1",
   "description": "Map the primary agent definition.",
   "forbid_negative_claims": true,
-  "required_files": 2,
   "required_symbols": 1,
   "required_tests": 0,
   "required_evidence": [
@@ -113,11 +112,10 @@ w raporcie `COMPLETE` absolutne twierdzenia o braku lub wyłączności. Pola te
 stosuj tylko wtedy, gdy wynikający z zadania target albo rola evidence są znane;
 nie zgaduj ścieżek tylko po to, aby utworzyć bramkę.
 
-Opcjonalne `required_files`, `required_symbols` i `required_tests` przyjmują
-nieujemną liczbę albo listę nazw. Deklarują minimalną powierzchnię potrzebną do
-uczciwego pokrycia criterion. Preflight używa większej wartości z jawnej
-deklaracji plików i konkretnych selectorów `required_evidence`; przekroczenie
-hard budget kończy się `SCOPE_TOO_BROAD` przed delegacją.
+Opcjonalne `required_symbols` i `required_tests` przyjmują nieujemną liczbę albo
+listę nazw. Stosuj je wyłącznie wtedy, gdy symbol albo test jest twardą bramką
+criterion. Minimalny file budget wynika z konkretnych `required_evidence.path`;
+pozostałe evidence scout dobiera sam w stałym budżecie.
 
 Scout waliduje wejście w tej kolejności:
 
@@ -264,7 +262,9 @@ obiektowy format co `findings.evidence`: `path`, liczbowe `line_start` i
 `line_end`, opcjonalnie `locator` oraz `relation`. Skrócone stringi typu
 `path:line-line` są niedozwolone. Puste `coverage.evidence` jest dozwolone dla
 `covered` wyłącznie wtedy, gdy to samo kryterium ma poprawne evidence w
-`findings`.
+`findings`, a findings podpierające to kryterium nie ograniczają się do
+claimów `inferred`; wymagany jest finding `observed`/`structural` albo jawne
+`coverage.evidence`.
 
 Przed statusem `COMPLETE` scout musi wykonać preflight wszystkich ścieżek z
 `findings` i `coverage`: skopiować repo-relative path dokładnie z wyniku

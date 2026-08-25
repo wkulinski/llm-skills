@@ -46,7 +46,7 @@ powiązanego z kryterium lub ryzykiem.
 1. Ustal z handoffu tryb `targeted` albo `cross-layer` i utwórz checklistę
    wszystkich identyfikatorów criteria.
    Dla każdego criterion przepisz też opcjonalne `required_evidence`,
-   `required_files`, `required_symbols`, `required_tests` i
+   `required_symbols`, `required_tests` i
    `forbid_negative_claims`: są to twarde bramki budżetu lub walidatora, nie
    sugestie.
 2. Nawiguj strategią opisaną w adapterze agenta. Grupuj niezależne odczyty i nie
