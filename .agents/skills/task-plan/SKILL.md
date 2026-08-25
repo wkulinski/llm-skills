@@ -130,8 +130,17 @@ którego potrzebuje użytkownik.
 
 ### 2. Repository context
 
-Przed scoutingiem zapisz krótką listę pytań dowodowych potrzebnych do planu.
-Pusta lista kończy ten krok bez scouta.
+Przed scoutingiem wyznacz minimalny zbiór nierozstrzygniętych decyzji
+planistycznych, których odpowiedź może zmienić ownership, granice lub zależności
+WP, model danych, zachowanie publiczne albo kryteria akceptacji. Twórz jedno
+criterion na decyzję, nie na WP, plik ani punkt issue. Pusty zbiór kończy ten
+krok bez scouta.
+
+Ten sam algorytm obowiązuje podczas tworzenia i kontynuacji planu; task-plan nie
+ma osobnego trybu re-run. Istniejący Markdown, potwierdzone evidence i decyzje
+użytkownika zmniejszają zbiór niewiadomych. Nie potwierdzaj ich ponownie bez
+konkretnego sygnału sprzeczności albo nieaktualności w źródle, snapshotcie lub
+nowym evidence.
 
 Repository-context zbiera **plan-level evidence**. Ma wystarczyć do ustalenia:
 
@@ -143,11 +152,9 @@ Repository-context zbiera **plan-level evidence**. Ma wystarczyć do ustalenia:
 
 Nie wymagaj od scouta pełnej inwentaryzacji endpointów, kompletnego przepływu
 UI–application–persistence, projektu migracji ani wszystkich testów, jeśli te
-informacje nie zmieniają planu. Jedno kryterium odpowiada jednej decyzji
-planistycznej. Opcjonalne `required_files` stosuj, gdy same selektory evidence nie
-oddają realnej szerokości odczytów; `required_symbols` i `required_tests` deklaruj
-wyłącznie wtedy, gdy są twardą bramką. Jeśli jawne minimum przekracza hard budget,
-zawęź pytania do decyzji planistycznych zamiast zgadywać mniejsze wartości.
+informacje nie zmieniają planu. Pozwól scoutowi wybrać minimalne evidence w
+stałym budżecie. Exact `required_evidence`, `required_symbols` i `required_tests`
+stosuj tylko wtedy, gdy konkretny artefakt jest warunkiem rozstrzygnięcia decyzji.
 
 Niepusta lista uruchamia dokładnie jeden canonical lifecycle zgodnie z
 `<skills_root>/_shared/references/repository-context-hybrid.md`. Task-plan nie
