@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {spawnSync} from "node:child_process";
-import test from "node:test";
+import {it} from "vitest";
 
 import {
     buildPlanId,
@@ -14,11 +14,13 @@ import {
     normalizeUserInput,
     persistSource,
     SourceError,
-} from "../scripts/source.mjs";
-import {loadPlan, resolvePlanPaths, savePlan, StoreError} from "../scripts/store.mjs";
-import {validatePlanDocument} from "../scripts/validate.mjs";
+} from "../../../.agents/skills/task-plan/scripts/source.mjs";
+import {loadPlan, resolvePlanPaths, savePlan, StoreError} from "../../../.agents/skills/task-plan/scripts/store.mjs";
+import {validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
+import {AtomicWriteError, writeFileAtomic} from "../../../.agents/skills/task-plan/scripts/atomic-file.mjs";
 
 const NOW = "2026-08-24T12:00:00.000Z";
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
 
 function temporaryRepository() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-plan-v2-"));
@@ -118,7 +120,7 @@ function saveInput(repoRoot, overrides = {}) {
     };
 }
 
-test("normalizes and persists source without escaping repository root", () => {
+it("normalizes and persists source without escaping repository root", () => {
     const root = temporaryRepository();
     fs.writeFileSync(path.join(root, "task.md"), "Plan this task.\n", "utf8");
     const file = normalizeFileSource({filePath: "./task.md", repoRoot: root, options: {fetched_at: NOW}});
@@ -134,7 +136,7 @@ test("normalizes and persists source without escaping repository root", () => {
     );
 });
 
-test("creates a plan from a GitHub issue containing only a title", () => {
+it("creates a plan from a GitHub issue containing only a title", () => {
     const root = temporaryRepository();
     const titleOnly = normalizeGitHubIssue({
         owner: "owner",
@@ -160,7 +162,40 @@ test("creates a plan from a GitHub issue containing only a title", () => {
     );
 });
 
-test("source-only is a valid resume point before a complete plan exists", () => {
+it("normalizes GitHub authors and comments with validated timestamps", () => {
+    const normalized = normalizeGitHubIssue({
+        owner: "owner",
+        repo: "repository",
+        issue_number: 123,
+        title: "Structured issue",
+        body: "Implement the structured request.",
+        authors: [{login: "alice"}, "alice", {name: "Bob"}],
+        comments: [
+            "Plain comment",
+            {body: "Structured comment", user: "carol", created_at: NOW},
+        ],
+        updated_at: NOW,
+    }, {fetched_at: NOW});
+
+    assert.deepEqual(normalized.authors, ["alice", "Bob"]);
+    assert.deepEqual(normalized.comments, [
+        {body: "Plain comment", author: null, created_at: null},
+        {body: "Structured comment", author: "carol", created_at: NOW},
+    ]);
+    assert.equal(normalized.source_updated_at, NOW);
+    assert.throws(
+        () => normalizeGitHubIssue({
+            owner: "owner",
+            repo: "repository",
+            issue_number: 123,
+            title: "Invalid timestamp",
+            comments: [{body: "Comment", created_at: "not-a-date"}],
+        }, {fetched_at: NOW}),
+        (error) => error instanceof SourceError && error.code === "INVALID_SOURCE",
+    );
+});
+
+it("source-only is a valid resume point before a complete plan exists", () => {
     const root = temporaryRepository();
     prepareSource(root);
     const loaded = loadPlan({repoRoot: root, sourceIdentity: source().identity});
@@ -169,7 +204,7 @@ test("source-only is a valid resume point before a complete plan exists", () => 
     assert.equal(loaded.markdown, null);
 });
 
-test("writes a ready Markdown plan without sidecar state", () => {
+it("writes a ready Markdown plan without sidecar state", () => {
     const root = temporaryRepository();
     prepareSource(root);
     const saved = savePlan(saveInput(root), {now: NOW});
@@ -184,7 +219,17 @@ test("writes a ready Markdown plan without sidecar state", () => {
     assert.equal(fs.existsSync(path.join(path.dirname(paths.sourcePath), "state.json")), false);
 });
 
-test("derives blocked and ready from questions stored only in Markdown", () => {
+it("rejects a plan id that does not belong to the source identity", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+
+    assert.throws(
+        () => resolvePlanPaths({repoRoot: root, sourceIdentity: source().identity, planId: "plan-wrong"}),
+        (error) => error instanceof StoreError && error.code === "PLAN_ID_MISMATCH",
+    );
+});
+
+it("derives blocked and ready from questions stored only in Markdown", () => {
     const root = temporaryRepository();
     prepareSource(root);
     const open = "- Q1 [open]: Which existing contract should remain the owner?";
@@ -202,7 +247,7 @@ test("derives blocked and ready from questions stored only in Markdown", () => {
     assert.equal(ready.validation.questions[0].answer, "Keep the existing Core contract.");
 });
 
-test("rejects answered questions without visible answer provenance", () => {
+it("rejects answered questions without visible answer provenance", () => {
     const root = temporaryRepository();
     prepareSource(root);
     const decisions = `- Q1 [answered]: Which contract?
@@ -215,7 +260,7 @@ test("rejects answered questions without visible answer provenance", () => {
     );
 });
 
-test("requires critical source and direction reviews", () => {
+it("requires critical source and direction reviews", () => {
     const root = temporaryRepository();
     prepareSource(root);
     const missingSourceAssessment = completePlanBody().replace(
@@ -234,7 +279,7 @@ test("requires critical source and direction reviews", () => {
     }
 });
 
-test("rejects none in essential package fields and requires evidence or discovery", () => {
+it("rejects none in essential package fields and requires evidence or discovery", () => {
     const root = temporaryRepository();
     prepareSource(root);
     assert.throws(
@@ -247,7 +292,40 @@ test("rejects none in essential package fields and requires evidence or discover
     );
 });
 
-test("rejects placeholders without replacing the last valid plan", () => {
+it("rejects duplicate work-package and question identifiers", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const duplicatePackage = completePlanBody().replace(
+        "\n## Order and dependencies",
+        `\n### WP1 — Duplicate package
+
+- Source: Point 1
+- Goal: Duplicate the requested behavior.
+- Scope: Duplicate scope.
+- Out of scope: none
+- Confirmed paths: src/Example.php
+- Candidate paths: none
+- Discovery required: none
+- Dependencies: none
+- Acceptance criteria: Duplicate acceptance.
+- Verification: Duplicate verification.
+\n## Order and dependencies`,
+    );
+    const duplicateQuestion = completePlanBody({
+        decisions: "- Q1 [open]: First question?\n- Q1 [open]: Duplicate question?",
+    });
+
+    for (const body of [duplicatePackage, duplicateQuestion]) {
+        assert.throws(
+            () => savePlan(saveInput(root, {markdown_body: body}), {now: NOW}),
+            (error) => error instanceof StoreError
+                && error.code === "INVALID_PLAN"
+                && error.details.errors.some((message) => message.includes("Duplicate")),
+        );
+    }
+});
+
+it("rejects placeholders without replacing the last valid plan", () => {
     const root = temporaryRepository();
     prepareSource(root);
     const first = savePlan(saveInput(root), {now: NOW});
@@ -259,7 +337,7 @@ test("rejects placeholders without replacing the last valid plan", () => {
     assert.equal(fs.readFileSync(first.paths.draft_path.startsWith("/") ? first.paths.draft_path : path.join(root, first.paths.draft_path), "utf8"), first.markdown);
 });
 
-test("rejects sidecar-era input fields", () => {
+it("rejects sidecar-era input fields", () => {
     const root = temporaryRepository();
     prepareSource(root);
     for (const field of ["status", "blocking_questions", "reviewed_at", "last_error", "state"]) {
@@ -270,7 +348,7 @@ test("rejects sidecar-era input fields", () => {
     }
 });
 
-test("stores and verifies canonical context references in plan front matter", () => {
+it("stores and verifies canonical context references in plan front matter", () => {
     const root = temporaryRepository();
     prepareSource(root);
     const reportPath = path.join(root, "var", "agent", "context.report.json");
@@ -288,7 +366,7 @@ test("stores and verifies canonical context references in plan front matter", ()
     assert.ok(loaded.validation.errors.some((message) => message.includes("context report hash")));
 });
 
-test("verifies context evidence whenever an incomplete canonical run is referenced", () => {
+it("verifies context evidence whenever an incomplete canonical run is referenced", () => {
     const root = temporaryRepository();
     prepareSource(root);
     const reportPath = path.join(root, "var", "agent", "incomplete-context.report.json");
@@ -303,7 +381,7 @@ test("verifies context evidence whenever an incomplete canonical run is referenc
     assert.ok(loaded.validation.errors.some((message) => message.includes("context report hash")));
 });
 
-test("derives blocked from a blocked repository-context without requiring a synthetic question", () => {
+it("derives blocked from a blocked repository-context without requiring a synthetic question", () => {
     const root = temporaryRepository();
     prepareSource(root);
     const saved = savePlan(saveInput(root, {context: {status: "BLOCKED"}}), {now: NOW});
@@ -313,7 +391,7 @@ test("derives blocked from a blocked repository-context without requiring a synt
     assert.equal(saved.status, "blocked");
 });
 
-test("detects source artifact tampering during resume", () => {
+it("detects source artifact tampering during resume", () => {
     const root = temporaryRepository();
     const persisted = prepareSource(root);
     savePlan(saveInput(root), {now: NOW});
@@ -332,7 +410,7 @@ test("detects source artifact tampering during resume", () => {
     assert.equal(fs.readFileSync(path.join(root, loaded.paths.draft_path), "utf8"), planBeforeRetry);
 });
 
-test("keeps the last valid Markdown when atomic save fails", () => {
+it("keeps the last valid Markdown when atomic save fails", () => {
     const root = temporaryRepository();
     prepareSource(root);
     const first = savePlan(saveInput(root, {markdown_body: completePlanBody({goal: "Stable goal."})}), {now: NOW});
@@ -357,23 +435,49 @@ test("keeps the last valid Markdown when atomic save fails", () => {
     assert.doesNotMatch(persistedMarkdown, /Uncommitted goal\./);
 });
 
-test("CLI persists source and saves a plan without sidecar", () => {
+it("writes atomically inside the configured root and rejects path escape", () => {
+    const root = temporaryRepository();
+    const target = path.join(root, "var", "artifact.txt");
+
+    const written = writeFileAtomic(target, "first\n", {rootDir: root});
+    assert.equal(written.written, true);
+    assert.equal(fs.readFileSync(target, "utf8"), "first\n");
+    assert.throws(
+        () => writeFileAtomic(path.join(root, "..", "outside.txt"), "unsafe\n", {rootDir: root}),
+        (error) => error instanceof AtomicWriteError && error.code === "UNSAFE_PATH",
+    );
+});
+
+it("CLI persists source, saves and validates a plan without sidecar", () => {
     const root = temporaryRepository();
     const sourceFile = path.join(root, "source-input.json");
     const planFile = path.join(root, "plan-input.json");
     fs.writeFileSync(sourceFile, JSON.stringify(source()), "utf8");
-    const sourceScript = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../scripts/source.mjs");
-    const storeScript = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../scripts/store.mjs");
+    const sourceScript = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../.agents/skills/task-plan/scripts/source.mjs");
+    const storeScript = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../.agents/skills/task-plan/scripts/store.mjs");
+    const validateScript = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../.agents/skills/task-plan/scripts/validate.mjs");
     const persisted = spawnSync(process.execPath, [sourceScript, "persist", "--input", sourceFile, "--root", root], {encoding: "utf8"});
     assert.equal(persisted.status, 0, persisted.stderr);
 
     fs.writeFileSync(planFile, JSON.stringify(saveInput(root)), "utf8");
     const saved = spawnSync(process.execPath, [storeScript, "save", "--input", planFile], {encoding: "utf8"});
     assert.equal(saved.status, 0, saved.stderr);
-    assert.equal(JSON.parse(saved.stdout).status, "ready");
+    const savedResult = JSON.parse(saved.stdout);
+    assert.equal(savedResult.status, "ready");
+
+    const validated = spawnSync(process.execPath, [
+        validateScript,
+        "validate",
+        "--file",
+        path.join(root, savedResult.paths.draft_path),
+        "--root",
+        root,
+    ], {encoding: "utf8"});
+    assert.equal(validated.status, 0, validated.stderr);
+    assert.equal(JSON.parse(validated.stdout).valid, true);
 });
 
-test("validation can run directly against persisted evidence", () => {
+it("validation can run directly against persisted evidence", () => {
     const root = temporaryRepository();
     prepareSource(root);
     const saved = savePlan(saveInput(root), {now: NOW});
@@ -382,4 +486,12 @@ test("validation can run directly against persisted evidence", () => {
     assert.equal(validation.status, "ready");
     assert.match(saved.metadata.source_sha256, /^[a-f0-9]{64}$/);
     assert.equal(crypto.createHash("sha256").update(fs.readFileSync(path.join(root, saved.metadata.source_artifact))).digest("hex"), saved.metadata.source_sha256);
+});
+
+it("documents the repository-level task-plan test directory", () => {
+    const skill = fs.readFileSync(path.join(ROOT, ".agents/skills/task-plan/SKILL.md"), "utf8");
+
+    assert.match(skill, /tests\/skills\/task-plan\//);
+    assert.doesNotMatch(skill, /<skill_dir>\/tests\//);
+    assert.equal(fs.existsSync(path.join(ROOT, "tests/skills/task-plan/task-plan-v2.test.mjs")), true);
 });

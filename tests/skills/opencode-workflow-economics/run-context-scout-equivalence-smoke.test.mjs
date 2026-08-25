@@ -2,6 +2,7 @@ import {readFileSync} from "node:fs";
 import {describe, expect, it} from "vitest";
 
 import {parseArgs} from "../../../.agents/skills/opencode-workflow-economics/benchmarks/run-context-scout-equivalence-smoke.mjs";
+import {HYBRID_PROTOCOL_VERSION} from "../../../.agents/skills/_shared/scripts/context-scout-hybrid-run.mjs";
 
 const SOURCE = readFileSync(new URL("../../../.agents/skills/opencode-workflow-economics/benchmarks/run-context-scout-equivalence-smoke.mjs", import.meta.url), "utf8");
 
@@ -22,5 +23,11 @@ describe("canonical equivalence smoke runner", () => {
         expect(SOURCE).toMatch(/all_primary_observed/);
         expect(SOURCE).toMatch(/dispatch_audit/);
         expect(SOURCE).toMatch(/workspace_unchanged/);
+    });
+
+    it("publishes the protocol version owned by the production helper", () => {
+        expect(HYBRID_PROTOCOL_VERSION).toBe(4);
+        expect(SOURCE).toMatch(/protocol_version:\s*HYBRID_PROTOCOL_VERSION/);
+        expect(SOURCE).not.toMatch(/protocol_version:\s*\d/);
     });
 });

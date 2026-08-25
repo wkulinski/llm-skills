@@ -23,7 +23,7 @@ describe("implementation worker agent contract", () => {
     }, 30_000);
 
     it("keeps the worker bounded and prevents nested orchestration", () => {
-        const worker = read(".opencode/agent/implementation-worker.md");
+        const worker = read(".opencode/agents/implementation-worker.md");
         expect(worker).toMatch(/mode: subagent/);
         expect(worker).toMatch(/bash: allow/);
         expect(worker).toMatch(/task: deny/);

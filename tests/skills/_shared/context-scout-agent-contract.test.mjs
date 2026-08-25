@@ -12,7 +12,7 @@ function read(relativePath) {
 describe("context scout agent contracts", () => {
     it("requires the shared playbook and retains safety guards", () => {
         expect(fs.existsSync(path.join(ROOT, PLAYBOOK))).toBe(true);
-        for (const agent of [".opencode/agent/context-scout-fast.md", ".opencode/agent/context-scout.md"]) {
+        for (const agent of [".opencode/agents/context-scout-fast.md", ".opencode/agents/context-scout.md"]) {
             const content = read(agent);
             expect(content).toMatch(/repository-context-scout-playbook\.md/);
             expect(content).toMatch(/Nie deleguj agentów/);
@@ -33,8 +33,8 @@ describe("context scout agent contracts", () => {
     });
 
     it("keeps only role-specific discovery strategies", () => {
-        const primary = read(".opencode/agent/context-scout-fast.md");
-        const fallback = read(".opencode/agent/context-scout.md");
+        const primary = read(".opencode/agents/context-scout-fast.md");
+        const fallback = read(".opencode/agents/context-scout.md");
         expect(primary).toMatch(/codebase-memory-mcp jako pierwszej warstwy/);
         expect(primary).toMatch(/"codebase-memory\*": allow/);
         expect(primary).toMatch(/`index_repository` w trybie `full`/);
@@ -55,7 +55,7 @@ describe("context scout agent contracts", () => {
     });
 
     it("keeps the fast scout compact, grounded and fail-closed", () => {
-        const primary = read(".opencode/agent/context-scout-fast.md");
+        const primary = read(".opencode/agents/context-scout-fast.md");
         expect(primary).toMatch(/steps: 48/);
         expect(primary).toMatch(/W trybie `targeted` zmapuj maksymalnie 6 istotnych plików/);
         expect(primary).toMatch(/dokładnie jeden zwarty finding na criterion/);
@@ -115,8 +115,8 @@ describe("context scout agent contracts", () => {
             expect(content).not.toMatch(/DELEGATE_FALLBACK/);
         }
         for (const adapter of [
-            ".opencode/agent/context-scout-fast.md",
-            ".opencode/agent/context-scout.md",
+            ".opencode/agents/context-scout-fast.md",
+            ".opencode/agents/context-scout.md",
         ]) {
             expect(read(adapter)).not.toMatch(/DELEGATE_FALLBACK/);
         }
@@ -124,7 +124,7 @@ describe("context scout agent contracts", () => {
 
     it("documents Luna High as the bounded stronger fallback", () => {
         const canonical = read(".agents/skills/_shared/references/repository-context-hybrid.md");
-        const fallback = read(".opencode/agent/context-scout.md");
+        const fallback = read(".opencode/agents/context-scout.md");
 
         expect(canonical).toMatch(/`context-scout` \(Luna High\)/);
         expect(canonical).toMatch(/higher-reasoning second pass/);

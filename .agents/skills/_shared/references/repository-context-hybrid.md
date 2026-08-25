@@ -56,12 +56,14 @@ requires a fresh manifest and a new run.
    the context manifest with `.agents/skills/_shared/scripts/context-manifest.mjs`;
    fail closed when the current Git metadata is unavailable or does not match.
 2. After `prepare` the helper returns `CLAIM_PRIMARY`. The main agent calls
-  `claim --attempt primary` to atomically move the attempt to running under a
-  per-state lock and obtain
-   a one-time dispatch token plus the exact task prompt, then delegates
-   `context-scout-fast` through the native `task` tool using that prompt and
-   report path. The helper never starts OpenCode or an agent. A duplicate claim is
-   rejected. Both scout adapters must read
+   `claim --attempt primary` to atomically move the attempt to running under a
+   per-state lock and obtain a one-time dispatch token plus a ready-to-use
+   `dispatch` object. The main agent passes `dispatch.subagent_type`,
+   `dispatch.description` and `dispatch.prompt` directly to the native `task`
+   tool. `dispatch.prompt` MUST be passed verbatim: never summarize, wrap,
+   paraphrase or replace it with a reference such as "use the supplied prompt".
+   The helper never starts OpenCode or an agent. A duplicate claim is rejected.
+   Both scout adapters must read
    `./.agents/skills/_shared/references/repository-context-scout-playbook.md`
    before discovery; their local prompts contain only role-specific strategy and
    duplicated safety guards.
@@ -107,9 +109,11 @@ requires a fresh manifest and a new run.
    sztucznego raportu bez evidence i zachowuje normalną decyzję o pojedynczym
    fallbacku.
 6. Delegate exactly one `context-scout` fallback through native `task` only when
-   `settle` returns `CLAIM_FALLBACK`, then call `claim --attempt fallback` to
-   obtain its dispatch token and prompt. The fallback receives the same immutable
-   inputs and budget, never the primary's report or failure explanation.
+    `settle` returns `CLAIM_FALLBACK`, then call `claim --attempt fallback` to
+    obtain its dispatch token and ready-to-use `dispatch` object. Pass that
+    object's fields directly to native `task`, including `dispatch.prompt`
+    verbatim. The fallback receives the same immutable inputs and budget, never
+    the primary's report or failure explanation.
 7. Call `settle --attempt fallback --token <dispatch-token>` with the same
    immutable inputs. A rejected fallback always finalizes the run and never
    creates another fallback.
@@ -229,11 +233,12 @@ node .agents/skills/_shared/scripts/context-scout-hybrid-run.mjs prepare \
   --prompt-file <prompt> --manifest <manifest> --handoff <handoff> \
   --criteria <criteria> --output-dir <output> --title <title>
 
-# Claim the next attempt to obtain a one-time dispatch token and task prompt.
+# Claim the next attempt to obtain a one-time token and native task dispatch.
 node .agents/skills/_shared/scripts/context-scout-hybrid-run.mjs claim \
   --state <statePath> --run-id <runId> --attempt primary
 
-# Delegate next.agent with next.taskPrompt through the native task tool.
+# Call native task with claim.dispatch.subagent_type, description and prompt.
+# Pass claim.dispatch.prompt verbatim; do not summarize or replace it.
 
 node .agents/skills/_shared/scripts/context-scout-hybrid-run.mjs settle \
   --state <statePath> --run-id <runId> --attempt primary --token <dispatch-token>
@@ -242,9 +247,11 @@ node .agents/skills/_shared/scripts/context-scout-hybrid-run.mjs settle \
 ```
 
 `claim` is idempotence-guarded: it atomically moves the attempt from pending to
-running, emits a one-time dispatch token and task prompt, and rejects duplicate
-claims. `settle` requires the matching token and a running phase. The low-level
-`evaluate` and `finalize` commands exist for diagnostics and state-machine tests.
+running, emits a one-time dispatch token and a ready-to-use `dispatch` object,
+and rejects duplicate claims. It does not expose parallel top-level agent or
+prompt fields. `settle` requires the matching token and a running phase. The
+low-level `evaluate` and `finalize` commands exist for diagnostics and
+state-machine tests.
 
 The scout writes the complete report artifact to the path returned by `claim` and
 returns only a compact acknowledgement. The acknowledgement is diagnostic

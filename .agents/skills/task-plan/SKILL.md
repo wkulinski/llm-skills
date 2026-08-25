@@ -424,5 +424,5 @@ node <skill_dir>/scripts/validate.mjs validate --file ./docs/plan/<plan-id>.md -
 `context`, jeśli istnieje, zawiera finalny `status`, ścieżki raportu i kryteriów
 oraz ich SHA-256. `save --input -` przyjmuje ten JSON przez stdin.
 
-Testy skilla znajdują się w `<skill_dir>/tests/` i działają bez live GitHub,
+Testy skilla znajdują się w `tests/skills/task-plan/` i działają bez live GitHub,
 live repository-context i implementacji aplikacji.

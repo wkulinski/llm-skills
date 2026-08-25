@@ -411,23 +411,23 @@ function escapeRegex(value) {
 }
 
 function parseArgs(argv) {
-    const result = {_: []};
+    const parsed = {_: []};
     for (let index = 0; index < argv.length; index += 1) {
         const token = argv[index];
         if (!token.startsWith("--")) {
-            result._.push(token);
+            parsed._.push(token);
             continue;
         }
         const key = token.slice(2).replaceAll("-", "_");
         const next = argv[index + 1];
         if (typeof next === "undefined" || next.startsWith("--")) {
-            result[key] = true;
+            parsed[key] = true;
         } else {
-            result[key] = next;
+            parsed[key] = next;
             index += 1;
         }
     }
-    return result;
+    return parsed;
 }
 
 async function main(argv) {

@@ -5,7 +5,7 @@
       "description": "Locate the context-scout-fast agent strategy and safety permissions.",
       "forbid_negative_claims": true,
       "required_evidence": [
-        {"path": ".opencode/agent/context-scout-fast.md", "anchors": ["permission:", "codebase-memory*"]}
+        {"path": ".opencode/agents/context-scout-fast.md", "anchors": ["permission:", "codebase-memory*"]}
       ]
     },
     {

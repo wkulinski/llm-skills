@@ -169,7 +169,7 @@ Dodano do `criteria.json` opcjonalne pola:
   "forbid_negative_claims": true,
   "required_evidence": [
     {
-      "path": ".opencode/agent/context-scout-fast.md",
+      "path": ".opencode/agents/context-scout-fast.md",
       "anchors": ["permission:"]
     }
   ]
@@ -428,7 +428,7 @@ Rekomendowane użycie:
 
 Najważniejsze elementy rozwiązania:
 
-- `.opencode/agent/context-scout-fast.md` — kompaktowy kontrakt;
+- `.opencode/agents/context-scout-fast.md` — kompaktowy kontrakt;
 - `.agents/skills/_shared/scripts/context-criteria.mjs` — walidacja enriched
   criteria;
 - `.agents/skills/_shared/scripts/context-scout-report.mjs` — deterministic
