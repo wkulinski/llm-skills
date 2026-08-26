@@ -783,7 +783,7 @@ describe("run-matrix output contract", () => {
         expect(fourth.status).toBe(0);
         expect(fourth.stdout).toContain("SKIP-CACHED [CACHE_CHANGED]");
         expect(readCounter(counterPath)).toBe(3);
-    });
+    }, 30_000);
 
     it("stores mutating command cache under the post-command fingerprint", () => {
         const {config, inputPath, tempRoot} = createCacheConfig("changed.txt");

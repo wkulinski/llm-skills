@@ -25,7 +25,7 @@ shared_files:
 
 ## Cel i granice
 
-Task-plan przygotowuje jeden dokument Markdown w `./docs/plan/`. Plan ma być
+Task-plan przygotowuje jeden dokument Markdown w `./docs/plans/`. Plan ma być
 użyteczny dla wykonawcy, krytyczny wobec materiału źródłowego i uczciwy wobec
 brakujących dowodów.
 
@@ -69,6 +69,66 @@ błąd struktury lub evidence  → invalid
 
 `ready` oznacza kompletny plan bez otwartych blockerów. Nie oznacza zgody na
 implementację. Implementacja wymaga osobnego, jawnego polecenia użytkownika.
+
+Każdy plan gotowy do implementacji zawiera także kontrakt wykonania w dwóch
+sekcjach Markdown. `## Execution environment` zapisuje konkretną rekomendację
+środowiska, źródło rankingu, dozwolone rodziny modeli i opcjonalne, uzasadnione
+override'y WP. `## Execution` przechowuje status, następny WP, tabelę postępu i
+log wykonania. To nadal jest część jednego planu, nie osobny stan.
+
+Minimalny format środowiska:
+
+```md
+## Execution environment
+
+- Ranking source: https://aicodingdaily.com/leaderboard
+- Ranking updated at: YYYY-MM-DD
+- Assessed at: YYYY-MM-DD
+- Allowed model families: OpenAI, DeepSeek, Tencent
+- Qwen policy: frontend-design only
+- Project family override: none
+- Default model: provider/model
+- Default reasoning: concrete-level
+- Escalation model: provider/model
+- Escalation reasoning: concrete-level
+- Escalation trigger: justified condition
+- WP overrides: none
+```
+
+`Project family override` oraz pola escalation są opcjonalne; jeśli występują,
+muszą być konkretne. `WP overrides: none` można zastąpić listą:
+
+```md
+- WP overrides:
+  - WP<n>: model=provider/model; reasoning=concrete-level; justification=...
+```
+
+Walidacja sprawdza strukturę i metadane bez sieci. Dostępność modelu oraz
+widoczność wariantu reasoning sprawdza dopiero executor.
+
+Minimalny ledger wykonania:
+
+```md
+## Execution
+
+- Status: not_started
+- Next WP: WP1
+
+### Progress
+
+| WP | Status | Completed at | Verification |
+|---|---|---|---|
+| WP1 | pending | none | none |
+
+### Execution log
+
+No execution entries have been recorded.
+```
+
+Na starcie status to `not_started`, każdy WP ma status `pending`, a `Next WP`
+wskazuje pierwszy zdefiniowany WP. Executor może później zapisać
+`in_progress`, `blocked` albo `complete`; WP oznacza jako `done` wyłącznie
+razem z datą i krótkim dowodem w kolumnie `Verification`.
 
 ## Trigger i źródła
 
@@ -281,6 +341,8 @@ Wymagane sekcje:
 ## Decisions and open questions
 ## Risks and discovery debt
 ## Acceptance and verification
+## Execution environment
+## Execution
 ## Next action
 ```
 
@@ -325,6 +387,7 @@ Każdy pakiet używa nagłówka `### WP<number> — <tytuł>` i zawiera:
 - Candidate paths:
 - Discovery required:
 - Dependencies:
+- Estimated size: `small`, `medium` albo `large`
 - Acceptance criteria:
 - Verification:
 ```
@@ -332,6 +395,11 @@ Każdy pakiet używa nagłówka `### WP<number> — <tytuł>` i zawiera:
 Puste kategorie zapisuj jako `none`. `Candidate paths` są hipotezami i nie mogą
 być przedstawione w handoffie jako potwierdzone. Jeśli ścieżka nie została
 potwierdzona, użyj konkretnego `Discovery required` zamiast zgadywania.
+
+`Estimated size` jest jedyną deklaracją rozmiaru potrzebną do dynamicznego
+batchowania. Nie oznacza stałego podziału sesji: executor łączy eligible WP
+według rozmiaru, zależności, postępu, dostępnego środowiska i pozostałego
+kontekstu.
 
 `Source coverage` mapuje każdy punkt źródła do WP albo jawnie uzasadnionego
 wyłączenia. Nie twórz WP dla samej ceremonii procesu.
@@ -481,7 +549,7 @@ Minimalny przebieg CLI:
 node <skill_dir>/scripts/source.mjs persist --input ./source.json --root "$PWD"
 node <skill_dir>/scripts/store.mjs save --input ./plan-input.json
 node <skill_dir>/scripts/store.mjs load --source-identity 'owner/repository#123' --root "$PWD"
-node <skill_dir>/scripts/validate.mjs validate --file ./docs/plan/<plan-id>.md --root "$PWD"
+node <skill_dir>/scripts/validate.mjs validate --file ./docs/plans/<plan-id>.md --root "$PWD"
 ```
 
 `plan-input.json` zawiera wyłącznie:

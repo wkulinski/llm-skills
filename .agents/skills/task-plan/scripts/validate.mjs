@@ -18,6 +18,8 @@ export const REQUIRED_SECTIONS = Object.freeze([
     "Decisions and open questions",
     "Risks and discovery debt",
     "Acceptance and verification",
+    "Execution environment",
+    "Execution",
     "Next action",
 ]);
 
@@ -30,11 +32,16 @@ export const REQUIRED_PACKAGE_FIELDS = Object.freeze([
     "Candidate paths",
     "Discovery required",
     "Dependencies",
+    "Estimated size",
     "Acceptance criteria",
     "Verification",
 ]);
 
-const ESSENTIAL_PACKAGE_FIELDS = new Set(["Source", "Goal", "Scope", "Acceptance criteria", "Verification"]);
+const ESSENTIAL_PACKAGE_FIELDS = new Set(["Source", "Goal", "Scope", "Estimated size", "Acceptance criteria", "Verification"]);
+export const EXECUTION_STATUSES = Object.freeze(["not_started", "in_progress", "complete", "blocked"]);
+export const EXECUTION_WP_STATUSES = Object.freeze(["pending", "in_progress", "done", "blocked"]);
+const CONCRETE_MODEL_PATTERN = /^[^/\s]+\/[^/\s]+$/;
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export const REQUIRED_DIRECTION_FIELDS = Object.freeze([
     "Existing mechanism reused",
@@ -115,7 +122,9 @@ export function validatePlanDocument(markdown, options = {}) {
         packageIds.add(packageRecord.id);
         errors.push(...validatePackage(packageRecord));
     }
+    errors.push(...validatePackageDependencies(packages));
     errors.push(...validateSourceCoverage(parsed.body, packageIds));
+    errors.push(...validateExecutionContract(parsed.body, packages));
 
     const questionResult = parseQuestions(parsed.body);
     errors.push(...questionResult.errors);
@@ -168,6 +177,317 @@ export function extractPackages(body) {
         const end = nextSection >= 0 && nextSection < nextPackage ? nextSection : nextPackage;
         return {id: match[1], title: match[2].trim(), body: body.slice(start, end)};
     });
+}
+
+export function parseExecutionContract(body) {
+    const environmentSection = extractSection(body, "Execution environment");
+    const executionSection = extractSection(body, "Execution");
+    const progressSection = extractSubsection(executionSection, "Progress");
+    const logSection = extractSubsection(executionSection, "Execution log");
+    const overrides = labeledBlock(environmentSection, "WP overrides");
+
+    return {
+        environment: {
+            rankingSource: labeledValue(environmentSection, "Ranking source"),
+            rankingUpdatedAt: labeledValue(environmentSection, "Ranking updated at"),
+            assessedAt: labeledValue(environmentSection, "Assessed at"),
+            allowedModelFamilies: labeledValue(environmentSection, "Allowed model families"),
+            qwenPolicy: labeledValue(environmentSection, "Qwen policy"),
+            projectFamilyOverride: labeledValue(environmentSection, "Project family override"),
+            defaultModel: labeledValue(environmentSection, "Default model"),
+            defaultReasoning: labeledValue(environmentSection, "Default reasoning"),
+            escalationModel: labeledValue(environmentSection, "Escalation model"),
+            escalationReasoning: labeledValue(environmentSection, "Escalation reasoning"),
+            escalationTrigger: labeledValue(environmentSection, "Escalation trigger"),
+            wpOverrides: overrides.value,
+            wpOverrideEntries: overrides.nested,
+        },
+        execution: {
+            status: labeledValue(executionSection, "Status"),
+            nextWp: labeledValue(executionSection, "Next WP"),
+            progressRows: parseProgressRows(progressSection),
+            log: logSection.trim(),
+        },
+    };
+}
+
+export function validateExecutionContract(body, packages = extractPackages(body)) {
+    const contract = parseExecutionContract(body);
+    const errors = validateExecutionSections(body);
+    errors.push(...validateExecutionEnvironment(contract.environment, packages));
+
+    errors.push(...validateExecutionProgress(contract.execution, packages));
+
+    return errors;
+}
+
+function validateExecutionSections(body) {
+    return ["Execution environment", "Execution"]
+        .filter((heading) => countExactHeading(body, "##", heading) !== 1)
+        .map((heading) => `Plan must contain exactly one ## ${heading} section.`);
+}
+
+function validateExecutionEnvironment(environment, packages) {
+    const errors = [];
+    const requiredFields = [
+        ["Ranking source", environment.rankingSource],
+        ["Ranking updated at", environment.rankingUpdatedAt],
+        ["Assessed at", environment.assessedAt],
+        ["Allowed model families", environment.allowedModelFamilies],
+        ["Qwen policy", environment.qwenPolicy],
+        ["Default model", environment.defaultModel],
+        ["Default reasoning", environment.defaultReasoning],
+        ["WP overrides", environment.wpOverrides || environment.wpOverrideEntries.join("\n")],
+    ];
+    for (const [label, value] of requiredFields) {
+        if (String(value ?? "").trim() === "") {
+            errors.push(`Execution environment is missing non-empty field: ${label}.`);
+        }
+    }
+    if (cleanCell(environment.rankingSource) !== "https://aicodingdaily.com/leaderboard") {
+        errors.push("Execution environment Ranking source must be https://aicodingdaily.com/leaderboard.");
+    }
+    for (const [label, value] of [["Ranking updated at", environment.rankingUpdatedAt], ["Assessed at", environment.assessedAt]]) {
+        if (!isIsoDate(cleanCell(value))) {
+            errors.push(`Execution environment ${label} must use YYYY-MM-DD.`);
+        }
+    }
+    const allowedFamilies = cleanCell(environment.allowedModelFamilies).toLowerCase().match(/[a-z][a-z0-9_-]*/g) ?? [];
+    for (const family of ["openai", "deepseek", "tencent"]) {
+        if (!allowedFamilies.includes(family)) {
+            errors.push(`Execution environment Allowed model families must include ${family}.`);
+        }
+    }
+    if (!cleanCell(environment.qwenPolicy).toLowerCase().includes("frontend-design")) {
+        errors.push("Execution environment Qwen policy must limit Qwen to frontend-design work.");
+    }
+    validateConcreteEnvironmentValue(environment.defaultModel, "Default model", errors);
+    validateReasoning(environment.defaultReasoning, "Default reasoning", errors);
+    if (environment.projectFamilyOverride && !isNone(environment.projectFamilyOverride) && cleanCell(environment.projectFamilyOverride).length === 0) {
+        errors.push("Execution environment Project family override must be non-empty when provided.");
+    }
+    if (environment.escalationModel || environment.escalationReasoning || environment.escalationTrigger) {
+        validateConcreteEnvironmentValue(environment.escalationModel, "Escalation model", errors);
+        validateReasoning(environment.escalationReasoning, "Escalation reasoning", errors);
+        if (isNone(environment.escalationTrigger)) {
+            errors.push("Execution environment Escalation trigger must be justified when escalation is declared.");
+        }
+    }
+    validateOverrides(environment, packages, errors);
+    return errors;
+}
+
+function validateExecutionProgress(execution, packages) {
+    const errors = [];
+    if (!EXECUTION_STATUSES.includes(cleanCell(execution.status))) {
+        errors.push(`Execution Status must be one of: ${EXECUTION_STATUSES.join(", ")}.`);
+    }
+    if (String(execution.nextWp ?? "").trim() === "") {
+        errors.push("Execution is missing non-empty field: Next WP.");
+    } else if (cleanCell(execution.nextWp) !== "none" && !packages.some((packageRecord) => packageRecord.id === cleanCell(execution.nextWp))) {
+        errors.push(`Execution Next WP references unknown package: ${cleanCell(execution.nextWp)}.`);
+    }
+    if (execution.progressRows.length === 0) {
+        errors.push("Execution must contain a Progress table with at least one WP row.");
+    }
+    if (execution.log === "") {
+        errors.push("Execution must contain a non-empty Execution log.");
+    }
+
+    const packageIds = packages.map((packageRecord) => packageRecord.id);
+    const rowsById = new Map();
+    for (const row of execution.progressRows) {
+        if (row.error) {
+            errors.push(row.error);
+            continue;
+        }
+        if (rowsById.has(row.id)) {
+            errors.push(`Execution Progress contains duplicate WP: ${row.id}.`);
+        }
+        rowsById.set(row.id, row);
+        errors.push(...validateProgressRow(row, packageIds));
+    }
+    if (rowsById.size !== packageIds.length || packageIds.some((id) => !rowsById.has(id))) {
+        errors.push("Execution Progress must reference every defined WP exactly once.");
+    }
+    errors.push(...validateExecutionStatus(execution, packageIds, rowsById));
+    return errors;
+}
+
+function validateProgressRow(row, packageIds) {
+    const errors = [];
+    if (!packageIds.includes(row.id)) {
+        errors.push(`Execution Progress references unknown package: ${row.id}.`);
+    }
+    if (!EXECUTION_WP_STATUSES.includes(row.status)) {
+        errors.push(`Execution Progress ${row.id} has invalid status: ${row.status}.`);
+    }
+    if (row.status === "done") {
+        if (isNone(row.completedAt)) {
+            errors.push(`Execution Progress ${row.id} done status requires Completed at evidence.`);
+        } else if (Number.isNaN(Date.parse(cleanCell(row.completedAt)))) {
+            errors.push(`Execution Progress ${row.id} Completed at must be a valid date.`);
+        }
+        if (isNone(row.verification)) {
+            errors.push(`Execution Progress ${row.id} done status requires Verification evidence.`);
+        }
+    } else if (!isNone(row.completedAt)) {
+        errors.push(`Execution Progress ${row.id} must use Completed at: none until done.`);
+    }
+    return errors;
+}
+
+function validateExecutionStatus(execution, packageIds, rowsById) {
+    const errors = [];
+    const executionStatus = cleanCell(execution.status);
+    const rowStatuses = [...rowsById.values()].map((row) => row.status);
+    if (executionStatus === "not_started" && rowStatuses.some((status) => status !== "pending")) {
+        errors.push("Execution not_started status requires every WP to be pending.");
+    }
+    if (executionStatus === "not_started" && packageIds.length > 0 && cleanCell(execution.nextWp) !== packageIds[0]) {
+        errors.push("Execution not_started status must point Next WP to the first defined WP.");
+    }
+    if (executionStatus === "complete") {
+        if (rowStatuses.some((status) => status !== "done")) {
+            errors.push("Execution complete status requires every WP to be done.");
+        }
+        if (cleanCell(execution.nextWp) !== "none") {
+            errors.push("Execution complete status requires Next WP: none.");
+        }
+    } else if (rowStatuses.length > 0 && rowStatuses.every((status) => status === "done")) {
+        errors.push("Execution requires complete status when every WP is done.");
+    }
+    if (executionStatus === "in_progress" && rowStatuses.every((status) => status === "pending")) {
+        errors.push("Execution in_progress status requires at least one non-pending WP.");
+    }
+    if (executionStatus === "blocked" && !rowStatuses.includes("blocked")) {
+        errors.push("Execution blocked status requires at least one blocked WP.");
+    }
+    return errors;
+}
+
+function validateOverrides(environment, packages, errors) {
+    const value = cleanCell(environment.wpOverrides);
+    if (isNone(value)) {
+        if (environment.wpOverrideEntries.length > 0) {
+            errors.push("Execution environment WP overrides cannot list entries after declaring none.");
+        }
+        return;
+    }
+    if (environment.wpOverrideEntries.length === 0) {
+        errors.push("Execution environment WP overrides must list each override with a justification.");
+        return;
+    }
+    const packageIds = new Set(packages.map((packageRecord) => packageRecord.id));
+    const seen = new Set();
+    for (const line of environment.wpOverrideEntries) {
+        const match = line.trim().match(/^[-*]\s+(WP[1-9][0-9]*):\s*model=([^;]+);\s*reasoning=([^;]+);\s*justification=(.+)$/i);
+        if (!match) {
+            errors.push(`Invalid WP override: ${line.trim()}.`);
+            continue;
+        }
+        const [, id, model, reasoning, justification] = match;
+        if (!packageIds.has(id)) {
+            errors.push(`Execution environment WP override references unknown package: ${id}.`);
+        }
+        if (seen.has(id)) {
+            errors.push(`Execution environment contains duplicate WP override: ${id}.`);
+        }
+        seen.add(id);
+        validateConcreteEnvironmentValue(model, `${id} override model`, errors);
+        validateReasoning(reasoning, `${id} override reasoning`, errors);
+        if (isNone(justification)) {
+            errors.push(`${id} override requires a non-empty justification.`);
+        }
+    }
+}
+
+function validateConcreteEnvironmentValue(value, label, errors) {
+    const cleaned = cleanCell(value);
+    if (!CONCRETE_MODEL_PATTERN.test(cleaned)) {
+        errors.push(`Execution environment ${label} must be a concrete provider/model identifier.`);
+    }
+}
+
+function validateReasoning(value, label, errors) {
+    const cleaned = cleanCell(value).toLowerCase();
+    if (cleaned === "" || cleaned === "none" || cleaned === "unknown" || cleaned === "unspecified") {
+        errors.push(`Execution environment ${label} must be a concrete reasoning level.`);
+    }
+}
+
+function parseProgressRows(section) {
+    const rows = [];
+    const tableLines = section.split(/\r?\n/).filter((line) => line.trim().startsWith("|"));
+    if (tableLines.length === 0) {
+        return rows;
+    }
+    const header = splitTableRow(tableLines[0]);
+    const expectedHeader = ["WP", "Status", "Completed at", "Verification"];
+    if (header.join("\u0000") !== expectedHeader.join("\u0000")) {
+        rows.push({error: "Execution Progress table must use columns: WP, Status, Completed at, Verification."});
+    }
+    for (const line of tableLines.slice(1)) {
+        const cells = splitTableRow(line);
+        if (cells.every((cell) => /^:?-{3,}:?$/.test(cell))) {
+            continue;
+        }
+        if (cells.length !== 4 || !/^WP[1-9][0-9]*$/.test(cells[0])) {
+            rows.push({error: `Invalid Execution Progress row: ${line.trim()}.`});
+            continue;
+        }
+        rows.push({
+            id: cells[0],
+            status: cells[1],
+            completedAt: cells[2],
+            verification: cells[3],
+        });
+    }
+    return rows;
+}
+
+function splitTableRow(line) {
+    const trimmed = line.trim();
+    const cells = trimmed.endsWith("|") ? trimmed.split("|").slice(1, -1) : trimmed.split("|").slice(1);
+    return cells.map((cell) => cleanCell(cell));
+}
+
+function labeledBlock(section, label) {
+    const lines = section.split(/\r?\n/);
+    const start = lines.findIndex((line) => new RegExp(`^\\s*-\\s+${escapeRegex(label)}:\\s*`).test(line));
+    if (start < 0) {
+        return {value: "", nested: []};
+    }
+    const valueMatch = lines[start].match(new RegExp(`^\\s*-\\s+${escapeRegex(label)}:\\s*(.*)$`));
+    const nested = [];
+    for (let index = start + 1; index < lines.length; index += 1) {
+        const line = lines[index];
+        if (/^\s*$/.test(line)) {
+            continue;
+        }
+        if (/^\s+-\s+/.test(line)) {
+            nested.push(line.trim());
+            continue;
+        }
+        break;
+    }
+    return {value: valueMatch?.[1]?.trim() ?? "", nested};
+}
+
+function cleanCell(value) {
+    return String(value ?? "").trim().replace(/^`(.*)`$/, "$1").trim();
+}
+
+function isIsoDate(value) {
+    if (!DATE_PATTERN.test(value)) {
+        return false;
+    }
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(`${value}T`);
+}
+
+function countExactHeading(body, marker, heading) {
+    return [...body.matchAll(new RegExp(`^${escapeRegex(marker)} ${escapeRegex(heading)}\\s*$`, "gm"))].length;
 }
 
 export function parseQuestions(body) {
@@ -366,7 +686,53 @@ function validatePackage(packageRecord) {
     if (isNone(values.get("Confirmed paths")) && isNone(values.get("Discovery required"))) {
         errors.push(`${packageRecord.id} requires confirmed paths or concrete discovery required.`);
     }
+    if (!new Set(["small", "medium", "large"]).has(cleanCell(values.get("Estimated size")).toLowerCase())) {
+        errors.push(`${packageRecord.id} Estimated size must be small, medium or large.`);
+    }
     return errors;
+}
+
+function validatePackageDependencies(packages) {
+    const errors = [];
+    const packageIds = new Set(packages.map((packageRecord) => packageRecord.id));
+    const dependenciesById = new Map();
+
+    for (const packageRecord of packages) {
+        const dependencies = packageDependencies(packageRecord);
+        dependenciesById.set(packageRecord.id, dependencies.filter((dependency) => packageIds.has(dependency) && dependency !== packageRecord.id));
+        for (const dependency of dependencies) {
+            if (!packageIds.has(dependency)) {
+                errors.push(`${packageRecord.id} dependency references unknown package: ${dependency}.`);
+            } else if (dependency === packageRecord.id) {
+                errors.push(`${packageRecord.id} cannot depend on itself.`);
+            }
+        }
+    }
+
+    const visiting = new Set();
+    const visited = new Set();
+    const hasCycle = (id) => {
+        if (visiting.has(id)) {
+            return true;
+        }
+        if (visited.has(id)) {
+            return false;
+        }
+        visiting.add(id);
+        const cyclic = (dependenciesById.get(id) ?? []).some(hasCycle);
+        visiting.delete(id);
+        visited.add(id);
+        return cyclic;
+    };
+    if (packages.some((packageRecord) => hasCycle(packageRecord.id))) {
+        errors.push("Work package dependencies must not contain a cycle.");
+    }
+    return errors;
+}
+
+function packageDependencies(packageRecord) {
+    const value = packageRecord.body.match(/^\s*-\s+Dependencies:\s*(.*)$/m)?.[1] ?? "";
+    return [...new Set(value.match(/\bWP[1-9][0-9]*\b/g) ?? [])];
 }
 
 function validateLabeledSection(body, heading, fields, label, options = {}) {
@@ -415,8 +781,19 @@ function extractSection(body, heading) {
     return body.slice(start, end >= 0 ? end : body.length);
 }
 
+function extractSubsection(section, heading) {
+    const startMatch = new RegExp(`^### ${escapeRegex(heading)}\\s*$`, "m").exec(section);
+    if (!startMatch) {
+        return "";
+    }
+    const start = startMatch.index + startMatch[0].length;
+    const end = section.indexOf("\n### ", start);
+    return section.slice(start, end >= 0 ? end : section.length);
+}
+
 function labeledValue(lines, label) {
-    const match = lines.join("\n").match(new RegExp(`^\\s*-\\s+${escapeRegex(label)}:\\s*(.*)$`, "m"));
+    const content = Array.isArray(lines) ? lines.join("\n") : String(lines ?? "");
+    const match = content.match(new RegExp(`^\\s*-\\s+${escapeRegex(label)}:\\s*(.*)$`, "m"));
     return match?.[1]?.trim() ?? "";
 }
 
