@@ -5,9 +5,9 @@
         "lint:js": "eslint",
         "lint:js:fix": "eslint --fix",
         "lint:js:fix:dry": "eslint --fix-dry-run",
-        "test": "vitest run --project unit",
+        "test": "vitest run --project unit --project integration",
         "test:integration": "vitest run --project integration",
-        "test:all": "vitest run --project unit --project integration"
+        "test:unit": "vitest run --project unit"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
