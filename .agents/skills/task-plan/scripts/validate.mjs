@@ -87,6 +87,7 @@ export function validatePlanDocument(markdown, options = {}) {
     errors.push(...validateMetadata(parsed.metadata));
     errors.push(...validateRequiredSections(parsed.body));
     errors.push(...validatePlaceholders(parsed.body));
+    errors.push(...validateNamedBullets(parsed.body));
     errors.push(...validateLabeledSection(
         parsed.body,
         "Source assessment",
@@ -315,6 +316,36 @@ function validatePlaceholders(body) {
     return PLACEHOLDER_PATTERNS
         .filter((pattern) => pattern.test(body))
         .map((pattern) => `Plan contains placeholder matching ${pattern}.`);
+}
+
+function validateNamedBullets(body) {
+    const errors = [];
+    const lines = body.split("\n");
+    let fence = null;
+
+    for (const line of lines) {
+        if (fence !== null) {
+            if (new RegExp(`^\\s*${fence.character}{${fence.length},}\\s*$`).test(line)) {
+                fence = null;
+            }
+            continue;
+        }
+
+        const opening = line.match(/^\s*(`{3,}|~{3,})/);
+        if (opening) {
+            fence = {character: opening[1][0], length: opening[1].length};
+            continue;
+        }
+
+        if (/^\s*-\s+/.test(line) && !/^\s*-\s+\S(?:[^:\r\n]*\S)?: /.test(line)) {
+            errors.push(`Bullet must have a name followed by ": ": ${line.trim()}.`);
+        }
+    }
+
+    if (fence !== null) {
+        errors.push("Plan contains an unclosed fenced code block.");
+    }
+    return errors;
 }
 
 function validatePackage(packageRecord) {

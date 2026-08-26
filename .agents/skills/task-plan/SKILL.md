@@ -194,6 +194,80 @@ Zapisz pełny dokument przez `<skill_dir>/scripts/store.mjs`. Każda aktualizacj
 zastępuje cały Markdown; nie podmieniaj wybranych sekcji i nie utrzymuj drugiej
 kopii work packages w JSON.
 
+### Deterministyczna edycja istniejącego planu
+
+Do punktowej aktualizacji już zapisanego planu używaj
+`<skill_dir>/scripts/edit.mjs`, zamiast tworzyć doraźne skrypty oparte na
+zamianie tekstu. Każdy punkt w sekcji planu musi mieć nazwę przed `: `:
+
+```md
+- <nazwa-oraz-id>: <wartość>
+- R3 [medium]: <wartość>
+```
+
+Nazwa może być identyfikatorem (`R3`, `A2`, `Q5`) albo nazwą pola
+(`Dependencies`, `Evidence gate`). Helper operuje wyłącznie na tej strukturze:
+
+```text
+<skill_dir>/scripts/edit.mjs add-bullet
+  --file ./docs/plan/<plan>.md
+  (--section <dokładna sekcja> | --work-package <WP<number>>)
+  --id <nazwa>
+  --value <jednoliniowa wartość>
+  [--status <status>]
+
+<skill_dir>/scripts/edit.mjs edit-bullet
+  --file ./docs/plan/<plan>.md
+  (--section <dokładna sekcja> | --work-package <WP<number>>)
+  --id <nazwa>
+  [--value <jednoliniowa wartość>]
+  [--status <status>]
+
+<skill_dir>/scripts/edit.mjs remove-bullet
+  --file ./docs/plan/<plan>.md
+  (--section <dokładna sekcja> | --work-package <WP<number>>)
+  --id <nazwa>
+
+<skill_dir>/scripts/edit.mjs answer-question
+  --file ./docs/plan/<plan>.md
+  --id Q<number>
+  --answer <jednoliniowa odpowiedź>
+
+<skill_dir>/scripts/edit.mjs add-question
+  --file ./docs/plan/<plan>.md
+  --id Q<number>
+  --prompt <jednoliniowe pytanie>
+  --status <open|answered>
+  [--answer <jednoliniowa odpowiedź>]
+
+<skill_dir>/scripts/edit.mjs edit-question
+  --file ./docs/plan/<plan>.md
+  --id Q<number>
+  [--prompt <jednoliniowe pytanie>]
+  [--status <open|answered>]
+  [--answer <jednoliniowa odpowiedź>]
+
+<skill_dir>/scripts/edit.mjs remove-question
+  --file ./docs/plan/<plan>.md
+  --id Q<number>
+```
+
+`add-bullet` wymaga nowego identyfikatora, a `edit-bullet` i `remove-bullet`
+wymagają identyfikatora istniejącego dokładnie raz. `--section` i
+`--work-package` są wzajemnie wykluczające. Automatyczna flaga `--next` nie jest
+obsługiwana: identyfikator nadaje wywołujący, dzięki czemu punkty nazwane nie
+muszą być sztucznie numerowane. Pytania `Q<number>` są blokami z podpunktami
+`Answer` i `Source`, więc obsługują je wyłącznie wrappery pytaniowe. `edit-question`
+zmienia prompt, status i/lub odpowiedź (przejście do `answered` wymaga
+odpowiedzi), a `remove-question` usuwa cały blok pytania.
+
+`edit.mjs` wymaga kanonicznego pliku planu, jednoznacznego selektora i
+zwalidowanego dokumentu. Brak albo duplikat sekcji, WP, punktu lub pytania kończy
+operację bez zapisu. Po udanej transformacji zapis i frontmatter przechodzą
+przez `<skill_dir>/scripts/store.mjs`; `--dry-run` wykonuje tę samą walidację bez
+zapisu. Helper nie interpretuje dowolnego Markdowna i nie stosuje heurystycznego
+wyszukiwania fragmentów tekstu.
+
 Wymagane sekcje:
 
 ```text
