@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import test from "node:test";
+import {it} from "vitest";
 
-import {applyOperation, editPlan} from "./edit.mjs";
-import {buildPlanId, normalizeUserInput, persistSource} from "./source.mjs";
-import {savePlan} from "./store.mjs";
-import {validatePlanDocument} from "./validate.mjs";
+import {applyOperation, editPlan} from "../../../.agents/skills/task-plan/scripts/edit.mjs";
+import {buildPlanId, normalizeUserInput, persistSource} from "../../../.agents/skills/task-plan/scripts/source.mjs";
+import {savePlan} from "../../../.agents/skills/task-plan/scripts/store.mjs";
+import {validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
 
 const BASE_BODY = `# Fixture plan
 
@@ -95,7 +95,7 @@ function cleanup(fixture) {
     fs.rmSync(fixture.root, {recursive: true, force: true});
 }
 
-test("edit-bullet selects a WP bullet and persists through store", () => {
+it("edit-bullet selects a WP bullet and persists through store", () => {
     const fixture = createFixture();
     try {
         const result = editPlan({
@@ -117,7 +117,7 @@ test("edit-bullet selects a WP bullet and persists through store", () => {
     }
 });
 
-test("CLI exposes structural selectors and rejects legacy options", () => {
+it("CLI exposes structural selectors and rejects legacy options", () => {
     const fixture = createFixture();
     try {
         const edited = spawnSync(process.execPath, [
@@ -162,7 +162,7 @@ test("CLI exposes structural selectors and rejects legacy options", () => {
     }
 });
 
-test("add-bullet creates a named bullet with an optional status", () => {
+it("add-bullet creates a named bullet with an optional status", () => {
     const result = applyOperation(BASE_BODY, {
         type: "add-bullet",
         section: "Risks and discovery debt",
@@ -175,7 +175,7 @@ test("add-bullet creates a named bullet with an optional status", () => {
     assert.match(result.body, /- R2 \[medium\]: The new operation needs a focused test\./);
 });
 
-test("remove-bullet removes one named bullet", () => {
+it("remove-bullet removes one named bullet", () => {
     const result = applyOperation(BASE_BODY, {
         type: "remove-bullet",
         section: "Risks and discovery debt",
@@ -186,7 +186,7 @@ test("remove-bullet removes one named bullet", () => {
     assert.equal(result.body.includes("- R1 [low]:"), false);
 });
 
-test("bullet operations require one container and keep question blocks semantic", () => {
+it("bullet operations require one container and keep question blocks semantic", () => {
     assert.throws(
         () => applyOperation(BASE_BODY, {
             type: "add-bullet",
@@ -225,7 +225,7 @@ test("bullet operations require one container and keep question blocks semantic"
     );
 });
 
-test("answer-question changes an open question into an answered question", () => {
+it("answer-question changes an open question into an answered question", () => {
     const result = applyOperation(BASE_BODY, {
         type: "answer-question",
         id: "Q1",
@@ -238,7 +238,7 @@ test("answer-question changes an open question into an answered question", () =>
     assert.match(result.body, /  - Source: current conversation/);
 });
 
-test("add-question inserts a structurally addressed question", () => {
+it("add-question inserts a structurally addressed question", () => {
     const result = applyOperation(BASE_BODY, {
         type: "add-question",
         id: "Q2",
@@ -252,7 +252,7 @@ test("add-question inserts a structurally addressed question", () => {
     assert.match(result.body, /  - Answer: Yes\./);
 });
 
-test("edit-question changes the semantic question block", () => {
+it("edit-question changes the semantic question block", () => {
     const answered = applyOperation(BASE_BODY, {
         type: "edit-question",
         id: "Q1",
@@ -275,7 +275,7 @@ test("edit-question changes the semantic question block", () => {
     assert.equal(reopened.body.includes("  - Source: current conversation"), false);
 });
 
-test("remove-question removes the complete semantic block", () => {
+it("remove-question removes the complete semantic block", () => {
     const answered = applyOperation(BASE_BODY, {
         type: "edit-question",
         id: "Q1",
@@ -292,7 +292,7 @@ test("remove-question removes the complete semantic block", () => {
     assert.match(result.body, /## Decisions and open questions/);
 });
 
-test("duplicate and missing structural targets fail closed", () => {
+it("duplicate and missing structural targets fail closed", () => {
     const duplicate = BASE_BODY.replace(
         "- Goal: Exercise a deterministic edit.",
         "- Goal: Exercise a deterministic edit.\n- Goal: Duplicate.",
@@ -318,7 +318,7 @@ test("duplicate and missing structural targets fail closed", () => {
     );
 });
 
-test("plan validation rejects unnamed bullets but ignores fenced examples", () => {
+it("plan validation rejects unnamed bullets but ignores fenced examples", () => {
     const fixture = createFixture();
     try {
         const markdown = fs.readFileSync(fixture.file, "utf8");
@@ -348,7 +348,7 @@ test("plan validation rejects unnamed bullets but ignores fenced examples", () =
     }
 });
 
-test("editPlan does not write when the selected target is missing", () => {
+it("editPlan does not write when the selected target is missing", () => {
     const fixture = createFixture();
     try {
         const before = fs.readFileSync(fixture.file, "utf8");
@@ -370,7 +370,7 @@ test("editPlan does not write when the selected target is missing", () => {
     }
 });
 
-test("text resembling a field inside a fenced block is not selected", () => {
+it("text resembling a field inside a fenced block is not selected", () => {
     const body = BASE_BODY.replace(
         "## Risks and discovery debt",
         "```text\n- Goal: fake field\n```\n\n## Risks and discovery debt",
@@ -386,7 +386,7 @@ test("text resembling a field inside a fenced block is not selected", () => {
     assert.equal(result.body.includes("- Goal: Updated."), true);
 });
 
-test("dry-run never writes the proposed structural edit", () => {
+it("dry-run never writes the proposed structural edit", () => {
     const fixture = createFixture();
     try {
         const before = fs.readFileSync(fixture.file, "utf8");
@@ -408,7 +408,7 @@ test("dry-run never writes the proposed structural edit", () => {
     }
 });
 
-test("dry-run validates the candidate plan before reporting success", () => {
+it("dry-run validates the candidate plan before reporting success", () => {
     const fixture = createFixture();
     try {
         const before = fs.readFileSync(fixture.file, "utf8");

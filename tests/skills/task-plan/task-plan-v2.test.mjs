@@ -67,7 +67,7 @@ The requested behavior is in scope. Unrelated refactors are out of scope.
 
 ## Source coverage
 
-- Point 1 → WP1
+- Point 1: WP1
 
 ## Work packages
 
