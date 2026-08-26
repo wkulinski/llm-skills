@@ -18,8 +18,8 @@ docs/HANDOFF.md
 default-reviewers.txt
 .agents/project_path.txt
 
-/docs/draft/
-/docs/plan/
+/docs/drafts/
+/docs/plans/
 
 /var/
 /.owe/

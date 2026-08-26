@@ -6,6 +6,7 @@ This repository stores reusable LLM skills under `.agents/skills/`.
 - Skill instructions live in `.agents/skills/<skill-name>/SKILL.md`.
 - Optional helper scripts live in `.agents/skills/<skill-name>/scripts/`.
 - Tests for repository tooling live in `tests/skills/`.
+- Ready execution plans live in `docs/plans/`; working drafts remain in `docs/drafts/`.
 
 ## Documentation Map
 - [Skills index](./SKILLS.md)

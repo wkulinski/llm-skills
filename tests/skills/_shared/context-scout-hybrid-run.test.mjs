@@ -473,7 +473,13 @@ test("valid blocked report is classified as retryable agent incompleteness throu
         coverage: [{criterion_id: "C1", status: "blocked", reason: "source was not available"}],
     }));
 
-    const evaluation = evaluateAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: primary.dispatchToken});
+    const evaluation = evaluateAttempt({
+        state: prepared.statePath,
+        "run-id": prepared.runId,
+        attempt: "primary",
+        token: primary.dispatchToken,
+        "duration-ms": "0",
+    });
     assert.equal(evaluation.validation.schemaValid, true);
     assert.equal(evaluation.validation.status, "BLOCKED");
     assert.equal(evaluation.failure_class, FAILURE_CLASSES.AGENT_INCOMPLETE);

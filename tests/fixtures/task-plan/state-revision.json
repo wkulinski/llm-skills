@@ -1,7 +1,7 @@
 {
   "plan": {
     "plan_id": "state-revision",
-    "draft_path": "docs/plan/state-revision.md",
+    "draft_path": "docs/plans/state-revision.md",
     "source_identity": "user:state-revision",
     "plan_version": 7
   },

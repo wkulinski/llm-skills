@@ -29,7 +29,7 @@ export function resolvePlanPaths({repoRoot = process.cwd(), sourceIdentity, plan
         sourcePath: sourcePaths.artifactPath,
         draftPath: resolveInside(
             sourcePaths.repoRoot,
-            path.join(sourcePaths.repoRoot, "docs", "plan", `${sourcePaths.planId}.md`),
+            path.join(sourcePaths.repoRoot, "docs", "plans", `${sourcePaths.planId}.md`),
             "draft_path",
         ),
     };
