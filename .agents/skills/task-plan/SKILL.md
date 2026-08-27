@@ -19,6 +19,7 @@ shared_files:
   - _shared/scripts/read-purpose.mjs
   - _shared/scripts/secret-detector.mjs
   - _shared/scripts/slugify-title.mjs
+  - _shared/scripts/model-hierarchy.mjs
 ---
 
 # `$task-plan`
@@ -70,65 +71,67 @@ błąd struktury lub evidence  → invalid
 `ready` oznacza kompletny plan bez otwartych blockerów. Nie oznacza zgody na
 implementację. Implementacja wymaga osobnego, jawnego polecenia użytkownika.
 
-Każdy plan gotowy do implementacji zawiera także kontrakt wykonania w dwóch
-sekcjach Markdown. `## Execution environment` zapisuje konkretną rekomendację
-środowiska, źródło rankingu, dozwolone rodziny modeli i opcjonalne, uzasadnione
-override'y WP. `## Execution` przechowuje status, następny WP, tabelę postępu i
-log wykonania. To nadal jest część jednego planu, nie osobny stan.
+Każdy plan gotowy do implementacji zawiera rekomendowane środowisko oraz prosty,
+binarny kontrakt wykonania. Nie zapisuje stanów sesji, batchy ani przejść
+pośrednich.
 
-Minimalny format środowiska:
+Minimalny format:
 
 ```md
 ## Execution environment
 
-- Ranking source: https://aicodingdaily.com/leaderboard
-- Ranking updated at: YYYY-MM-DD
-- Assessed at: YYYY-MM-DD
-- Allowed model families: OpenAI, DeepSeek, Tencent
-- Qwen policy: frontend-design only
-- Project family override: none
 - Default model: provider/model
 - Default reasoning: concrete-level
-- Escalation model: provider/model
-- Escalation reasoning: concrete-level
-- Escalation trigger: justified condition
 - WP overrides: none
+
+## Execution
+
+- [ ] WP1
+- [ ] WP2
 ```
 
-`Project family override` oraz pola escalation są opcjonalne; jeśli występują,
-muszą być konkretne. `WP overrides: none` można zastąpić listą:
+Kolejność wpisów jest kolejnością wykonania. Ukończenie zapisuje wyłącznie
+task-plan przez zmianę `[ ]` na `[x]` wraz z datą i krótkim evidence:
+
+```md
+- [x] WP1 — 2026-08-27 — focused test passed
+```
+
+Niezakończony lub zablokowany WP pozostaje `[ ]`.
+
+`WP overrides: none` można zastąpić uzasadnioną listą:
 
 ```md
 - WP overrides:
-  - WP<n>: model=provider/model; reasoning=concrete-level; justification=...
+  - WP2: model=provider/model; reasoning=concrete-level; justification=why this WP needs it
 ```
 
-Walidacja sprawdza strukturę i metadane bez sieci. Dostępność modelu oraz
-widoczność wariantu reasoning sprawdza dopiero executor.
+Po oszacowaniu WP task-plan wybiera z lokalnej hierarchii najsłabszy profil,
+który według oceny agenta wystarczy do realizacji celu, discovery, kryteriów i
+weryfikacji. Zapisuje go jako rekomendację wykonawczą; override stosuje tylko,
+gdy konkretny WP wymaga silniejszego profilu. Walidacja jest lokalna: nie pobiera
+leaderboardu i nie sprawdza dostępności modelu w sieci.
 
-Minimalny ledger wykonania:
+Rekomendacja musi wskazywać profil obecny w project-relative konfiguracji
+`.agents/config/model-hierarchy.json`. Profile są uporządkowane od najsilniejszego
+do najsłabszego, jak w leaderboardzie:
 
-```md
-## Execution
-
-- Status: not_started
-- Next WP: WP1
-
-### Progress
-
-| WP | Status | Completed at | Verification |
-|---|---|---|---|
-| WP1 | pending | none | none |
-
-### Execution log
-
-No execution entries have been recorded.
+```json
+{
+  "version": 1,
+  "order": "strongest-to-weakest",
+  "profiles": [
+    {"model": "provider/model-b", "reasoning": "high"},
+    {"model": "provider/model-b", "reasoning": "medium"},
+    {"model": "provider/model-a", "reasoning": "medium"}
+  ]
+}
 ```
 
-Na starcie status to `not_started`, każdy WP ma status `pending`, a `Next WP`
-wskazuje pierwszy zdefiniowany WP. Executor może później zapisać
-`in_progress`, `blocked` albo `complete`; WP oznacza jako `done` wyłącznie
-razem z datą i krótkim dowodem w kolumnie `Verification`.
+Brak konfiguracji, duplikat albo rekomendacja spoza hierarchii blokuje
+walidację. Nie zgaduj pozycji modelu i nie dopisuj profilu automatycznie.
+Szablon do skopiowania znajduje się w
+`<skills_root>/plan-execute/model-hierarchy.json.dist`.
 
 ## Trigger i źródła
 
@@ -263,7 +266,7 @@ Wymagane sekcje:
 ## Direction, simplicity and consistency
 ## Source coverage
 ## Work packages
-## Order and dependencies
+## Order
 ## Decisions and open questions
 ## Risks and discovery debt
 ## Acceptance and verification
@@ -312,7 +315,6 @@ Każdy pakiet używa nagłówka `### WP<number> — <tytuł>` i zawiera:
 - Confirmed paths:
 - Candidate paths:
 - Discovery required:
-- Dependencies:
 - Estimated size: `small`, `medium` albo `large`
 - Acceptance criteria:
 - Verification:
@@ -322,10 +324,12 @@ Puste kategorie zapisuj jako `none`. `Candidate paths` są hipotezami i nie mog�
 być przedstawione w handoffie jako potwierdzone. Jeśli ścieżka nie została
 potwierdzona, użyj konkretnego `Discovery required` zamiast zgadywania.
 
-`Estimated size` jest jedyną deklaracją rozmiaru potrzebną do dynamicznego
-batchowania. Nie oznacza stałego podziału sesji: executor łączy eligible WP
-według rozmiaru, zależności, postępu, dostępnego środowiska i pozostałego
-kontekstu.
+`Estimated size` jest szacunkiem planistycznym przekazywanym wykonawcy. Nie
+steruje batchingiem ani trwałym stanem wykonania.
+
+Kolejność WP w dokumencie jest kolejnością wykonania. Sekcja
+`Order` może krótko uzasadnić kolejność wykonania, ale nie jest wejściem do
+osobnego grafu ani mechanizmu batchowania.
 
 `Source coverage` mapuje każdy punkt źródła do WP albo jawnie uzasadnionego
 wyłączenia. Nie twórz WP dla samej ceremonii procesu.
@@ -340,7 +344,7 @@ Wykonaj jeden review odpowiadający na pytania:
 4. Czy plan używa istniejących wzorców zamiast równoległego rozwiązania?
 5. Czy mniejsza zmiana osiągnęłaby ten sam rezultat?
 6. Czy WP nie dublują odpowiedzialności, stanu, algorytmu ani integracji?
-7. Czy ownership, zależności i założenia są spójne między wszystkimi WP?
+7. Czy ownership, kolejność i założenia są spójne między wszystkimi WP?
 8. Czy każde kryterium akceptacji ma konkretny test albo check?
 
 Zapisz wynik w `Direction, simplicity and consistency`, a następnie wprowadź
@@ -465,7 +469,8 @@ Publiczne role:
 
 - `source.mjs`: normalizacja GitHub/file/user input, bezpieczny odczyt i trwały
   source artifact;
-- `store.mjs`: stabilny plan ID, pełny atomowy zapis Markdowna i resume;
+- `store.mjs`: stabilny plan ID, pełny atomowy zapis Markdowna, resume i
+  oznaczanie ukończenia pojedynczego WP;
 - `validate.mjs`: strukturalna bramka `ready`, bez udawania oceny semantycznej;
 - `atomic-file.mjs`: atomowy zapis pojedynczego artefaktu.
 
@@ -475,6 +480,7 @@ Minimalny przebieg CLI:
 node <skill_dir>/scripts/source.mjs persist --input ./source.json --root "$PWD"
 node <skill_dir>/scripts/store.mjs save --input ./plan-input.json
 node <skill_dir>/scripts/store.mjs load --source-identity 'owner/repository#123' --root "$PWD"
+node <skill_dir>/scripts/store.mjs complete-wp --file ./docs/plans/<plan-id>.md --wp WP1 --evidence "focused test passed" --root "$PWD"
 node <skill_dir>/scripts/validate.mjs validate --file ./docs/plans/<plan-id>.md --root "$PWD"
 ```
 
