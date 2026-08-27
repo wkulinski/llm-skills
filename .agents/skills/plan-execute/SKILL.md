@@ -1,11 +1,12 @@
 ---
 name: plan-execute
 description: >-
-  Wykonuje gotowy plan task-plan sekwencyjnie: wybiera pierwszy niezakończony
-  work package, przekazuje go do code-implement i zleca task-plan zapis ukończenia
-  wraz z dowodem. Nie utrzymuje pośrednich statusów, batchy ani grafu zależności.
+  Wykonuje gotowy, zwalidowany plan task-plan sekwencyjnie: wybiera pierwszy
+  niezakończony work package, przekazuje go do code-implement i zleca
+  task-plan zapis ukończenia wraz z dowodem. Użyj, gdy użytkownik chce
+  zrealizować istniejący plan (utworzony przez skill task-plan) krok po kroku,
+  a nie tworzyć nowy plan ani implementować pojedynczej zmiany.
 shared_files:
-  - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/model-hierarchy.mjs
 ---
 
@@ -22,8 +23,7 @@ Odpowiedzialności są rozdzielone jednoznacznie:
   atomowego zapisu planu;
 - `$plan-execute` rozwiązuje ścieżkę i wybiera pierwszy niezakończony WP;
 - `$code-implement` implementuje i weryfikuje dokładnie jeden WP;
-- `$plan-execute` nie edytuje Markdowna samodzielnie, tylko wywołuje operację
-  `complete-wp` należącą do task-plan.
+- `$plan-execute` nie edytuje Markdowna samodzielnie, tylko wywołuje operację `complete-wp` należącą do task-plan.
 
 ## Kontrakt wykonania
 
@@ -54,10 +54,20 @@ stan `$code-implement` służą do wznowienia implementacji, ale nie są drugim
    `${CACHE_PATH:-var/agent/cache}/plan-execute/last-plan.txt`.
 3. Pointer musi zawierać dokładnie jedną repo-relative ścieżkę do
    `docs/plans/*.md`.
-4. Po poprawnym rozwiązaniu jawnej ścieżki zapisz ją jako pointer do wznowienia.
+4. Każde rozwiązanie planu — jawne (z podanej ścieżki) lub pośrednie (z
+   pointera) — odświeża plik `last-plan.txt` bieżącą ścieżką, co pozwala na
+   wznowienie w następnej sesji.
 
 Pointer jest wyłącznie lokalnym skrótem do ostatniego planu. Nie zawiera statusu
 ani kopii work packages.
+
+**Uwaga — plan musi być kanonicznym plikiem task-plan.** `execute.mjs` odczytuje
+plan przez API task-plan, które wiąże ścieżkę pliku z `source_identity` z
+frontmatteru. Jeśli wskażesz plik skopiowany lub przemianowany (o innej nazwie niż
+kanoniczna `docs/plans/<plan-id>.md` wynikająca z `source_identity`), kroki `next`
+i `check-environment` zakończą się błędem `NON_CANONICAL_PLAN_PATH`, mimo że samo
+rozwiązanie ścieżki się powiedzie. Używaj ścieżki zwróconej przez task-plan lub
+zapisanej w pointerze.
 
 ## Workflow
 
@@ -73,18 +83,9 @@ node <skills_root>/task-plan/scripts/validate.mjs validate \
   --root "$PWD"
 ```
 
-Nie powtarzaj w tym skillu listy wymaganych sekcji i pól. Ich jedynym źródłem
-prawdy jest walidator task-plan.
-
 ### 2. Wybór WP
 
-Wybierz dokładnie pierwszy niezaznaczony WP w kolejności dokumentu. Nie:
-
-- buduj grafu zależności;
-- wyszukuj równoległych albo niezależnych WP;
-- twórz dynamicznego batcha;
-- przeliczaj rozmiaru WP na budżet kontekstu;
-- zapisuj `Next WP`.
+Wybierz dokładnie pierwszy niezaznaczony WP w kolejności dokumentu.
 
 Pomocnicza komenda:
 
@@ -94,7 +95,7 @@ node <skill_dir>/scripts/execute.mjs next --path ./docs/plans/<plan-id>.md
 
 Wynik zawiera także `Estimated size` oraz rekomendowane `model` i `reasoning`.
 Override przypisany do WP ma pierwszeństwo przed wartościami domyślnymi planu.
-Rozmiar jest informacją dla wykonawcy; nie służy do automatycznego batchowania.
+Rozmiar jest informacją dla wykonawcy.
 
 Przed implementacją odczytaj faktycznie ustawiony model i reasoning z bieżącego
 środowiska, a następnie uruchom deterministyczny preflight:
@@ -113,7 +114,9 @@ lub wyższy profil. Brak bieżącego reasoning albo profil spoza konfiguracji je
 jawnym błędem; nie zgaduj pozycji. Nie pobieraj leaderboardu ani innych danych z
 sieci.
 
-Szablon konfiguracji znajduje się w
+Wymaganie wstępne: w projekcie musi istnieć `.agents/config/model-hierarchy.json`
+(skopiuj szablon poniżej); w przeciwnym razie `check-environment` zgłosi
+`MODEL_HIERARCHY_NOT_FOUND`. Szablon konfiguracji znajduje się w
 `<skill_dir>/model-hierarchy.json.dist`. Skopiuj go do projektu i usuń przykładowe
 profile:
 
@@ -122,9 +125,7 @@ mkdir -p .agents/config
 cp <skill_dir>/model-hierarchy.json.dist .agents/config/model-hierarchy.json
 ```
 
-Szablon pozostaje zwykłym JSON-em i używa pól `_comment`. Nie stosujemy JSONC,
-ponieważ runtime korzysta z natywnego, ścisłego `JSON.parse`; obsługa komentarzy
-wymagałaby dodatkowego parsera albo podatnego na błędy usuwania komentarzy.
+Szablon pozostaje zwykłym JSON-em i zamiast komentarzy używa pól `_comment`.
 
 ### 3. Implementacja
 
@@ -137,8 +138,6 @@ jest źródłem prawdy dla:
 - punktowego testu lub checku;
 - `$review-quick`;
 - raportowania blockera.
-
-Nie kopiuj jego bramki, stanów ani polityki testów do tego skilla.
 
 ### 4. Zapis ukończenia
 
@@ -167,8 +166,7 @@ Jeśli implementacja lub weryfikacja nie zakończyła się powodzeniem, nie wyko
 ### 5. Kontynuacja
 
 Po ukończeniu WP możesz ponownie wybrać pierwszy wpis `[ ]`, jeśli kontynuacja w
-tej samej sesji jest rozsądna. Nie zapisuj decyzji o kontynuacji jako batcha.
-Jeśli nie ma kolejnego wpisu `[ ]`, zgłoś ukończenie planu.
+tej samej sesji jest rozsądna. Jeśli nie ma kolejnego wpisu `[ ]`, zgłoś ukończenie planu.
 
 ## Helper `execute.mjs`
 
@@ -178,17 +176,17 @@ Helper jest małą fasadą orkiestracyjną. Obsługuje tylko:
 resolve  — rozwiąż ścieżkę i pointer
 next     — zwróć pierwszy niezakończony WP
 check-environment — porównaj bieżący profil z wymaganiem WP
-complete — deleguj zapis ukończenia do task-plan
 ```
 
-Nie implementuje walidatora, rendererów Markdown, zewnętrznego rankingu modeli,
-wyboru testów ani maszyny stanów. Porównuje tylko dwie pozycje z lokalnej,
-zwalidowanej hierarchii.
+Porównuje tylko dwie pozycje z lokalnej, zwalidowanej hierarchii.
 
 ## Warunki przerwania
 
 - brak planu lub niepoprawny pointer;
 - walidator task-plan nie zwraca `ready`;
+- brak pliku `.agents/config/model-hierarchy.json` (skopiuj szablon
+  `model-hierarchy.json.dist` do projektu) — `check-environment` kończy się błędem
+  `MODEL_HIERARCHY_NOT_FOUND`;
 - rekomendowany model albo reasoning nie jest dostępny w bieżącym środowisku;
 - wybrany WP wymaga decyzji użytkownika albo zmiany planu;
 - `$code-implement` nie zakończył WP lub nie dostarczył evidence;
