@@ -5,7 +5,7 @@ import path from "node:path";
 import {pathToFileURL} from "node:url";
 
 import {compareModelProfiles, loadModelHierarchy} from "../../_shared/scripts/model-hierarchy.mjs";
-import {completeWorkPackage, loadPlanFile} from "../../task-plan/scripts/store.mjs";
+import {loadPlanFile} from "../../task-plan/scripts/store.mjs";
 import {
     parseExecutionContract,
     parseExecutionEnvironment,
@@ -198,7 +198,6 @@ function usage() {
         "  execute.mjs resolve [--path <plan>] [--root <repo>] [--cache-path <dir>]",
         "  execute.mjs next [--path <plan>] [--root <repo>] [--cache-path <dir>]",
         "  execute.mjs check-environment [--path <plan>] --current-model <model> --current-reasoning <level> [--root <repo>] [--cache-path <dir>]",
-        "  execute.mjs complete --path <plan> --wp <WPn> --evidence <text> [--root <repo>] [--cache-path <dir>]",
     ].join("\n");
 }
 
@@ -220,29 +219,17 @@ async function main(argv) {
         result = {path: resolved.relative, source: resolved.source};
     } else if (command === "next") {
         result = selectNextWorkPackage(loadExecutionPlan({planPath: resolved.absolute, repoRoot}));
-    } else if (command === "check-environment" && args.current_model && args.current_reasoning) {
+    } else if (command === "check-environment") {
+        if (!args.current_model || !args.current_reasoning) {
+            throw new PlanExecuteError(
+                "INVALID_ARGUMENT",
+                "check-environment requires both --current-model and --current-reasoning.",
+            );
+        }
         result = checkExecutionEnvironment(loadExecutionPlan({planPath: resolved.absolute, repoRoot}), {
             currentModel: args.current_model,
             currentReasoning: args.current_reasoning,
         });
-    } else if (command === "complete" && args.wp && args.evidence) {
-        try {
-            const completed = completeWorkPackage({
-                repoRoot,
-                planPath: resolved.absolute,
-                wpId: args.wp,
-                evidence: args.evidence,
-            });
-            result = {
-                action: "completed",
-                changed: completed.changed,
-                workPackage: completed.completed,
-                revision: completed.metadata.revision,
-                path: completed.paths.draft_path,
-            };
-        } catch (error) {
-            throw translateExecutionError(error);
-        }
     } else {
         throw new PlanExecuteError("INVALID_ARGUMENT", usage());
     }
