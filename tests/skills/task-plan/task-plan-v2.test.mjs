@@ -15,7 +15,14 @@ import {
     persistSource,
     SourceError,
 } from "../../../.agents/skills/task-plan/scripts/source.mjs";
-import {loadPlan, resolvePlanPaths, savePlan, StoreError} from "../../../.agents/skills/task-plan/scripts/store.mjs";
+import {
+    completeWorkPackage,
+    loadPlan,
+    loadPlanFile,
+    resolvePlanPaths,
+    savePlan,
+    StoreError,
+} from "../../../.agents/skills/task-plan/scripts/store.mjs";
 import {validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
 import {AtomicWriteError, writeFileAtomic} from "../../../.agents/skills/task-plan/scripts/atomic-file.mjs";
 
@@ -25,7 +32,21 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../.
 function temporaryRepository() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-plan-v2-"));
     fs.mkdirSync(path.join(root, "docs", "plans"), {recursive: true});
+    writeModelHierarchy(root);
     return root;
+}
+
+function writeModelHierarchy(root) {
+    const configDir = path.join(root, ".agents", "config");
+    fs.mkdirSync(configDir, {recursive: true});
+    fs.writeFileSync(path.join(configDir, "model-hierarchy.json"), `${JSON.stringify({
+        version: 1,
+        order: "strongest-to-weakest",
+        profiles: [
+            {model: "deepseek/deepseek-v4", reasoning: "high"},
+            {model: "openai/gpt-5.6-sol", reasoning: "medium"},
+        ],
+    }, null, 2)}\n`, "utf8");
 }
 
 function source(body = "Implement point one.") {
@@ -80,14 +101,13 @@ The requested behavior is in scope. Unrelated refactors are out of scope.
 - Confirmed paths: ${confirmed}
 - Candidate paths: none
 - Discovery required: ${discovery}
-- Dependencies: none
 - Estimated size: medium
 - Acceptance criteria: Existing flow exposes the requested behavior.
 - Verification: Run the focused unit test and inspect the resulting behavior.
 
-## Order and dependencies
+## Order
 
-WP1 has no dependencies.
+WP1 runs first.
 
 ## Decisions and open questions
 
@@ -103,33 +123,13 @@ Run the focused unit test for WP1.
 
 ## Execution environment
 
-- Ranking source: https://aicodingdaily.com/leaderboard
-- Ranking updated at: 2026-08-20
-- Assessed at: 2026-08-24
-- Allowed model families: OpenAI, DeepSeek, Tencent
-- Qwen policy: frontend-design only
-- Project family override: none
-- Default model: openai/gpt-5.6-luna
-- Default reasoning: max
-- Escalation model: openai/gpt-5.6-sol
-- Escalation reasoning: medium
-- Escalation trigger: contract conflict
+- Default model: openai/gpt-5.6-sol
+- Default reasoning: medium
 - WP overrides: none
 
 ## Execution
 
-- Status: not_started
-- Next WP: WP1
-
-### Progress
-
-| WP | Status | Completed at | Verification |
-|---|---|---|---|
-| WP1 | pending | none | none |
-
-### Execution log
-
-No execution entries have been recorded.
+- [ ] WP1
 
 ## Next action
 
@@ -251,46 +251,98 @@ it("writes a ready Markdown plan without sidecar state", () => {
     assert.equal(fs.existsSync(path.join(path.dirname(paths.sourcePath), "state.json")), false);
 });
 
-it("validates the execution environment and one progress row per work package", () => {
+it("requires one execution checkbox per work package", () => {
     const root = temporaryRepository();
     prepareSource(root);
     const valid = savePlan(saveInput(root), {now: NOW});
     assert.equal(valid.validation.valid, true);
     assert.deepEqual(valid.validation.packages.map((packageRecord) => packageRecord.id), ["WP1"]);
 
-    const duplicateRow = completePlanBody().replace(
-        "| WP1 | pending | none | none |",
-        "| WP1 | pending | none | none |\n| WP1 | pending | none | none |",
+    const duplicateEntry = completePlanBody().replace(
+        "- [ ] WP1",
+        "- [ ] WP1\n- [ ] WP1",
     );
     assert.throws(
-        () => savePlan(saveInput(root, {markdown_body: duplicateRow}), {now: NOW}),
+        () => savePlan(saveInput(root, {markdown_body: duplicateEntry}), {now: NOW}),
         (error) => error instanceof StoreError
             && error.code === "INVALID_PLAN"
-            && error.details.errors.some((message) => message.includes("duplicate WP")),
+            && error.details.errors.some((message) => message.includes("duplicate work-package")),
+    );
+
+    const legacyStatus = completePlanBody().replace("- [ ] WP1", "- Status: not_started\n- [ ] WP1");
+    assert.throws(
+        () => savePlan(saveInput(root, {markdown_body: legacyStatus}), {now: NOW}),
+        (error) => error instanceof StoreError
+            && error.code === "INVALID_PLAN"
+            && error.details.errors.some((message) => message.includes("Invalid Execution entry")),
+    );
+
+    const missingEvidence = completePlanBody().replace("- [ ] WP1", "- [x] WP1 — 2026-08-24 — none");
+    assert.throws(
+        () => savePlan(saveInput(root, {markdown_body: missingEvidence}), {now: NOW}),
+        (error) => error instanceof StoreError
+            && error.code === "INVALID_PLAN"
+            && error.details.errors.some((message) => message.includes("concrete verification evidence")),
     );
 });
 
-it("requires concrete model metadata and verification evidence for completed WP", () => {
+it("requires concrete size, model and reasoning recommendations", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const unknownModel = completePlanBody().replace("Default model: openai/gpt-5.6-luna", "Default model: unknown");
+    const invalidSize = completePlanBody().replace("- Estimated size: medium", "- Estimated size: huge");
+    const invalidModel = completePlanBody().replace("- Default model: openai/gpt-5.6-sol", "- Default model: other/unranked");
+    const invalidReasoning = completePlanBody().replace("- Default reasoning: medium", "- Default reasoning: none");
+
+    for (const body of [invalidSize, invalidModel, invalidReasoning]) {
+        assert.throws(
+            () => savePlan(saveInput(root, {markdown_body: body}), {now: NOW}),
+            (error) => error instanceof StoreError && error.code === "INVALID_PLAN",
+        );
+    }
+});
+
+it("requires the project-local model hierarchy", () => {
+    const root = temporaryRepository();
+    fs.unlinkSync(path.join(root, ".agents", "config", "model-hierarchy.json"));
+    prepareSource(root);
+
     assert.throws(
-        () => savePlan(saveInput(root, {markdown_body: unknownModel}), {now: NOW}),
+        () => savePlan(saveInput(root), {now: NOW}),
         (error) => error instanceof StoreError
             && error.code === "INVALID_PLAN"
-            && error.details.errors.some((message) => message.includes("concrete provider/model")),
+            && error.details.errors.some((message) => message.includes("Model hierarchy does not exist")),
     );
+});
 
-    const completed = completePlanBody()
-        .replace("- Status: not_started", "- Status: complete")
-        .replace("- Next WP: WP1", "- Next WP: none")
-        .replace("| WP1 | pending | none | none |", "| WP1 | done | 2026-08-24 | npm test -- tests/skills/task-plan/task-plan-v2.test.mjs |");
-    const validation = validatePlanDocument(
-        `---\nplan_id: "v2-example"\nrevision: 1\nsource_identity: "${source().identity}"\nsource_artifact: "var/agent/task-plan/example.json"\nsource_sha256: "${"a".repeat(64)}"\ncontext_status: "NOT_REQUIRED"\ncontext_report: null\ncontext_report_sha256: null\ncontext_criteria: null\ncontext_criteria_sha256: null\nupdated_at: "${NOW}"\n---\n${completed}`,
-        {repoRoot: root, verifyEvidence: false},
-    );
-    assert.equal(validation.valid, true);
-    assert.equal(validation.errors.some((message) => message.includes("done status requires Verification")), false);
+it("completes a work package through the task-plan store", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const saved = savePlan(saveInput(root), {now: NOW});
+    const completed = completeWorkPackage({
+        repoRoot: root,
+        planPath: saved.paths.draft_path,
+        wpId: "WP1",
+        evidence: "focused unit test passed",
+    }, {now: NOW});
+
+    assert.equal(completed.changed, true);
+    assert.equal(completed.metadata.revision, 2);
+    assert.match(completed.markdown, /- \[x\] WP1 — 2026-08-24 — focused unit test passed/);
+    assert.equal(loadPlanFile({repoRoot: root, planPath: saved.paths.draft_path}).status, "ready");
+});
+
+it("preserves replacement tokens in completion evidence", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const saved = savePlan(saveInput(root), {now: NOW});
+    const completed = completeWorkPackage({
+        repoRoot: root,
+        planPath: saved.paths.draft_path,
+        wpId: "WP1",
+        evidence: "saw $& in output",
+    }, {now: NOW});
+
+    assert.match(completed.markdown, /- \[x\] WP1 — 2026-08-24 — saw \$& in output/);
 });
 
 it("rejects a plan id that does not belong to the source identity", () => {
@@ -370,7 +422,7 @@ it("rejects duplicate work-package and question identifiers", () => {
     const root = temporaryRepository();
     prepareSource(root);
     const duplicatePackage = completePlanBody().replace(
-        "\n## Order and dependencies",
+        "\n## Order",
         `\n### WP1 — Duplicate package
 
 - Source: Point 1
@@ -380,10 +432,10 @@ it("rejects duplicate work-package and question identifiers", () => {
 - Confirmed paths: src/Example.php
 - Candidate paths: none
 - Discovery required: none
-- Dependencies: none
+- Estimated size: small
 - Acceptance criteria: Duplicate acceptance.
 - Verification: Duplicate verification.
-\n## Order and dependencies`,
+\n## Order`,
     );
     const duplicateQuestion = completePlanBody({
         decisions: "- Q1 [open]: First question?\n- Q1 [open]: Duplicate question?",
@@ -395,49 +447,6 @@ it("rejects duplicate work-package and question identifiers", () => {
             (error) => error instanceof StoreError
                 && error.code === "INVALID_PLAN"
                 && error.details.errors.some((message) => message.includes("Duplicate")),
-        );
-    }
-});
-
-it("rejects unknown, self-referencing and cyclic work-package dependencies", () => {
-    const root = temporaryRepository();
-    prepareSource(root);
-    const unknownDependency = completePlanBody().replace("- Dependencies: none", "- Dependencies: WP99");
-    const selfDependency = completePlanBody().replace("- Dependencies: none", "- Dependencies: WP1");
-    const cyclicDependencies = completePlanBody()
-        .replace("- Point 1 → WP1", "- Point 1 → WP1\n- Point 2 → WP2")
-        .replace("- Dependencies: none", "- Dependencies: WP2")
-        .replace("\n## Order and dependencies", `
-### WP2 — Implement point two
-
-- Source: Point 2
-- Goal: Implement point two.
-- Scope: Update the existing behavior.
-- Out of scope: Unrelated cleanup.
-- Confirmed paths: src/Example.php
-- Candidate paths: none
-- Discovery required: none
-- Dependencies: WP1
-- Estimated size: small
-- Acceptance criteria: Point two works.
-- Verification: Run the focused unit test.
-
-## Order and dependencies`)
-        .replace(
-            "| WP1 | pending | none | none |",
-            "| WP1 | pending | none | none |\n| WP2 | pending | none | none |",
-        );
-
-    for (const [body, expected] of [
-        [unknownDependency, "unknown package: WP99"],
-        [selfDependency, "cannot depend on itself"],
-        [cyclicDependencies, "must not contain a cycle"],
-    ]) {
-        assert.throws(
-            () => savePlan(saveInput(root, {markdown_body: body}), {now: NOW}),
-            (error) => error instanceof StoreError
-                && error.code === "INVALID_PLAN"
-                && error.details.errors.some((message) => message.includes(expected)),
         );
     }
 });

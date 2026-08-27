@@ -7,7 +7,7 @@ import {pathToFileURL} from "node:url";
 
 import {writeFileAtomic} from "./atomic-file.mjs";
 import {buildPlanId, loadPersistedSource, resolveSourceArtifactPath} from "./source.mjs";
-import {parsePlanDocument, validatePlanDocument} from "./validate.mjs";
+import {parseExecutionContract, parsePlanDocument, validatePlanDocument} from "./validate.mjs";
 
 export class StoreError extends Error {
     constructor(code, message, details = {}) {
@@ -70,6 +70,61 @@ export function loadPlan({repoRoot = process.cwd(), sourceIdentity, fsOps = fs} 
         source,
         paths: publicPaths(paths),
     };
+}
+
+export function loadPlanFile({repoRoot = process.cwd(), planPath, fsOps = fs} = {}) {
+    const root = path.resolve(repoRoot);
+    const absolute = resolveInside(root, requiredString(planPath, "planPath"), "planPath");
+    if (!fsOps.existsSync(absolute)) {
+        throw new StoreError("PLAN_NOT_FOUND", `Plan does not exist: ${relativePath(root, absolute)}.`);
+    }
+    let parsed;
+    try {
+        parsed = parsePlanDocument(fsOps.readFileSync(absolute, "utf8"));
+    } catch (error) {
+        throw new StoreError("PLAN_READ_FAILED", `Could not read ${absolute}.`, causeDetails(error));
+    }
+    const sourceIdentity = requiredString(parsed.metadata.source_identity, "front matter source_identity");
+    const expected = resolvePlanPaths({repoRoot: root, sourceIdentity});
+    if (absolute !== expected.draftPath) {
+        throw new StoreError("NON_CANONICAL_PLAN_PATH", "Plan path does not match its source identity.");
+    }
+    return loadPlan({repoRoot: root, sourceIdentity, fsOps});
+}
+
+export function completeWorkPackage({repoRoot = process.cwd(), planPath, wpId, evidence, fsOps = fs} = {}, options = {}) {
+    const loaded = loadPlanFile({repoRoot, planPath, fsOps});
+    if (loaded.status !== "ready") {
+        throw new StoreError("PLAN_NOT_READY", `Plan cannot be executed while validation status is ${loaded.status}.`, {
+            errors: loaded.validation?.errors ?? [],
+        });
+    }
+
+    const id = requiredString(wpId, "wpId");
+    const verification = requiredSingleLine(evidence, "evidence");
+    const contract = parseExecutionContract(parsePlanDocument(loaded.markdown).body);
+    const selected = contract.items.find((item) => item.id === id);
+    if (!selected) {
+        throw new StoreError("UNKNOWN_WORK_PACKAGE", `Unknown work package: ${id}.`);
+    }
+    if (selected.completed) {
+        return {...loaded, changed: false, completed: selected};
+    }
+    const next = contract.items.find((item) => !item.completed);
+    if (next?.id !== id) {
+        throw new StoreError("WORK_PACKAGE_OUT_OF_ORDER", `${id} cannot be completed before ${next?.id ?? "the current work package"}.`);
+    }
+
+    const timestamp = validTimestamp(options.now ?? new Date().toISOString(), "updated_at");
+    const completedAt = new Date(timestamp).toISOString().slice(0, 10);
+    const parsed = parsePlanDocument(loaded.markdown);
+    const markdownBody = replacePendingExecutionEntry(parsed.body, id, `- [x] ${id} — ${completedAt} — ${verification}`);
+    const saved = savePlan({
+        repo_root: repoRoot,
+        source_identity: loaded.metadata.source_identity,
+        markdown_body: markdownBody,
+    }, {now: timestamp, fsOps});
+    return {...saved, changed: true, completed: {id, completed: true, completedAt, verification}};
 }
 
 export function savePlan(input = {}, options = {}) {
@@ -251,8 +306,24 @@ function normalizeMarkdownBody(value) {
     return body;
 }
 
+function replacePendingExecutionEntry(body, wpId, replacement) {
+    const sectionMatch = /^## Execution\s*$/m.exec(body);
+    if (!sectionMatch) {
+        throw new StoreError("INVALID_PLAN", "Plan does not contain ## Execution.");
+    }
+    const start = sectionMatch.index + sectionMatch[0].length;
+    const nextHeading = body.indexOf("\n## ", start);
+    const end = nextHeading >= 0 ? nextHeading : body.length;
+    const section = body.slice(start, end);
+    const pattern = new RegExp(`^\\s*-\\s+\\[ \\]\\s+${escapeRegex(wpId)}\\s*$`, "m");
+    if (!pattern.test(section)) {
+        throw new StoreError("INVALID_PLAN", `Pending Execution entry not found for ${wpId}.`);
+    }
+    return `${body.slice(0, start)}${section.replace(pattern, () => replacement)}${body.slice(end)}`;
+}
+
 function validTimestamp(value, name) {
-    const candidate = requiredString(value, name);
+    const candidate = value instanceof Date ? value.toISOString() : requiredString(value, name);
     if (Number.isNaN(Date.parse(candidate))) {
         throw new StoreError("INVALID_TIMESTAMP", `${name} must be a valid timestamp.`);
     }
@@ -264,6 +335,21 @@ function requiredString(value, name) {
         throw new StoreError("INVALID_ARGUMENT", `${name} must be a non-empty string.`);
     }
     return value.trim();
+}
+
+function requiredSingleLine(value, name) {
+    const result = requiredString(value, name);
+    if (/\r|\n/.test(result)) {
+        throw new StoreError("INVALID_ARGUMENT", `${name} must be a single line.`);
+    }
+    if (/^(?:none|n\/a|not applicable)$/i.test(result)) {
+        throw new StoreError("INVALID_ARGUMENT", `${name} must contain concrete evidence.`);
+    }
+    return result;
+}
+
+function escapeRegex(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function resolveInside(root, candidate, name) {
@@ -328,10 +414,17 @@ async function main(argv) {
         result = savePlan(readJsonInput(args.input));
     } else if (command === "load" && args.source_identity) {
         result = loadPlan({repoRoot: args.root ?? process.cwd(), sourceIdentity: args.source_identity});
+    } else if (command === "complete-wp" && args.file && args.wp && args.evidence) {
+        result = completeWorkPackage({
+            repoRoot: args.root ?? process.cwd(),
+            planPath: args.file,
+            wpId: args.wp,
+            evidence: args.evidence,
+        });
     } else if (command === "paths" && args.source_identity) {
         result = publicPaths(resolvePlanPaths({repoRoot: args.root ?? process.cwd(), sourceIdentity: args.source_identity}));
     } else {
-        throw new StoreError("INVALID_ARGUMENT", "Usage: store.mjs save --input <file|-> | load|paths --source-identity <id> [--root <repo>]");
+        throw new StoreError("INVALID_ARGUMENT", "Usage: store.mjs save --input <file|-> | load|paths --source-identity <id> [--root <repo>] | complete-wp --file <plan> --wp <WPn> --evidence <text> [--root <repo>]");
     }
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
