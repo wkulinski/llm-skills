@@ -22,6 +22,21 @@ Both agents receive exactly the same:
 - context manifest;
 - criteria file.
 
+### Input storage
+
+Before `prepare`, the main agent MUST put every newly created immutable input
+under repository-local `CACHE_PATH` (default: `./var/agent/cache`). New prompt,
+handoff and criteria files should use a dedicated
+`${CACHE_PATH}/repository-context/<task-slug>/` directory; a valid manifest
+already stored under `CACHE_PATH` may be reused. The exact paths passed through
+`--prompt-file`, `--manifest`, `--handoff`, `--criteria` and `--output-dir` must
+remain under repository-local `CACHE_PATH`.
+
+Never use `/tmp`, a home directory or another external location for files that
+will be read by a scout. Choose the cache paths before `prepare`; an
+`INPUT_INVALID` path rejection is a safety failure to correct, not a normal
+discovery outcome or a way to probe permitted locations.
+
 The manifest is the only source of repository, branch, HEAD and already-read
 paths. The handoff contains only mode, normalized task brief, decisions and
 constraints. The criteria file is the only source of acceptance criteria.
@@ -211,16 +226,13 @@ The final `_shared` matrix is intentionally distributed across focused tests:
 | Area | Verification |
 |---|---|
 | Criteria anchors and budgets | `context-criteria.test.mjs` |
-| Retry classes and report lifecycle | `context-scout-report.test.mjs`, `context-scout-hybrid-run.test.mjs` |
-| Staged, unstaged and untracked drift; rerun guard; one fallback | `context-scout-hybrid-run.test.mjs` |
+| Retry classes and report lifecycle | `context-scout-report.test.mjs` |
 | Secret false/true positives | `secret-detector.test.mjs`, `context-handoff.test.mjs`, `context-manifest.test.mjs` |
 | Scout permissions and native integration | `context-scout-agent-contract.test.mjs`, `context-scout-opencode.integration.test.mjs` |
 
-The matrix covers valid `scout-selected` evidence, existing and missing
-`required-literal` anchors, equal/minimal budgets, every retry class, valid
-`INCOMPLETE` and `BLOCKED` reports, missing reports, worktree drift, secret
-detection, identical reruns and exactly one fallback. Benchmark and live smoke
-checks remain optional cost-bearing layers.
+The matrix covers criteria validation, report validation, secret handling and
+scout permission contracts. Benchmark and live smoke checks remain optional
+cost-bearing layers.
 
 Do not describe `hybrid_final: 8/8` as `primary: 8/8`.
 
@@ -232,6 +244,8 @@ The main agent uses the state and `runId` returned by each step:
 node .agents/skills/_shared/scripts/context-scout-hybrid-run.mjs prepare \
   --prompt-file <prompt> --manifest <manifest> --handoff <handoff> \
   --criteria <criteria> --output-dir <output> --title <title>
+
+# Every placeholder above resolves under repository-local CACHE_PATH.
 
 # Claim the next attempt to obtain a one-time token and native task dispatch.
 node .agents/skills/_shared/scripts/context-scout-hybrid-run.mjs claim \

@@ -47,9 +47,9 @@ require `--text`. Do not hand-write the final JSON.
 `--read-mode` to record declared read context. These fields are validated against
 the shared read-purpose enum and do not prove freshness or non-redundancy.
 
-Ledger and report output paths must be under `var/agent/cache` or the system
-temporary directory. The builder rejects writes to source and configuration
-paths.
+Ledger and report output paths must be under repository-local `CACHE_PATH`
+(default: `./var/agent/cache`). The builder rejects writes to source and
+configuration paths.
 
 Reserve at least 40% of the step budget for evidence preflight, coverage,
 `check` and `render`. Once every handoff criterion has minimal evidence, stop
