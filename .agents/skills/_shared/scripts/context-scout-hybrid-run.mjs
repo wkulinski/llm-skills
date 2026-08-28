@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
-import {assertArtifactPath} from "./artifact-path.mjs";
+import {assertArtifactPath, resolveArtifactCacheRoot} from "./artifact-path.mjs";
 import {preflightCriteriaFile} from "./context-criteria.mjs";
 import {
     FAILURE_CLASSES,
@@ -138,7 +138,7 @@ function withStateLock(statePath, callback) {
 }
 
 function resolveExisting(cwd, value, label) {
-    const resolved = path.resolve(cwd, value);
+    const resolved = assertArtifactPath(value, label, cwd);
     if (!fs.existsSync(resolved)) { throw new Error(`${label} does not exist: ${resolved}`); }
     return resolved;
 }
@@ -529,7 +529,7 @@ function prepareHybridUnchecked(args, cwd) {
         }
         if (!manifest.head) { throw new Error("Manifest does not contain head"); }
         outputDir = assertArtifactPath(
-            args["output-dir"] ?? "var/agent/cache/context-scout-hybrid",
+            args["output-dir"] ?? path.join(resolveArtifactCacheRoot(cwd), "context-scout-hybrid"),
             "hybrid output directory",
             cwd,
         );
