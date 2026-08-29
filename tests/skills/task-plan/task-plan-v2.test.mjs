@@ -23,7 +23,7 @@ import {
     savePlan,
     StoreError,
 } from "../../../.agents/skills/task-plan/scripts/store.mjs";
-import {validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
+import {parsePlanDocument, validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
 import {AtomicWriteError, writeFileAtomic} from "../../../.agents/skills/task-plan/scripts/atomic-file.mjs";
 
 const NOW = "2026-08-24T12:00:00.000Z";
@@ -130,10 +130,6 @@ Run the focused unit test for WP1.
 ## Execution
 
 - [ ] WP1
-
-## Next action
-
-Ask the user whether to implement, revise, or stop.
 `;
 }
 
@@ -492,14 +488,26 @@ it("stores and verifies canonical context references in plan front matter", () =
     assert.ok(loaded.validation.errors.some((message) => message.includes("context report hash")));
 });
 
-it("verifies context evidence whenever an incomplete canonical run is referenced", () => {
+it("withdraws ready while a material revision references an incomplete canonical run", () => {
     const root = temporaryRepository();
     prepareSource(root);
+    const ready = savePlan(saveInput(root), {now: NOW});
     const reportPath = path.join(root, "var", "agent", "incomplete-context.report.json");
+    const criteriaPath = path.join(root, "var", "agent", "incomplete-context.criteria.json");
     fs.mkdirSync(path.dirname(reportPath), {recursive: true});
     fs.writeFileSync(reportPath, "{\"status\":\"INCOMPLETE\"}\n", "utf8");
-    const saved = savePlan(saveInput(root, {context: {status: "INCOMPLETE", report_path: reportPath}}), {now: NOW});
-    assert.equal(saved.status, "ready");
+    fs.writeFileSync(criteriaPath, "{\"version\":2}\n", "utf8");
+    const saved = savePlan(saveInput(root, {
+        markdown_body: parsePlanDocument(ready.markdown).body,
+        context: {status: "INCOMPLETE", report_path: reportPath, criteria_path: criteriaPath},
+    }), {now: "2026-08-24T13:00:00.000Z"});
+
+    assert.equal(ready.status, "ready");
+    assert.equal(saved.status, "blocked");
+    assert.equal(saved.metadata.revision, 2);
+    assert.equal(saved.metadata.context_status, "INCOMPLETE");
+    assert.equal(saved.metadata.context_criteria, "var/agent/incomplete-context.criteria.json");
+    assert.equal(parsePlanDocument(saved.markdown).body, parsePlanDocument(ready.markdown).body);
 
     fs.writeFileSync(reportPath, "{\"status\":\"tampered\"}\n", "utf8");
     const loaded = loadPlan({repoRoot: root, sourceIdentity: source().identity});
