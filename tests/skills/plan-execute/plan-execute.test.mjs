@@ -124,10 +124,6 @@ ${overrides}
 ## Execution
 
 ${execution}
-
-## Next action
-
-Execute the first unchecked work package.
 `;
 }
 
@@ -284,5 +280,30 @@ it("does not execute a plan blocked by an open planning question", () => {
     assert.throws(
         () => loadExecutionPlan({planPath: created.planPath, repoRoot: root}),
         (error) => error instanceof PlanExecuteError && error.code === "PLAN_NOT_READY",
+    );
+});
+
+it("does not execute a ready plan withdrawn by an incomplete material revision", () => {
+    const root = temporaryRepository();
+    const created = makePlan(root, [{id: "WP1", title: "Revised"}], "user-input:revision");
+    const reportPath = path.join(root, "var", "agent", "incomplete-context.report.json");
+    fs.mkdirSync(path.dirname(reportPath), {recursive: true});
+    fs.writeFileSync(reportPath, "{\"status\":\"INCOMPLETE\"}\n", "utf8");
+    const blocked = savePlan({
+        repo_root: root,
+        source_identity: "user-input:revision",
+        markdown_body: parsePlanDocument(created.saved.markdown).body,
+        context: {status: "INCOMPLETE", report_path: reportPath},
+    }, {now: "2026-08-26T13:00:00.000Z"});
+
+    assert.equal(created.saved.status, "ready");
+    assert.equal(blocked.status, "blocked");
+    assert.throws(
+        () => loadExecutionPlan({planPath: created.planPath, repoRoot: root}),
+        (error) => error instanceof PlanExecuteError && error.code === "PLAN_NOT_READY",
+    );
+    assert.throws(
+        () => completeWorkPackage({repoRoot: root, planPath: created.planPath, wpId: "WP1", evidence: "passed"}),
+        (error) => error instanceof StoreError && error.code === "PLAN_NOT_READY",
     );
 });

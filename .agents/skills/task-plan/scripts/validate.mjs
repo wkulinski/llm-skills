@@ -22,7 +22,6 @@ export const REQUIRED_SECTIONS = Object.freeze([
     "Acceptance and verification",
     "Execution environment",
     "Execution",
-    "Next action",
 ]);
 
 export const REQUIRED_PACKAGE_FIELDS = Object.freeze([
@@ -132,7 +131,7 @@ export function validatePlanDocument(markdown, options = {}) {
     }
 
     return result(errors, packages, questionResult.questions, parsed.metadata, {
-        contextBlocked: parsed.metadata.context_status === "BLOCKED",
+        contextBlocked: ["INCOMPLETE", "BLOCKED"].includes(parsed.metadata.context_status),
     });
 }
 
