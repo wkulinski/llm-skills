@@ -60,7 +60,9 @@ Przed intake zastosuj
 wskazuje istniejący plan albo WP i nie zawiera jawnego polecenia bezpośredniej
 implementacji przez `$code-implement`, ten skill nie przejmuje orkiestracji —
 sterowanie należy przekazać do `$plan-execute`. Po handoffie z `$plan-execute`
-implementuj wyłącznie wskazany jeden WP.
+implementuj wyłącznie wskazany jeden WP. W trybie handoff `$code-implement`
+działa jako **wykonawca** dokładnie jednego WP, a nie jako orkiestrator —
+orkiestracja pozostaje po stronie `$plan-execute`.
 
 ## Tryb domyślny i autonomia
 - Domyślnie `$code-implement` działa w trybie `autonomous`.

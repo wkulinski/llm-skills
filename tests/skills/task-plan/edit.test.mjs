@@ -9,7 +9,8 @@ import {buildPlanId, normalizeUserInput, persistSource} from "../../../.agents/s
 import {savePlan} from "../../../.agents/skills/task-plan/scripts/store.mjs";
 import {validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
 
-const BASE_BODY = `# Fixture plan
+function buildPlan() {
+    return `# Fixture plan
 
 ## Source and objective
 - Objective: exercise the structural editor.
@@ -46,10 +47,11 @@ const BASE_BODY = `# Fixture plan
 - Candidate paths: none.
 - Discovery required: none.
 - Dependencies: none.
+- Estimated size: medium
 - Acceptance criteria: The selected field changes.
 - Verification: The targeted test passes.
 
-## Order and dependencies
+## Order
 - WP1: independent.
 
 ## Decisions and open questions
@@ -61,13 +63,34 @@ const BASE_BODY = `# Fixture plan
 ## Acceptance and verification
 - Check: validate the plan after editing.
 
+## Execution environment
+
+- Default model: openai/gpt-5.6-sol
+- Default reasoning: medium
+- WP overrides: none
+
+## Execution
+
+- [ ] WP1
+
 ## Next action
 - Action: Run the targeted test.
 `;
+}
 const EDIT_SCRIPT = path.join(process.cwd(), ".agents/skills/task-plan/scripts/edit.mjs");
 
 function createFixture() {
     const root = fs.mkdtempSync(path.join(process.cwd(), "var/agent/cache/task-plan-edit-test-"));
+    const configDir = path.join(root, ".agents", "config");
+    fs.mkdirSync(configDir, {recursive: true});
+    fs.writeFileSync(path.join(configDir, "model-hierarchy.json"), `${JSON.stringify({
+        version: 1,
+        order: "strongest-to-weakest",
+        profiles: [
+            {model: "deepseek/deepseek-v4", reasoning: "high"},
+            {model: "openai/gpt-5.6-sol", reasoning: "medium"},
+        ],
+    }, null, 2)}\n`);
     const identity = `test/structural-editor/${path.basename(root)}`;
     const source = normalizeUserInput({
         body: "structural editor fixture",
@@ -75,19 +98,19 @@ function createFixture() {
     }, {fetched_at: "2026-01-01T00:00:00.000Z"});
     persistSource(source, {repoRoot: root});
     const planId = buildPlanId(identity);
-    savePlan({
+    const saved = savePlan({
         repo_root: root,
         source_identity: identity,
         plan_id: planId,
-        markdown_body: BASE_BODY,
+        markdown_body: buildPlan(),
         context: null,
         updated_at: "2026-01-01T00:00:01.000Z",
     });
-    const file = path.join(root, "docs", "plan", `${planId}.md`);
+    const file = path.join(root, saved.paths.draft_path);
     return {
         root,
         file,
-        relativeFile: path.relative(root, file),
+        relativeFile: saved.paths.draft_path,
     };
 }
 
@@ -163,7 +186,7 @@ it("CLI exposes structural selectors and rejects legacy options", () => {
 });
 
 it("add-bullet creates a named bullet with an optional status", () => {
-    const result = applyOperation(BASE_BODY, {
+    const result = applyOperation(buildPlan(), {
         type: "add-bullet",
         section: "Risks and discovery debt",
         id: "R2",
@@ -176,7 +199,7 @@ it("add-bullet creates a named bullet with an optional status", () => {
 });
 
 it("remove-bullet removes one named bullet", () => {
-    const result = applyOperation(BASE_BODY, {
+    const result = applyOperation(buildPlan(), {
         type: "remove-bullet",
         section: "Risks and discovery debt",
         id: "R1",
@@ -188,7 +211,7 @@ it("remove-bullet removes one named bullet", () => {
 
 it("bullet operations require one container and keep question blocks semantic", () => {
     assert.throws(
-        () => applyOperation(BASE_BODY, {
+        () => applyOperation(buildPlan(), {
             type: "add-bullet",
             section: "Risks and discovery debt",
             work_package: "WP1",
@@ -198,7 +221,7 @@ it("bullet operations require one container and keep question blocks semantic", 
         (error) => error.code === "INVALID_SELECTOR",
     );
     assert.throws(
-        () => applyOperation(BASE_BODY, {
+        () => applyOperation(buildPlan(), {
             type: "remove-bullet",
             section: "Decisions and open questions",
             id: "Q1",
@@ -206,7 +229,7 @@ it("bullet operations require one container and keep question blocks semantic", 
         (error) => error.code === "STRUCTURED_BULLET",
     );
     assert.throws(
-        () => applyOperation(BASE_BODY, {
+        () => applyOperation(buildPlan(), {
             type: "add-bullet",
             section: "Risks and discovery debt",
             next: true,
@@ -215,7 +238,7 @@ it("bullet operations require one container and keep question blocks semantic", 
         (error) => error.code === "UNSUPPORTED_OPTION",
     );
     assert.throws(
-        () => applyOperation(BASE_BODY, {
+        () => applyOperation(buildPlan(), {
             type: "edit-question",
             id: "Q1",
             source: "manual note",
@@ -226,7 +249,7 @@ it("bullet operations require one container and keep question blocks semantic", 
 });
 
 it("answer-question changes an open question into an answered question", () => {
-    const result = applyOperation(BASE_BODY, {
+    const result = applyOperation(buildPlan(), {
         type: "answer-question",
         id: "Q1",
         answer: "Yes.",
@@ -239,7 +262,7 @@ it("answer-question changes an open question into an answered question", () => {
 });
 
 it("add-question inserts a structurally addressed question", () => {
-    const result = applyOperation(BASE_BODY, {
+    const result = applyOperation(buildPlan(), {
         type: "add-question",
         id: "Q2",
         prompt: "Should this be tested?",
@@ -253,7 +276,7 @@ it("add-question inserts a structurally addressed question", () => {
 });
 
 it("edit-question changes the semantic question block", () => {
-    const answered = applyOperation(BASE_BODY, {
+    const answered = applyOperation(buildPlan(), {
         type: "edit-question",
         id: "Q1",
         prompt: "Should the selected field be changed?",
@@ -276,7 +299,7 @@ it("edit-question changes the semantic question block", () => {
 });
 
 it("remove-question removes the complete semantic block", () => {
-    const answered = applyOperation(BASE_BODY, {
+    const answered = applyOperation(buildPlan(), {
         type: "edit-question",
         id: "Q1",
         status: "answered",
@@ -293,7 +316,7 @@ it("remove-question removes the complete semantic block", () => {
 });
 
 it("duplicate and missing structural targets fail closed", () => {
-    const duplicate = BASE_BODY.replace(
+    const duplicate = buildPlan().replace(
         "- Goal: Exercise a deterministic edit.",
         "- Goal: Exercise a deterministic edit.\n- Goal: Duplicate.",
     );
@@ -308,7 +331,7 @@ it("duplicate and missing structural targets fail closed", () => {
         (error) => error.code === "DUPLICATE_TARGET",
     );
     assert.throws(
-        () => applyOperation(BASE_BODY, {
+        () => applyOperation(buildPlan(), {
             type: "edit-bullet",
             work_package: "WP1",
             id: "Missing",
@@ -371,7 +394,7 @@ it("editPlan does not write when the selected target is missing", () => {
 });
 
 it("text resembling a field inside a fenced block is not selected", () => {
-    const body = BASE_BODY.replace(
+    const body = buildPlan().replace(
         "## Risks and discovery debt",
         "```text\n- Goal: fake field\n```\n\n## Risks and discovery debt",
     );

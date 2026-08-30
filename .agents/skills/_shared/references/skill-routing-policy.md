@@ -28,8 +28,8 @@ Stosuj następującą kolejność:
    - utworzenie, krytyczna rewizja albo walidacja planu → `$task-plan`;
    - wykonanie, kontynuacja albo wznowienie istniejącego planu lub WP →
      `$plan-execute`;
-   - implementacja konkretnej zmiany bez istniejącego planu →
-     `$code-implement`;
+   - implementacja konkretnej zmiany (w tym feature, bugfix lub refaktor) bez
+     istniejącego planu → `$code-implement`;
    - szybki przegląd bieżących zmian → `$review-quick`;
    - przygotowanie lub wykonanie commita → `$git-commit`.
 3. Jeśli prośba łączy słowa „WP”, „work package”, „plan”, „kontynuuj plan” albo

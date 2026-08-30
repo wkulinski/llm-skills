@@ -37,7 +37,9 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
 ## 4. Przed zakończeniem zadania
 1. Jeśli zadanie dotyczy istniejącego planu albo work package, zastosuj
    `$plan-execute`; dla bezpośredniej implementacji bez planu zastosuj
-   `$code-implement`, zgodnie z `./skill-routing-policy.md`.
+   `$code-implement`, zgodnie z `./skill-routing-policy.md`. Jawne polecenie
+   użytkownika konkretnego skilla (np. `$code-implement`) ma pierwszeństwo nad
+   tym rozpoznaniem intencji.
 2. Jeśli potrzebujesz szybkiej auto-weryfikacji: uruchom `$review-quick`.
 3. Jeśli przygotowujesz commit: uruchom `$git-commit` (zawiera QA, commit-message i commit flow).
 4. Jeśli trzeba uporządkować dokumentację: uruchom `$docs-sync`.
