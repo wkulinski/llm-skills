@@ -8,6 +8,7 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
 - Procedura jakości (kolejność kroków): `./runtime-quality-procedures.md`.
 - Baseline techniczny stacka: `./php-symfony-postgres-standards.md`.
 - Odstępstwa architektoniczne (warunkowe): `./cqrs-monolith-standard-overrides.md`.
+- Routing nadrzędnego workflow między skillami: `./skill-routing-policy.md`.
 - Polityka wyboru nawigacji symbolicznej i zwykłego patcha, w tym preferencji `Serena-first` gdy Serena jest dostępna: `./symbolic-navigation-and-editing-policy.md`.
 - Procedury operacyjne (QA/commit/commit-message/review): właściwe skille (`$qa-run`, `$git-commit`, `$commit-message-write`, `$review-quick`, ...).
 
@@ -28,6 +29,10 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
   2. `./AGENTS.md` i dokumenty z `docs_map`
   3. Bieżący `SKILL.md`
   4. Pliki wskazane w `shared_files`
+- Wyjątek przed wyborem aktywnego skilla: routing nadrzędnego workflow odbywa się
+  według `./skill-routing-policy.md`. Bieżący `SKILL.md` nie może nadpisać tej
+  reguły, ponieważ nie został jeszcze wybrany; po wyborze obowiązują powyższe
+  priorytety dla procedur wykonawczych.
 
 ## 2. Współpraca i komunikacja
 - Najpierw doprecyzuj cel i kryteria akceptacji; nie zgaduj, gdy brakuje kluczowych danych.

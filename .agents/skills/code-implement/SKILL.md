@@ -1,13 +1,16 @@
 ---
 name: code-implement
 description: >-
-    Orkiestrator implementacji zmian w kodzie: intake prompta,
-    dopytania/stop-conditions, doczytanie kontekstu repo, zasady kodowania, lekkie
-    checki na końcu (`$review-quick` + punktowy test/lint), bez pełnego `$qa-run`
-    poza jednoznacznym poleceniem użytkownika, oraz standard
-    raportowania. Użyj, gdy użytkownik zleca dodanie funkcjonalności, naprawę
-    błędu lub refaktor.
+  Orkiestrator implementacji zmian w kodzie: intake prompta,
+  dopytania/stop-conditions, doczytanie kontekstu repo, zasady kodowania, lekkie
+  checki na końcu (`$review-quick` + punktowy test/lint), bez pełnego `$qa-run`
+  poza jednoznacznym poleceniem użytkownika, oraz standard
+  raportowania. Użyj, gdy użytkownik zleca dodanie funkcjonalności, naprawę
+  błędu lub refaktor bez istniejącego planu; gdy prompt wskazuje istniejący plan
+  albo WP, pierwszym workflow jest `$plan-execute`, chyba że użytkownik jawnie
+  zażąda bezpośredniej implementacji.
 shared_files:
+    - _shared/references/skill-routing-policy.md
     - _shared/references/runtime-collaboration-guidelines.md
     - _shared/references/runtime-quality-procedures.md
     - _shared/references/php-symfony-postgres-standards.md
@@ -50,6 +53,15 @@ Poprowadzić implementację zmian w kodzie end-to-end w sposób powtarzalny i be
 - nie uruchamiać pełnego `$qa-run` poza wyraźnym, jednoznacznym poleceniem użytkownika,
 - zaraportować wynik w stałym formacie.
 
+### Guard routingu
+
+Przed intake zastosuj
+`<skills_root>/_shared/references/skill-routing-policy.md`. Jeśli prompt
+wskazuje istniejący plan albo WP i nie zawiera jawnego polecenia bezpośredniej
+implementacji przez `$code-implement`, ten skill nie przejmuje orkiestracji —
+sterowanie należy przekazać do `$plan-execute`. Po handoffie z `$plan-execute`
+implementuj wyłącznie wskazany jeden WP.
+
 ## Tryb domyślny i autonomia
 - Domyślnie `$code-implement` działa w trybie `autonomous`.
 - `autonomous` oznacza: agent samodzielnie implementuje i weryfikuje zmianę bez dopytywania, o ile nie zachodzi `stop-condition`.
@@ -80,6 +92,7 @@ Mechanizmy:
 
 Źródła prawdy:
 - zasady współpracy/runtime: `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`
+- routing nadrzędnego workflow: `<skills_root>/_shared/references/skill-routing-policy.md`
 - checklisty jakości: `<skills_root>/_shared/references/runtime-quality-procedures.md`
 - baseline techniczny stacka: `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
 - override architektoniczny (warunkowy): `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` — tylko gdy aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`

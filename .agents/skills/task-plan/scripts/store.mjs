@@ -315,7 +315,7 @@ function replacePendingExecutionEntry(body, wpId, replacement) {
     const nextHeading = body.indexOf("\n## ", start);
     const end = nextHeading >= 0 ? nextHeading : body.length;
     const section = body.slice(start, end);
-    const pattern = new RegExp(`^\\s*-\\s+\\[ \\]\\s+${escapeRegex(wpId)}\\s*$`, "m");
+    const pattern = new RegExp(`^[ \\t]*-[ \\t]+\\[ \\]\\s+${escapeRegex(wpId)}[ \\t]*$`, "m");
     if (!pattern.test(section)) {
         throw new StoreError("INVALID_PLAN", `Pending Execution entry not found for ${wpId}.`);
     }

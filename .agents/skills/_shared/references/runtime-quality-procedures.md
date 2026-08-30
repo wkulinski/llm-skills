@@ -8,6 +8,7 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
 1. Przeczytaj prompt i ustal kryteria akceptacji.
 2. Sprawdź źródła reguł wymagane do implementacji:
    - `./runtime-collaboration-guidelines.md`
+   - `./skill-routing-policy.md`
    - `./php-symfony-postgres-standards.md`
    - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: `./cqrs-monolith-standard-overrides.md`
 3. Zweryfikuj entrypointy narzędzi projektu **wyłącznie** przez helper `.agents/skills/_shared/scripts/env-load.sh`:
@@ -34,7 +35,9 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
    - `ENV_BLOCKER`: wyłącznie po rzeczywistej próbie wykonania dozwolonej komendy zakończonej błędem środowiska.
 
 ## 4. Przed zakończeniem zadania
-1. Jeśli to zadanie implementacyjne: zastosuj `$code-implement` jako orkiestrator.
+1. Jeśli zadanie dotyczy istniejącego planu albo work package, zastosuj
+   `$plan-execute`; dla bezpośredniej implementacji bez planu zastosuj
+   `$code-implement`, zgodnie z `./skill-routing-policy.md`.
 2. Jeśli potrzebujesz szybkiej auto-weryfikacji: uruchom `$review-quick`.
 3. Jeśli przygotowujesz commit: uruchom `$git-commit` (zawiera QA, commit-message i commit flow).
 4. Jeśli trzeba uporządkować dokumentację: uruchom `$docs-sync`.
