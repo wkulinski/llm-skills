@@ -8,8 +8,8 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../.
 const BUILDER = path.join(ROOT, ".agents/skills/_shared/scripts/context-scout-report-builder.mjs");
 
 describe("context scout report builder", () => {
-    it("accepts artifacts in the system temporary directory", () => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-test-"));
+    it("rejects artifacts in the system temporary directory", () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-system-tmp-"));
         const ledger = path.join(dir, "ledger.json");
         const criteria = path.join(dir, "criteria.json");
         fs.writeFileSync(criteria, JSON.stringify({criteria: [{id: "C1", description: "Map the flow."}]}));
@@ -17,12 +17,12 @@ describe("context scout report builder", () => {
             cwd: ROOT,
             encoding: "utf8",
         });
-        expect(result.status, result.stderr).toBe(0);
-        expect(fs.existsSync(ledger)).toBe(true);
+        expect(result.status, result.stderr).toBe(1);
+        expect(result.stderr).toMatch(/must be under repository-local CACHE_PATH/);
     });
 
     it("stores enriched criteria in the ledger for every builder validation path", () => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-test-"));
+        const dir = fs.mkdtempSync(path.join(ROOT, "var", "agent", "cache", "context-scout-builder-test-"));
         const ledger = path.join(dir, "ledger.json");
         const criteria = path.join(dir, "criteria.json");
         fs.writeFileSync(criteria, JSON.stringify({criteria: [{id: "C1", description: "Map the flow.", forbid_negative_claims: true, required_evidence: [{path: "AGENTS.md", relation: "defines", anchors: ["Repository Guidelines"]}]}]}));
@@ -36,7 +36,7 @@ describe("context scout report builder", () => {
 
     it("refuses to overwrite source files", () => {
         const sourcePath = path.join(ROOT, "AGENTS.md");
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-test-"));
+        const dir = fs.mkdtempSync(path.join(ROOT, "var", "agent", "cache", "context-scout-builder-test-"));
         const criteria = path.join(dir, "criteria.json");
         fs.writeFileSync(criteria, JSON.stringify({criteria: [{id: "C1", description: "Map the flow."}]}));
         const result = spawnSync(process.execPath, [BUILDER, "init", sourcePath, "--head", "HEAD", "--criteria", criteria, "--mode", "targeted"], {
@@ -44,11 +44,11 @@ describe("context scout report builder", () => {
             encoding: "utf8",
         });
         expect(result.status).toBe(1);
-        expect(result.stderr).toMatch(/must be under var\/agent\/cache/);
+        expect(result.stderr).toMatch(/must be under repository-local CACHE_PATH/);
     });
 
     it("records a bounded parent read-set and explicit follow-up paths", () => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-test-"));
+        const dir = fs.mkdtempSync(path.join(ROOT, "var", "agent", "cache", "context-scout-builder-test-"));
         const ledger = path.join(dir, "ledger.json");
         const criteria = path.join(dir, "criteria.json");
         fs.writeFileSync(criteria, JSON.stringify({criteria: [{id: "C1", description: "Map the flow."}]}));
@@ -98,7 +98,7 @@ describe("context scout report builder", () => {
     });
 
     it("accepts a declared read purpose on covered evidence", () => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-test-"));
+        const dir = fs.mkdtempSync(path.join(ROOT, "var", "agent", "cache", "context-scout-builder-test-"));
         const ledger = path.join(dir, "ledger.json");
         const criteria = path.join(dir, "criteria.json");
         fs.writeFileSync(criteria, JSON.stringify({criteria: [{id: "C1", description: "Map the flow."}]}));
@@ -128,7 +128,7 @@ describe("context scout report builder", () => {
     });
 
     it("accepts a complete report in one batch and renders it from the ledger", () => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-test-"));
+        const dir = fs.mkdtempSync(path.join(ROOT, "var", "agent", "cache", "context-scout-builder-test-"));
         const ledger = path.join(dir, "ledger.json");
         const output = path.join(dir, "report.json");
         const criteria = path.join(dir, "criteria.json");
@@ -157,7 +157,7 @@ describe("context scout report builder", () => {
     });
 
     it("batch-renders a complete report in one builder invocation", () => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-test-"));
+        const dir = fs.mkdtempSync(path.join(ROOT, "var", "agent", "cache", "context-scout-builder-test-"));
         const ledger = path.join(dir, "ledger.json");
         const output = path.join(dir, "report.json");
         const criteria = path.join(dir, "criteria.json");
@@ -192,7 +192,7 @@ describe("context scout report builder", () => {
         ["INCOMPLETE", {criterion_id: "C1", status: "blocked", reason: "bounded discovery ended before direct verification"}],
         ["BLOCKED", {criterion_id: "C1", status: "blocked", reason: "the controlled attempt was blocked before discovery"}],
     ])("batch-renders %s without coercing the final status", (status, coverageEntry) => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-status-test-"));
+        const dir = fs.mkdtempSync(path.join(ROOT, "var", "agent", "cache", "context-scout-builder-status-test-"));
         const ledger = path.join(dir, "ledger.json");
         const output = path.join(dir, "report.json");
         const criteria = path.join(dir, "criteria.json");
@@ -225,7 +225,7 @@ describe("context scout report builder", () => {
     });
 
     it("rejects a batch-render status that differs from the payload", () => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-builder-status-test-"));
+        const dir = fs.mkdtempSync(path.join(ROOT, "var", "agent", "cache", "context-scout-builder-status-test-"));
         const ledger = path.join(dir, "ledger.json");
         const output = path.join(dir, "report.json");
         const criteria = path.join(dir, "criteria.json");

@@ -327,6 +327,39 @@ it("completes a work package through the task-plan store", () => {
     assert.equal(loadPlanFile({repoRoot: root, planPath: saved.paths.draft_path}).status, "ready");
 });
 
+it("accepts pending and completed WP execution-checklist bullets without the named-bullet rule", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const saved = savePlan(saveInput(root), {now: NOW});
+    const completed = completeWorkPackage({
+        repoRoot: root,
+        planPath: saved.paths.draft_path,
+        wpId: "WP1",
+        evidence: "focused unit test passed",
+    }, {now: NOW});
+
+    const validation = validatePlanDocument(completed.markdown, {repoRoot: root});
+    assert.equal(validation.valid, true, validation.errors.join("\n"));
+    assert.equal(
+        validation.errors.some((error) => error.includes("Bullet must have a name")),
+        false,
+        `WP checkbox bullets must not trigger the named-bullet rule: ${validation.errors.join("; ")}`,
+    );
+});
+
+it("rejects a completed WP entry that omits the completion date and verification", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const malformed = completePlanBody().replace("- [ ] WP1", "- [x] WP1");
+    const validation = validatePlanDocument(malformed, {repoRoot: root});
+    assert.equal(validation.valid, false);
+    assert.equal(
+        validation.errors.some((error) => error.includes("Invalid Execution entry")),
+        true,
+        `Malformed completed WP must be reported by parseExecutionContract: ${validation.errors.join("; ")}`,
+    );
+});
+
 it("preserves replacement tokens in completion evidence", () => {
     const root = temporaryRepository();
     prepareSource(root);

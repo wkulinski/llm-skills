@@ -651,6 +651,9 @@ function assertNamedBullets(lines, fenced) {
         if (fenced[index]) {
             continue;
         }
+        if (/^\s*-\s+\[[ xX]\]\s+WP[1-9][0-9]*(?:\s+—\s+\d{4}-\d{2}-\d{2}\s+—\s+.+)?\s*$/.test(lines[index])) {
+            continue;
+        }
         if (/^\s*-\s+/.test(lines[index]) && !/^\s*-\s+\S(?:[^:\r\n]*\S)?: /.test(lines[index])) {
             throw new PlanEditError("UNNAMED_BULLET", `Bullet must have a name followed by ": ": ${lines[index].trim()}.`);
         }

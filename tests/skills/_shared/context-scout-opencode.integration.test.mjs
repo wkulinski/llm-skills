@@ -131,7 +131,7 @@ test("benchmark adapters are debug-audited before a cohort", async () => {
 });
 
 test("controlled lifecycle preserves INCOMPLETE and BLOCKED reports through one fallback", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-controlled-lifecycle-"));
+    const dir = fs.mkdtempSync(path.join(ROOT, "var", "agent", "cache", "context-scout-controlled-lifecycle-"));
     const files = writeLifecycleFixtures(dir);
     const prepared = prepareHybrid({
         "prompt-file": files.prompt,
@@ -177,7 +177,7 @@ test("controlled lifecycle preserves INCOMPLETE and BLOCKED reports through one 
 });
 
 test("controlled lifecycle classifies empty stdin as a missing report", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-controlled-empty-report-"));
+    const dir = fs.mkdtempSync(path.join(ROOT, "var", "agent", "cache", "context-scout-controlled-empty-report-"));
     const files = writeLifecycleFixtures(dir);
     const prepared = prepareHybrid({
         "prompt-file": files.prompt,

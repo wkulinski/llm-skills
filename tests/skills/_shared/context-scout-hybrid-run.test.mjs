@@ -13,7 +13,9 @@ const HELPER = path.join(ROOT, ".agents/skills/_shared/scripts/context-scout-hyb
 const REPORT_BUILDER = path.join(ROOT, ".agents/skills/_shared/scripts/context-scout-report-builder.mjs");
 
 function makeFixtureDir() {
-    return fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-hybrid-test-"));
+    const cacheRoot = path.join(ROOT, "var", "agent", "cache");
+    fs.mkdirSync(cacheRoot, {recursive: true});
+    return fs.mkdtempSync(path.join(cacheRoot, "context-scout-hybrid-test-"));
 }
 
 function writeFixtures(dir, mode = "targeted") {
@@ -336,8 +338,10 @@ test("CLI exposes stale snapshot classification and diagnostics as JSON", () => 
 });
 
 test("CLI does not report unavailable git metadata as a changed snapshot", () => {
-    const dir = makeFixtureDir();
-    const files = writeFixtures(dir);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-hybrid-nogit-"));
+    const cacheDir = path.join(dir, "var", "agent", "cache");
+    fs.mkdirSync(cacheDir, {recursive: true});
+    const files = writeFixtures(cacheDir);
     const result = spawnSync(process.execPath, [
         HELPER,
         "prepare",
@@ -345,7 +349,7 @@ test("CLI does not report unavailable git metadata as a changed snapshot", () =>
         "--manifest", files.manifest,
         "--handoff", files.handoff,
         "--criteria", files.criteria,
-        "--output-dir", dir,
+        "--output-dir", cacheDir,
         "--title", "missing-git-metadata",
     ], {cwd: dir, encoding: "utf8"});
 

@@ -58,12 +58,12 @@ function planBody(packages) {
 - Acceptance criteria: ${item.title} is complete and verified.
 - Verification: Run the focused check for ${item.id}.
 `).join("\n");
-    const sourceCoverage = packages.map((item) => `- ${item.id} requirement → ${item.id}`).join("\n");
+    const sourceCoverage = packages.map((item) => `- ${item.id} requirement: ${item.id}`).join("\n");
     const execution = packages.map((item) => `- [ ] ${item.id}`).join("\n");
     const overrideEntries = packages
         .filter((item) => item.model)
         .map((item) => `  - ${item.id}: model=${item.model}; reasoning=${item.reasoning}; justification=${item.justification}`);
-    const overrides = overrideEntries.length > 0 ? `- WP overrides:\n${overrideEntries.join("\n")}` : "- WP overrides: none";
+    const overrides = overrideEntries.length > 0 ? `- WP overrides: configured\n${overrideEntries.join("\n")}` : "- WP overrides: none";
 
     return `# Plan execute test
 
