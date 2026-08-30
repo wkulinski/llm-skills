@@ -5,8 +5,10 @@ description: >-
   niezakończony work package, przekazuje go do code-implement i zleca
   task-plan zapis ukończenia wraz z dowodem. Użyj, gdy użytkownik chce
   zrealizować istniejący plan (utworzony przez skill task-plan) krok po kroku,
-  a nie tworzyć nowy plan ani implementować pojedynczej zmiany.
+  wskazuje WP albo prosi o kontynuację/wznowienie planu; nie używaj go do
+  tworzenia nowego planu ani do bezpośredniej implementacji pojedynczej zmiany.
 shared_files:
+  - _shared/references/skill-routing-policy.md
   - _shared/scripts/model-hierarchy.mjs
 ---
 
@@ -16,6 +18,11 @@ shared_files:
 
 `$plan-execute` jest prostym orkiestratorem pomiędzy gotowym planem a
 `$code-implement`.
+
+Wybór tego skilla wynika z
+`<skills_root>/_shared/references/skill-routing-policy.md`: jeżeli użytkownik
+prosi o wykonanie albo kontynuację istniejącego planu lub WP, `$plan-execute`
+jest pierwszym workflow, nawet gdy WP wygląda jak pojedyncza zmiana kodu.
 
 Odpowiedzialności są rozdzielone jednoznacznie:
 

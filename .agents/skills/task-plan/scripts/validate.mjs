@@ -517,6 +517,10 @@ function validateNamedBullets(body) {
             continue;
         }
 
+        if (/^\s*-\s+\[[ xX]\]\s+WP[1-9][0-9]*(?:\s+—\s+\d{4}-\d{2}-\d{2}\s+—\s+.+)?\s*$/.test(line)) {
+            continue;
+        }
+
         if (/^\s*-\s+/.test(line) && !/^\s*-\s+\S(?:[^:\r\n]*\S)?: /.test(line)) {
             errors.push(`Bullet must have a name followed by ": ": ${line.trim()}.`);
         }

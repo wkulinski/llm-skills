@@ -5,6 +5,7 @@ description: >-
   zweryfikowany plan wykonawczy. Rozdziela fakty, hipotezy i decyzje, używa
   ograniczonego contextu repo i nie uruchamia implementacji.
 shared_files:
+  - _shared/references/skill-routing-policy.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/repository-context-hybrid.md
@@ -29,6 +30,11 @@ shared_files:
 Task-plan przygotowuje jeden dokument Markdown w `./docs/plans/`. Plan ma być
 użyteczny dla wykonawcy, krytyczny wobec materiału źródłowego i uczciwy wobec
 brakujących dowodów.
+
+Routing między przygotowaniem planu a jego wykonaniem określa
+`<skills_root>/_shared/references/skill-routing-policy.md`. `$task-plan` nie
+przejmuje wykonania istniejącego planu; takie żądanie należy do
+`$plan-execute`.
 
 Task-plan:
 
