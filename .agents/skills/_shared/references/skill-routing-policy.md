@@ -13,7 +13,7 @@ procedur wykonawczych opisanych w poszczególnych skillach.
 - **Bezpośrednia implementacja** — zmiana opisana bez odwołania do istniejącego
   planu lub work package.
 - **Jawne wywołanie skilla** — użytkownik wskazuje skill albo jego workflow wprost,
-  np. `$plan-execute`, `$code-implement`, `$task-plan`, `$review-quick` lub
+  np. `$plan-execute`, `$code-implement`, `$task-plan`, `$code-review`, `$review-quick` lub
   `$git-commit`.
 - **Handoff wykonawczy** — `$plan-execute` przekazuje jeden wybrany WP do
   `$code-implement`; nie jest to nowe, niezależne wywołanie orkiestratora.
@@ -25,13 +25,15 @@ Stosuj następującą kolejność:
 1. Jawne polecenie użytkownika dotyczące konkretnego skilla ma pierwszeństwo,
    z zachowaniem twardych zasad bezpieczeństwa i stop-conditions.
 2. Bez jawnego wskazania skilla rozpoznaj intencję:
-   - utworzenie, krytyczna rewizja albo walidacja planu → `$task-plan`;
-   - wykonanie, kontynuacja albo wznowienie istniejącego planu lub WP →
+    - utworzenie planu, krytyczna rewizja w ramach jego tworzenia albo walidacja planu → `$task-plan`;
+    - niezależny, read-only review istniejącego planu → `$code-review` w trybie `plan`;
+    - wykonanie, kontynuacja albo wznowienie istniejącego planu lub WP →
      `$plan-execute`;
-   - implementacja konkretnej zmiany (w tym feature, bugfix lub refaktor) bez
-     istniejącego planu → `$code-implement`;
-   - szybki przegląd bieżących zmian → `$review-quick`;
-   - przygotowanie lub wykonanie commita → `$git-commit`.
+    - implementacja konkretnej zmiany (w tym feature, bugfix lub refaktor) bez
+      istniejącego planu → `$code-implement`;
+    - pełny albo głęboki przegląd implementacji → `$code-review` w trybie `code`;
+    - szybki przegląd bieżących zmian → `$review-quick`;
+    - przygotowanie lub wykonanie commita → `$git-commit`.
 3. Jeśli prośba łączy słowa „WP”, „work package”, „plan”, „kontynuuj plan” albo
    „zrealizuj kolejny pakiet” z implementacją, a użytkownik nie wskazał
    bezpośrednio `$code-implement`, pierwszym skillem zawsze jest
@@ -107,10 +109,13 @@ jasnego pytania — nie cichego pominięcia orkiestratora ani zmiany zakresu.
 
 | Intencja użytkownika | Pierwszy skill | Następny krok |
 | --- | --- | --- |
-| Przygotuj albo zweryfikuj plan | `$task-plan` | pozostaje planem, bez implementacji |
+| Przygotuj plan albo wykonaj jego critical review w ramach tworzenia | `$task-plan` | pozostaje planem, bez implementacji |
+| Formalnie zweryfikuj istniejący plan | `$task-plan` | walidacja struktury i statusu planu |
 | Wykonaj istniejący plan/WP | `$plan-execute` | wybrany WP → `$code-implement` |
 | Kontynuuj istniejący plan | `$plan-execute` | pierwszy niezakończony WP |
 | Zaimplementuj zmianę bez planu | `$code-implement` | implementacja i lekka weryfikacja |
+| Niezależny review istniejącego planu | `$code-review` (`plan`) | findings-first + plan coverage + readiness verdict |
+| Pełny albo głęboki przegląd implementacji | `$code-review` (`code`) | findings-first + coverage + merge verdict |
 | Przejrzyj bieżące zmiany | `$review-quick` | raport findings-first |
 | Zrób commit | `$git-commit` | procedura QA i commit |
 
