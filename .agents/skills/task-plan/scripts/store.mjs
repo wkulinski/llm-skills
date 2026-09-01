@@ -406,7 +406,31 @@ function readJsonInput(filePath) {
     return JSON.parse(content);
 }
 
+function usage() {
+    return [
+        "Usage:",
+        "  store.mjs save --input <file|->",
+        "  store.mjs load --source-identity <id> [--root <repo>]",
+        "  store.mjs paths --source-identity <id> [--root <repo>]",
+        "  store.mjs complete-wp --file <plan> --wp <WPn> --evidence <text> [--root <repo>]",
+        "",
+        "The save JSON input must contain repo_root; save does not use --root.",
+        "load, paths and complete-wp use --root for the repository when provided.",
+        "--input <file|-> reads JSON from a file; use the literal --input - for stdin.",
+        "Help (`--help` or `-h`) exits with code 0 before command dispatch and never changes a plan.",
+    ].join("\n");
+}
+
+function hasHelpFlag(argv) {
+    return argv.some((argument) => argument === "--help" || argument === "-h");
+}
+
 async function main(argv) {
+    if (hasHelpFlag(argv)) {
+        process.stdout.write(`${usage()}\n`);
+        return;
+    }
+
     const args = parseArgs(argv);
     const command = args._[0];
     let result;

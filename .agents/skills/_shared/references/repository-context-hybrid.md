@@ -162,6 +162,24 @@ requires a fresh manifest and a new run.
 - After a validated final report, the main agent may perform targeted reads for
   implementation or review but must not repeat broad repository discovery.
 
+## Broad vs targeted discovery matrix
+
+This matrix is the single source of truth for choosing between broad repository
+reconnaissance and pointed reads. Skills link to this reference instead of
+duplicating the matrix.
+
+| Situation | Recommended mode | Why |
+|---|---|---|
+| Known symbol, file or owner already established | CMM/Serena or another symbolic targeted read | A pointed read with a concrete purpose (`read-before-write`, `verification`) answers the question; broad discovery would add no new evidence. |
+| Unknown module or dependency structure | Broad reconnaissance through the hybrid helper | Plan-level evidence (owner, existing mechanism, entrypoint, test pattern) is not yet established; one `prepare` → `claim` → `settle` run collects it. |
+| Cross-layer scope (UI–application–persistence) | Broad reconnaissance first, then targeted reads | The first pass maps layers and boundaries; after a validated report only pointed reads remain. |
+| Fresh validated report available | Reuse the report; targeted reads only | Paths already recorded in `read_coverage.covered` must not be rediscovered broadly; a changed fingerprint requires a fresh manifest and a new run. |
+| `parse_partial`, `skipped` or `report-gap` gaps | Targeted reads filling exactly the missing evidence | A bounded partial (`INCOMPLETE`/`BLOCKED`) report leaves concrete gaps; fill them with `report-gap` reads instead of repeating the whole run. |
+
+After a validated final report, prefer pointed reads; repeat broad discovery
+only when a concrete signal (changed snapshot, new criteria or new source)
+makes the existing report stale.
+
 ## Run isolation
 
 The controller does not use a worktree-wide lock. Recursion and duplicate

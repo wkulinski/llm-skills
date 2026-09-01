@@ -5,7 +5,29 @@ import {pathToFileURL} from "node:url";
 import {formatReadObservation, parseReadEventArgs} from "../../_shared/scripts/read-purpose.mjs";
 import {appendJsonLine, formatIsoSeconds, insertLogLine, resolveReadEventsPath, resolveStatePath} from "./state-utils.mjs";
 
+function usage() {
+    return [
+        "Usage:",
+        "  state-readlog.mjs [structured flags...] <message...>",
+        "",
+        "Structured flags:",
+        "  --purpose discovery|read-before-write|verification|snapshot-refresh|report-gap",
+        "  --event read|report-reuse",
+        "  --source main|parent|scout|system|unknown",
+        "  --read-mode full|range|report",
+        "  --path <repo-relative-path> OR --scope <single-line-scope> (mutually exclusive)",
+        "  --delegation-id <id>",
+        "",
+        "Put structured flags first, before the free-form message; --path and --scope cannot be combined.",
+        "Help (`--help` or `-h`) exits with code 0 without requiring state.md or writing a log entry.",
+    ].join("\n");
+}
+
 export function runStateReadLog(argv, {cachePath, now = new Date()} = {}) {
+    if (argv[0] === "--help" || argv[0] === "-h") {
+        return {code: 0, stdout: `${usage()}\n`};
+    }
+
     const {absolute: statePath} = resolveStatePath(cachePath);
 
     if (!existsSync(statePath)) {

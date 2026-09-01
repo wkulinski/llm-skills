@@ -233,7 +233,9 @@ Szczegóły wykonawcze niezmieniające planu nie powinny być criteria; trafiaj�
 `Discovery required` w WP.
 
 Po zwalidowanym raporcie wolno wykonywać wyłącznie punktowe odczyty potrzebne do
-planu.
+planu. Wybór między rekonesansem szerokim a odczytem punktowym rozstrzyga
+macierz w `<skills_root>/_shared/references/repository-context-hybrid.md`;
+task-plan nie kopiuje tej macierzy.
 
 ### 3. Kompletny plan
 

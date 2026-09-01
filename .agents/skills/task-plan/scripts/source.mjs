@@ -329,7 +329,36 @@ function readJson(filePath) {
     return JSON.parse(content);
 }
 
+function usage() {
+    return [
+        "Usage:",
+        "  source.mjs <command> [options]",
+        "",
+        "Commands:",
+        "  normalize-file --path <file> [--root <repo>]",
+        "  normalize-user --input <file|->",
+        "  normalize-github --input <file|->",
+        "  persist --input <file|-> [--root <repo>]",
+        "  validate --input <file|->",
+        "",
+        "Input:",
+        "  --input <file|-> reads JSON from a file; use the literal --input - for stdin.",
+        "  normalize-file requires --path; persist uses the normalized source from --input.",
+        "",
+        "Help (`--help` or `-h`) exits with code 0 before command parsing and never writes a source artifact.",
+    ].join("\n");
+}
+
+function hasHelpFlag(argv) {
+    return argv.some((argument) => argument === "--help" || argument === "-h");
+}
+
 async function main(argv) {
+    if (hasHelpFlag(argv)) {
+        process.stdout.write(`${usage()}\n`);
+        return;
+    }
+
     const args = parseArgs(argv);
     const command = args._[0];
     let result;

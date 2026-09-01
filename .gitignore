@@ -24,3 +24,5 @@ default-reviewers.txt
 /var/
 /.owe/
 /.playwright-cli/
+
+.agents/skills/code-review/
