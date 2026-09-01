@@ -644,6 +644,41 @@ it("CLI persists source, saves and validates a plan without sidecar", () => {
     assert.equal(JSON.parse(validated.stdout).valid, true);
 });
 
+it("prints source and store CLI help without inputs or side effects", () => {
+    const root = temporaryRepository();
+    try {
+        const sourceScript = path.join(ROOT, ".agents/skills/task-plan/scripts/source.mjs");
+        const storeScript = path.join(ROOT, ".agents/skills/task-plan/scripts/store.mjs");
+        const cases = [
+            {
+                script: sourceScript,
+                helpArgs: [["--help"], ["-h"], ["persist", "--help"], ["normalize-file", "-h"]],
+                literals: ["normalize-file", "normalize-user", "normalize-github", "persist", "validate", "--input -", "never writes a source artifact"],
+            },
+            {
+                script: storeScript,
+                helpArgs: [["--help"], ["-h"], ["save", "--help"], ["load", "-h"]],
+                literals: ["save", "load", "paths", "complete-wp", "repo_root", "--root", "never changes a plan"],
+            },
+        ];
+
+        const helpCases = cases.flatMap(({script, literals, helpArgs}) => helpArgs.map((args) => ({args, literals, script})));
+        for (const {args, literals, script} of helpCases) {
+            const result = spawnSync(process.execPath, [script, ...args], {cwd: root, encoding: "utf8"});
+            assert.equal(result.status, 0, `${script} ${args.join(" ")}\n${result.stderr}`);
+            assert.equal(result.stderr, "");
+            for (const literal of literals) {
+                assert.match(result.stdout, new RegExp(literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${script} ${args.join(" ")} missing ${literal}`);
+            }
+        }
+
+        assert.equal(fs.existsSync(path.join(root, "var")), false);
+        assert.deepEqual(fs.readdirSync(path.join(root, "docs", "plans")), []);
+    } finally {
+        fs.rmSync(root, {force: true, recursive: true});
+    }
+});
+
 it("validation can run directly against persisted evidence", () => {
     const root = temporaryRepository();
     prepareSource(root);

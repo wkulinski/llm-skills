@@ -7,12 +7,16 @@ import {fileURLToPath} from "node:url";
 
 const skillDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const skillsRoot = path.resolve(skillDir, "..");
-const repoRoot = findRepoRoot();
 const rawArgs = process.argv.slice(2);
 
 if (rawArgs.length === 0) {
     usage();
 }
+if (rawArgs[0] === "--help" || rawArgs[0] === "-h") {
+    usage({help: true});
+}
+
+const repoRoot = findRepoRoot();
 
 const phpactor = resolveTool("phpactor");
 let toolWorkingDirForOutput = null;
@@ -41,16 +45,25 @@ writeJson({
 
 process.exit(ok ? 0 : (phpactorResult.status ?? 1));
 
-function usage() {
-    console.error(`Usage:
+function usage({help = false} = {}) {
+    const output = `Usage:
     phpactor-cli.mjs <phpactor-command> [phpactor arguments/options...]
+
+Adapter behavior:
+    Commands and options pass through to Phpactor.
+    Repository-relative paths are normalized to Phpactor's working directory.
+    The wrapper adds --no-interaction and --no-ansi when they are not supplied.
+    --help and -h show this wrapper help before git/tool resolution.
 
 Examples:
     phpactor-cli.mjs list --format=json
     phpactor-cli.mjs help class:move --format=json
     phpactor-cli.mjs class:move src/Old.php src/New.php --type=file
-    phpactor-cli.mjs offset:info src/Foo.php 123 --format=json`);
-    process.exit(2);
+    phpactor-cli.mjs offset:info src/Foo.php 123 --format=json
+
+Use help <command> to request help from the backend Phpactor command.`;
+    (help ? process.stdout : process.stderr).write(`${output}\n`);
+    process.exit(help ? 0 : 2);
 }
 
 function normalizeArgs(inputArgs) {

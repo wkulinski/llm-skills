@@ -85,7 +85,7 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
    - Nie interpretuj każdej zmiany po QA jako automatycznego powodu do kolejnego przebiegu. Powrót do kroku 3 i ponowne QA jest dozwolone tylko wtedy, gdy kroki 6-7 ujawniły konieczność zmiany kodu, konfiguracji lub toolingu poza dokumentacją albo inna procedura wymaga tego jawnie.
    - Jeśli taki wyjątkowy powrót jest konieczny po zakończonym `PASS`, rozpocznij nową sesję `$qa-run`; nie uruchamiaj ponownie `initial` w zakończonej sesji.
 8. Krok akceptacji: jeśli od momentu snapshotu (krok 2) zaszły jakiekolwiek zmiany w repo, zaraportuj je do akceptacji (wyłącznie „delta od snapshotu”, niepełna lista wszystkich zmian w repo):
-   - Preferowane obliczenie delty: `node <skill_dir>/scripts/snapshot-tools.mjs list --current` (generuje `delta-all.txt` i zwraca kod 0 gdy pusta, 1 gdy niepusta).
+   - Preferowane obliczenie delty: `node <skill_dir>/scripts/snapshot-tools.mjs list --current` (generuje `delta-all.txt`, wypisuje `DELTA_EMPTY` przy pustej delcie albo `DELTA_PRESENT` z listą ścieżek przy niepustej; wrapper zwraca kod 0 w obu przypadkach).
    - Jeśli “delta od snapshotu” jest pusta: napisz wprost “Brak zmian delta od snapshotu (krok 2)” i przejdź do kroku 9.
    - Jeśli “delta od snapshotu” nie jest pusta:
      - wypisz listę plików, których treść zmieniła się względem snapshotu (oraz pliki dodane/usunięte od snapshotu),

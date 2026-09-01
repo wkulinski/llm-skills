@@ -476,6 +476,14 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
    - jeśli to **krytyczny plik**: zatrzymaj się i dopytaj użytkownika, czy taki scope jest akceptowalny,
    - jeśli to **nie jest krytyczny plik**: nie “zasypuj pytaniami” — spróbuj znaleźć rozwiązanie w obrębie ustalonego zakresu; jeśli to niemożliwe, wykonaj minimalną zmianę konieczną technicznie i jawnie zaraportuj to w podsumowaniu.
 
+Kontrakt lokalnych CLI poznawaj w kolejności: dokumentacja skilla → `--help`/`-h`
+wywołanego entrypointu → punktowy odczyt źródła tylko przy braku lub sprzeczności
+kontraktu. Nie czytaj całego skryptu, jeśli dokumentacja albo help opisują
+argumenty i skutki wywołania. Wybór między rekonesansem szerokim a odczytem
+punktowym rozstrzyga macierz w
+`<skills_root>/_shared/references/repository-context-hybrid.md`; ten skill nie
+kopiuje macierzy ani nie powtarza zakazów broad rediscovery i read-before-write.
+
 ### 3) Plan pracy
 1. Jeśli zadanie nie jest trywialne: zaproponuj krótki plan (3–6 kroków) i trzymaj się go.
 2. Jeśli w trakcie okaże się, że zakres rośnie: zatrzymaj się, zaktualizuj plan i poproś o potwierdzenie.

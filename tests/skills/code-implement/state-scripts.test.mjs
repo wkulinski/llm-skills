@@ -1,4 +1,5 @@
 import {existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {spawnSync} from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import {describe, expect, it} from "vitest";
@@ -10,6 +11,43 @@ import {runStateReadLog} from "../../../.agents/skills/code-implement/scripts/st
 import {formatIsoSeconds, formatLocalDate, formatLocalTime, resolveReadEventsPath, resolveStatePath} from "../../../.agents/skills/code-implement/scripts/state-utils.mjs";
 
 describe("code-implement state scripts", () => {
+    it("prints read-log CLI help without requiring or writing state", () => {
+        const tempRoot = mkdtempSync(path.join(os.tmpdir(), "code-implement-help-test-"));
+        try {
+            const cachePath = path.join(tempRoot, "cache");
+            const script = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../.agents/skills/code-implement/scripts/state-readlog.mjs");
+            for (const flag of ["--help", "-h"]) {
+                const result = spawnSync(process.execPath, [script, flag], {
+                    cwd: tempRoot,
+                    env: {...process.env, CACHE_PATH: cachePath},
+                    encoding: "utf8",
+                });
+
+                expect(result.status).toBe(0);
+                expect(result.stderr).toBe("");
+                for (const literal of [
+                    "purpose",
+                    "discovery",
+                    "read-before-write",
+                    "event",
+                    "source",
+                    "read-mode",
+                    "path",
+                    "scope",
+                    "cannot be combined",
+                    "Put structured flags first",
+                ]) {
+                    expect(result.stdout).toContain(literal);
+                }
+            }
+
+            expect(existsSync(resolveStatePath(cachePath).absolute)).toBe(false);
+            expect(existsSync(resolveReadEventsPath(cachePath).absolute)).toBe(false);
+        } finally {
+            rmSync(tempRoot, {force: true, recursive: true});
+        }
+    });
+
     it("initializes a state file once and keeps it stable on rerun", () => {
         const tempRoot = mkdtempSync(path.join(os.tmpdir(), "code-implement-state-test-"));
         try {

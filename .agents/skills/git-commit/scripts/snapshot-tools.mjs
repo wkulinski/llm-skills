@@ -401,7 +401,29 @@ export function showSnapshotDelta({
     return showOne({execCommand, filePath: target, full, repoRoot, snapshotDir: context.snapshotDir});
 }
 
+function usage() {
+    return [
+        "Usage:",
+        "  snapshot-tools.mjs create [--new|--force-new]",
+        "  snapshot-tools.mjs list [--current|<snapshot-dir>]",
+        "  snapshot-tools.mjs show [--current|<snapshot-dir>] <path|--all> [--full]",
+        "",
+        "create reuses the current snapshot unless --new or --force-new is given.",
+        "list reports the delta; show displays one path or all paths from delta-all.txt.",
+        "Help (`--help` or `-h`) exits with code 0 before git resolution, even after a command, and creates no snapshot.",
+    ].join("\n");
+}
+
+function hasHelpFlag(argv) {
+    return argv.some((argument) => argument === "--help" || argument === "-h");
+}
+
 export async function runSnapshotTools(argv, {execCommand = runCommand, pointerFile = DEFAULT_POINTER_FILE} = {}) {
+    if (hasHelpFlag(argv)) {
+        process.stdout.write(`${usage()}\n`);
+        return 0;
+    }
+
     const [command = "", ...rest] = argv;
     const repoRootResult = execCommand("git", ["rev-parse", "--show-toplevel"]);
     if (repoRootResult.status !== 0) {

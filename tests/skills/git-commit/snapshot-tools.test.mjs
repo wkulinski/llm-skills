@@ -1,6 +1,7 @@
-import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {spawnSync} from "node:child_process";
 import {describe, expect, it} from "vitest";
 
 import {
@@ -14,6 +15,42 @@ import {
 } from "../../../.agents/skills/git-commit/scripts/snapshot-tools.mjs";
 
 describe("snapshot tools", () => {
+    it("prints CLI help before git resolution and snapshot creation", () => {
+        const tempRoot = mkdtempSync(path.join(os.tmpdir(), "snapshot-tools-help-test-"));
+        try {
+            const binDir = path.join(tempRoot, "bin");
+            const marker = path.join(tempRoot, "git-called.txt");
+            mkdirSync(binDir);
+            const fakeGit = path.join(binDir, "git");
+            writeFileSync(fakeGit, "#!/usr/bin/env bash\nprintf 'called\\n' > \"$SNAPSHOT_HELP_MARKER\"\nexit 1\n", "utf8");
+            chmodSync(fakeGit, 0o755);
+            const script = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../.agents/skills/git-commit/scripts/snapshot-tools.mjs");
+            const env = {...process.env, PATH: `${binDir}:${process.env.PATH ?? ""}`, SNAPSHOT_HELP_MARKER: marker};
+
+            const helpArgs = [
+                ["--help"],
+                ["-h"],
+                ["create", "--help"],
+                ["create", "-h"],
+                ["list", "--help"],
+                ["show", "-h"],
+            ];
+            for (const args of helpArgs) {
+                const result = spawnSync(process.execPath, [script, ...args], {cwd: tempRoot, env, encoding: "utf8"});
+                expect(result.status).toBe(0);
+                expect(result.stderr).toBe("");
+                for (const literal of ["create", "--new", "--force-new", "list", "--current", "show", "--all", "--full", "creates no snapshot"]) {
+                    expect(result.stdout).toContain(literal);
+                }
+            }
+
+            expect(existsSync(marker)).toBe(false);
+            expect(existsSync(path.join(tempRoot, "snapshot"))).toBe(false);
+        } finally {
+            rmSync(tempRoot, {force: true, recursive: true});
+        }
+    });
+
     it("splits lines and resolves unique sorted values", () => {
         expect(splitLines("a\n\n b \n")).toEqual(["a", "b"]);
         expect(uniqueSorted(["b", "a", "a"])).toEqual(["a", "b"]);
