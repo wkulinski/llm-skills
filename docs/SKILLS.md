@@ -2,6 +2,7 @@
 
 - `$agent-cache-clear`
 - `$code-implement`
+- `$code-review`
 - `$commit-message-write`
 - `$context-refresh`
 - `$dev-mate`
