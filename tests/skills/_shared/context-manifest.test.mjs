@@ -146,7 +146,8 @@ describe("context manifest", () => {
                 calls.push(args.join(" "));
                 if (args[0] === "remote") { return "git@github.com:acme/project.git\n"; }
                 if (args[0] === "branch") { return "feature/context-routing\n"; }
-                if (args[0] === "rev-parse") { return "abc123\n"; }
+                if (args[0] === "rev-parse" && args[1] === "HEAD") { return "abc123\n"; }
+                if (args[0] === "rev-parse" && args[1] === "--show-toplevel") { return "/repo/root\n"; }
                 return "";
             },
             now: new Date("2026-07-14T12:00:00.000Z"),
@@ -158,7 +159,7 @@ describe("context manifest", () => {
             head: "abc123",
             generated_at: "2026-07-14T12:00:00.000Z",
         });
-        expect(calls).toHaveLength(6);
+        expect(calls).toHaveLength(7);
         expect(manifest.worktree).toEqual({
             staged_sha256: EMPTY_SHA256,
             unstaged_sha256: EMPTY_SHA256,
@@ -190,6 +191,27 @@ describe("context manifest", () => {
             expect(untracked.untracked_sha256).not.toBe(empty.untracked_sha256);
             expect(untracked.combined_sha256).not.toBe(staged.combined_sha256);
             expect(JSON.stringify(untracked)).not.toContain("untracked secret-shaped text");
+        } finally {
+            rmSync(repo, {recursive: true, force: true});
+        }
+    });
+
+    it("hashes untracked files relative to the repository root from any cwd", () => {
+        const repo = makeGitRepo();
+        try {
+            const sub = path.join(repo, "sub");
+            mkdirSync(sub);
+            writeFileSync(path.join(sub, "sub.txt"), "sub\n");
+            git(repo, "add", "sub/sub.txt");
+            git(repo, "commit", "--quiet", "-m", "add sub");
+            writeFileSync(path.join(repo, "root-new.txt"), "root untracked\n");
+            writeFileSync(path.join(sub, "sub-new.txt"), "sub untracked\n");
+
+            const fromRoot = getWorktreeFingerprint({cwd: repo});
+            const fromSub = getWorktreeFingerprint({cwd: sub});
+
+            expect(fromSub).toEqual(fromRoot);
+            expect(fromSub.untracked_sha256).not.toBe(EMPTY_SHA256);
         } finally {
             rmSync(repo, {recursive: true, force: true});
         }

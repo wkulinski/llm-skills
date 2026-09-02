@@ -67,17 +67,22 @@ function canonicalUntrackedHash({cwd, execFile}) {
     return representation.digest("hex");
 }
 
+function resolveRepositoryRoot(cwd, execFile = execFileSync) {
+    const output = gitOutput(["rev-parse", "--show-toplevel"], {cwd, execFile}).trim();
+    return output ? path.resolve(output) : path.resolve(cwd);
+}
+
 export function getWorktreeFingerprint({cwd = process.cwd(), execFile = execFileSync} = {}) {
-    const context = {cwd: path.resolve(cwd), execFile};
+    const context = {cwd: resolveRepositoryRoot(cwd, execFile), execFile};
     const staged_sha256 = canonicalDiffHash([
-        "diff", "--cached", "--binary", "--full-index", "--no-ext-diff", "--no-color", "--no-renames", "--",
+        "diff", "--cached", "--binary", "--full-index", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--",
     ], context);
     const unstaged_sha256 = canonicalDiffHash([
-        "diff", "--binary", "--full-index", "--no-ext-diff", "--no-color", "--no-renames", "--",
+        "diff", "--binary", "--full-index", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--",
     ], context);
     const untracked_sha256 = canonicalUntrackedHash(context);
     const combined_sha256 = sha256([
-        "worktree-fingerprint-v1",
+        "worktree-fingerprint-v2",
         staged_sha256,
         unstaged_sha256,
         untracked_sha256,

@@ -13,6 +13,7 @@ shared_files:
   - _shared/references/context-subagent-contract.md
   - _shared/scripts/context-manifest.mjs
   - _shared/scripts/secret-detector.mjs
+  - _shared/scripts/change-inventory.mjs
 ---
 
 # $context-refresh
@@ -138,11 +139,18 @@ Jeśli tryb to **Full** i zdefiniowano `TESTS_README`, przeczytaj README testów
 
 ### 5) Analiza bieżących zmian (skalowalnie)
 Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania dużych diffów do rozmowy.
-1. Zrób szybki przegląd rozmiaru zmian: `git diff --stat`.
-2. Zastosuj próg dla “czytam od razu”:
+1. Wygeneruj strukturalne inventory zmian:
+   ```bash
+   node <skills_root>/_shared/scripts/change-inventory.mjs build --output <CACHE_PATH>/repository-context/change-inventory.json
+   ```
+   - Inventory należy regenerować przy każdym refreshu; nie używaj wcześniej zapisanego pliku jako źródła aktualnego zakresu.
+   - Inventory zawiera: pliki z powierzchniami zmian (staged/unstaged/untracked), stats śledzonych zmian i liczby plików, subsystemy oraz worktree fingerprint.
+   - Doczytaj inventory jako dane wejściowe dla poniższych kroków zamiast powtarzać ad-hoc git commands.
+2. Zrób szybki przegląd rozmiaru zmian na podstawie inventory (stats.total, stats.tracked_insertions/tracked_deletions/staged_files/unstaged_files/untracked_files).
+3. Zastosuj próg dla "czytam od razu":
    - jeśli liczba zmienionych+nieśledzonych plików jest mała (np. ≤ 10): przejrzyj diff każdego pliku lub jego kluczowe fragmenty,
-   - jeśli jest większa: ogranicz się do orientacji (stat/numstat) + pełne diffy tylko dla plików “high-risk” oraz dla obszaru wskazanego w prompt.
-3. Trigger doczytania on-demand (kluczowe):
+   - jeśli jest większa: ogranicz się do orientacji (stat/numstat) + pełne diffy tylko dla plików "high-risk" oraz dla obszaru wskazanego w prompt.
+4. Trigger doczytania on-demand (kluczowe):
    Doczytywanie ma być uruchamiane wtedy, gdy “zadanie dotyka” pliku/obszaru, którego nie masz jeszcze wystarczająco dobrze w głowie. Triggerem jest zawsze potrzeba podjęcia decyzji lub wykonania zmiany w danym obszarze.
 
    To nie jest “ponowne uruchomienie `$context-refresh`”. To jest punktowe doczytanie tylko tego, co jest potrzebne w danym momencie. Sam status `dirty` albo `untracked` nie jest dowodem, że poprzedni odczyt jest nieaktualny.
@@ -158,7 +166,7 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
    - zadanie dotyczy kodu w języku wspieranym przez Serenę → zawęź zakres przez Serenę zgodnie z `<skills_root>/_shared/references/symbolic-navigation-and-editing-policy.md` zamiast czytać pełne pliki bez potrzeby.
    - jeśli Serena nie jest dostępna, ale dostępna jest inna warstwa symboliczna dla języka → użyj jej według tej samej polityki.
 
-4. Procedura doczytania on-demand:
+5. Procedura doczytania on-demand:
    - Ustal “target” doczytania: plik / moduł / symbol.
    - Jeśli target to plik:
      - jeśli plik jest zmieniony i nie ma ważnego odczytu jego aktualnej wersji dla zakresu patcha: przeczytaj `git diff -- <plik>` i aktualną treść pliku (przynajmniej relewantne sekcje),
@@ -173,12 +181,12 @@ Cel: zrozumieć, “co jest zmienione w repo” bez konieczności wklejania duż
      - przeczytaj README modułu i (jeśli istnieje) sprawdź, czy indeks modułów nie odsyła do dodatkowych konwencji.
    - Po doczytaniu: wróć do zadania i podejmij decyzję/wykonaj zmianę w oparciu o doczytane informacje.
 
-5. Doczytanie on-demand (krótka zasada wykonawcza):
+6. Doczytanie on-demand (krótka zasada wykonawcza):
    - zanim zmodyfikujesz plik, którego zmian nie rozumiesz (bo np. był już zmieniony przed Twoją pracą albo zmienił się od ostatniego odczytu), doczytaj jego diff/treść w tym momencie; nie powtarzaj szerokiego discovery, jeśli aktualny raport wystarcza do decyzji,
    - analogicznie: zanim przygotujesz `commit-message.txt`, upewnij się, że rozumiesz „co” i “dlaczego” (w praktyce robi to też `$commit-message-write`).
    - jeśli zadanie jest wyraźnie runtime/debuggingowe i AI Mate jest dostępny, możesz pomocniczo użyć `$dev-mate` do zebrania logów/profilera/DI; nie zastępuje to odczytu kodu ani dokumentacji.
    - jeśli zadanie dotyczy kodu w języku wspieranym przez Serenę, preferuj zawężenie przez Serenę zamiast szerokiego odczytu całych plików; jeśli Serena nie jest dostępna, zastosuj tę samą zasadę do innej warstwy symbolicznej; dla Twig/YAML/docs zwykle pozostań przy `rg` i zwykłym odczycie, a dla SCSS użyj zwykłego patcha tylko wtedy, gdy zmiana jest banalna i lokalna.
-6. Uwaga: jeśli kolejnym krokiem ma być `$commit-message-write`, to ten skill ma własną procedurę analizy zmian przed zapisaniem `commit-message.txt` — `$context-refresh` nie musi “wiedzieć wszystkiego” o każdej zmianie, ale musi wiedzieć, co jest zmienione i gdzie.
+7. Uwaga: jeśli kolejnym krokiem ma być `$commit-message-write`, to ten skill ma własną procedurę analizy zmian przed zapisaniem `commit-message.txt` — `$context-refresh` nie musi “wiedzieć wszystkiego” o każdej zmianie, ale musi wiedzieć, co jest zmienione i gdzie.
 
 ### 6) Weryfikacja spójności procedur (jeśli dotyczy)
 Jeśli zmiany dotyczą procedur (pliki w `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`, `<skills_root>/_shared/references/runtime-quality-procedures.md`, `<skills_root>/*`):
@@ -188,7 +196,8 @@ Jeśli zmiany dotyczą procedur (pliki w `<skills_root>/_shared/references/runti
 ### 7) Potwierdzenie gotowości
 Podsumuj krótko:
 - jakie dokumenty zostały wczytane (rdzeń + moduły dotknięte zmianami),
-- jakie obszary kodu są zmienione,
+- jakie obszary kodu są zmienione (na podstawie inventory: stats, subsystemy),
+- czy zapisano `change-inventory.json` do `<CACHE_PATH>/repository-context/` (ścieżka, worktree fingerprint),
 - czy widzisz potencjalne rozbieżności/duplikaty w dokumentacji lub procedurach.
 
 Po zakończeniu refreshu agent główny lub `context-refresher` powinien przygotować
@@ -202,7 +211,7 @@ issue, komentarzy, pełnych dokumentów ani sekretów.
 - Tryb: `Quick` lub `Full`.
 - Użyte klucze dokumentacji: lista tylko tych kluczy `docs_map`, które były użyte w tym uruchomieniu (np. `MAIN_DOC=...`, `MODULE_DOCS_GLOB=...`).
 - Wczytane: lista kluczowych dokumentów (rdzeń + moduły dotknięte).
-- Zmiany w repo: krótki opis zakresu (moduły/obszary) + liczba plików zmienionych/untracked.
+- Zmiany w repo: krótki opis zakresu (moduły/obszary) + liczba plików zmienionych/untracked (z inventory).
 - Uwagi: braki, sprzeczności, duplikaty, rzeczy do doczytania “on-demand”.
 
 ## Przykłady wejścia
