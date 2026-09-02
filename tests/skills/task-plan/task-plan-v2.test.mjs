@@ -644,6 +644,49 @@ it("CLI persists source, saves and validates a plan without sidecar", () => {
     assert.equal(JSON.parse(validated.stdout).valid, true);
 });
 
+it("normalizes a conversational source through stdin before persisting it", () => {
+    const root = temporaryRepository();
+    try {
+        const sourceScript = path.join(ROOT, ".agents/skills/task-plan/scripts/source.mjs");
+        const storeScript = path.join(ROOT, ".agents/skills/task-plan/scripts/store.mjs");
+        const conversation = JSON.stringify({title: "Conversation task", body: "Implement point one."});
+
+        const normalized = spawnSync(process.execPath, [sourceScript, "normalize-user", "--input", "-"], {
+            cwd: root,
+            input: `${conversation}\n`,
+            encoding: "utf8",
+        });
+        assert.equal(normalized.status, 0, normalized.stderr);
+        const normalizedSource = JSON.parse(normalized.stdout);
+        assert.equal(normalizedSource.source_kind, "user-input");
+
+        const persisted = spawnSync(process.execPath, [sourceScript, "persist", "--input", "-", "--root", root], {
+            cwd: root,
+            input: normalized.stdout,
+            encoding: "utf8",
+        });
+        assert.equal(persisted.status, 0, persisted.stderr);
+        const persistedSource = JSON.parse(persisted.stdout);
+        assert.match(persistedSource.source_identity, /^user-input:/);
+        assert.equal(fs.existsSync(path.join(root, persistedSource.source_artifact)), true);
+
+        const saved = spawnSync(process.execPath, [storeScript, "save", "--input", "-"], {
+            cwd: root,
+            input: `${JSON.stringify({
+                repo_root: root,
+                source_identity: persistedSource.source_identity,
+                markdown_body: completePlanBody(),
+                context: null,
+            })}\n`,
+            encoding: "utf8",
+        });
+        assert.equal(saved.status, 0, saved.stderr);
+        assert.equal(JSON.parse(saved.stdout).status, "ready");
+    } finally {
+        fs.rmSync(root, {force: true, recursive: true});
+    }
+});
+
 it("prints source and store CLI help without inputs or side effects", () => {
     const root = temporaryRepository();
     try {
@@ -695,5 +738,7 @@ it("documents the repository-level task-plan test directory", () => {
 
     assert.match(skill, /tests\/skills\/task-plan\//);
     assert.doesNotMatch(skill, /<skill_dir>\/tests\//);
+    assert.match(skill, /normalize-user --input -/);
+    assert.match(skill, /persist --input -/);
     assert.equal(fs.existsSync(path.join(ROOT, "tests/skills/task-plan/task-plan-v2.test.mjs")), true);
 });

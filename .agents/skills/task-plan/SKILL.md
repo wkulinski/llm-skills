@@ -77,6 +77,22 @@ konkretnego celu i rezultatu, zapytaj, czy opis ma być potraktowany jako zadani
 source artifact i SHA-256 przed repository-context. Nie dopowiadaj wymagań na
 podstawie długości, nagłówków lub rodzaju źródła.
 
+Dla źródła z bieżącej konwersacji agent nie żąda od użytkownika pliku wejściowego.
+Przekazuje JSON źródła przez stdin (heredoc, bez shellowego escapowania JSON) i
+pozwala `source.mjs` utworzyć kanoniczny artefakt:
+
+```bash
+node <skill_dir>/scripts/source.mjs normalize-user --input - <<'CONVERSATION_JSON' \
+  | node <skill_dir>/scripts/source.mjs persist --input - --root "$PWD"
+{"title":"Conversation task","body":"Don't fail on apostrophes."}
+CONVERSATION_JSON
+```
+
+Wynik `persist` dostarcza `source_identity`, `source_artifact` i
+`source_sha256`, które należy zachować przy zapisie planu. Nie zapisuj ręcznie
+tymczasowego `source.json` i nie pomijaj utrwalenia źródła tylko dlatego, że
+wejściem była konwersacja.
+
 GitHub issue może zawierać wyłącznie niepusty tytuł. Puste body nie blokuje wtedy
 planowania: tytuł jest całym dostępnym materiałem źródłowym, a szczegóły
 techniczne i kryteria pozostają jawnie niezweryfikowane, dopóki nie potwierdzi ich
@@ -563,6 +579,7 @@ Minimalny przebieg CLI:
 
 ```bash
 node <skill_dir>/scripts/source.mjs persist --input ./source.json --root "$PWD"
+# Dla bieżącej konwersacji: JSON źródła podaj przez stdin w heredoc (patrz wyżej).
 node <skill_dir>/scripts/store.mjs save --input ./plan-input.json
 node <skill_dir>/scripts/store.mjs load --source-identity 'owner/repository#123' --root "$PWD"
 node <skill_dir>/scripts/store.mjs complete-wp --file ./docs/plans/<plan-id>.md --wp WP1 --evidence "focused test passed" --root "$PWD"

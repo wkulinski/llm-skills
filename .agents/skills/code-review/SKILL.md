@@ -10,6 +10,7 @@ shared_files:
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/repository-context-hybrid.md
   - _shared/references/context-subagent-contract.md
+  - _shared/scripts/change-inventory.mjs
 ---
 
 # Code Review
@@ -60,6 +61,21 @@ First classify the review target:
 Creating a plan or revising a plan as its owner remains `$task-plan`. This skill's
 `plan` target is an independent, read-only review and never takes ownership of the
 plan's Markdown, status, questions, or validation lifecycle.
+
+### Read change inventory
+
+For a working-tree `code` review, always regenerate the change inventory at the
+beginning of the review:
+
+```bash
+node <skills_root>/_shared/scripts/change-inventory.mjs build --output <CACHE_PATH>/repository-context/change-inventory.json
+```
+
+Read the resulting `files[]`, `stats`, and `subsystems[]` as the change inventory
+for this review instead of running ad-hoc git commands. The inventory fingerprint
+identifies the exact snapshot that was reviewed. A file entry can contain both
+`staged` and `unstaged` surfaces for the same path; review both, and treat the
+surface counters as non-exclusive.
 
 Supported inputs:
 
@@ -338,7 +354,10 @@ If a serious issue is plausible but not proven, lower confidence/severity or cla
 
 Passing lint/typecheck/build is hygiene evidence, not behavioral proof.
 
-Verification commands must be focused and non-destructive. List only commands actually run.
+This skill is **read-only**. Do not run lint, test, build, or other verification commands
+during the review. Mechanical verification is a separate phase handled by `$qa-run`.
+Report unverified claims as `verification_gap` in the Verification section; do not treat missing
+verification as a blocker unless the claim cannot be evaluated without it.
 
 ## 7. Review the review
 
@@ -359,11 +378,14 @@ Deduplicate overlapping findings by failure mode, not by file.
 
 Discard compliments, generic advice, speculative refactors, and style-only comments from the findings list.
 
-## 8. Coverage ledger
+After the false-positive pass, ensure that each inventory entry has an explicit
+review outcome before publishing the verdict.
+
+## 8. Coverage
 
 Before final verdict, account for every meaningful changed area.
 
-Use one of:
+Use one of the following outcomes for every inventory entry:
 
 - `FINDING` — issue reported
 - `REVIEWED` — reviewed, no issue found
@@ -442,20 +464,21 @@ Include the `Complexity/value gate` outcome when the gate was relevant.
 
 ### Verification
 
-List only checks actually run and their results. Never claim a command ran if it did not.
+This review is read-only. List the mechanical checks actually run and their results.
+If lint, tests, or build were not run, report a `verification_gap` in this section;
+do not turn an otherwise reviewable source area into `NOT_COVERED`. Full verification
+is handled by `$qa-run` as a separate phase after the review.
 
 ### Example command
 
-For a default working-tree review, build the complete change inventory with:
+For a default working-tree review, regenerate the change inventory (see Section 1):
 
 ```bash
-git status --short
-git diff --cached --stat
-git diff --stat
-git ls-files --others --exclude-standard
+node <skills_root>/_shared/scripts/change-inventory.mjs build --output <CACHE_PATH>/repository-context/change-inventory.json
 ```
 
-Review the union of those staged, unstaged, and untracked paths; do not silently replace it with only the output of `git diff`.
+Review the union of staged, unstaged, and untracked paths from the inventory's `files[]`;
+do not silently replace it with only the output of `git diff`.
 
 Prompt examples:
 
