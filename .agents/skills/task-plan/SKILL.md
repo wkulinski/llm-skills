@@ -195,6 +195,19 @@ oceny, nie faktami technicznymi. Weryfikuj je tylko w stopniu potrzebnym do
 przypisania punktu albo sformułowania pytania. Szczegół wykonawczy, który nie
 zmienia planu, jest discovery debt.
 
+Dla planu naprawczego oddziel symptom, potwierdzoną przyczynę i proponowaną
+naprawę. Jeżeli przyczyna nie jest potwierdzona, a rozważane przyczyny prowadzą
+do różnych zmian, nie zapisuj jednej z hipotez jako bezwarunkowego `Scope`.
+Najpierw rozstrzygnij ją przez evidence gate w fazie planowania. Brak możliwego
+do uzyskania evidence pozostawia plan `blocked`; nie przenoś wyboru naprawy do
+wykonawcy ani do `Discovery required`.
+
+Traktuj jako zachowanie publiczne także wartości domyślne, okresy ważności,
+retry, timeouty, statusy i przejścia oraz treści komunikatów będące częścią
+zgłoszenia. Jeżeli ich wartość może zmienić obserwowalny rezultat, potwierdź ją
+istniejącym kontraktem albo decyzją użytkownika zamiast nazywać szczegółem
+wykonawczym.
+
 ### 2. Repository context
 
 Przed scoutingiem wyznacz minimalny zbiór nierozstrzygniętych decyzji
@@ -207,6 +220,11 @@ Utwórz criterion tylko dla nierozstrzygniętej decyzji mogącej zmienić owners
 zachowanie publiczne, model danych, granice WP lub kryteria akceptacji. Szczegół
 wykonawczy nie jest criterion; zapisz go później jako `Discovery required` w
 odpowiednim WP.
+
+Nieznana przyczyna błędu jest criterion, jeżeli jej możliwe warianty wymagają
+innych napraw, właścicieli, ścieżek, granic WP albo testów regresyjnych. Criterion
+ma wtedy zebrać evidence rozstrzygające między wariantami, a nie tylko wskazać
+entrypoint lub ogólny mechanizm domenowy.
 
 Ten sam algorytm obowiązuje podczas tworzenia i kontynuacji planu; task-plan nie
 ma osobnego trybu re-run. Istniejący Markdown, potwierdzone evidence i decyzje
@@ -252,6 +270,13 @@ Po zwalidowanym raporcie wolno wykonywać wyłącznie punktowe odczyty potrzebne
 planu. Wybór między rekonesansem szerokim a odczytem punktowym rozstrzyga
 macierz w `<skills_root>/_shared/references/repository-context-hybrid.md`;
 task-plan nie kopiuje tej macierzy.
+
+Po ustaleniu confirmed production paths wykonaj punktowe sprawdzenie testów
+odwołujących się do zmienianych handlerów, komend, query, kontrolerów albo
+publicznych kontraktów. Nie poprzestawaj na jednym „reprezentatywnym” teście z
+raportu, jeżeli potwierdzone ścieżki wskazują właściciela zachowania na innym
+poziomie. `Verification` ma uwzględniać poziom testów wymagany przez lokalną
+strategię testowania i istniejące testy właściciela mechanizmu.
 
 ### 3. Kompletny plan
 
@@ -407,6 +432,13 @@ Puste kategorie zapisuj jako `none`. `Candidate paths` są hipotezami i nie mog�
 być przedstawione w handoffie jako potwierdzone. Jeśli ścieżka nie została
 potwierdzona, użyj konkretnego `Discovery required` zamiast zgadywania.
 
+Przed wpisaniem do `Scope` operacji „dodać”, „zmienić”, „zaimplementować” albo
+równoważnej sprawdź punktowo obecnego właściciela mechanizmu. Proponowana zmiana
+pozostaje w `Scope` tylko wtedy, gdy evidence potwierdza brak albo konkretną lukę.
+Jeżeli mechanizm już realizuje wymagane zachowanie, usuń zmianę lub przeformułuj
+ją na weryfikację i szukaj rzeczywistej przyczyny symptomu. Jeżeli nie da się tego
+rozstrzygnąć, zastosuj test wpływu discovery debt opisany w critical review.
+
 `Estimated size` jest szacunkiem planistycznym przekazywanym wykonawcy. Nie
 steruje batchingiem ani trwałym stanem wykonania.
 
@@ -439,6 +471,37 @@ Wykonaj jeden review odpowiadający na pytania:
 8. Czy każde kryterium akceptacji ma konkretny test albo check?
 9. Czy plan spełnia inwarianty treści i nie przepisuje reguł globalnych?
 10. Czy każdy punkt źródła został przypisany albo wykluczony po odpowiedzi użytkownika?
+11. Czy plan proponuje zmianę, której potrzeby nie potwierdza evidence?
+12. Czy wynik któregokolwiek `Discovery required` może unieważnić wybraną naprawę albo zmienić ownership, granice WP, model danych, zachowanie publiczne lub kryteria akceptacji?
+
+Pytania 11 i 12 mają obowiązkowe, osobne ścieżki postępowania:
+
+#### Potwierdzenie potrzeby zmiany
+
+- Odpowiedź `nie` na pytanie 11: kontynuuj review.
+- Odpowiedź `tak`: wykonaj punktowy odczyt właściciela mechanizmu.
+  - Jeśli mechanizmu albo wymaganego zachowania brakuje, zachowaj zmianę i dopisz
+    konkretne evidence.
+  - Jeśli mechanizm już istnieje, usuń zmianę albo przeformułuj ją na weryfikację;
+    nie dodawaj równoległej odpowiedzialności.
+  - Jeśli nie można rozstrzygnąć potrzeby zmiany, zastosuj test wpływu discovery
+    debt poniżej.
+
+#### Test wpływu discovery debt
+
+- Odpowiedź `nie` na pytanie 12: wpis może pozostać w `Discovery required` jako
+  szczegół wykonawczy niezmieniający planu.
+- Odpowiedź `tak`: plan nie może być `ready`, dopóki niewiadoma nie zostanie
+  rozstrzygnięta.
+  - Jeśli odpowiedź może dostarczyć repository-context, utwórz criterion i
+    wykonaj canonical context lifecycle.
+  - Jeśli potrzebna jest decyzja biznesowa, utwórz pytanie `[open]`.
+  - Jeśli potrzebna jest reprodukcja, log albo inne evidence runtime, zapisz
+    konkretny evidence gate fazy planowania. Uzyskaj evidence przed wyborem
+    naprawy; gdy jest niedostępne, pozostaw plan `blocked`.
+
+Dla każdego wpisu `Discovery required` odpowiedz na pytanie 12 oddzielnie. Nie
+uznawaj całej sekcji za bezpieczną na podstawie jednego ogólnego stwierdzenia.
 
 Zapisz wynik w `Direction, simplicity and consistency`, a następnie wprowadź
 jedną rewizję wynikającą z review zgodnie z inwariantami treści. Nie uruchamiaj
@@ -507,6 +570,12 @@ gdy:
 - confirmed, candidate i discovery debt są rozdzielone;
 - discovery debt nie może zmieniać ownership, granic WP, modelu danych,
   zachowania publicznego ani kryteriów akceptacji;
+- każda proponowana zmiana ma evidence potwierdzające brak lub konkretną lukę w
+  istniejącym mechanizmie;
+- żadna niepotwierdzona przyczyna błędu ani nierozstrzygnięty evidence gate nie
+  pozostaje w planie `ready`;
+- verification obejmuje testy właściciela zmienianego zachowania zgodnie z
+  lokalną strategią testowania;
 - source i context artefakty istnieją i mają hashe zgodne z frontmatterem.
 
 Po `ready` pokaż:
