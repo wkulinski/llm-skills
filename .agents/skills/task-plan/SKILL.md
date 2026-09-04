@@ -41,7 +41,8 @@ Task-plan:
 - pobiera issue, plik albo opis użytkownika;
 - oddziela wymagania od sugestii, hipotez i decyzji;
 - zbiera tylko potrzebny kontekst repozytorium;
-- tworzy kompletny plan i wykonuje jeden critical review;
+- tworzy kompletny plan, wykonuje jeden critical review i zawsze zleca
+  niezależny `$code-review` gotowego kandydata planu;
 - zadaje wyłącznie pytania blokujące;
 - wyprowadza wynik `ready` albo `blocked` bezpośrednio z Markdowna.
 
@@ -168,6 +169,9 @@ intake
   → critical review i jedna rewizja
   → pytania blokujące, jeśli istnieją
   → aktualizacja całego planu po odpowiedzi
+  → zapis i walidacja kompletnego kandydata planu
+  → niezależny `$code-review` planu
+  → rewizja findings, walidacja i re-review zmienionych fragmentów
   → ready
 ```
 
@@ -459,59 +463,64 @@ dla samej ceremonii procesu.
 
 ### 4. Critical review
 
-Wykonaj jeden review odpowiadający na pytania:
+Wykonaj jeden review, odpowiadając `tak` albo `nie` na każde pytanie w tabeli.
+W grupie pytań wszystkie odpowiedzi `tak` oznaczają lewą ścieżkę, a choć jedna
+odpowiedź `nie` — prawą. Nie traktuj odpowiedzi jako samego komentarza do
+review: popraw plan, zbierz evidence albo oznacz go jako `blocked`.
 
-1. Czy plan realizuje rzeczywisty rezultat źródła zamiast bezkrytycznie wdrażać jego sugerowaną diagnozę lub rozwiązanie?
-2. Czy wszystkie punkty źródła są zrealizowane albo jawnie wyłączone?
-3. Czy potwierdzone dowody rzeczywiście wspierają proponowane zmiany?
-4. Czy plan używa istniejących wzorców zamiast równoległego rozwiązania?
-5. Czy mniejsza zmiana osiągnęłaby ten sam rezultat?
-6. Czy WP nie dublują odpowiedzialności, stanu, algorytmu ani integracji?
-7. Czy ownership, kolejność i założenia są spójne między wszystkimi WP?
-8. Czy każde kryterium akceptacji ma konkretny test albo check?
-9. Czy plan spełnia inwarianty treści i nie przepisuje reguł globalnych?
-10. Czy każdy punkt źródła został przypisany albo wykluczony po odpowiedzi użytkownika?
-11. Czy plan proponuje zmianę, której potrzeby nie potwierdza evidence?
-12. Czy wynik któregokolwiek `Discovery required` może unieważnić wybraną naprawę albo zmienić ownership, granice WP, model danych, zachowanie publiczne lub kryteria akceptacji?
+| Pytania kontrolne | Gdy odpowiedź jest `tak` albo wszystkie są `tak` | Gdy odpowiedź jest `nie` albo choć jedna jest `nie` |
+| --- | --- | --- |
+| **Kierunek względem źródła:** Czy plan realizuje rzeczywisty rezultat źródła zamiast bezkrytycznie wdrażać jego sugerowaną diagnozę lub rozwiązanie? | Kontynuuj review. | Skoryguj kierunek. Jeżeli rezultat źródła pozostaje niejednoznaczny, utwórz pytanie `[open]`. |
+| **Pokrycie źródła:** Czy wszystkie punkty źródła są zrealizowane albo jawnie wyłączone? <br> **Przypisanie:** Czy każdy punkt źródła został przypisany albo wykluczony po odpowiedzi użytkownika? | Kontynuuj review. | Przypisz punkt źródła do WP. Wykluczenie albo materialne przeformułowanie punktu wymaga pokazania evidence i pytania użytkownika, czy punkt utrzymać, przeformułować czy wykluczyć. |
+| **Wsparcie evidence:** Czy potwierdzone dowody rzeczywiście wspierają proponowane zmiany? <br> **Potrzeba zmiany:** Czy potrzeba każdej proponowanej zmiany jest potwierdzona evidence? | Kontynuuj review. | Wykonaj punktowy odczyt właściciela mechanizmu albo innego źródła brakującego dowodu. Jeśli mechanizmu albo wymaganego zachowania brakuje, zachowaj zmianę i dopisz konkretne evidence. Jeśli mechanizm już istnieje, usuń zmianę albo przeformułuj ją na weryfikację; nie dodawaj równoległej odpowiedzialności. Jeśli niewiadoma nadal może zmienić plan, zastosuj wiersz `Discovery required`. |
+| **Istniejący mechanizm:** Czy plan używa istniejących wzorców zamiast równoległego rozwiązania? <br> **Brak duplikacji:** Czy żaden WP nie dubluje odpowiedzialności, stanu, algorytmu ani integracji innego WP? <br> **Spójność WP:** Czy ownership, kolejność i założenia są spójne między wszystkimi WP? | Kontynuuj review. | Zastosuj istniejący mechanizm albo skoryguj ownership, granice i kolejność WP. Scal lub rozdziel odpowiedzialności tylko wtedy, gdy plan po zmianie nadal pokrywa wynik źródła. |
+| **Minimalność:** Czy mniejsza zmiana osiągnęłaby ten sam rezultat? | Zastąp kierunek mniejszą zmianą i sprawdź ponownie pokrycie źródła oraz kryteria akceptacji. Jeżeli mniejsza zmiana zmienia lub usuwa punkt źródła, zastosuj wiersz `Pokrycie źródła`. | Kontynuuj review. |
+| **Weryfikacja:** Czy każde kryterium akceptacji ma konkretny test albo check? | Kontynuuj review. | Dopisz konkretny test albo check dla właściciela zmienianego zachowania. Jeśli właściciel lub właściwy poziom testu nie jest potwierdzony, wykonaj najpierw punktowy odczyt testów. |
+| **Inwarianty planu:** Czy plan spełnia inwarianty treści i nie przepisuje reguł globalnych? | Kontynuuj review. | Popraw naruszony inwariant albo usuń przepisane reguły globalne, a przed `ready` uruchom walidację strukturalną planu. |
+| **Discovery required:** Czy wynik któregokolwiek wpisu `Discovery required` może unieważnić wybraną naprawę albo zmienić ownership, granice WP, model danych, zachowanie publiczne lub kryteria akceptacji? | Plan nie może być `ready`, dopóki niewiadoma nie zostanie rozstrzygnięta. Jeśli odpowiedź może dostarczyć repository-context, utwórz criterion i wykonaj canonical context lifecycle. Jeśli potrzebna jest decyzja biznesowa, utwórz pytanie `[open]`. Jeśli potrzebna jest reprodukcja, log albo inne evidence runtime, zapisz konkretny evidence gate fazy planowania. Uzyskaj evidence przed wyborem naprawy; gdy jest niedostępne, pozostaw plan `blocked`. | Wpis może pozostać w `Discovery required` jako szczegół wykonawczy niezmieniający planu. |
 
-Pytania 11 i 12 mają obowiązkowe, osobne ścieżki postępowania:
-
-#### Potwierdzenie potrzeby zmiany
-
-- Odpowiedź `nie` na pytanie 11: kontynuuj review.
-- Odpowiedź `tak`: wykonaj punktowy odczyt właściciela mechanizmu.
-  - Jeśli mechanizmu albo wymaganego zachowania brakuje, zachowaj zmianę i dopisz
-    konkretne evidence.
-  - Jeśli mechanizm już istnieje, usuń zmianę albo przeformułuj ją na weryfikację;
-    nie dodawaj równoległej odpowiedzialności.
-  - Jeśli nie można rozstrzygnąć potrzeby zmiany, zastosuj test wpływu discovery
-    debt poniżej.
-
-#### Test wpływu discovery debt
-
-- Odpowiedź `nie` na pytanie 12: wpis może pozostać w `Discovery required` jako
-  szczegół wykonawczy niezmieniający planu.
-- Odpowiedź `tak`: plan nie może być `ready`, dopóki niewiadoma nie zostanie
-  rozstrzygnięta.
-  - Jeśli odpowiedź może dostarczyć repository-context, utwórz criterion i
-    wykonaj canonical context lifecycle.
-  - Jeśli potrzebna jest decyzja biznesowa, utwórz pytanie `[open]`.
-  - Jeśli potrzebna jest reprodukcja, log albo inne evidence runtime, zapisz
-    konkretny evidence gate fazy planowania. Uzyskaj evidence przed wyborem
-    naprawy; gdy jest niedostępne, pozostaw plan `blocked`.
-
-Dla każdego wpisu `Discovery required` odpowiedz na pytanie 12 oddzielnie. Nie
-uznawaj całej sekcji za bezpieczną na podstawie jednego ogólnego stwierdzenia.
+Każdy wpis `Discovery required` oceń osobno. Nie uznawaj całej sekcji za
+bezpieczną na podstawie jednego ogólnego stwierdzenia.
 
 Zapisz wynik w `Direction, simplicity and consistency`, a następnie wprowadź
 jedną rewizję wynikającą z review zgodnie z inwariantami treści. Nie uruchamiaj
-auto-uproszczenia ani control review. Nierozstrzygnięty finding staje się
-pytaniem blokującym albo ryzykiem w planie.
+auto-uproszczenia ani dodatkowego control review w tej fazie. Nierozstrzygnięty
+finding staje się pytaniem blokującym albo ryzykiem w planie.
 
 Po odpowiedzi użytkownika sprawdź ponownie tylko zmienione fragmenty. Jeśli
 problem pozostaje, pokaż blocker zamiast uruchamiać pętlę review lub restart.
 
-### 5. Pytania blokujące
+### 5. Niezależny code review planu
+
+Po wewnętrznym critical review, rozstrzygnięciu pytań blokujących oraz zapisie i
+walidacji kompletnego kandydata uruchom zawsze `$code-review` z targetem
+`plan`. Następuje to przed pokazaniem użytkownikowi komunikatu `ready`.
+Reviewer otrzymuje kanoniczny Markdown planu oraz referencje do source artifact,
+context reportu i kryteriów, jeśli istnieją.
+
+`$code-review` pozostaje niezależny i read-only: nie zmienia Markdowna, nie
+tworzy pytań, nie ustawia statusu ani nie uruchamia repository-context. Ocena
+planu sprawdza source coverage, ownership, granice i zależności WP, kolejność,
+kryteria akceptacji, verification oraz evidence proponowanych zmian. Nie
+powtarza szerokiego discovery; brak lub nieaktualność artefaktu zgłasza jako lukę
+pokrycia.
+
+Jeśli review zgłosi finding wymagający zmiany, `$task-plan` ocenia go wobec
+źródła i evidence, a następnie aktualizuje pełny Markdown przez `store.mjs`:
+
+- rozstrzygalny fakt techniczny koryguje w planie;
+- brakujący dowód uruchamia zwykłą ścieżkę criterion/context albo evidence gate;
+- decyzja biznesowa tworzy pytanie `[open]`;
+- niepotwierdzony albo nierozstrzygnięty finding pozostawia plan `blocked`.
+
+Po każdej rewizji uruchom walidację, a następnie ponów `$code-review` dla
+zmienionych fragmentów planu i ich bezpośrednich zależności. Powtarzaj ten cykl,
+dopóki review nie pozostawia findings wymagających zmiany albo plan nie stanie
+się `blocked`. Nie zapisuj osobnego lifecycle findings ani statusu review:
+źródłem prawdy pozostaje aktualny Markdown, a przyjęte findings muszą być
+odzwierciedlone w jego treści.
+
+### 6. Pytania blokujące
 
 Pytaj tylko wtedy, gdy różne odpowiedzi istotnie zmieniają zakres, zachowanie,
 model danych lub kryteria akceptacji. Grupuj pytania w jeden czytelny batch.
@@ -555,9 +564,10 @@ Taki dokument ma wynik `blocked`. Po odpowiedzi zastąp wpis:
 Nie twórz osobnej operacji propagacji decyzji. Ogólne „kontynuuj” nie jest
 odpowiedzią na pytanie, akceptacją WP ani zgodą na implementację.
 
-### 6. Ready i handoff
+### 7. Ready i handoff
 
-Przed `ready` uruchom `<skill_dir>/scripts/validate.mjs`. Status jest dozwolony,
+Przed `ready` uruchom `<skill_dir>/scripts/validate.mjs`, a następnie wymagany
+niezależny `$code-review` zgodnie z poprzednią sekcją. Status jest dozwolony,
 gdy:
 
 - wszystkie wymagane sekcje istnieją;
@@ -577,6 +587,9 @@ gdy:
 - verification obejmuje testy właściciela zmienianego zachowania zgodnie z
   lokalną strategią testowania;
 - source i context artefakty istnieją i mają hashe zgodne z frontmatterem.
+
+Nie pokazuj użytkownikowi komunikatu `ready`, dopóki niezależny review nie
+zakończy się bez findings wymagających zmiany.
 
 Po `ready` pokaż:
 
