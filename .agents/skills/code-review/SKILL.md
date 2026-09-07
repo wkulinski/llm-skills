@@ -107,6 +107,31 @@ report/reference, and any available hashes before judging the plan. If a referen
 artifact is unavailable or stale, report the resulting coverage gap; do not silently
 reconstruct or mutate the plan's identity.
 
+### Active-plan context for code
+
+For a `code` target with no explicitly supplied plan, check whether
+`${CACHE_PATH:-var/agent/cache}/plan-execute/last-plan.txt` exists. This is the
+only automatic plan lookup: do not search every plan in the repository.
+
+When the pointer exists:
+
+- resolve its single repository-relative canonical plan path; never treat the
+  pointer as a copy of the plan or as a source of work-package status;
+- validate the resolved plan through the `$task-plan` contract before relying on
+  it, and record an invalid, stale, or non-canonical plan as a coverage gap;
+- determine whether the reviewed change maps to the current work package or to
+  another explicitly identifiable work package, using the changed behavior,
+  scope, and execution evidence rather than filename similarity alone;
+- review the mapped work package's goal, scope, out-of-scope boundary,
+  dependencies, acceptance criteria, and planned verification in addition to
+  the ordinary code-review lenses;
+- if the mapping is ambiguous, do not infer plan compliance. Record the plan
+  alignment as `NOT_COVERED` or raise a `QUESTION` when it materially affects
+  confidence.
+
+An active plan is an additional source of expected behavior, never a substitute
+for reviewing correctness, propagation, contracts, or operational risk in code.
+
 ## 2. Establish expected behavior
 
 Before judging implementation, locate the strongest available sources of intent in this order:
@@ -120,6 +145,11 @@ Before judging implementation, locate the strongest available sources of intent 
 7. tests and current code as behavioral evidence, not unquestionable product authority
 
 A project may keep task plans or specifications outside version control. If a relevant plan is discoverable, verify that it actually corresponds to the reviewed change before treating it as authoritative.
+
+For a `code` target, apply the active-plan alignment from Section 1 whenever a
+valid plan pointer was found. Use the plan's acceptance criteria as expected
+behavior, but do not accept implementation merely because it appears to follow
+the plan.
 
 If expected behavior cannot be determined and the concern is a product choice, classify it as `QUESTION`, not a defect.
 
@@ -312,8 +342,46 @@ Check whether tests:
 - cover distinct execution paths that can actually fail
 - validate contracts rather than implementation trivia
 - can fail for the defect they claim to prevent
+- derive their expected result from an authoritative requirement, contract, or
+  independently established invariant rather than the implementation's current
+  output
+- would have failed before the regression was fixed when that can be safely
+  established, rather than merely passing against the new implementation
+- control or explicitly isolate time, time zone, locale, randomness, ordering,
+  asynchronous completion, external I/O, and shared state whenever they can
+  affect the result
+- use stable contracts, roles, or selectors. A test may cover translated or
+  rendered UI behavior, but should not couple to incidental copy, fragile DOM
+  structure, or parser output when a stable behavioral contract exists
+- are not duplicates whose only difference is data that cannot change the
+  exercised behavior
+- exercise the meaningful failure mode of a stateful, cross-boundary, or
+  otherwise complex mechanism; a trivial unit assertion is not sufficient as
+  the only evidence for the mechanism's higher-risk behavior
 
 Do not request tests that merely vary values without exercising a distinct behavior.
+
+Do not reject a test merely because it uses a translation, DOM, or fixture. The
+defect is unstable coupling or an untrustworthy oracle, not the technology in
+isolation.
+
+### Active-plan alignment for code
+
+When Section 1 identified a valid active plan for a `code` review, assess the
+change against the mapped work package as well as the normal code-review
+contract:
+
+- does the implemented behavior satisfy the work package's objective and
+  acceptance criteria?
+- has the change stayed inside its stated scope and out-of-scope boundary?
+- are prerequisite work packages, ownership boundaries, and dependencies
+  respected?
+- does the chosen verification provide the evidence promised by the work
+  package, or is a deviation justified and visible?
+
+Do not turn this into a full review of every work package or a replacement for
+the code review. A plan mismatch, omitted acceptance criterion, or unjustified
+scope expansion is a code-review concern when it affects the reviewed change.
 
 ### Plan integrity and execution readiness
 
@@ -354,10 +422,37 @@ If a serious issue is plausible but not proven, lower confidence/severity or cla
 
 Passing lint/typecheck/build is hygiene evidence, not behavioral proof.
 
-This skill is **read-only**. Do not run lint, test, build, or other verification commands
-during the review. Mechanical verification is a separate phase handled by `$qa-run`.
-Report unverified claims as `verification_gap` in the Verification section; do not treat missing
-verification as a blocker unless the claim cannot be evaluated without it.
+This skill is **read-only**, which means it must not edit source, change Git
+state, alter persistent application data, or perform externally visible actions.
+It may run documented, safe, non-destructive commands when they directly answer
+a review question. Keep every command proportional to the changed behavior or a
+candidate finding, and record its command, result, and limitation.
+
+Permitted mechanical evidence includes a focused test, a targeted lint or
+typecheck, a build, a safe reproduction, or a narrowly scoped inspection tool.
+Use documented project entrypoints; do not guess commands, create test data in a
+shared environment, or run an action that can mutate production-like state.
+
+Do not run a full test suite, repository-wide lint, or full QA matrix unless the
+user explicitly requests it. `$qa-run` remains the normal workflow for full QA.
+Do not expand a focused check into a broader run merely because it is available.
+
+For a change affecting rendered UI, run a proportional Playwright checkpoint
+when `playwright-cli` and a safe application target are available. First inspect
+the installed CLI with `playwright-cli --help`, then follow the safe-session and
+artifact rules in
+`<skills_root>/frontend-ui-consistency/references/playwright-cli-verification.md`.
+The checkpoint should cover the changed state and relevant interaction, use a
+stable snapshot/role/selector, and check new console or request errors. Add a
+relevant viewport or accessibility/state check when the change's risk requires
+it. Do not use Playwright interactions that persist application data.
+
+If a relevant selected focused check is unavailable, report a
+`verification_gap`. If a required UI checkpoint cannot run because
+`playwright-cli` or a safe application target is unavailable, report the same
+gap for that UI behavior. Do not treat missing mechanical verification as a
+blocker unless the claim cannot be evaluated without it, and do not present the
+unverified behavior as proven.
 
 ## 7. Review the review
 
@@ -462,12 +557,33 @@ Then provide:
 A compact table/list of reviewed areas and any `NOT_COVERED` surfaces.
 Include the `Complexity/value gate` outcome when the gate was relevant.
 
+### Plan alignment
+
+For a `code` review with an active-plan pointer, state the resolved plan path,
+mapped work package, plan-alignment outcome, and any unmapped acceptance
+criterion or scope/dependency concern. Otherwise say that no active-plan
+pointer was available or applicable.
+
 ### Verification
 
-This review is read-only. List the mechanical checks actually run and their results.
-If lint, tests, or build were not run, report a `verification_gap` in this section;
-do not turn an otherwise reviewable source area into `NOT_COVERED`. Full verification
-is handled by `$qa-run` as a separate phase after the review.
+List the mechanical checks actually run, their results, and any relevant limits.
+Explicitly distinguish focused checks from full QA. If a relevant lint, test,
+build, safe reproduction, or Playwright checkpoint was not run, state why and
+report a `verification_gap`; do not turn an otherwise reviewable source area
+into `NOT_COVERED`. Full verification is handled by `$qa-run` unless the user
+explicitly requests otherwise.
+
+### Summary and next step
+
+State concisely:
+
+- the review activities completed, including traces, source reads, and commands
+  actually run;
+- the general assessment and finding status (`No findings` when none were
+  accepted);
+- the strongest remaining blind spot or verification gap;
+- the recommended next action, such as a focused check, `$qa-run`, plan
+  correction through `$task-plan`, clarification, or no further action.
 
 ### Example command
 
@@ -492,7 +608,9 @@ Prompt examples:
 For a `plan` target, describe changes to the plan as the next action and route
 them to `$task-plan`; do not edit the plan from this skill.
 
-If there are no findings, say so explicitly and still include the strongest remaining blind spot.
+If there are no findings, say `No findings.` explicitly before the review
+details and repeat that status in the Summary. Still include the strongest
+remaining blind spot.
 
 ## 12. Re-review after fixes
 

@@ -1,8 +1,7 @@
 ---
 description: Konsultuje, audytuje, rozwija i weryfikuje istniejący frontend z użyciem skilla frontend-ui-consistency oraz Playwright CLI. Używaj także przed implementacją do opiniowania widoków i proponowania zmian UI/UX.
 mode: subagent
-model: opencode-go/qwen3.8-max
-temperature: 0.6
+model: openai/gpt-5.6-luna
 variant: max
 steps: 60
 color: accent
