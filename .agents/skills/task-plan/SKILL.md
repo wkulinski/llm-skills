@@ -432,6 +432,40 @@ Każdy pakiet używa nagłówka `### WP<number> — <tytuł>` i zawiera:
 - Verification:
 ```
 
+#### Trwałe testy a jednorazowa weryfikacja zmiany
+
+Nie zamieniaj listy zmian w listę trwałych testów. Dowód, że wykonano zmianę,
+nie jest automatycznie trwałą specyfikacją systemu. W `Verification` rozdziel
+testy pozostające w repozytorium od jednorazowych checków wykonawczych.
+
+Dla każdego proponowanego trwałego testu wskaż regułę docelowego systemu,
+a następnie odpowiedz: **Czy ten osobny scenariusz zaplanowalibyśmy również
+dla systemu zbudowanego od początku według docelowego kontraktu, bez znajomości
+usuwanego kodu, starego ograniczenia i historii zadania?** Oceń potrzebę
+scenariusza, jego szczególne wartości wejściowe i asercje, nie tylko nazwę
+albo deklarowane uzasadnienie.
+
+- Jeżeli po odjęciu historii znika powód istnienia osobnego scenariusza,
+  nie wpisuj go do zakresu trwałych testów. Potrzebne potwierdzenie wykonania
+  zmiany zaplanuj jako jednorazowy check.
+- Jeżeli istniejący test pokrywa docelową regułę, zaplanuj jego aktualizację
+  zamiast osobnego testu upamiętniającego usunięte zachowanie. Nowy trwały
+  scenariusz wymaga odrębnego przypadku wynikającego z docelowego kontraktu.
+- Sam fakt, że test nie przechodziłby przed zmianą, nie uzasadnia jego trwałości.
+  To dowód różnicy zachowania, a nie samodzielne wymaganie testowe.
+
+Przykład: po usunięciu limitu 10 rekordów osobny test „wyświetla 11 rekordów”,
+uzasadniony wyłącznie dawnym limitem, należy zastąpić jednorazową weryfikacją.
+Test kompletności oczekiwanego zbioru rekordów spełniających warunki może
+specyfikować docelowy kontrakt, jeżeli takie jest wymaganie; najpierw sprawdź,
+czy nie jest to już odpowiedzialność istniejącego testu listy. Sama liczba 11
+w fixture nie dyskwalifikuje testu. Zmiana nazwy albo zastąpienie 11 liczbą 17
+nie naprawia braku uzasadnienia dla osobnego scenariusza. Analogicznie asercja
+braku jest poprawna, gdy wynika z niezależnego wymagania docelowego kontraktu,
+a nie wyłącznie z historii usunięcia.
+
+#### Pozostałe zasady work package
+
 Puste kategorie zapisuj jako `none`. `Candidate paths` są hipotezami i nie mogą
 być przedstawione w handoffie jako potwierdzone. Jeśli ścieżka nie została
 potwierdzona, użyj konkretnego `Discovery required` zamiast zgadywania.
@@ -476,6 +510,7 @@ review: popraw plan, zbierz evidence albo oznacz go jako `blocked`.
 | **Istniejący mechanizm:** Czy plan używa istniejących wzorców zamiast równoległego rozwiązania? <br> **Brak duplikacji:** Czy żaden WP nie dubluje odpowiedzialności, stanu, algorytmu ani integracji innego WP? <br> **Spójność WP:** Czy ownership, kolejność i założenia są spójne między wszystkimi WP? | Kontynuuj review. | Zastosuj istniejący mechanizm albo skoryguj ownership, granice i kolejność WP. Scal lub rozdziel odpowiedzialności tylko wtedy, gdy plan po zmianie nadal pokrywa wynik źródła. |
 | **Minimalność:** Czy mniejsza zmiana osiągnęłaby ten sam rezultat? | Zastąp kierunek mniejszą zmianą i sprawdź ponownie pokrycie źródła oraz kryteria akceptacji. Jeżeli mniejsza zmiana zmienia lub usuwa punkt źródła, zastosuj wiersz `Pokrycie źródła`. | Kontynuuj review. |
 | **Weryfikacja:** Czy każde kryterium akceptacji ma konkretny test albo check? | Kontynuuj review. | Dopisz konkretny test albo check dla właściciela zmienianego zachowania. Jeśli właściciel lub właściwy poziom testu nie jest potwierdzony, wykonaj najpierw punktowy odczyt testów. |
+| **Trwałość testów:** Czy każdy proponowany trwały test przeszedł bramkę „Trwałe testy a jednorazowa weryfikacja zmiany” — czy osobny scenariusz byłby potrzebny bez znajomości historii zmiany? | Kontynuuj review. | Usuń scenariusz uzasadniony wyłącznie historią z zakresu trwałych testów; potrzebny dowód wykonania zmiany przenieś do jednorazowych checków w `Verification`. Jeśli test ma chronić regułę już pokrytą, zaplanuj aktualizację jej istniejącego testu zamiast duplikatu. |
 | **Inwarianty planu:** Czy plan spełnia inwarianty treści i nie przepisuje reguł globalnych? | Kontynuuj review. | Popraw naruszony inwariant albo usuń przepisane reguły globalne, a przed `ready` uruchom walidację strukturalną planu. |
 | **Discovery required:** Czy wynik któregokolwiek wpisu `Discovery required` może unieważnić wybraną naprawę albo zmienić ownership, granice WP, model danych, zachowanie publiczne lub kryteria akceptacji? | Plan nie może być `ready`, dopóki niewiadoma nie zostanie rozstrzygnięta. Jeśli odpowiedź może dostarczyć repository-context, utwórz criterion i wykonaj canonical context lifecycle. Jeśli potrzebna jest decyzja biznesowa, utwórz pytanie `[open]`. Jeśli potrzebna jest reprodukcja, log albo inne evidence runtime, zapisz konkretny evidence gate fazy planowania. Uzyskaj evidence przed wyborem naprawy; gdy jest niedostępne, pozostaw plan `blocked`. | Wpis może pozostać w `Discovery required` jako szczegół wykonawczy niezmieniający planu. |
 
@@ -586,6 +621,9 @@ gdy:
   pozostaje w planie `ready`;
 - verification obejmuje testy właściciela zmienianego zachowania zgodnie z
   lokalną strategią testowania;
+- każdy proponowany trwały test przeszedł bramkę „Trwałe testy a jednorazowa
+  weryfikacja zmiany”; `Verification` odróżnia trwałe testy od jednorazowych
+  checków i nie utrwala osobnych scenariuszy uzasadnionych wyłącznie historią;
 - source i context artefakty istnieją i mają hashe zgodne z frontmatterem.
 
 Nie pokazuj użytkownikowi komunikatu `ready`, dopóki niezależny review nie
