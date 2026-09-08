@@ -365,6 +365,38 @@ Do not reject a test merely because it uses a translation, DOM, or fixture. The
 defect is unstable coupling or an untrustworthy oracle, not the technology in
 isolation.
 
+#### Durable tests versus one-off change verification
+
+Apply this gate to both implemented tests and tests proposed in a plan. A proof
+that a change was completed is not automatically a lasting specification of the
+system. Do not turn the change list into a list of permanent tests.
+
+For each proposed permanent test, identify the rule of the target system and
+ask: **Would we need this separate scenario if the system had been built from
+scratch to the target contract, without knowing the removed code, old limit, or
+history of the task?** Check the need for the scenario, its special input values,
+and its assertions—not just its name or stated justification.
+
+- If removing that history removes the reason for the separate scenario, require
+  its removal from the permanent suite or planned test scope. Keep any necessary
+  proof of the change as a one-off execution check.
+- If an existing test owns the target rule, prefer updating that test. A new
+  permanent scenario needs a distinct case justified by the target contract,
+  not merely a difference between the old and new implementation.
+- A test failing before the fix is useful regression evidence, but is not by
+  itself a reason to retain a separate test. Apply both this gate and the
+  regression checks above.
+
+Example: after removing a limit of 10 records, a separate “displays 11 records”
+test justified only by the old limit is change verification, not a permanent
+scenario. A test that the list contains the complete expected set of eligible
+records can specify the target contract, if that is the requirement; first check
+whether the existing list test already owns it. The number 11 in a fixture is
+not itself a defect. Renaming the test or replacing 11 with 17 does not repair a
+scenario whose only reason to exist is the removed limit. Likewise, a negative
+assertion is legitimate when the target contract independently requires an
+absence; removal history alone does not establish that requirement.
+
 ### Active-plan alignment for code
 
 When Section 1 identified a valid active plan for a `code` review, assess the
@@ -395,6 +427,7 @@ contract (`<skills_root>/task-plan/SKILL.md`) without editing it:
 - `Direction, simplicity and consistency` names the existing mechanism, simpler alternatives, minimality, and ownership rather than asserting them generically;
 - each WP has an actionable goal, scope, out-of-scope boundary, discovery notes, acceptance criteria, and verification;
 - acceptance criteria have a concrete test or check, and the execution environment/command contract is internally consistent;
+- every planned permanent test passes the **Durable tests versus one-off change verification** gate above; history-only scenarios are removed from permanent test scope, and any necessary one-off checks are explicitly distinguished in `Verification`;
 - open questions, missing evidence, or discovery debt that could change public behavior, ownership, WP boundaries, data models, or acceptance criteria are treated as blockers or questions;
 - the plan does not copy global workflow rules, describe its own drafting history, or claim `ready` independently of `$task-plan` validation.
 
