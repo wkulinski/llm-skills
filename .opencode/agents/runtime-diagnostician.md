@@ -1,8 +1,6 @@
 ---
 description: Używaj przy błędach runtime, HTTP 5xx, wyjątkach, problemach z profilerem, logami lub kontenerem DI.
 mode: subagent
-model: opencode-go/deepseek-v4-flash
-variant: max
 color: warning
 steps: 32
 permission:

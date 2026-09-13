@@ -4,9 +4,22 @@ import {describe, expect, it} from "vitest";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../");
 const PLAYBOOK = ".agents/skills/_shared/references/repository-context-scout-playbook.md";
+const AGENTS_DIR = path.join(ROOT, ".opencode/agents");
 
 function read(relativePath) {
     return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
+}
+
+function frontmatter(relativePath) {
+    const match = read(relativePath).match(/^---\n([\s\S]*?)\n---/);
+    return match ? match[1] : "";
+}
+
+function agentNames() {
+    return fs.readdirSync(AGENTS_DIR)
+        .filter((name) => name.endsWith(".md"))
+        .map((name) => name.slice(0, -3))
+        .sort();
 }
 
 describe("context scout agent contracts", () => {
@@ -122,16 +135,26 @@ describe("context scout agent contracts", () => {
         }
     });
 
-    it("documents Luna High as the bounded stronger fallback", () => {
+    it("documents Luna High as the bounded stronger fallback through the project config runtime contract", () => {
         const canonical = read(".agents/skills/_shared/references/repository-context-hybrid.md");
-        const fallback = read(".opencode/agents/context-scout.md");
+        const config = read("opencode.jsonc");
 
         expect(canonical).toMatch(/`context-scout` \(Luna High\)/);
         expect(canonical).toMatch(/higher-reasoning second pass/);
         expect(canonical).toMatch(/at most one fallback/);
         expect(canonical).not.toMatch(/Luna Low/);
-        expect(fallback).toMatch(/model: openai\/gpt-5\.6-luna/);
-        expect(fallback).toMatch(/variant: high/);
+
+        expect(config).toMatch(/"context-scout": \{\s*"model": "openai\/gpt-5\.6-luna",\s*"variant": "high"\s*\}/);
+
+        expect(config).not.toMatch(/OPENCODE_AGENT_/);
+
+        for (const agent of agentNames()) {
+            const agentFrontmatter = frontmatter(`.opencode/agents/${agent}.md`);
+            expect(config).toContain(`"${agent}": {`);
+            expect(agentFrontmatter).not.toMatch(/^model:/m);
+            expect(agentFrontmatter).not.toMatch(/^variant:/m);
+            expect(agentFrontmatter).not.toMatch(/^\s*thinking:/m);
+        }
     });
 
     it("publishes every shared repository-context runtime dependency", () => {

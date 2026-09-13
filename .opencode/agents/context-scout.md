@@ -1,8 +1,6 @@
 ---
 description: Niezależny read-only repository-context fallback dla tego samego zakresu targeted/cross-layer; delegowany natywnym task wyłącznie po CLAIM_FALLBACK, bez CMM i danych primary, zapisuje walidowany raport evidence.
 mode: subagent
-model: openai/gpt-5.6-luna
-variant: high
 color: info
 steps: 36
 permission:

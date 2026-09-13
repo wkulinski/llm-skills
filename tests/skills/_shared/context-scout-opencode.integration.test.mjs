@@ -11,11 +11,19 @@ import {FAILURE_CLASSES} from "../../../.agents/skills/_shared/scripts/context-s
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../");
 const REPORT_BUILDER = path.join(ROOT, ".agents/skills/_shared/scripts/context-scout-report-builder.mjs");
+const AGENTS_DIR = path.join(ROOT, ".opencode/agents");
 
 function debugAgent(name) {
     const result = spawnSync("opencode", ["debug", "agent", name], {cwd: ROOT, encoding: "utf8"});
     assert.equal(result.status, 0, result.stderr);
     return JSON.parse(result.stdout);
+}
+
+function agentNames() {
+    return fs.readdirSync(AGENTS_DIR)
+        .filter((name) => name.endsWith(".md"))
+        .map((name) => name.slice(0, -3))
+        .sort();
 }
 
 function hasRule(agent, permission, pattern, action) {
@@ -115,6 +123,18 @@ test("OpenCode resolves fallback without CMM and unrelated MCP tools", () => {
     assert.equal(hasRule(agent, "bash", "*", "deny"), true);
     assert.equal(hasRule(agent, "read", "**/*primary*.report.json", "deny"), true);
     assert.equal(hasRule(agent, "read", "**/*primary*.ledger.json", "deny"), true);
+});
+
+test("OpenCode resolves model and thinking for every project subagent", () => {
+    for (const name of agentNames()) {
+        const agent = debugAgent(name);
+        assert.equal(typeof agent.model?.providerID, "string", `${name}: missing model provider`);
+        assert.equal(typeof agent.model?.modelID, "string", `${name}: missing model id`);
+
+        const thinking = agent.variant ?? agent.options?.thinking?.type;
+        assert.equal(typeof thinking, "string", `${name}: missing thinking configuration`);
+        assert.notEqual(thinking, "", `${name}: empty thinking configuration`);
+    }
 });
 
 test("benchmark adapters are debug-audited before a cohort", async () => {
