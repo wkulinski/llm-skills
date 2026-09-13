@@ -12,6 +12,10 @@
         "reserved": 10000
     },
     "permission": {
+        // Permission rules are evaluated with the last matching pattern winning,
+        // so the catch-all allow stays first and the specific denies stay last.
+        // Keep this as a single "read" object: a duplicate JSON key would drop
+        // the earlier rules entirely instead of merging them.
         "read": {
             "*": "allow",
             "*.env": "allow",
@@ -19,7 +23,12 @@
             "*.env.example": "allow",
             "**/.*": "allow",
             "**/.*/*": "allow",
-            "**/.*/*/**": "allow"
+            "**/.*/*/**": "allow",
+            // Scout attempts must not read primary artifacts from another attempt.
+            // The benchmark/helper use separate report paths; the deny rules are
+            // intentionally narrower than the existing workspace/tmp policy.
+            "**/*primary*.report.json": "deny",
+            "**/*primary*.ledger.json": "deny"
         },
         "external_directory": {
             "/tmp/*": "allow",
@@ -27,13 +36,6 @@
             "/tmp/**/.*": "allow",
             "/tmp/**/.*/*": "allow",
             "/tmp/**/.*/*/**": "allow"
-        },
-        // Scout attempts must not read primary artifacts from another attempt.
-        // The benchmark/helper use separate report paths; the deny rules are
-        // intentionally narrower than the existing workspace/tmp policy.
-        "read": {
-            "**/*primary*.report.json": "deny",
-            "**/*primary*.ledger.json": "deny"
         },
         "mate_*": "deny"
     },
@@ -56,7 +58,37 @@
                 "webfetch": "ask"
             }
         },
+        "context-refresher": {
+            "model": "opencode-go/deepseek-v4.1-flash",
+            "variant": "max"
+        },
+        "context-scout-fast": {
+            "model": "opencode-go/deepseek-v4.1-flash",
+            "options": {
+                "thinking": {
+                    "type": "disabled"
+                }
+            }
+        },
+        "context-scout": {
+            "model": "openai/gpt-5.6-luna",
+            "variant": "high"
+        },
+        "diff-reviewer": {
+            "model": "opencode-go/deepseek-v4.1-flash",
+            "variant": "max"
+        },
+        "frontend-ui-engineer": {
+            "model": "openai/gpt-5.6-luna",
+            "variant": "max"
+        },
+        "implementation-worker": {
+            "model": "opencode-go/deepseek-v4.1-flash",
+            "variant": "max"
+        },
         "runtime-diagnostician": {
+            "model": "opencode-go/deepseek-v4.1-flash",
+            "variant": "max",
             "permission": {
                 "mate_*": "allow"
             }

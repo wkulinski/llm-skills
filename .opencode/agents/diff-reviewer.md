@@ -1,8 +1,6 @@
 ---
 description: Używaj ręcznie do trudnego review bieżącego diffu pod kątem regresji, kontraktów, CQRS i braków w testach.
 mode: subagent
-model: opencode-go/deepseek-v4-flash
-variant: max
 color: error
 steps: 48
 permission:

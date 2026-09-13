@@ -7,8 +7,6 @@ description: >-
     new design decisions, expanding scope, or repeatedly guessing.
 mode: subagent
 hidden: true
-model: opencode-go/deepseek-v4-flash
-variant: max
 steps: 24
 permission:
     "*": deny

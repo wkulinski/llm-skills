@@ -1,12 +1,8 @@
 ---
 description: Primary read-only repository-context scout dla targeted i cross-layer; delegowany natywnym task wyłącznie po hybrid prepare, używa CMM-first z bezpośrednią weryfikacją źródeł i zapisuje walidowany raport evidence.
 mode: subagent
-model: opencode-go/deepseek-v4-flash
 color: info
 steps: 48
-options:
-    thinking:
-        type: disabled
 permission:
     edit: deny
     read:

@@ -166,6 +166,44 @@ Minimal `.env.local` or `.env.dist` variables used by this repository:
 
 Shell scripts in `.agents/skills/**/scripts` auto-load `.env` and `.env.local` through `.agents/skills/_shared/scripts/env-load.sh`. This helper also exposes `resolve_tool_cmd` for deterministic entrypoint resolution.
 
+#### OpenCode agent runtime (model + thinking)
+
+Project-local `opencode.jsonc` owns every subagent's model and thinking configuration. Subagent definitions in `.opencode/agents/*.md` do not carry `model`, `variant`, or `options.thinking`; OpenCode resolves those runtime settings from the project config when it loads the instance for this project directory.
+
+Repository `.env` files remain reserved for script configuration and secrets such as tool paths, cache paths, profile flags, and `GH_TOKEN`. They do not configure subagent models or thinking levels.
+
+To configure a subagent, edit the `agent` section in the project's `opencode.jsonc`. Use the filename without `.md` as the agent key:
+
+```jsonc
+{
+    "agent": {
+        "context-scout": {
+            "model": "openai/gpt-5.6-luna",
+            "variant": "high"
+        },
+        "context-scout-fast": {
+            "model": "opencode-go/deepseek-v4.1-flash",
+            "options": {
+                "thinking": {
+                    "type": "disabled"
+                }
+            }
+        }
+    }
+}
+```
+
+Use `model` for the provider/model identifier. For regular subagents use `variant` for the reasoning level. `context-scout-fast` is the exception: its provider-specific reasoning setting is configured as `options.thinking.type`. Apply the same pattern to the remaining agent keys: `context-refresher`, `diff-reviewer`, `frontend-ui-engineer`, `implementation-worker`, and `runtime-diagnostician`.
+
+OpenCode reads this file once when it loads the project instance and keeps it for the lifetime of the running process. Restart OpenCode (for `opencode web`, the server process) after changing these settings; opening another session in an already-loaded instance does not reload them. Verify the resolved configuration from the project root with:
+
+```bash
+opencode debug agent context-scout
+opencode debug agent context-scout-fast
+```
+
+Do not put model or thinking settings back into `.opencode/agents/*.md`, and do not add `OPENCODE_AGENT_*` variables to `.env`; those files have different responsibilities.
+
 ### Tool entrypoints
 Proxy wrappers are optional.
 
