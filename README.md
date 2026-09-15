@@ -193,7 +193,7 @@ To configure a subagent, edit the `agent` section in the project's `opencode.jso
 }
 ```
 
-Use `model` for the provider/model identifier. For regular subagents use `variant` for the reasoning level. `context-scout-fast` is the exception: its provider-specific reasoning setting is configured as `options.thinking.type`. Apply the same pattern to the remaining agent keys: `context-refresher`, `diff-reviewer`, `frontend-ui-engineer`, `implementation-worker`, and `runtime-diagnostician`.
+Use `model` for the provider/model identifier. For regular subagents use `variant` for the reasoning level. `context-scout-fast` is the exception: its provider-specific reasoning setting is configured as `options.thinking.type`. Apply the same pattern to the remaining agent keys: `context-refresher`, `frontend-ui-engineer`, `implementation-worker`, and `runtime-diagnostician`.
 
 OpenCode reads this file once when it loads the project instance and keeps it for the lifetime of the running process. Restart OpenCode (for `opencode web`, the server process) after changing these settings; opening another session in an already-loaded instance does not reload them. Verify the resolved configuration from the project root with:
 

@@ -5,7 +5,8 @@ import path from "node:path";
 import {pathToFileURL} from "node:url";
 
 import {compareModelProfiles, loadModelHierarchy} from "../../_shared/scripts/model-hierarchy.mjs";
-import {loadPlanFile} from "../../task-plan/scripts/store.mjs";
+import {completeWorkPackage as completeTaskPlanWorkPackage, loadPlanFile} from "../../task-plan/scripts/store.mjs";
+import {writeFileAtomic} from "../../task-plan/scripts/atomic-file.mjs";
 import {
     parseExecutionContract,
     parseExecutionEnvironment,
@@ -139,9 +140,26 @@ export function writeLastPlanPointer({
 } = {}) {
     const resolved = resolvePlanPath({repoRoot, explicitPath: planPath, cachePath, fsOps});
     const pointerPath = resolvePointerPath(path.resolve(repoRoot), cachePath);
-    fsOps.mkdirSync(path.dirname(pointerPath), {recursive: true});
-    fsOps.writeFileSync(pointerPath, `${resolved.relative}\n`, "utf8");
+    writeFileAtomic(pointerPath, `${resolved.relative}\n`, {fsOps});
     return {path: pointerPath, value: resolved.relative};
+}
+
+export function completeExecutionWorkPackage({
+    planPath,
+    wpId,
+    evidence,
+    repoRoot = process.cwd(),
+    cachePath = process.env.CACHE_PATH || "var/agent/cache",
+    fsOps = fs,
+} = {}, options = {}) {
+    try {
+        const resolved = resolvePlanPath({repoRoot, explicitPath: planPath, cachePath, fsOps});
+        const pointer = writeLastPlanPointer({planPath: resolved.absolute, repoRoot, cachePath, fsOps});
+        const completed = completeTaskPlanWorkPackage({repoRoot, planPath: resolved.absolute, wpId, evidence, fsOps}, options);
+        return {...completed, pointer};
+    } catch (error) {
+        throw translateExecutionError(error);
+    }
 }
 
 function resolvePointerPath(repoRoot, cachePath) {
@@ -198,6 +216,7 @@ function usage() {
         "  execute.mjs resolve [--path <plan>] [--root <repo>] [--cache-path <dir>]",
         "  execute.mjs next [--path <plan>] [--root <repo>] [--cache-path <dir>]",
         "  execute.mjs check-environment [--path <plan>] --current-model <model> --current-reasoning <level> [--root <repo>] [--cache-path <dir>]",
+        "  execute.mjs complete --path <plan> --wp <WPn> --evidence <text> [--root <repo>] [--cache-path <dir>]",
     ].join("\n");
 }
 
@@ -211,27 +230,43 @@ async function main(argv) {
 
     const repoRoot = path.resolve(args.root ?? process.cwd());
     const cachePath = args.cache_path ?? process.env.CACHE_PATH ?? "var/agent/cache";
-    const resolved = resolvePlanPath({repoRoot, explicitPath: args.path, cachePath});
-    writeLastPlanPointer({planPath: resolved.absolute, repoRoot, cachePath});
 
     let result;
-    if (command === "resolve") {
-        result = {path: resolved.relative, source: resolved.source};
-    } else if (command === "next") {
-        result = selectNextWorkPackage(loadExecutionPlan({planPath: resolved.absolute, repoRoot}));
-    } else if (command === "check-environment") {
-        if (!args.current_model || !args.current_reasoning) {
+    if (command === "complete") {
+        if (!args.path || !args.wp || !args.evidence) {
             throw new PlanExecuteError(
                 "INVALID_ARGUMENT",
-                "check-environment requires both --current-model and --current-reasoning.",
+                "complete requires --path, --wp and --evidence.",
             );
         }
-        result = checkExecutionEnvironment(loadExecutionPlan({planPath: resolved.absolute, repoRoot}), {
-            currentModel: args.current_model,
-            currentReasoning: args.current_reasoning,
+        result = completeExecutionWorkPackage({
+            planPath: args.path,
+            repoRoot,
+            wpId: args.wp,
+            evidence: args.evidence,
+            cachePath,
         });
     } else {
-        throw new PlanExecuteError("INVALID_ARGUMENT", usage());
+        const resolved = resolvePlanPath({repoRoot, explicitPath: args.path, cachePath});
+        writeLastPlanPointer({planPath: resolved.absolute, repoRoot, cachePath});
+        if (command === "resolve") {
+            result = {path: resolved.relative, source: resolved.source};
+        } else if (command === "next") {
+            result = selectNextWorkPackage(loadExecutionPlan({planPath: resolved.absolute, repoRoot}));
+        } else if (command === "check-environment") {
+            if (!args.current_model || !args.current_reasoning) {
+                throw new PlanExecuteError(
+                    "INVALID_ARGUMENT",
+                    "check-environment requires both --current-model and --current-reasoning.",
+                );
+            }
+            result = checkExecutionEnvironment(loadExecutionPlan({planPath: resolved.absolute, repoRoot}), {
+                currentModel: args.current_model,
+                currentReasoning: args.current_reasoning,
+            });
+        } else {
+            throw new PlanExecuteError("INVALID_ARGUMENT", usage());
+        }
     }
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }

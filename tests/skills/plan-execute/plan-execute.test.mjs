@@ -8,6 +8,7 @@ import {persistSource, normalizeUserInput} from "../../../.agents/skills/task-pl
 import {completeWorkPackage, savePlan, StoreError} from "../../../.agents/skills/task-plan/scripts/store.mjs";
 import {parsePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
 import {
+    completeExecutionWorkPackage,
     loadExecutionPlan,
     PlanExecuteError,
     resolvePlanPath,
@@ -141,6 +142,126 @@ it("resolves an explicit plan and continues through a path-only pointer", () => 
     const continued = resolvePlanPath({repoRoot: root, cachePath});
     assert.equal(continued.source, "last-plan");
     assert.equal(continued.relative, saved.paths.draft_path);
+});
+
+it("completes through the facade, refreshes the canonical pointer, and resumes the next WP", () => {
+    const root = temporaryRepository();
+    const cachePath = path.join(root, "var", "agent", "cache");
+    const {saved, planPath} = makePlan(root, [
+        {id: "WP1", title: "First"},
+        {id: "WP2", title: "Follow-up"},
+    ], "user-input:facade");
+
+    const completed = completeExecutionWorkPackage({
+        repoRoot: root,
+        planPath,
+        wpId: "WP1",
+        evidence: "facade test passed",
+        cachePath,
+    }, {now: NOW});
+
+    assert.equal(completed.changed, true);
+    assert.equal(completed.pointer.value, saved.paths.draft_path);
+    assert.equal(fs.readFileSync(completed.pointer.path, "utf8"), `${saved.paths.draft_path}\n`);
+    assert.equal(path.dirname(completed.pointer.path), path.join(root, "var", "agent", "cache", "plan-execute"));
+    assert.deepEqual(
+        fs.readdirSync(path.dirname(completed.pointer.path)).filter((name) => name.includes(".tmp-")),
+        [],
+    );
+
+    const resumed = resolvePlanPath({repoRoot: root, cachePath});
+    assert.equal(resumed.source, "last-plan");
+    assert.equal(resumed.relative, saved.paths.draft_path);
+    assert.equal(selectNextWorkPackage(loadExecutionPlan({planPath: resumed.absolute, repoRoot: root})).selected.id, "WP2");
+});
+
+it("reports a completed one-WP plan when next resumes through the pointer", () => {
+    const root = temporaryRepository();
+    const cachePath = path.join(root, "var", "agent", "cache");
+    const {planPath} = makePlan(root, [{id: "WP1", title: "Only"}], "user-input:facade-complete");
+
+    completeExecutionWorkPackage({
+        repoRoot: root,
+        planPath,
+        wpId: "WP1",
+        evidence: "facade test passed",
+        cachePath,
+    }, {now: NOW});
+
+    const resumed = resolvePlanPath({repoRoot: root, cachePath});
+    assert.deepEqual(selectNextWorkPackage(loadExecutionPlan({planPath: resumed.absolute, repoRoot: root})), {
+        action: "complete",
+        selected: null,
+    });
+});
+
+it("keeps the plan and pointer unchanged when facade completion fails", () => {
+    const root = temporaryRepository();
+    const cachePath = path.join(root, "var", "agent", "cache");
+    const {planPath} = makePlan(root, [
+        {id: "WP1", title: "First"},
+        {id: "WP2", title: "Follow-up"},
+    ], "user-input:facade-errors");
+    const pointer = writeLastPlanPointer({planPath, repoRoot: root, cachePath});
+    const originalPlan = fs.readFileSync(planPath, "utf8");
+    const originalPointer = fs.readFileSync(pointer.path, "utf8");
+
+    assert.throws(
+        () => completeExecutionWorkPackage({
+            repoRoot: root,
+            planPath,
+            wpId: "WP2",
+            evidence: "out of order",
+            cachePath,
+        }, {now: NOW}),
+        (error) => error instanceof PlanExecuteError && error.code === "WORK_PACKAGE_OUT_OF_ORDER",
+    );
+    assert.throws(
+        () => completeExecutionWorkPackage({
+            repoRoot: root,
+            planPath,
+            wpId: "WP1",
+            cachePath,
+        }, {now: NOW}),
+        (error) => error instanceof PlanExecuteError && error.code === "INVALID_ARGUMENT",
+    );
+
+    assert.equal(fs.readFileSync(planPath, "utf8"), originalPlan);
+    assert.equal(fs.readFileSync(pointer.path, "utf8"), originalPointer);
+});
+
+it("points at the explicitly chosen plan when facade completion fails", () => {
+    const root = temporaryRepository();
+    const cachePath = path.join(root, "var", "agent", "cache");
+    const previous = makePlan(root, [{id: "WP1", title: "Previous"}], "user-input:pointer-previous");
+    const selected = makePlan(root, [
+        {id: "WP1", title: "First"},
+        {id: "WP2", title: "Follow-up"},
+    ], "user-input:pointer-selected");
+    const pointer = writeLastPlanPointer({planPath: previous.planPath, repoRoot: root, cachePath});
+    const previousPlanBefore = fs.readFileSync(previous.planPath, "utf8");
+    const selectedPlanBefore = fs.readFileSync(selected.planPath, "utf8");
+
+    assert.equal(fs.readFileSync(pointer.path, "utf8"), `${previous.saved.paths.draft_path}\n`);
+
+    assert.throws(
+        () => completeExecutionWorkPackage({
+            repoRoot: root,
+            planPath: selected.planPath,
+            wpId: "WP2",
+            evidence: "out of order",
+            cachePath,
+        }, {now: NOW}),
+        (error) => error instanceof PlanExecuteError && error.code === "WORK_PACKAGE_OUT_OF_ORDER",
+    );
+
+    assert.equal(fs.readFileSync(pointer.path, "utf8"), `${selected.saved.paths.draft_path}\n`);
+    assert.equal(fs.readFileSync(selected.planPath, "utf8"), selectedPlanBefore);
+    assert.equal(fs.readFileSync(previous.planPath, "utf8"), previousPlanBefore);
+
+    const resumed = resolvePlanPath({repoRoot: root, cachePath});
+    assert.equal(resumed.source, "last-plan");
+    assert.equal(resumed.relative, selected.saved.paths.draft_path);
 });
 
 it("selects exactly the first unchecked work package", () => {

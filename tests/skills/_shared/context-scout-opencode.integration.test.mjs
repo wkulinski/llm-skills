@@ -125,7 +125,9 @@ test("OpenCode resolves fallback without CMM and unrelated MCP tools", () => {
     assert.equal(hasRule(agent, "read", "**/*primary*.ledger.json", "deny"), true);
 });
 
-test("OpenCode resolves model and thinking for every project subagent", () => {
+// Spawns `opencode debug agent` once per project subagent, so its runtime scales
+// with the agent count and exceeds the default 30s integration timeout.
+test("OpenCode resolves model and thinking for every project subagent", {timeout: 120_000}, () => {
     for (const name of agentNames()) {
         const agent = debugAgent(name);
         assert.equal(typeof agent.model?.providerID, "string", `${name}: missing model provider`);
