@@ -39,6 +39,56 @@ profilu użytkownika automatycznie. Jeżeli aplikacja jest niedostępna, audyt
 statyczny bez renderowania wykonuj tylko na jawne polecenie i oznacz go jako
 nieweryfikowany wizualnie.
 
+## Jawny dostęp do aplikacji i auth state
+
+Każde zadanie wymagające chronionej nawigacji używa poniższego kontraktu zamiast
+zgadywania adresu, logowania lub profilu przeglądarki.
+
+### Wybór URL
+
+Priorytet jest stały: **explicit prompt/task URL -> `PLAYWRIGHT_GUI_BASE_URL` ->
+ask user or blocker**. Najpierw użyj URL-a podanego w promptcie lub zadaniu,
+następnie wartości środowiskowej. Jeśli żadna wartość nie istnieje, poproś
+użytkownika o adres albo zgłoś blokadę. Nigdy nie zgaduj trasy i nigdy nie
+ustawiaj domyślnie `localhost`.
+
+`PLAYWRIGHT_GUI_LOGIN_URL` nie jest kolejnym fallbackiem URL-a aplikacji. Razem
+z `PLAYWRIGHT_GUI_USER_LOGIN` i `PLAYWRIGHT_GUI_USER_PASSWORD` może być użyty
+wyłącznie w jawnej, należącej do projektu recipe logowania. Skill nie ma
+generycznego konsumenta `fill` ani generycznego workflow logowania.
+
+### Opcjonalny storage state
+
+`PLAYWRIGHT_GUI_STORAGE_STATE` jest opcjonalną, repo-relative ścieżką do
+storage state. Przed chronioną nawigacją zweryfikuj metadane ścieżki, bez
+odczytywania jej zawartości:
+
+1. ścieżka musi po rozwiązaniu pozostać wewnątrz `.playwright-cli/auth/`;
+2. musi wskazywać `regular file`;
+3. musi być `Git-ignored` (sprawdzenie `git check-ignore` jest częścią walidacji).
+
+Brak wartości, brak pliku albo nieudana walidacja oznaczają
+`authentication unavailable`: nie przechodź do chronionego URL-a. Skieruj
+użytkownika do jawnego bootstrapu state albo do konkretnej, projektowej recipe;
+nie wymyślaj własnego logowania. Zawartości state, credentiali ani sekretów
+nie wolno odczytywać, wypisywać, commitować ani umieszczać w ogólnych
+argumentach CLI. Po pozytywnej walidacji przekaż CLI wyłącznie zweryfikowaną
+nazwę pliku do `state-load <filename>`.
+
+### Kolejność sesji i nawigacji
+
+Zarówno `infrastructure preflight`, jak i `application checkpoint` używają
+jednego CLI rozwiązanego raz przez `resolve_tool_cmd` (`env-load.sh`); bezpośrednie
+`playwright-cli` jest niedozwolone, bo konfiguracja `BIN_PATH`-only działa tylko
+przez resolved command. `infrastructure preflight` ma własną unikalną sesję i
+helper sam ją zamyka. `application checkpoint` zawsze używa **separate unique session**,
+której nie dzieli z preflightem ani innym procesem. Własną sesję aplikacji otwórz najpierw
+w bezpiecznym, pustym kontekście. Dla chronionego URL-a kolejność jest
+obowiązkowa: walidacja state, udane `state-load <filename>`, dopiero potem
+nawigacja. Błąd ładowania klasyfikuj jako `authentication unavailable`, nie
+stosuj fallbacku do generycznego `fill`, a własną sesję zawsze zamknij — także
+po błędzie walidacji, ładowania lub nawigacji.
+
 ## Zasady nadrzędne
 
 1. Najpierw odkryj istniejący wzorzec, potem go zastosuj lub rozszerz.

@@ -16,6 +16,7 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
    - nie wyprowadzaj ścieżek ręcznie z `BIN_PATH` i nie stosuj dodatkowych heurystyk,
    - `resolve_tool_cmd` ładuje aktywne pliki env repo automatycznie.
    - wyjątek: `$qa-run` w trybie macierzy JSON uruchamia komendy 1:1 z `.agents/qa-run.matrix.json` (bez discovery entrypointów).
+   - punktowe testy i komendy diagnostyczne uruchamiaj wyłącznie przez kanoniczny entrypoint repozytorium; nie składaj równoległych komend, które tworzą inne środowisko niż kanoniczne, w tym inną tożsamość projektu Compose.
 4. Jeśli pracujesz jako główny agent LLM lub użytkownik prosi o odświeżenie kontekstu, uruchom `$context-refresh`. Delegowane subagenty nie uruchamiają go automatycznie; stosują kontrakt swojego promptu i manifest przekazany przez agenta głównego. Wyjątkiem jest jawnie zlecony `context-refresher`.
 
 ## 2. Po utworzeniu nowego pliku
@@ -27,12 +28,13 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
 1. Implementuj zgodnie z `./runtime-collaboration-guidelines.md` oraz aktywnym baseline/override.
 2. Utrzymuj zasadę evidence-based: decyzje i raportowanie opieraj na realnych odczytach/komendach.
 3. Domyślna weryfikacja po implementacji jest punktowa i dotyczy ostatniego przyrostu; pełne QA uruchamiaj wyłącznie z jawnego polecenia użytkownika albo przez skill, który explicite to definiuje.
-4. Nie rozszerzaj zakresu bez decyzji użytkownika, zwłaszcza dla zmian high-risk.
+4. Nie rozszerzaj zakresu bez decyzji użytkownika, zwłaszcza dla zmian high-risk. Operacje usuwające wolumeny lub dane wymagają jawnej zgody użytkownika, chyba że zostały wprost zlecone.
 5. Przed wyborem końcowego testu/lintu uruchom `node .agents/skills/_shared/scripts/targeted-check-decision.mjs` z parametrami wynikającymi z kryteriów, feedbacku i matrixa:
    - `RUN_TARGETED_TEST`: jeden wskazany plik testowy albo 1–3 metody, przez entrypoint z `resolve_tool_cmd`,
    - `RUN_MATRIX_CHECK`: punktowa komenda 1:1 z `.agents/qa-run.matrix.json`,
    - `REVIEW_ONLY`: raportuj `verification_gap`; nie używaj pełnego suite jako fallbacku,
    - `ENV_BLOCKER`: wyłącznie po rzeczywistej próbie wykonania dozwolonej komendy zakończonej błędem środowiska.
+   - niepowodzenie narzędzia raportuj na etapie, na którym wystąpiło (np. brak CLI, uruchomienie, połączenie, wykonanie komendy), i nie uogólniaj pojedynczego błędu do niedostępności środowiska.
 
 ## 4. Przed zakończeniem zadania
 1. Jeśli zadanie dotyczy istniejącego planu albo work package, zastosuj

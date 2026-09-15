@@ -152,12 +152,17 @@ Oznacz WP jako ukończony dopiero po uzyskaniu konkretnego evidence. Zapis zleć
 task-plan:
 
 ```bash
-node <skills_root>/task-plan/scripts/store.mjs complete-wp \
-  --file ./docs/plans/<plan-id>.md \
+node <skill_dir>/scripts/execute.mjs complete \
+  --path ./docs/plans/<plan-id>.md \
   --wp WP1 \
   --evidence "focused test passed" \
   --root "$PWD"
 ```
+
+Fasada najpierw rozwiązuje jawnie wskazany plan i atomowo ustawia go jako pointer
+ostatniego planu, a dopiero potem przekazuje zapis ukończenia do `$task-plan`.
+Dzięki temu błąd walidacji lub kolejności nie zmienia planu i pozostawia pointer
+przy jawnie wybranym planie, a nie przy poprzednim.
 
 Operacja task-plan:
 
@@ -183,6 +188,7 @@ Helper jest małą fasadą orkiestracyjną. Obsługuje tylko:
 resolve  — rozwiąż ścieżkę i pointer
 next     — zwróć pierwszy niezakończony WP
 check-environment — porównaj bieżący profil z wymaganiem WP
+complete — ustaw pointer na jawnie wskazany plan i przekaż ukończenie WP do task-plan
 ```
 
 Porównuje tylko dwie pozycje z lokalnej, zwalidowanej hierarchii.

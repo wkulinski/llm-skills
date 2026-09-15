@@ -12,30 +12,103 @@ Playwright CLI dostarcza trzy różne rodzaje dowodu:
 
 ## Źródło prawdy dla składni
 
-Przed użyciem sprawdź aktualne polecenia:
-
-```bash
-playwright-cli --help
-```
-
-Nie używaj alternatywnego prefiksu ani oficjalnego skilla Playwright. Jeżeli `playwright-cli` nie jest dostępne w `PATH`, zastosuj blokadę opisaną w `<skill_dir>/SKILL.md`. Nie zakładaj opcji niewymienionej przez aktualne `--help`.
+Aktualność składni jest sprawdzana przez `--help` wykonane na resolved CLI w
+obowiązkowym helperze poniżej. Nie używaj alternatywnego prefiksu ani
+oficjalnego skilla Playwright i nie zakładaj opcji niewymienionej przez aktualne
+`--help`.
 
 ## Preflight
 
-Przed odkryciem, audytem i edycją renderowanego UI:
+Preflight jest obowiązkowy i wykonywalny. Przed odkryciem, audytem i edycją
+renderowanego UI uruchom helper skilla zamiast składać komendy ręcznie:
 
-1. Uruchom `playwright-cli --help`.
-2. Ustaw unikalną sesję, np. `SESSION="frontend-ui-preflight-$(date +%s)-$$"`.
-3. Standardowo otwórz `about:blank` przez `--browser=chromium`, a po sukcesie
-   zamknij sesję.
-4. Jeżeli ustawiono `PLAYWRIGHT_MCP_CDP_ENDPOINT`, zamiast tego wykonaj `attach
-   --cdp` i po sukcesie `detach`.
-5. Jeżeli WSL nie ma lokalnej przeglądarki, użyj skonfigurowanego CDP albo przerwij
-   zadanie. Nie instaluj browsera automatycznie.
+```bash
+bash <skill_dir>/scripts/playwright-preflight.sh
+```
 
-Brak CLI, browsera lub działającego CDP blokuje zadanie przed analizą i edycją.
-Dokładny komunikat blokady zgłoś w raporcie. Poza WSL błąd uruchomienia browsera
-również blokuje zadanie.
+Helper ładuje `<skills_root>/_shared/scripts/env-load.sh`, raz rozwiązuje CLI
+przez `resolve_tool_cmd playwright-cli playwright-cli` i wykonuje `--help` na
+tym samym resolved command. Dopiero po poprawnej walidacji tworzy unikalną
+sesję, wykonuje `open about:blank --browser=chromium` i `close` albo — gdy
+ustawiono `PLAYWRIGHT_MCP_CDP_ENDPOINT` — `attach --cdp` i `detach`, oraz
+raportuje wynik sprzątania. Nie instaluje przeglądarki, nie loguje się i nie
+wypisuje wartości CDP, outputu CLI ani innych sekretów. Nie zapisuje artefaktów
+w repozytorium.
+
+Interpretacja wyniku (stdout):
+
+```text
+CLI: OK|MISSING|INVALID
+Browser mode: local-chromium|cdp-attach
+Browser launch: OK|FAIL
+Browser cleanup: OK|FAIL|NOT_REQUIRED
+```
+
+`Browser mode`, `Browser launch` i `Browser cleanup` są raportowane po
+poprawnym `--help`. Przy braku resolved CLI (`CLI: MISSING`) albo nieudanym
+`--help` (`CLI: INVALID`) uruchomienie/attach nie następuje, a cleanup ma stan
+`NOT_REQUIRED`.
+
+Kody wyjścia rozróżniają etap niepowodzenia:
+
+| Kod | Znaczenie | Blokada zadania |
+|---|---|---|
+| 0 | `--help`, launch/attach i cleanup zakończyły się sukcesem | brak |
+| 2 | `CLI: MISSING` — nie udało się rozwiązać CLI, albo `CLI: INVALID` — resolved CLI odrzuciło `--help`; launch/attach nie wykonano, cleanup `NOT_REQUIRED` | zadanie zablokowane przed analizą i edycją |
+| 3 | `Browser launch: FAIL` — CLI przeszło `--help`, ale uruchomienie lub `attach` nie powiodło się; kod zachowuje pierwszeństwo także przy `Browser cleanup: FAIL` | zadanie zablokowane przed analizą i edycją |
+| 4 | launch/attach zakończył się sukcesem, ale `Browser cleanup: FAIL` | zadanie zablokowane przed analizą i edycją |
+
+Jeżeli WSL nie ma lokalnej przeglądarki, użyj skonfigurowanego CDP albo przerwij
+zadanie. Brak CLI, browsera lub działającego CDP blokuje zadanie przed analizą i
+edycją. Dokładny komunikat blokady zgłoś w raporcie. Poza WSL błąd uruchomienia
+browsera również blokuje zadanie.
+
+## Kontrakt URL-a i chronionej nawigacji
+
+Najpierw rozwiąż URL aplikacji bez zgadywania trasy: jawny URL z promptu lub
+zadania ma pierwszeństwo, potem `PLAYWRIGHT_GUI_BASE_URL`, a przy braku obu
+zapytaj użytkownika albo zgłoś blokadę. Nie używaj domyślnego `localhost`.
+`PLAYWRIGHT_GUI_LOGIN_URL` służy wyłącznie jawnej, projektowej recipe logowania
+wraz z `PLAYWRIGHT_GUI_USER_LOGIN` i `PLAYWRIGHT_GUI_USER_PASSWORD`; nie jest
+fallbackiem URL-a ani generycznym konsumentem `fill`.
+
+Jeśli chroniony URL wymaga storage state, przed uruchomieniem aplikacji sprawdź
+samą ścieżkę `PLAYWRIGHT_GUI_STORAGE_STATE`, bez czytania zawartości. Musi być
+repo-relative, po rozwiązaniu pozostać pod `.playwright-cli/auth/`, wskazywać
+`regular file` i przejść `git check-ignore`. Nie przekazuj zawartości state,
+credentiali ani sekretów do CLI. Gdy state jest nieobecny lub nie przechodzi
+walidacji, zatrzymaj nawigację i skieruj użytkownika do jawnego bootstrapu albo
+konkretnej projektowej recipe.
+
+Po udanym preflight użyj oddzielnej, unikalnej sesji aplikacji. Sesja aplikacji
+używa tego samego, raz rozwiązanego CLI co preflight — nigdy nie wywołuj
+bezpośrednio `playwright-cli`, bo konfiguracja `BIN_PATH`-only przeszłaby
+preflight, a checkpoint aplikacji nie uruchomiłby się:
+
+```bash
+. <skills_root>/_shared/scripts/env-load.sh
+PW_CLI="$(resolve_tool_cmd playwright-cli playwright-cli)" || { printf 'CLI: MISSING\n'; exit 2; }
+```
+
+Otwórz bezpieczny pusty kontekst, a dla chronionego URL-a wykonaj kolejno
+walidację, dokładnie `state-load <filename>` i dopiero nawigację. Poniższy
+przebieg pokazuje kolejność (placeholdery nie są wartościami domyślnymi):
+
+```bash
+APP_SESSION="ui-review-<task>-application"
+"$PW_CLI" -s="$APP_SESSION" open about:blank --browser=chromium
+# Po walidacji metadanych state, bez odczytywania jego zawartości:
+"$PW_CLI" -s="$APP_SESSION" state-load <filename>
+# Tylko po udanym state-load; URL został wcześniej jawnie rozwiązany.
+"$PW_CLI" -s="$APP_SESSION" goto "$RESOLVED_APPLICATION_URL"
+# Wykonaj także po błędzie walidacji, ładowania lub nawigacji.
+"$PW_CLI" -s="$APP_SESSION" close
+```
+
+Błąd `state-load` klasyfikuj jako `authentication unavailable`. Nie próbuj
+generycznego `fill` ani innego automatycznego logowania. Sesja preflightu jest
+własnością helpera i helper ją zamyka; sesję aplikacji zawsze zamyka właściciel
+checkpointu.
 
 ## Profile weryfikacji
 
@@ -47,20 +120,26 @@ Zakres wynika z profilu skilla:
 
 ## Sesja
 
-Używaj unikalnej nazwy, np.:
+Wszystkie komendy sesji wykonuj przez `"$PW_CLI"` rozwiązane raz w kontrakcie
+powyżej; bezpośrednie `playwright-cli` jest niedozwolone. Używaj unikalnej nazwy
+dla sesji checkpointu aplikacji, np.:
 
 ```bash
 SESSION="ui-review-grid-header"
 mkdir -p .playwright-cli/ui-review/zadanie
-playwright-cli -s="$SESSION" open http://localhost --headed --browser=chromium
+"$PW_CLI" -s="$SESSION" open "$RESOLVED_APPLICATION_URL" --headed --browser=chromium
 ```
+
+`RESOLVED_APPLICATION_URL` musi pochodzić z jawnego URL-a zadania albo z
+`PLAYWRIGHT_GUI_BASE_URL` zgodnie z kontraktem powyżej; nie zastępuj go zgadywaną
+trasą.
 
 Po zmianie DOM pobierz nowy snapshot; refs mogą być nieaktualne.
 
 Na końcu:
 
 ```bash
-playwright-cli -s="$SESSION" close
+"$PW_CLI" -s="$SESSION" close
 ```
 
 Nie używaj wspólnej sesji, gdy inne procesy mogą pracować równolegle.
@@ -105,19 +184,19 @@ Przed screenshotem zapewnij w miarę możliwości:
 Możesz sprawdzić środowisko:
 
 ```bash
-playwright-cli -s="$SESSION" eval "() => ({ width: innerWidth, height: innerHeight, dpr: devicePixelRatio, scrollX, scrollY, dark: matchMedia('(prefers-color-scheme: dark)').matches, reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches })"
+"$PW_CLI" -s="$SESSION" eval "() => ({ width: innerWidth, height: innerHeight, dpr: devicePixelRatio, scrollX, scrollY, dark: matchMedia('(prefers-color-scheme: dark)').matches, reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches })"
 ```
 
 Przed screenshotem wymagającym stabilnych fontów użyj:
 
 ```bash
-playwright-cli -s="$SESSION" eval "async () => { await document.fonts.ready; return true; }"
+"$PW_CLI" -s="$SESSION" eval "async () => { await document.fonts.ready; return true; }"
 ```
 
 ## Snapshot
 
 ```bash
-playwright-cli -s="$SESSION" snapshot --depth=5
+"$PW_CLI" -s="$SESSION" snapshot --depth=5
 ```
 
 Używaj refs, ról lub stabilnych selektorów. Nie używaj starych refs po nawigacji lub re-renderze.
@@ -127,14 +206,14 @@ Używaj refs, ról lub stabilnych selektorów. Nie używaj starych refs po nawig
 Viewport lub element:
 
 ```bash
-playwright-cli -s="$SESSION" screenshot --filename=.playwright-cli/ui-review/zadanie/cel-przed.png
-playwright-cli -s="$SESSION" screenshot e42 --filename=.playwright-cli/ui-review/zadanie/komponent-po.png
+"$PW_CLI" -s="$SESSION" screenshot --filename=.playwright-cli/ui-review/zadanie/cel-przed.png
+"$PW_CLI" -s="$SESSION" screenshot e42 --filename=.playwright-cli/ui-review/zadanie/komponent-po.png
 ```
 
 Pełna strona jest wyjątkiem. Użyj aktualnej opcji CLI:
 
 ```bash
-playwright-cli -s="$SESSION" screenshot --full-page --filename=.playwright-cli/ui-review/zadanie/strona-po.png
+"$PW_CLI" -s="$SESSION" screenshot --full-page --filename=.playwright-cli/ui-review/zadanie/strona-po.png
 ```
 
 Dla analizy komponentu preferuj element i viewport; pełna strona pomaga tylko wtedy, gdy ważny jest kontekst layoutu.
@@ -144,7 +223,7 @@ Dla analizy komponentu preferuj element i viewport; pełna strona pomaga tylko w
 Odczytuj tylko właściwości istotne dla problemu:
 
 ```bash
-playwright-cli -s="$SESSION" eval "(el) => { const s = getComputedStyle(el); return { padding: s.padding, gap: s.gap, border: s.border, borderRadius: s.borderRadius, fontSize: s.fontSize, fontWeight: s.fontWeight, lineHeight: s.lineHeight, color: s.color, backgroundColor: s.backgroundColor, alignItems: s.alignItems, justifyContent: s.justifyContent }; }" e42
+"$PW_CLI" -s="$SESSION" eval "(el) => { const s = getComputedStyle(el); return { padding: s.padding, gap: s.gap, border: s.border, borderRadius: s.borderRadius, fontSize: s.fontSize, fontWeight: s.fontWeight, lineHeight: s.lineHeight, color: s.color, backgroundColor: s.backgroundColor, alignItems: s.alignItems, justifyContent: s.justifyContent }; }" e42
 ```
 
 Screenshot odpowiada „jak wygląda”, computed styles pomagają odpowiedzieć „dlaczego”.
@@ -158,9 +237,9 @@ Wykonaj przed edycją, gdy stan można uruchomić. Nazwa powinna wskazywać zada
 Dobieraj zgodnie z profilem i projektem. Typowa macierz rozszerzona:
 
 ```bash
-playwright-cli -s="$SESSION" resize 390 844
-playwright-cli -s="$SESSION" resize 1024 768
-playwright-cli -s="$SESSION" resize 1440 900
+"$PW_CLI" -s="$SESSION" resize 390 844
+"$PW_CLI" -s="$SESSION" resize 1024 768
+"$PW_CLI" -s="$SESSION" resize 1440 900
 ```
 
 Dla zgłoszonej regresji sprawdź szerokość zgłoszenia oraz przynajmniej jeden sąsiedni zakres.
@@ -178,8 +257,8 @@ Zamiast tego:
 5. raportuj nowe błędy oraz istotne błędy zastane oddzielnie.
 
 ```bash
-playwright-cli -s="$SESSION" console error
-playwright-cli -s="$SESSION" requests
+"$PW_CLI" -s="$SESSION" console error
+"$PW_CLI" -s="$SESSION" requests
 ```
 
 Przy trudnym błędzie użyj tracingu zgodnie z aktualnym `--help`.

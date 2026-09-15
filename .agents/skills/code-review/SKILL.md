@@ -201,7 +201,7 @@ Increase review depth when the change spans subsystems or has material risk invo
 - deployment, configuration, scheduled execution, or operational behavior
 - changes whose correctness depends on several independent assumptions
 
-Review depth means relevant lenses and verification. Do not add a pass that repeats an already covered question.
+Review depth means relevant lenses and verification. Do not add a pass that repeats an already covered question. The publication gate in Section 6 applies at every depth: more depth adds lenses and evidence, it does not remove the obligation to weigh the strongest counterargument and classify the candidate.
 
 ### Complexity/value gate
 
@@ -445,6 +445,24 @@ A candidate becomes a finding only if it has:
 - an explanation of impact
 - evidence strong enough for its severity
 
+Before publication, every candidate must pass this ordered publication gate:
+
+1. **observation** — the concrete behavior, artifact, or gap actually observed;
+2. **authoritative source of expected behavior** — the requirement, contract, plan or work package, or repository convention that makes the observation a defect rather than a preference (see Section 2);
+3. **demonstrated consequence or contract violation** — the concrete failure mode, violated invariant, or missing-verification surface, not merely a difference in approach;
+4. **strongest counterargument considered** — the best available reason the observation may be expected, already prevented elsewhere, or out of scope;
+5. **classification** — exactly one outcome: `finding`, `QUESTION`, `SUGGESTION`, or rejected candidate.
+
+The publication gate is not independent verification of interpretation. Re-reading
+the same location, running a test that the candidate itself points to, or passing
+the report's structural validation do not, by themselves, establish that the
+interpretation is correct. Candidates supplied by auxiliary channels (another
+agent, a subagent report, a tool, or a reviewer hand-off) never carry a verdict
+with them; they enter this skill as unverified candidates and must pass the same
+gate as any other candidate. A plan or work package is a source of expected
+behavior only for the scope it actually maps to; it does not authorize
+expectations for behavior outside that mapped scope.
+
 For `BLOCKER`, require direct reproduction when practical, such as:
 
 - a focused failing test
@@ -471,8 +489,13 @@ user explicitly requests it. `$qa-run` remains the normal workflow for full QA.
 Do not expand a focused check into a broader run merely because it is available.
 
 For a change affecting rendered UI, run a proportional Playwright checkpoint
-when `playwright-cli` and a safe application target are available. First inspect
-the installed CLI with `playwright-cli --help`, then follow the safe-session and
+when `playwright-cli` and a safe application target are available. First run the
+sole preflight entrypoint,
+`<skills_root>/frontend-ui-consistency/scripts/playwright-preflight.sh`; it
+validates `--help` through the resolved CLI and reports launch/attach and
+cleanup. A status 2 blocks before the UI checkpoint, status 3 reports a
+launch/attach failure (including cleanup failure), and status 4 reports cleanup
+failure after a successful launch/attach. Then follow the safe-session and
 artifact rules in
 `<skills_root>/frontend-ui-consistency/references/playwright-cli-verification.md`.
 The checkpoint should cover the changed state and relevant interaction, use a
@@ -501,6 +524,13 @@ For each candidate ask:
 6. Is the severity proportional to actual impact?
 7. Can the user act on the finding?
 8. Is the cited location real and relevant?
+
+For every surviving candidate, record the strongest counterargument you actually
+considered and the resulting classification from the publication gate. A
+candidate does not enter the findings list merely because it survived the
+questions above; it must be classified as `finding`, `QUESTION`, or
+`SUGGESTION`, or explicitly discarded as a rejected candidate. Unclassified
+candidates are not published.
 
 Deduplicate overlapping findings by failure mode, not by file.
 

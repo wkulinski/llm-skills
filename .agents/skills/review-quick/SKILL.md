@@ -31,6 +31,7 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
 - Jeśli użytkownik chce poprawki, należy przejść do `$code-implement` (a nie rozszerzać `$review-quick`).
 - Gdy `$review-quick` jest uruchamiany jako część pętli `$code-implement`, priorytetem jest ostatni przyrost i obszary bezpośrednio nim dotknięte.
 - Nie rozszerzaj wtedy raportu na cały narosły dirty diff, chyba że użytkownik prosi o review całego zakresu albo ostatni przyrost zmienia kontrakt całego rozwiązania.
+- `$review-quick` jest jedyną procedurą szybkiego review i wykonuje ją bieżący agent: nie inicjuje delegacji do innego agenta ani kanału pomocniczego, a jego wynik nie jest formalnym werdyktem i nie zastępuje bramki publikacji `$code-review`.
 
 ## Podstawa sprawdzeń i źródła dowodów
 - Sprawdzenia opieraj na:

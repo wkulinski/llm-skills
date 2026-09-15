@@ -16,8 +16,8 @@
 - `$handoff-refresh`
 - `$module-atlas-sync`
 - `$opencode-workflow-economics`
-- `$plan-execute`
 - `$php-structure-refactor`
+- `$plan-execute`
 - `$qa-run`
 - `$review-quick`
 - `$rules-sync`

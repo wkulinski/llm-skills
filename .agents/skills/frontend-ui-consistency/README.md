@@ -15,29 +15,45 @@ Zainstaluj CLI i browser używany przez skill:
 ```bash
 npm install -g @playwright/cli@0.1.17
 playwright-cli install-browser chrome-for-testing
-playwright-cli --help
+bash <skill_dir>/scripts/playwright-preflight.sh
 ```
 
-Skill wymaga globalnej komendy `playwright-cli` dostępnej w `PATH`.
+Helper jest jedynym entrypointem preflightu. Rozwiązuje `playwright-cli` dokładnie
+raz przez `resolve_tool_cmd playwright-cli playwright-cli`: najpierw sprawdza
+`BIN_PATH`, a następnie używa `PATH` jako fallbacku. Globalna komenda w `PATH` nie
+jest więc wymagana, jeśli `BIN_PATH` wskazuje wykonywalny CLI.
 
-Po instalacji sprawdź działanie browsera:
+Po instalacji zweryfikuj działanie obowiązkowym helperem skilla (nie składaj
+preflightu ręcznie):
 
 ```bash
-SESSION="frontend-ui-check-$(date +%s)-$$"
-playwright-cli -s="$SESSION" open about:blank --browser=chromium
-playwright-cli -s="$SESSION" close
+bash <skill_dir>/scripts/playwright-preflight.sh
 ```
 
-W WSL można użyć dedykowanej przeglądarki uruchomionej po stronie Windows
-przez CDP. Ustaw `PLAYWRIGHT_MCP_CDP_ENDPOINT` na endpoint instancji z
-włączonym remote debugging.
+Helper waliduje resolved CLI przez `--help`, a następnie otwiera `about:blank` w
+Chromium i zamyka sesję. W WSL można użyć dedykowanej przeglądarki uruchomionej
+po stronie Windows przez CDP: ustaw `PLAYWRIGHT_MCP_CDP_ENDPOINT` na endpoint
+instancji z włączonym remote debugging, a helper sam wykona `attach --cdp` i
+`detach`. Znaczenie wyniku i kodów wyjścia opisuje
+`<skill_dir>/references/playwright-cli-verification.md`.
 
-Przy CDP pomiń `open --browser=chromium` i dołącz do istniejącej sesji:
+## Dostęp do aplikacji
 
-```bash
-SESSION="frontend-ui-cdp-$(date +%s)-$$"
-playwright-cli -s="$SESSION" attach --cdp="$PLAYWRIGHT_MCP_CDP_ENDPOINT"
-```
+URL wybieraj w kolejności: jawny URL z promptu/zadania, następnie
+`PLAYWRIGHT_GUI_BASE_URL`, a przy braku obu — zapytaj użytkownika lub zgłoś
+blokadę. Nie zgaduj trasy i nie używaj domyślnego `localhost`.
+
+Sesja aplikacji używa tego samego, raz rozwiązanego CLI co preflight (`PW_CLI`
+przez `resolve_tool_cmd`); bezpośrednie `playwright-cli` nie działa w konfiguracji
+`BIN_PATH`-only.
+
+Opcjonalny `PLAYWRIGHT_GUI_STORAGE_STATE` musi być repo-relative, rozwiązywać się
+do regular file pod `.playwright-cli/auth/` i być ignorowany przez Git. Przed
+chronioną nawigacją osobna, unikalna sesja aplikacji otwiera pusty kontekst,
+waliduje state i wykonuje `state-load <filename>`; dopiero potem nawiguje.
+Nieudane ładowanie raportuj jako `authentication unavailable`, bez generycznego
+`fill`, i zawsze zamykaj tę sesję. Brak state kieruj do jawnego bootstrapu albo
+projektowej recipe logowania. Szczegółowy kontrakt i blokady są w `SKILL.md`.
 
 ## Artefakty i dane
 

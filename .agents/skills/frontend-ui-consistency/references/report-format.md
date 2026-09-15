@@ -3,6 +3,21 @@
 Najpierw dobierz format do `execution_mode`, a dopiero potem do profilu. Pomijaj
 sekcje nieistotne; nie wpisuj serii „nie dotyczy”.
 
+## Odrębne wyniki dostępu
+
+Raportuj osobno trzy wyniki, aby blokada przeglądarki nie była mylona z
+problemem aplikacji ani uwierzytelnienia:
+
+- **Browser** — wynik `--help`, uruchomienia/attach i cleanupu sesji preflightu;
+- **Application** — wybrany jawnie URL oraz wynik nawigacji/checkpointu;
+- **Authentication** — walidacja i `state-load` opcjonalnego state. Użyj
+  `authentication unavailable`, gdy state jest nieobecny, nieprawidłowy albo
+  ładowanie się nie udało; nie maskuj tego generycznym logowaniem.
+
+Nie wpisuj zawartości storage state, credentiali ani sekretów. Dla publicznego
+URL-a wynik Authentication może być `not required`; nadal zachowaj osobną
+klasyfikację Browser i Application.
+
 ## Raport konsultacyjny — `execution_mode: advisory`
 
 ```text
@@ -13,6 +28,9 @@ sekcje nieistotne; nie wpisuj serii „nie dotyczy”.
 - Funkcja widoku i główne zadanie użytkownika:
 - Dominanta, główna akcja i istniejący wzorzec:
 - Sprawdzony stan, viewporty i screenshoty:
+- Browser outcome:
+- Application outcome:
+- Authentication outcome:
 
 ### Obserwacje i rekomendacje
 1. Problem lub możliwość:
@@ -46,6 +64,9 @@ Zmiana:
 Wzorzec lub istniejąca reguła:
 Weryfikacja: strona/stan, viewport, screenshoty i najważniejszy stan
 Weryfikacja Playwright i konsola:
+Browser outcome:
+Application outcome:
+Authentication outcome:
 Ryzyka lub brak weryfikacji:
 ```
 
@@ -88,6 +109,9 @@ Ryzyka lub brak weryfikacji:
 - Nowe błędy konsoli lub requestów po scenariuszu:
 - Weryfikacja Playwright i visual regression:
 - Wynik review diffu:
+- Browser outcome:
+- Application outcome:
+- Authentication outcome:
 
 ### Kontrola estetyczna
 
