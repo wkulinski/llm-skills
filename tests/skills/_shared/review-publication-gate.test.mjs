@@ -5,6 +5,7 @@ import {describe, expect, it} from "vitest";
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../");
 const CODE_REVIEW = ".agents/skills/code-review/SKILL.md";
 const REVIEW_QUICK = ".agents/skills/review-quick/SKILL.md";
+const TASK_PLAN = ".agents/skills/task-plan/SKILL.md";
 
 function read(relativePath) {
     return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -67,5 +68,60 @@ describe("review publication gate", () => {
         expect(content).toMatch(/nie inicjuje delegacji/);
         expect(content).toMatch(/nie jest formalnym werdyktem/);
         expect(content).toMatch(/bramki publikacji `\$code-review`/);
+    });
+
+    it("contracts the plan review as a read-only phase of the current agent", () => {
+        const content = read(TASK_PLAN);
+        const reviewSection = section(content, "### 5. Faza read-only code review planu", "### 6. Pytania blokujące");
+
+        expect(reviewSection).toMatch(/odrębną fazą read-only bieżącego agenta, nie osobnym\s+wykonawcą/);
+        expect(reviewSection).toMatch(/nie zmienia Markdowna, nie tworzy pytań, nie ustawia\s+statusu/);
+        expect(reviewSection).toMatch(/review-cycle\.mjs/);
+        expect(reviewSection).toMatch(/Nie\s+ocenia prawdziwości ocen semantycznych/);
+        expect(content).toMatch(/deleguje fazy review do osobnego wykonawcy/);
+    });
+
+    it("bounds the owner decision with explicit assessments, one revision and a delta budget", () => {
+        const reviewSection = section(read(TASK_PLAN), "### 5. Faza read-only code review planu", "### 6. Pytania blokujące");
+
+        expect(reviewSection).toMatch(/Actionable `MINOR`/);
+        expect(reviewSection).toMatch(/tabela werdyktów|Tabela werdyktów/i);
+        expect(reviewSection).toMatch(/jedną spójną rewizję całego Markdowna/);
+        expect(reviewSection).toMatch(/najwyżej trzy delta-review/);
+        expect(reviewSection).toMatch(/progress gate/);
+        expect(reviewSection).toMatch(/Hashe dokumentów identyfikują wersje dokumentu/);
+        expect(reviewSection).toMatch(/jedną paczką operacji/);
+    });
+
+    it("contracts plan review as the current agent's phase, not a separate executor", () => {
+        const content = read(CODE_REVIEW);
+        const target = section(content, "## 1. Resolve review target and scope", "## 2. Establish expected behavior");
+
+        expect(target).toMatch(/separate read-only phase performed by the current coordinating\s+agent, not a separate executor/);
+        expect(target).toMatch(/phase separation is not a claim\s+of executor independence/);
+        expect(content).toMatch(/A plan verdict is decided by this review, not inherited/);
+    });
+
+    it("requires explicit prior-finding resolutions and delta provenance in re-review", () => {
+        const content = read(CODE_REVIEW);
+        const resolutions = section(content, "### Finding resolutions", "### Verification");
+        const reReview = content.slice(content.indexOf("## 12. Re-review after fixes"));
+
+        expect(resolutions).toMatch(/\*\*resolved\*\*/);
+        expect(resolutions).toMatch(/\*\*current\*\*/);
+        expect(resolutions).toMatch(/\*\*accepted\*\*/);
+        expect(resolutions).toMatch(/A missing resolution is an incomplete review, not an implicit acceptance/);
+        expect(reReview).toMatch(/starting from the changed sections\/work packages and\s+their direct dependencies supplied in the delta input/);
+        expect(reReview).toMatch(/same failure mode and whether\s+new evidence exists/);
+        expect(reReview).toMatch(/concrete provenance evidence from the fix or a direct dependency/);
+        expect(reReview).toMatch(/identify document versions, not finding identity/);
+    });
+
+    it("does not let a caveat verdict hide an actionable MINOR", () => {
+        const verdicts = section(read(CODE_REVIEW), "For a `plan` target, use plan-specific wording:", "## 11. Output format");
+
+        expect(verdicts).toMatch(/PLAN READY WITH CAVEAT[^;]*non-actionable or explicitly accepted/);
+        expect(verdicts).toMatch(/an actionable MINOR forces `PLAN CHANGES REQUESTED` instead/);
+        expect(verdicts).toMatch(/`SUGGESTION` never changes the verdict or opens another round/);
     });
 });

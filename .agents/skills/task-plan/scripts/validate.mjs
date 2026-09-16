@@ -692,14 +692,44 @@ function parseArgs(argv) {
 async function main(argv) {
     const args = parseArgs(argv);
     if (args._[0] !== "validate" || !args.file) {
-        throw new ValidationError("INVALID_ARGUMENT", "Usage: validate.mjs validate --file <plan.md> --root <repo>");
+        throw new ValidationError("INVALID_ARGUMENT", "Usage: validate.mjs validate --file <plan.md> --root <repo> [--verbose]");
     }
+    const root = args.root ?? process.cwd();
     const markdown = fs.readFileSync(path.resolve(args.file), "utf8");
-    const validation = validatePlanDocument(markdown, {repoRoot: args.root ?? process.cwd()});
-    process.stdout.write(`${JSON.stringify(validation, null, 2)}\n`);
+    const validation = validatePlanDocument(markdown, {repoRoot: root});
+    const planPath = path.relative(path.resolve(root), path.resolve(args.file)).split(path.sep).join("/");
+    const projection = projectValidationOutput(validation, markdown, {verbose: args.verbose === true, planPath});
+    process.stdout.write(`${JSON.stringify(projection, null, 2)}\n`);
     if (!validation.valid) {
         process.exitCode = 1;
     }
+}
+
+/**
+ * Project the CLI validation result without work-package bodies or questions.
+ *
+ * `validatePlanDocument` keeps its full internal result; only the command-line
+ * surface is compacted. Use `verbose` for the complete payload.
+ */
+export function projectValidationOutput(validation, markdown, {verbose = false, planPath = null} = {}) {
+    const projection = {
+        ok: validation.valid,
+        valid: validation.valid,
+        status: validation.status,
+        changed: false,
+        plan_id: validation.metadata?.plan_id ?? null,
+        revision: validation.metadata?.revision ?? null,
+        content_sha256: sha256(markdown),
+        plan_path: planPath,
+        changed_sections: [],
+        changed_work_packages: [],
+        errors: validation.errors ?? [],
+        warnings: [],
+    };
+    if (verbose) {
+        return {...projection, ...validation};
+    }
+    return projection;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

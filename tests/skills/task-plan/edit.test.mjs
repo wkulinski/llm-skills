@@ -105,7 +105,7 @@ function createFixture() {
         markdown_body: buildPlan(),
         context: null,
         updated_at: "2026-01-01T00:00:01.000Z",
-    });
+    }, {verbose: true});
     const file = path.join(root, saved.paths.draft_path);
     return {
         root,
@@ -180,6 +180,48 @@ it("CLI exposes structural selectors and rejects legacy options", () => {
         assert.notEqual(legacy.status, 0);
         assert.match(legacy.stderr, /INVALID_ARGUMENT/);
         assert.match(fs.readFileSync(fixture.file, "utf8"), /- Goal: Use the CLI structural editor\./);
+    } finally {
+        cleanup(fixture);
+    }
+});
+
+it("CLI edit returns a compact projection by default and full Markdown with --verbose", () => {
+    const fixture = createFixture();
+    try {
+        const compact = spawnSync(process.execPath, [
+            EDIT_SCRIPT,
+            "edit-bullet",
+            "--file", fixture.relativeFile,
+            "--root", fixture.root,
+            "--work-package", "WP1",
+            "--id", "Goal",
+            "--value", "Compact CLI projection.",
+        ], {encoding: "utf8"});
+        assert.equal(compact.status, 0, compact.stderr);
+        const compactResult = JSON.parse(compact.stdout);
+        assert.equal(compactResult.ok, true);
+        assert.equal(compactResult.changed, true);
+        assert.equal(compactResult.revision, 2);
+        assert.match(compactResult.content_sha256, /^[a-f0-9]{64}$/);
+        assert.deepEqual(compactResult.changed_work_packages, ["WP1"]);
+        assert.equal(Object.hasOwn(compactResult, "markdown"), false);
+        assert.equal(Object.hasOwn(compactResult, "validation"), false);
+        assert.equal(compact.stdout.includes("## Work packages"), false);
+
+        const verbose = spawnSync(process.execPath, [
+            EDIT_SCRIPT,
+            "edit-bullet",
+            "--file", fixture.relativeFile,
+            "--root", fixture.root,
+            "--work-package", "WP1",
+            "--id", "Goal",
+            "--value", "Verbose CLI projection.",
+            "--verbose",
+        ], {encoding: "utf8"});
+        assert.equal(verbose.status, 0, verbose.stderr);
+        const verboseResult = JSON.parse(verbose.stdout);
+        assert.match(verboseResult.markdown, /- Goal: Verbose CLI projection\./);
+        assert.equal(verboseResult.revision, 3);
     } finally {
         cleanup(fixture);
     }
@@ -449,6 +491,167 @@ it("dry-run validates the candidate plan before reporting success", () => {
             (error) => error.code === "EDIT_INVALID",
         );
         assert.equal(fs.readFileSync(fixture.file, "utf8"), before);
+    } finally {
+        cleanup(fixture);
+    }
+});
+
+it("applies a batch in memory and persists one revision", () => {
+    const fixture = createFixture();
+    try {
+        const result = editPlan({
+            file: fixture.relativeFile,
+            operations: [
+                {
+                    type: "edit-bullet",
+                    work_package: "WP1",
+                    id: "Goal",
+                    value: "Apply the complete batch.",
+                },
+                {
+                    type: "edit-bullet",
+                    work_package: "WP1",
+                    id: "Scope",
+                    value: "Two coordinated fields.",
+                },
+            ],
+        }, {repoRoot: fixture.root});
+
+        assert.equal(result.changed, true);
+        assert.equal(result.revision, 2);
+        const markdown = fs.readFileSync(fixture.file, "utf8");
+        assert.match(markdown, /- Goal: Apply the complete batch\./);
+        assert.match(markdown, /- Scope: Two coordinated fields\./);
+    } finally {
+        cleanup(fixture);
+    }
+});
+
+it("apply-operations CLI accepts an operations array over stdin and writes one revision", () => {
+    const fixture = createFixture();
+    try {
+        const batched = spawnSync(process.execPath, [
+            EDIT_SCRIPT,
+            "apply-operations",
+            "--file", fixture.relativeFile,
+            "--root", fixture.root,
+            "--input", "-",
+        ], {
+            encoding: "utf8",
+            input: JSON.stringify({
+                operations: [
+                    {type: "edit-bullet", work_package: "WP1", id: "Goal", value: "Batch CLI goal."},
+                    {type: "edit-bullet", work_package: "WP1", id: "Scope", value: "Batch CLI scope."},
+                ],
+            }),
+        });
+        assert.equal(batched.status, 0, batched.stderr);
+        const result = JSON.parse(batched.stdout);
+        assert.equal(result.changed, true);
+        assert.equal(result.revision, 2);
+        assert.match(fs.readFileSync(fixture.file, "utf8"), /- Goal: Batch CLI goal\./);
+        assert.match(fs.readFileSync(fixture.file, "utf8"), /- Scope: Batch CLI scope\./);
+
+        const failing = spawnSync(process.execPath, [
+            EDIT_SCRIPT,
+            "apply-operations",
+            "--file", fixture.relativeFile,
+            "--root", fixture.root,
+            "--input", "-",
+        ], {
+            encoding: "utf8",
+            input: JSON.stringify({
+                operations: [
+                    {type: "edit-bullet", work_package: "WP1", id: "Goal", value: "Must roll back."},
+                    {type: "edit-bullet", work_package: "WP1", id: "Missing", value: "Fails the batch."},
+                ],
+            }),
+        });
+        assert.notEqual(failing.status, 0);
+        assert.match(failing.stderr, /TARGET_NOT_FOUND/);
+        assert.match(fs.readFileSync(fixture.file, "utf8"), /- Goal: Batch CLI goal\./);
+        assert.doesNotMatch(fs.readFileSync(fixture.file, "utf8"), /Must roll back\./);
+
+        const malformed = spawnSync(process.execPath, [
+            EDIT_SCRIPT,
+            "apply-operations",
+            "--file", fixture.relativeFile,
+            "--root", fixture.root,
+            "--input", "-",
+        ], {encoding: "utf8", input: JSON.stringify({operations: []})});
+        assert.notEqual(malformed.status, 0);
+        assert.match(malformed.stderr, /non-empty operations array/);
+    } finally {
+        cleanup(fixture);
+    }
+});
+
+it("does not persist any batch operation when a later operation fails", () => {
+    const fixture = createFixture();
+    try {
+        const before = fs.readFileSync(fixture.file, "utf8");
+        assert.throws(
+            () => editPlan({
+                file: fixture.relativeFile,
+                operations: [
+                    {
+                        type: "edit-bullet",
+                        work_package: "WP1",
+                        id: "Goal",
+                        value: "Must be rolled back.",
+                    },
+                    {
+                        type: "edit-bullet",
+                        work_package: "WP1",
+                        id: "Missing",
+                        value: "Fails the batch.",
+                    },
+                ],
+            }, {repoRoot: fixture.root}),
+            (error) => error.code === "TARGET_NOT_FOUND",
+        );
+        assert.equal(fs.readFileSync(fixture.file, "utf8"), before);
+    } finally {
+        cleanup(fixture);
+    }
+});
+
+it("rejects an edit when its snapshot changes before the canonical save", () => {
+    const fixture = createFixture();
+    try {
+        let planReads = 0;
+        let concurrentBytes = null;
+        const racingFs = {
+            ...fs,
+            readFileSync(file, ...args) {
+                if (path.resolve(file) === fixture.file) {
+                    planReads += 1;
+                    if (planReads === 3) {
+                        concurrentBytes = fs.readFileSync(file, "utf8").replace(
+                            "- Goal: Exercise a deterministic edit.",
+                            "- Goal: Concurrent writer won.",
+                        );
+                        fs.writeFileSync(file, concurrentBytes, "utf8");
+                    }
+                }
+                return fs.readFileSync(file, ...args);
+            },
+        };
+
+        assert.throws(
+            () => editPlan({
+                file: fixture.relativeFile,
+                operation: {
+                    type: "edit-bullet",
+                    work_package: "WP1",
+                    id: "Goal",
+                    value: "Stale writer.",
+                },
+            }, {repoRoot: fixture.root, fsOps: racingFs}),
+            (error) => error.code === "PLAN_CONFLICT",
+        );
+        assert.equal(fs.readFileSync(fixture.file, "utf8"), concurrentBytes);
+        assert.doesNotMatch(concurrentBytes, /Stale writer\./);
     } finally {
         cleanup(fixture);
     }

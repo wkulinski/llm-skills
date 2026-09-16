@@ -22,6 +22,38 @@ function agentNames() {
         .sort();
 }
 
+// Reads the top-level keys of the `agent` section without loading JSONC.
+function configuredAgentNames() {
+    const config = read("opencode.jsonc");
+    const start = config.indexOf('"agent": {');
+    expect(start).toBeGreaterThan(-1);
+    const names = [];
+    let depth = 0;
+    for (let index = config.indexOf("{", start); index < config.length; index += 1) {
+        const character = config[index];
+        if (character === "{") {
+            depth += 1;
+            continue;
+        }
+        if (character === "}") {
+            depth -= 1;
+            if (depth === 0) { break; }
+            continue;
+        }
+        if (character !== '"') { continue; }
+
+        let end = index + 1;
+        while (end < config.length && config[end] !== '"') {
+            end += config[end] === "\\" ? 2 : 1;
+        }
+        if (depth === 1 && /^:\s*\{/.test(config.slice(end + 1))) {
+            names.push(config.slice(index + 1, end));
+        }
+        index = end;
+    }
+    return names;
+}
+
 describe("context scout agent contracts", () => {
     it("requires the shared playbook and retains safety guards", () => {
         expect(fs.existsSync(path.join(ROOT, PLAYBOOK))).toBe(true);
@@ -155,6 +187,19 @@ describe("context scout agent contracts", () => {
             expect(agentFrontmatter).not.toMatch(/^variant:/m);
             expect(agentFrontmatter).not.toMatch(/^\s*thinking:/m);
         }
+    });
+
+    it("keeps every configured agent backed by a file or a documented built-in", () => {
+        const fileBacked = new Set(agentNames());
+        const builtIns = new Set(["build", "title"]);
+
+        for (const name of configuredAgentNames()) {
+            if (fileBacked.has(name) || builtIns.has(name)) {
+                continue;
+            }
+            throw new Error(`opencode.jsonc configures agent "${name}" without .opencode/agents/${name}.md and without a documented built-in exception.`);
+        }
+        expect(configuredAgentNames()).toEqual(expect.arrayContaining(["build", "context-scout-fast"]));
     });
 
     it("publishes every shared repository-context runtime dependency", () => {

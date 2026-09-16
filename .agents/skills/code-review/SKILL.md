@@ -59,8 +59,11 @@ First classify the review target:
 - `plan` — an existing task-plan Markdown document whose execution-readiness is being evaluated.
 
 Creating a plan or revising a plan as its owner remains `$task-plan`. This skill's
-`plan` target is an independent, read-only review and never takes ownership of the
-plan's Markdown, status, questions, or validation lifecycle.
+`plan` target is a separate read-only phase performed by the current coordinating
+agent, not a separate executor. It never takes ownership of the plan's Markdown,
+status, questions, or validation lifecycle, and the phase separation is not a claim
+of executor independence. `$task-plan` evaluates this skill's result after the
+phase ends.
 
 ### Read change inventory
 
@@ -160,6 +163,11 @@ decisions, repository evidence, and the plan contract defined by `$task-plan`
 Do not treat `candidate paths`, `discovery debt`, or a plan's suggested diagnosis
 as confirmed facts without supporting evidence.
 
+A plan verdict is decided by this review, not inherited from a plan as owner, from
+an auxiliary report, or from the plan's own structure. Report honest coverage; if
+relevant evidence is unavailable, say so instead of lowering the bar for the
+verdict.
+
 ## 3. Discover project context
 
 Do not encode assumptions about languages, frameworks, build tools, or runtime environments into the review.
@@ -177,6 +185,8 @@ Instead, discover what this project actually uses and how it expects work to be 
 Use the project's documented commands and execution environment whenever possible. Do not guess how to run tests, linters, builds, containers, interpreters, compilers, or package managers.
 
 Technology-specific knowledge should come from the model, the code, and repository documentation. The skill defines **what must be investigated**, not a tutorial for each technology.
+
+When a read of a rule, contract, or documentation section that applies to the reviewed behavior is truncated, complete the part that governs the behavior before relying on it. A cut-off excerpt does not cover the omitted text, and the verdict must not rest on an unread applicable section.
 
 For a `plan` target, also read the relevant `$task-plan` contract
 (`<skills_root>/task-plan/SKILL.md`) and only the
@@ -328,6 +338,13 @@ Check:
 - dependency additions that duplicate established capabilities
 - changes that make future correctness materially harder to reason about
 
+When a change modifies or removes a mechanism, check whether the artifacts that
+describe the target state now match it: the instructions an agent follows, the
+documentation, the scope of new plans, and the tests. A named exception that only
+preserves the old implementation is removed or replaced by the general target rule.
+An exception that carries necessary provenance or a concrete migration contract
+stays. This is an assessment of relevance, not a blacklist of a name.
+
 Do not block on “I would design it differently.”
 
 ### Tests and verification
@@ -386,6 +403,12 @@ and its assertions—not just its name or stated justification.
 - A test failing before the fix is useful regression evidence, but is not by
   itself a reason to retain a separate test. Apply both this gate and the
   regression checks above.
+- History alone is not a defect. A scenario that verifies an actual migration
+  contract, a compatibility guarantee, or a target invariant that the system must
+  hold independently of the removed implementation keeps its permanent place.
+  Distinguish that case from a scenario whose only reason to exist is the removed
+  implementation, and decide each planned test separately rather than replacing the
+  whole question with a general coverage statement.
 
 Example: after removing a limit of 10 records, a separate “displays 11 records”
 test justified only by the old limit is change verification, not a permanent
@@ -427,7 +450,7 @@ contract (`<skills_root>/task-plan/SKILL.md`) without editing it:
 - `Direction, simplicity and consistency` names the existing mechanism, simpler alternatives, minimality, and ownership rather than asserting them generically;
 - each WP has an actionable goal, scope, out-of-scope boundary, discovery notes, acceptance criteria, and verification;
 - acceptance criteria have a concrete test or check, and the execution environment/command contract is internally consistent;
-- every planned permanent test passes the **Durable tests versus one-off change verification** gate above; history-only scenarios are removed from permanent test scope, and any necessary one-off checks are explicitly distinguished in `Verification`;
+- every planned permanent test passes the **Durable tests versus one-off change verification** gate above, applied to each listed test rather than replaced by a general coverage statement; history-only scenarios are removed from permanent test scope, while a scenario verifying an actual migration contract or target invariant stays, and any necessary one-off checks are explicitly distinguished in `Verification`;
 - open questions, missing evidence, or discovery debt that could change public behavior, ownership, WP boundaries, data models, or acceptance criteria are treated as blockers or questions;
 - the plan does not copy global workflow rules, describe its own drafting history, or claim `ready` independently of `$task-plan` validation.
 
@@ -534,6 +557,8 @@ candidates are not published.
 
 Deduplicate overlapping findings by failure mode, not by file.
 
+When your interpretation of a rule or a finding is challenged, read the specific governing text and weigh the strongest counterargument before keeping or correcting the assessment. Agreement is not required, but a challenge is answered with the concrete rule, not with a restatement of the earlier position. An auxiliary check with a narrow scope does not prove coverage of an axis it never examined, so do not cite it as evidence for that axis. Correct the assessment in either direction when the governing text requires it.
+
 Discard compliments, generic advice, speculative refactors, and style-only comments from the findings list.
 
 After the false-positive pass, ensure that each inventory entry has an explicit
@@ -582,14 +607,14 @@ For a `code` target, choose one:
 For a `plan` target, use plan-specific wording:
 
 - **PLAN BLOCKED** — a BLOCKER, invalid plan structure, or execution-blocking coverage gap remains;
-- **PLAN CHANGES REQUESTED** — no blocker, but one or more MAJOR findings remain;
+- **PLAN CHANGES REQUESTED** — no blocker, but one or more MAJOR or actionable MINOR findings remain;
 - **PLAN DISCUSS** — an approval-affecting QUESTION or high-risk `NOT_COVERED` area remains;
-- **PLAN READY WITH CAVEAT** — only MINOR findings remain;
+- **PLAN READY WITH CAVEAT** — only MINOR findings that are non-actionable or explicitly accepted by the user remain; an actionable MINOR forces `PLAN CHANGES REQUESTED` instead;
 - **PLAN READY** — no unresolved plan defects or material coverage gaps remain.
 
-`PLAN READY` is an independent review result, not the `$task-plan` `ready`
-status. The canonical plan validator and plan owner remain responsible for that
-status.
+`PLAN READY` is a result of this read-only review phase, not the `$task-plan`
+`ready` status. The canonical plan validator and plan owner remain responsible for
+that status. `SUGGESTION` never changes the verdict or opens another round.
 
 ## 11. Output format
 
@@ -619,6 +644,20 @@ Then provide:
 
 A compact table/list of reviewed areas and any `NOT_COVERED` surfaces.
 Include the `Complexity/value gate` outcome when the gate was relevant.
+
+### Finding resolutions
+
+For a re-review, or whenever prior findings were supplied in the input, report one
+explicit resolution per prior ID instead of silently dropping it:
+
+- **resolved** — the prior finding no longer applies, with the evidence that
+  proves it;
+- **current** — it still applies, with its current severity and the evidence;
+- **accepted** — it remains by explicit user decision, with the decision
+  reference.
+
+A missing resolution is an incomplete review, not an implicit acceptance. The
+owner passes these resolutions to the `$task-plan` decision helper.
 
 ### Plan alignment
 
@@ -662,7 +701,7 @@ do not silently replace it with only the output of `git diff`.
 Prompt examples:
 
 - `$code-review` — perform a full review of the current working tree;
-- `$code-review` — independently review the existing plan `./docs/plans/example.md` for execution readiness.
+- `$code-review` — review the existing plan `./docs/plans/example.md` as a read-only phase for execution readiness.
 
 ### Verdict
 
@@ -679,11 +718,24 @@ remaining blind spot.
 
 When explicitly asked to re-review fixes:
 
-- review the fix delta first
-- verify that prior findings are actually resolved
-- for `code`, trace newly affected execution paths
-- for `plan`, trace newly affected source mappings, ownership, dependencies, and acceptance criteria
-- do not automatically reopen unrelated areas from the original review
-- report regressions introduced by the fixes
-- do not edit a plan; route plan corrections through `$task-plan`
-- do not continue into an automatic fix/re-review loop unless explicitly requested
+- review the fix delta first, starting from the changed sections/work packages and
+  their direct dependencies supplied in the delta input;
+- resolve every prior finding ID explicitly as **resolved**, **current**, or
+  **accepted**, with evidence and the current severity when it persists;
+- for a recurring finding, state whether it is the same failure mode and whether
+  new evidence exists; link it to the prior ID;
+- for a new finding, state whether it originates from the fix or a direct
+  dependency, and name the changed section/work package or dependency that makes
+  it reachable;
+- verify that prior findings are actually resolved;
+- for `code`, trace newly affected execution paths;
+- for `plan`, trace newly affected source mappings, ownership, dependencies, and acceptance criteria;
+- do not automatically reopen unrelated areas from the original review, and treat
+  observations from unchanged, independent scope as `SUGGESTION` or rejected
+  candidates;
+- a new `BLOCKER`, `MAJOR`, or actionable `MINOR` outside the changed lines needs
+  concrete provenance evidence from the fix or a direct dependency; document hashes
+  identify document versions, not finding identity;
+- report regressions introduced by the fixes;
+- do not edit a plan; route plan corrections through `$task-plan`;
+- do not continue into an automatic fix/re-review loop unless explicitly requested.

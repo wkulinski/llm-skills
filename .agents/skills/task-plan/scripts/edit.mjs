@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {pathToFileURL} from "node:url";
 
 import {
     loadPlan,
+    projectPlanOutcome,
     renderPlanDocument,
     resolvePlanPaths,
     savePlan,
@@ -62,10 +64,11 @@ export function applyOperation(body, operation) {
  * Edit the canonical task-plan file and persist it through store.mjs.
  */
 export function editPlan(input = {}, options = {}) {
+    const fsOps = options.fsOps ?? fs;
     const repoRoot = path.resolve(options.repoRoot ?? process.cwd());
     const file = requiredString(input.file, "file");
     const absoluteFile = resolveInsideRoot(file, repoRoot);
-    const markdown = readPlanFile(absoluteFile);
+    const markdown = readPlanFile(absoluteFile, fsOps);
     const parsed = parsePlanDocument(markdown);
 
     if (parsed.errors.length > 0) {
@@ -83,7 +86,7 @@ export function editPlan(input = {}, options = {}) {
         });
     }
 
-    const loaded = loadPlan({repoRoot, sourceIdentity});
+    const loaded = loadPlan({repoRoot, sourceIdentity, fsOps});
     if (!loaded.validation?.valid) {
         throw new PlanEditError("PLAN_INVALID", "The current plan must pass structural and evidence validation before editing.", {
             errors: loaded.validation?.errors ?? [],
@@ -93,13 +96,20 @@ export function editPlan(input = {}, options = {}) {
         throw new PlanEditError("PLAN_CHANGED_DURING_READ", "The plan changed while the edit was being prepared.");
     }
 
-    const result = applyOperation(parsed.body, input.operation);
+    const operations = resolveOperations(input);
+    let body = parsed.body;
+    let changed = false;
+    for (const operation of operations) {
+        const result = applyOperation(body, operation);
+        body = result.body;
+        changed = changed || result.changed;
+    }
     const dryRun = input.dry_run === true;
-    if (!result.changed || dryRun) {
-        const candidateValidation = result.changed
+    if (!changed || dryRun) {
+        const candidateValidation = changed
             ? validatePlanDocument(
-                renderPlanDocument(result.body, loaded.metadata),
-                {repoRoot},
+                renderPlanDocument(body, loaded.metadata),
+                {repoRoot, fsOps},
             )
             : loaded.validation;
         if (!candidateValidation.valid) {
@@ -107,34 +117,79 @@ export function editPlan(input = {}, options = {}) {
                 errors: candidateValidation.errors,
             });
         }
-        return {
-            ok: true,
-            changed: result.changed,
-            dry_run: dryRun,
-            operation: input.operation?.type ?? null,
+        const candidateMarkdown = changed ? renderPlanDocument(body, loaded.metadata) : loaded.markdown;
+        return projectPlanOutcome({
             status: candidateValidation.status,
+            changed,
+            planId: parsed.metadata.plan_id,
             revision: loaded.metadata?.revision ?? null,
-            next_revision: result.changed ? Number(loaded.metadata?.revision ?? 0) + 1 : loaded.metadata?.revision ?? null,
-            file: path.relative(repoRoot, absoluteFile).split(path.sep).join("/"),
-        };
+            contentSha256: sha256(loaded.markdown),
+            planPath: path.relative(repoRoot, absoluteFile).split(path.sep).join("/"),
+            beforeMarkdown: loaded.markdown,
+            afterMarkdown: candidateMarkdown,
+            errors: candidateValidation.errors,
+            verbose: options.verbose === true,
+            extra: {
+                dry_run: dryRun,
+                next_revision: changed ? Number(loaded.metadata?.revision ?? 0) + 1 : loaded.metadata?.revision ?? null,
+                operation: operationType(operations),
+                file: path.relative(repoRoot, absoluteFile).split(path.sep).join("/"),
+            },
+        });
     }
 
     const saved = savePlan({
         repo_root: repoRoot,
         source_identity: sourceIdentity,
         plan_id: parsed.metadata.plan_id,
-        markdown_body: result.body,
-    });
-
-    return {
-        ok: true,
-        changed: true,
-        dry_run: false,
-        operation: input.operation?.type ?? null,
+        markdown_body: body,
+        expected_revision: loaded.metadata.revision,
+        base_sha256: sha256(markdown),
+    }, {fsOps, verbose: true});
+    return projectPlanOutcome({
         status: saved.status,
-        revision: saved.metadata.revision,
-        file: path.relative(repoRoot, absoluteFile).split(path.sep).join("/"),
-    };
+        changed: saved.changed,
+        planId: parsed.metadata.plan_id,
+        revision: saved.metadata?.revision ?? null,
+        contentSha256: saved.content_sha256 ?? sha256(saved.markdown ?? ""),
+        planPath: path.relative(repoRoot, absoluteFile).split(path.sep).join("/"),
+        beforeMarkdown: loaded.markdown,
+        afterMarkdown: saved.markdown ?? body,
+        errors: saved.validation?.errors ?? [],
+        full: {
+            markdown: saved.markdown ?? null,
+            metadata: saved.metadata ?? null,
+            validation: saved.validation ?? null,
+            paths: saved.paths ?? null,
+        },
+        verbose: options.verbose === true,
+        extra: {
+            dry_run: false,
+            operation: operationType(operations),
+            file: path.relative(repoRoot, absoluteFile).split(path.sep).join("/"),
+        },
+    });
+}
+
+function resolveOperations(input) {
+    if (typeof input.operations !== "undefined" && typeof input.operation !== "undefined") {
+        throw new PlanEditError("INVALID_ARGUMENT", "Provide either operation or operations, not both.");
+    }
+    if (typeof input.operations === "undefined") {
+        return [input.operation];
+    }
+    if (!Array.isArray(input.operations) || input.operations.length === 0) {
+        throw new PlanEditError("INVALID_ARGUMENT", "operations must be a non-empty array.");
+    }
+    return input.operations;
+}
+
+function operationType(operations) {
+    return operations.length === 1 ? operations[0]?.type ?? null : null;
+}
+
+function sha256(value) {
+    return crypto.createHash("sha256").update(value).digest("hex");
 }
 
 function addBullet(lines, structure, operation) {
@@ -756,9 +811,9 @@ function resolveInsideRoot(file, root) {
     return absolute;
 }
 
-function readPlanFile(file) {
+function readPlanFile(file, fsOps = fs) {
     try {
-        return fs.readFileSync(file, "utf8");
+        return fsOps.readFileSync(file, "utf8");
     } catch (error) {
         throw new PlanEditError("PLAN_READ_FAILED", `Could not read ${file}.`, {
             cause: error instanceof Error ? error.message : String(error),
@@ -792,7 +847,7 @@ function operationFromArgs(args) {
         throw new PlanEditError("INVALID_ARGUMENT", "Exactly one edit command is required.");
     }
     if (["add-bullet", "edit-bullet", "remove-bullet"].includes(command)) {
-        assertAllowedArgs(args, new Set(["file", "root", "dry_run", "section", "work_package", "id", "value", "status", "target", "field", "next", "_"]));
+        assertAllowedArgs(args, new Set(["file", "root", "dry_run", "verbose", "section", "work_package", "id", "value", "status", "target", "field", "next", "_"]));
         if (typeof args.target !== "undefined" || typeof args.field !== "undefined" || typeof args.next !== "undefined") {
             throw new PlanEditError("UNSUPPORTED_OPTION", "Bullet operations use section or work-package and require an explicit id; target and next are not supported.");
         }
@@ -809,7 +864,7 @@ function operationFromArgs(args) {
         };
     }
     if (command === "answer-question") {
-        assertAllowedArgs(args, new Set(["file", "root", "dry_run", "id", "answer", "source", "_"]));
+        assertAllowedArgs(args, new Set(["file", "root", "dry_run", "verbose", "id", "answer", "source", "_"]));
         return {
             type: command,
             id: args.id,
@@ -818,7 +873,7 @@ function operationFromArgs(args) {
         };
     }
     if (command === "edit-question") {
-        assertAllowedArgs(args, new Set(["file", "root", "dry_run", "id", "prompt", "status", "answer", "_"]));
+        assertAllowedArgs(args, new Set(["file", "root", "dry_run", "verbose", "id", "prompt", "status", "answer", "_"]));
         return {
             type: command,
             id: args.id,
@@ -828,14 +883,14 @@ function operationFromArgs(args) {
         };
     }
     if (command === "remove-question") {
-        assertAllowedArgs(args, new Set(["file", "root", "dry_run", "id", "_"]));
+        assertAllowedArgs(args, new Set(["file", "root", "dry_run", "verbose", "id", "_"]));
         return {
             type: command,
             id: args.id,
         };
     }
     if (command === "add-question") {
-        assertAllowedArgs(args, new Set(["file", "root", "dry_run", "id", "prompt", "status", "answer", "_"]));
+        assertAllowedArgs(args, new Set(["file", "root", "dry_run", "verbose", "id", "prompt", "status", "answer", "_"]));
         return {
             type: command,
             id: args.id,
@@ -865,9 +920,12 @@ function usage() {
         "  edit.mjs add-question --file <plan.md> --id <Q#> --prompt <prompt> --status <open|answered> [--answer <answer>]",
         "  edit.mjs edit-question --file <plan.md> --id <Q#> [--prompt <prompt>] [--status <open|answered>] [--answer <answer>]",
         "  edit.mjs remove-question --file <plan.md> --id <Q#>",
+        "  edit.mjs apply-operations --file <plan.md> --input <file|->",
         "Options:",
         "  --root <repo>   Repository root (defaults to the current directory).",
         "  --dry-run       Validate and render the structural operation without writing.",
+        "  --verbose       Include the full Markdown, metadata and validation payload.",
+        "  --input <file|-> JSON with the operations array; apply-operations writes one revision.",
     ].join("\n");
 }
 
@@ -877,12 +935,36 @@ async function main(argv) {
         process.stdout.write(`${usage()}\n`);
         return;
     }
-    const result = editPlan({
+    const input = args._[0] === "apply-operations"
+        ? batchInputFromArgs(args)
+        : {file: args.file, dry_run: args.dry_run === true, operation: operationFromArgs(args)};
+    const result = editPlan(input, {repoRoot: args.root ?? process.cwd(), verbose: args.verbose === true});
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+function batchInputFromArgs(args) {
+    assertAllowedArgs(args, new Set(["file", "root", "dry_run", "verbose", "input", "_"]));
+    const payload = readJsonInput(args.input);
+    if (!Array.isArray(payload?.operations) || payload.operations.length === 0) {
+        throw new PlanEditError("INVALID_ARGUMENT", "--input must contain a non-empty operations array.");
+    }
+    return {
         file: args.file,
         dry_run: args.dry_run === true,
-        operation: operationFromArgs(args),
-    }, {repoRoot: args.root ?? process.cwd()});
-    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        operations: payload.operations,
+    };
+}
+
+function readJsonInput(filePath) {
+    if (typeof filePath !== "string" || filePath === "") {
+        throw new PlanEditError("INVALID_ARGUMENT", "apply-operations requires --input <file|->.");
+    }
+    const content = filePath === "-" ? fs.readFileSync(0, "utf8") : fs.readFileSync(path.resolve(filePath), "utf8");
+    try {
+        return JSON.parse(content);
+    } catch {
+        throw new PlanEditError("INVALID_ARGUMENT", "--input must contain valid JSON.");
+    }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

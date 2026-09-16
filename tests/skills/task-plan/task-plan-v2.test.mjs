@@ -147,6 +147,14 @@ function saveInput(repoRoot, overrides = {}) {
     };
 }
 
+function contentHash(markdown) {
+    return crypto.createHash("sha256").update(markdown).digest("hex");
+}
+
+function updateToken(saved) {
+    return {expected_revision: saved.revision, base_sha256: saved.content_sha256};
+}
+
 it("normalizes and persists source without escaping repository root", () => {
     const root = temporaryRepository();
     fs.writeFileSync(path.join(root, "task.md"), "Plan this task.\n", "utf8");
@@ -234,7 +242,7 @@ it("source-only is a valid resume point before a complete plan exists", () => {
 it("writes a ready Markdown plan without sidecar state", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const saved = savePlan(saveInput(root), {now: NOW});
+    const saved = savePlan(saveInput(root), {now: NOW, verbose: true});
     const loaded = loadPlan({repoRoot: root, sourceIdentity: source().identity});
     const paths = resolvePlanPaths({repoRoot: root, sourceIdentity: source().identity});
 
@@ -250,16 +258,17 @@ it("writes a ready Markdown plan without sidecar state", () => {
 it("requires one execution checkbox per work package", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const valid = savePlan(saveInput(root), {now: NOW});
+    const valid = savePlan(saveInput(root), {now: NOW, verbose: true});
     assert.equal(valid.validation.valid, true);
     assert.deepEqual(valid.validation.packages.map((packageRecord) => packageRecord.id), ["WP1"]);
+    const token = updateToken(valid);
 
     const duplicateEntry = completePlanBody().replace(
         "- [ ] WP1",
         "- [ ] WP1\n- [ ] WP1",
     );
     assert.throws(
-        () => savePlan(saveInput(root, {markdown_body: duplicateEntry}), {now: NOW}),
+        () => savePlan(saveInput(root, {markdown_body: duplicateEntry, ...token}), {now: NOW}),
         (error) => error instanceof StoreError
             && error.code === "INVALID_PLAN"
             && error.details.errors.some((message) => message.includes("duplicate work-package")),
@@ -267,7 +276,7 @@ it("requires one execution checkbox per work package", () => {
 
     const legacyStatus = completePlanBody().replace("- [ ] WP1", "- Status: not_started\n- [ ] WP1");
     assert.throws(
-        () => savePlan(saveInput(root, {markdown_body: legacyStatus}), {now: NOW}),
+        () => savePlan(saveInput(root, {markdown_body: legacyStatus, ...token}), {now: NOW}),
         (error) => error instanceof StoreError
             && error.code === "INVALID_PLAN"
             && error.details.errors.some((message) => message.includes("Invalid Execution entry")),
@@ -275,7 +284,7 @@ it("requires one execution checkbox per work package", () => {
 
     const missingEvidence = completePlanBody().replace("- [ ] WP1", "- [x] WP1 — 2026-08-24 — none");
     assert.throws(
-        () => savePlan(saveInput(root, {markdown_body: missingEvidence}), {now: NOW}),
+        () => savePlan(saveInput(root, {markdown_body: missingEvidence, ...token}), {now: NOW}),
         (error) => error instanceof StoreError
             && error.code === "INVALID_PLAN"
             && error.details.errors.some((message) => message.includes("concrete verification evidence")),
@@ -313,13 +322,13 @@ it("requires the project-local model hierarchy", () => {
 it("completes a work package through the task-plan store", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const saved = savePlan(saveInput(root), {now: NOW});
+    const saved = savePlan(saveInput(root), {now: NOW, verbose: true});
     const completed = completeWorkPackage({
         repoRoot: root,
         planPath: saved.paths.draft_path,
         wpId: "WP1",
         evidence: "focused unit test passed",
-    }, {now: NOW});
+    }, {now: NOW, verbose: true});
 
     assert.equal(completed.changed, true);
     assert.equal(completed.metadata.revision, 2);
@@ -330,13 +339,13 @@ it("completes a work package through the task-plan store", () => {
 it("accepts pending and completed WP execution-checklist bullets without the named-bullet rule", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const saved = savePlan(saveInput(root), {now: NOW});
+    const saved = savePlan(saveInput(root), {now: NOW, verbose: true});
     const completed = completeWorkPackage({
         repoRoot: root,
         planPath: saved.paths.draft_path,
         wpId: "WP1",
         evidence: "focused unit test passed",
-    }, {now: NOW});
+    }, {now: NOW, verbose: true});
 
     const validation = validatePlanDocument(completed.markdown, {repoRoot: root});
     assert.equal(validation.valid, true, validation.errors.join("\n"));
@@ -363,13 +372,13 @@ it("rejects a completed WP entry that omits the completion date and verification
 it("preserves replacement tokens in completion evidence", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const saved = savePlan(saveInput(root), {now: NOW});
+    const saved = savePlan(saveInput(root), {now: NOW, verbose: true});
     const completed = completeWorkPackage({
         repoRoot: root,
         planPath: saved.paths.draft_path,
         wpId: "WP1",
         evidence: "saw $& in output",
-    }, {now: NOW});
+    }, {now: NOW, verbose: true});
 
     assert.match(completed.markdown, /- \[x\] WP1 — 2026-08-24 — saw \$& in output/);
 });
@@ -394,8 +403,9 @@ it("derives blocked and ready from questions stored only in Markdown", () => {
     const answered = `- Q1 [answered]: Which existing contract should remain the owner?
   - Answer: Keep the existing Core contract.
   - Source: current conversation`;
-    const ready = savePlan(saveInput(root, {markdown_body: completePlanBody({decisions: answered})}), {
+    const ready = savePlan(saveInput(root, {markdown_body: completePlanBody({decisions: answered}), ...updateToken(blocked)}), {
         now: "2026-08-24T12:05:00.000Z",
+        verbose: true,
     });
     assert.equal(ready.status, "ready");
     assert.equal(ready.metadata.revision, 2);
@@ -483,10 +493,10 @@ it("rejects duplicate work-package and question identifiers", () => {
 it("rejects placeholders without replacing the last valid plan", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const first = savePlan(saveInput(root), {now: NOW});
+    const first = savePlan(saveInput(root), {now: NOW, verbose: true});
     const placeholderBody = completePlanBody().replace("Implement the requested behavior.", "TODO");
     assert.throws(
-        () => savePlan(saveInput(root, {markdown_body: placeholderBody}), {now: "2026-08-24T12:05:00.000Z"}),
+        () => savePlan(saveInput(root, {markdown_body: placeholderBody, ...updateToken(first)}), {now: "2026-08-24T12:05:00.000Z"}),
         (error) => error instanceof StoreError && error.code === "INVALID_PLAN",
     );
     assert.equal(fs.readFileSync(first.paths.draft_path.startsWith("/") ? first.paths.draft_path : path.join(root, first.paths.draft_path), "utf8"), first.markdown);
@@ -512,7 +522,7 @@ it("stores and verifies canonical context references in plan front matter", () =
     fs.writeFileSync(reportPath, "{\"status\":\"COMPLETE\"}\n", "utf8");
     fs.writeFileSync(criteriaPath, "{\"version\":2}\n", "utf8");
     const context = {status: "COMPLETE", report_path: reportPath, criteria_path: criteriaPath};
-    const saved = savePlan(saveInput(root, {context}), {now: NOW});
+    const saved = savePlan(saveInput(root, {context}), {now: NOW, verbose: true});
     assert.equal(saved.metadata.context_status, "COMPLETE");
 
     fs.writeFileSync(reportPath, "{\"status\":\"tampered\"}\n", "utf8");
@@ -524,7 +534,7 @@ it("stores and verifies canonical context references in plan front matter", () =
 it("withdraws ready while a material revision references an incomplete canonical run", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const ready = savePlan(saveInput(root), {now: NOW});
+    const ready = savePlan(saveInput(root), {now: NOW, verbose: true});
     const reportPath = path.join(root, "var", "agent", "incomplete-context.report.json");
     const criteriaPath = path.join(root, "var", "agent", "incomplete-context.criteria.json");
     fs.mkdirSync(path.dirname(reportPath), {recursive: true});
@@ -533,7 +543,8 @@ it("withdraws ready while a material revision references an incomplete canonical
     const saved = savePlan(saveInput(root, {
         markdown_body: parsePlanDocument(ready.markdown).body,
         context: {status: "INCOMPLETE", report_path: reportPath, criteria_path: criteriaPath},
-    }), {now: "2026-08-24T13:00:00.000Z"});
+        ...updateToken(ready),
+    }), {now: "2026-08-24T13:00:00.000Z", verbose: true});
 
     assert.equal(ready.status, "ready");
     assert.equal(saved.status, "blocked");
@@ -551,7 +562,7 @@ it("withdraws ready while a material revision references an incomplete canonical
 it("derives blocked from a blocked repository-context without requiring a synthetic question", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const saved = savePlan(saveInput(root, {context: {status: "BLOCKED"}}), {now: NOW});
+    const saved = savePlan(saveInput(root, {context: {status: "BLOCKED"}}), {now: NOW, verbose: true});
 
     assert.equal(saved.validation.valid, true);
     assert.equal(saved.metadata.context_status, "BLOCKED");
@@ -580,7 +591,7 @@ it("detects source artifact tampering during resume", () => {
 it("keeps the last valid Markdown when atomic save fails", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const first = savePlan(saveInput(root, {markdown_body: completePlanBody({goal: "Stable goal."})}), {now: NOW});
+    const first = savePlan(saveInput(root, {markdown_body: completePlanBody({goal: "Stable goal."})}), {now: NOW, verbose: true});
     const failingFs = {
         ...fs,
         renameSync(from, to) {
@@ -591,7 +602,10 @@ it("keeps the last valid Markdown when atomic save fails", () => {
         },
     };
     assert.throws(
-        () => savePlan(saveInput(root, {markdown_body: completePlanBody({goal: "Uncommitted goal."})}), {
+        () => savePlan(saveInput(root, {
+            markdown_body: completePlanBody({goal: "Uncommitted goal."}),
+            ...updateToken(first),
+        }), {
             now: "2026-08-24T12:05:00.000Z",
             fsOps: failingFs,
         }),
@@ -600,6 +614,128 @@ it("keeps the last valid Markdown when atomic save fails", () => {
     const persistedMarkdown = fs.readFileSync(path.join(root, first.paths.draft_path), "utf8");
     assert.match(persistedMarkdown, /Stable goal\./);
     assert.doesNotMatch(persistedMarkdown, /Uncommitted goal\./);
+});
+
+it("rejects missing or stale update tokens without changing the canonical plan", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const first = savePlan(saveInput(root), {now: NOW, verbose: true});
+    const planPath = path.join(root, first.paths.draft_path);
+    const before = fs.readFileSync(planPath, "utf8");
+    const cases = [
+        {},
+        {...updateToken(first), expected_revision: first.metadata.revision + 1},
+        {...updateToken(first), base_sha256: "0".repeat(64)},
+    ];
+
+    for (const token of cases) {
+        assert.throws(
+            () => savePlan(saveInput(root, {
+                markdown_body: completePlanBody({goal: "Rejected stale update."}),
+                ...token,
+            }), {now: "2026-08-24T12:05:00.000Z"}),
+            (error) => error instanceof StoreError && error.code === "PLAN_CONFLICT",
+        );
+        assert.equal(fs.readFileSync(planPath, "utf8"), before);
+    }
+    assert.equal(fs.existsSync(`${planPath}.lock`), false);
+});
+
+it("accepts only one update from the same base snapshot", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const first = savePlan(saveInput(root), {now: NOW, verbose: true});
+    const token = updateToken(first);
+    const accepted = savePlan(saveInput(root, {
+        markdown_body: completePlanBody({goal: "First writer."}),
+        ...token,
+    }), {now: "2026-08-24T12:05:00.000Z", verbose: true});
+
+    assert.equal(accepted.metadata.revision, 2);
+    assert.throws(
+        () => savePlan(saveInput(root, {
+            markdown_body: completePlanBody({goal: "Second writer."}),
+            ...token,
+        }), {now: "2026-08-24T12:06:00.000Z"}),
+        (error) => error instanceof StoreError && error.code === "PLAN_CONFLICT",
+    );
+    const persisted = fs.readFileSync(path.join(root, accepted.paths.draft_path), "utf8");
+    assert.match(persisted, /First writer\./);
+    assert.doesNotMatch(persisted, /Second writer\./);
+});
+
+it("reclaims a dead stale lock and removes its takeover claim", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const first = savePlan(saveInput(root), {now: NOW, verbose: true});
+    const planPath = path.join(root, first.paths.draft_path);
+    const lockPath = `${planPath}.lock`;
+    const staleAt = new Date(Date.now() - 60_000);
+    fs.writeFileSync(lockPath, "999999999:dead-owner\n", "utf8");
+    fs.utimesSync(lockPath, staleAt, staleAt);
+
+    const saved = savePlan(saveInput(root, {
+        markdown_body: completePlanBody({goal: "Reclaimed stale lock."}),
+        ...updateToken(first),
+    }), {now: "2026-08-24T12:05:00.000Z"});
+
+    assert.equal(saved.changed, true);
+    assert.equal(saved.revision, 2);
+    assert.equal(fs.existsSync(lockPath), false);
+    assert.equal(fs.existsSync(`${lockPath}.stale-claim`), false);
+});
+
+it("does not remove a replacement lock observed during stale-lock takeover", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const first = savePlan(saveInput(root), {now: NOW, verbose: true});
+    const planPath = path.join(root, first.paths.draft_path);
+    const lockPath = `${planPath}.lock`;
+    const staleAt = new Date(Date.now() - 60_000);
+    fs.writeFileSync(lockPath, "999999999:dead-owner\n", "utf8");
+    fs.utimesSync(lockPath, staleAt, staleAt);
+
+    let lockReads = 0;
+    const racingFs = {
+        ...fs,
+        readFileSync(file, ...args) {
+            if (path.resolve(file) !== lockPath) {
+                return fs.readFileSync(file, ...args);
+            }
+            const content = fs.readFileSync(file, ...args);
+            lockReads += 1;
+            if (lockReads === 1) {
+                fs.unlinkSync(lockPath);
+                fs.writeFileSync(lockPath, `${process.pid}:replacement-owner\n`, "utf8");
+            }
+            return content;
+        },
+    };
+
+    assert.throws(
+        () => savePlan(saveInput(root, {
+            markdown_body: completePlanBody({goal: "Must not replace a new owner."}),
+            ...updateToken(first),
+        }), {now: "2026-08-24T12:05:00.000Z", fsOps: racingFs}),
+        (error) => error instanceof StoreError && error.code === "PLAN_LOCK_TIMEOUT",
+    );
+    assert.match(fs.readFileSync(lockPath, "utf8"), /replacement-owner/);
+    assert.equal(fs.existsSync(`${lockPath}.stale-claim`), false);
+});
+
+it("treats an identical update from the current base as a no-op", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const first = savePlan(saveInput(root), {now: NOW, verbose: true});
+    const repeated = savePlan(saveInput(root, {
+        markdown_body: parsePlanDocument(first.markdown).body,
+        ...updateToken(first),
+    }), {now: "2026-08-24T12:05:00.000Z", verbose: true});
+
+    assert.equal(repeated.changed, false);
+    assert.equal(repeated.metadata.revision, first.metadata.revision);
+    assert.equal(repeated.metadata.updated_at, first.metadata.updated_at);
+    assert.equal(repeated.markdown, first.markdown);
 });
 
 it("writes atomically inside the configured root and rejects path escape", () => {
@@ -636,12 +772,88 @@ it("CLI persists source, saves and validates a plan without sidecar", () => {
         validateScript,
         "validate",
         "--file",
-        path.join(root, savedResult.paths.draft_path),
+        path.join(root, savedResult.plan_path),
         "--root",
         root,
     ], {encoding: "utf8"});
     assert.equal(validated.status, 0, validated.stderr);
     assert.equal(JSON.parse(validated.stdout).valid, true);
+});
+
+it("CLI store save stays compact by default and a separate load reads the full document", () => {
+    const root = temporaryRepository();
+    try {
+        prepareSource(root);
+        const storeScript = path.join(ROOT, ".agents/skills/task-plan/scripts/store.mjs");
+        const planFile = path.join(root, "plan-input.json");
+        fs.writeFileSync(planFile, JSON.stringify(saveInput(root)), "utf8");
+
+        const saved = spawnSync(process.execPath, [storeScript, "save", "--input", planFile], {encoding: "utf8"});
+        assert.equal(saved.status, 0, saved.stderr);
+        const compact = JSON.parse(saved.stdout);
+        assert.equal(compact.ok, true);
+        assert.equal(compact.status, "ready");
+        assert.equal(compact.revision, 1);
+        assert.match(compact.content_sha256, /^[a-f0-9]{64}$/);
+        assert.equal(typeof compact.plan_path, "string");
+        assert.equal(Object.hasOwn(compact, "markdown"), false);
+        assert.equal(saved.stdout.includes("## Work packages"), false);
+
+        const verboseSource = normalizeUserInput({
+            identity: "owner/repository#777",
+            title: "Verbose save",
+            body: "Save with full output.",
+        }, {fetched_at: NOW});
+        persistSource(verboseSource, {repoRoot: root});
+        const verbosePlanFile = path.join(root, "verbose-plan-input.json");
+        fs.writeFileSync(verbosePlanFile, JSON.stringify({
+            ...saveInput(root),
+            source_identity: verboseSource.identity,
+        }), "utf8");
+        const verbose = spawnSync(process.execPath, [storeScript, "save", "--input", verbosePlanFile, "--verbose"], {encoding: "utf8"});
+        assert.equal(verbose.status, 0, verbose.stderr);
+        assert.equal(JSON.parse(verbose.stdout).markdown.includes("## Work packages"), true);
+
+        const loaded = spawnSync(process.execPath, [
+            storeScript,
+            "load",
+            "--source-identity", source().identity,
+            "--root", root,
+        ], {encoding: "utf8"});
+        assert.equal(loaded.status, 0, loaded.stderr);
+        const full = JSON.parse(loaded.stdout);
+        assert.equal(full.markdown.includes("## Work packages"), true);
+        assert.equal(full.content_sha256, compact.content_sha256);
+    } finally {
+        fs.rmSync(root, {force: true, recursive: true});
+    }
+});
+
+it("CLI validate returns a compact projection and full payload with --verbose", () => {
+    const root = temporaryRepository();
+    try {
+        prepareSource(root);
+        const validateScript = path.join(ROOT, ".agents/skills/task-plan/scripts/validate.mjs");
+        const saved = savePlan(saveInput(root), {now: NOW, verbose: true});
+        const planFile = path.join(root, saved.paths.draft_path);
+
+        const compact = spawnSync(process.execPath, [validateScript, "validate", "--file", planFile, "--root", root], {encoding: "utf8"});
+        assert.equal(compact.status, 0, compact.stderr);
+        const compactResult = JSON.parse(compact.stdout);
+        assert.equal(compactResult.valid, true);
+        assert.equal(compactResult.status, "ready");
+        assert.match(compactResult.content_sha256, /^[a-f0-9]{64}$/);
+        assert.equal(Object.hasOwn(compactResult, "packages"), false);
+        assert.equal(Object.hasOwn(compactResult, "questions"), false);
+
+        const verbose = spawnSync(process.execPath, [validateScript, "validate", "--file", planFile, "--root", root, "--verbose"], {encoding: "utf8"});
+        assert.equal(verbose.status, 0, verbose.stderr);
+        const verboseResult = JSON.parse(verbose.stdout);
+        assert.equal(Array.isArray(verboseResult.packages), true);
+        assert.deepEqual(verboseResult.packages.map((record) => record.id), ["WP1"]);
+    } finally {
+        fs.rmSync(root, {force: true, recursive: true});
+    }
 });
 
 it("normalizes a conversational source through stdin before persisting it", () => {
@@ -725,13 +937,84 @@ it("prints source and store CLI help without inputs or side effects", () => {
 it("validation can run directly against persisted evidence", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const saved = savePlan(saveInput(root), {now: NOW});
+    const saved = savePlan(saveInput(root), {now: NOW, verbose: true});
     const validation = validatePlanDocument(saved.markdown, {repoRoot: root});
     assert.equal(validation.valid, true);
     assert.equal(validation.status, "ready");
     assert.match(saved.metadata.source_sha256, /^[a-f0-9]{64}$/);
     assert.equal(crypto.createHash("sha256").update(fs.readFileSync(path.join(root, saved.metadata.source_artifact))).digest("hex"), saved.metadata.source_sha256);
 });
+
+it("projects a compact default save result and exposes the full document on request", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const compact = savePlan(saveInput(root), {now: NOW});
+
+    assert.equal(compact.ok, true);
+    assert.equal(compact.status, "ready");
+    assert.equal(compact.changed, true);
+    assert.equal(compact.plan_id, savedPlanId(root));
+    assert.equal(compact.revision, 1);
+    assert.match(compact.content_sha256, /^[a-f0-9]{64}$/);
+    assert.equal(typeof compact.plan_path, "string");
+    assert.deepEqual(compact.changed_sections.length > 0, true);
+    assert.deepEqual(compact.changed_work_packages, ["WP1"]);
+    assert.deepEqual(compact.errors, []);
+    assert.deepEqual(compact.warnings, []);
+    assert.equal(Object.hasOwn(compact, "markdown"), false);
+    assert.equal(Object.hasOwn(compact, "validation"), false);
+    assert.equal(JSON.stringify(compact).includes("## Work packages"), false);
+    assert.equal(JSON.stringify(compact).includes("Goal: Implement the requested behavior."), false);
+
+    const verbose = savePlan(saveInput(root, {
+        markdown_body: completePlanBody({goal: "Explicit full read."}),
+        ...updateToken(compact),
+    }), {now: "2026-08-24T12:05:00.000Z", verbose: true});
+    assert.match(verbose.markdown, /Goal: Explicit full read\./);
+    assert.equal(verbose.metadata.revision, 2);
+    assert.equal(verbose.content_sha256, contentHash(verbose.markdown));
+});
+
+it("returns the canonical content hash consistently across save, load and no-op", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const saved = savePlan(saveInput(root), {now: NOW});
+    const loaded = loadPlan({repoRoot: root, sourceIdentity: source().identity});
+    const repeated = savePlan(saveInput(root, {
+        markdown_body: parsePlanDocument(loaded.markdown).body,
+        ...updateToken(saved),
+    }), {now: "2026-08-24T12:05:00.000Z"});
+
+    assert.equal(saved.content_sha256, contentHash(loaded.markdown));
+    assert.equal(loaded.content_sha256, contentHash(loaded.markdown));
+    assert.equal(repeated.content_sha256, saved.content_sha256);
+    assert.equal(repeated.changed, false);
+    assert.equal(repeated.revision, saved.revision);
+});
+
+it("projects complete-wp without the Markdown body and reports the changed package", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const saved = savePlan(saveInput(root), {now: NOW});
+    const completed = completeWorkPackage({
+        repoRoot: root,
+        planPath: saved.plan_path,
+        wpId: "WP1",
+        evidence: "focused unit test passed",
+    }, {now: NOW});
+
+    assert.equal(completed.ok, true);
+    assert.equal(completed.changed, true);
+    assert.equal(completed.revision, 2);
+    assert.match(completed.content_sha256, /^[a-f0-9]{64}$/);
+    assert.deepEqual(completed.changed_work_packages, ["WP1"]);
+    assert.equal(Object.hasOwn(completed, "markdown"), false);
+    assert.equal(JSON.stringify(completed).includes("## Execution"), false);
+});
+
+function savedPlanId(root) {
+    return loadPlan({repoRoot: root, sourceIdentity: source().identity}).metadata.plan_id;
+}
 
 it("documents the repository-level task-plan test directory", () => {
     const skill = fs.readFileSync(path.join(ROOT, ".agents/skills/task-plan/SKILL.md"), "utf8");
