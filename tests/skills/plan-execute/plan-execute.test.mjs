@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -18,6 +19,13 @@ import {
 } from "../../../.agents/skills/plan-execute/scripts/execute.mjs";
 
 const NOW = "2026-08-26T12:00:00.000Z";
+
+function updateToken(saved) {
+    return {
+        expected_revision: saved.revision,
+        base_sha256: saved.content_sha256,
+    };
+}
 
 function temporaryRepository() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "plan-execute-"));
@@ -41,7 +49,7 @@ function makePlan(root, packages, identity = `user-input:plan-execute-${packages
         repo_root: root,
         source_identity: source.identity,
         markdown_body: planBody(packages),
-    }, {now: NOW});
+    }, {now: NOW, verbose: true});
     return {saved, planPath: path.join(root, saved.paths.draft_path)};
 }
 
@@ -281,7 +289,7 @@ it("selects exactly the first unchecked work package", () => {
         source: "plan-default",
     });
 
-    completeWorkPackage({repoRoot: root, planPath, wpId: "WP1", evidence: "focused test passed"}, {now: NOW});
+    completeWorkPackage({repoRoot: root, planPath, wpId: "WP1", evidence: "focused test passed"}, {now: NOW, verbose: true});
     const second = selectNextWorkPackage(loadExecutionPlan({planPath, repoRoot: root}));
     assert.equal(second.selected.id, "WP2");
 });
@@ -354,7 +362,7 @@ it("marks completion through task-plan with date and evidence", () => {
         planPath,
         wpId: "WP1",
         evidence: "focused test passed",
-    }, {now: NOW});
+    }, {now: NOW, verbose: true});
 
     assert.equal(completed.changed, true);
     assert.match(completed.markdown, /- \[x\] WP1 — 2026-08-26 — focused test passed/);
@@ -363,7 +371,7 @@ it("marks completion through task-plan with date and evidence", () => {
         planPath,
         wpId: "WP1",
         evidence: "focused test passed",
-    }, {now: NOW});
+    }, {now: NOW, verbose: true});
     assert.equal(repeated.changed, false);
     assert.equal(repeated.metadata.revision, 2);
     assert.deepEqual(selectNextWorkPackage(loadExecutionPlan({planPath, repoRoot: root})), {
@@ -389,6 +397,42 @@ it("rejects out-of-order completion and missing evidence", () => {
     );
 });
 
+it("propagates a completion conflict when the transformed snapshot becomes stale", () => {
+    const root = temporaryRepository();
+    const created = makePlan(root, [{id: "WP1", title: "Concurrent"}], "user-input:completion-conflict");
+    let planReads = 0;
+    let concurrentBytes = null;
+    const racingFs = {
+        ...fs,
+        readFileSync(file, ...args) {
+            if (path.resolve(file) === created.planPath) {
+                planReads += 1;
+                if (planReads === 3) {
+                    concurrentBytes = fs.readFileSync(file, "utf8").replace(
+                        "- Goal: Execute Concurrent.",
+                        "- Goal: Concurrent writer changed the package.",
+                    );
+                    fs.writeFileSync(file, concurrentBytes, "utf8");
+                }
+            }
+            return fs.readFileSync(file, ...args);
+        },
+    };
+
+    assert.throws(
+        () => completeExecutionWorkPackage({
+            repoRoot: root,
+            planPath: created.planPath,
+            wpId: "WP1",
+            evidence: "stale implementation evidence",
+            fsOps: racingFs,
+        }, {now: NOW}),
+        (error) => error instanceof PlanExecuteError && error.code === "PLAN_CONFLICT",
+    );
+    assert.equal(fs.readFileSync(created.planPath, "utf8"), concurrentBytes);
+    assert.match(concurrentBytes, /- \[ \] WP1/);
+});
+
 it("does not execute a plan blocked by an open planning question", () => {
     const root = temporaryRepository();
     const created = makePlan(root, [{id: "WP1", title: "Questioned"}], "user-input:question");
@@ -396,7 +440,12 @@ it("does not execute a plan blocked by an open planning question", () => {
         "No open questions.",
         "- Q1 [open]: Which owner should execute this?",
     );
-    savePlan({repo_root: root, source_identity: "user-input:question", markdown_body: blockedBody}, {now: NOW});
+    savePlan({
+        repo_root: root,
+        source_identity: "user-input:question",
+        markdown_body: blockedBody,
+        ...updateToken(created.saved),
+    }, {now: NOW});
 
     assert.throws(
         () => loadExecutionPlan({planPath: created.planPath, repoRoot: root}),
@@ -415,6 +464,7 @@ it("does not execute a ready plan withdrawn by an incomplete material revision",
         source_identity: "user-input:revision",
         markdown_body: parsePlanDocument(created.saved.markdown).body,
         context: {status: "INCOMPLETE", report_path: reportPath},
+        ...updateToken(created.saved),
     }, {now: "2026-08-26T13:00:00.000Z"});
 
     assert.equal(created.saved.status, "ready");

@@ -41,8 +41,8 @@ Task-plan:
 - pobiera issue, plik albo opis użytkownika;
 - oddziela wymagania od sugestii, hipotez i decyzji;
 - zbiera tylko potrzebny kontekst repozytorium;
-- tworzy kompletny plan, wykonuje jeden critical review i zawsze zleca
-  niezależny `$code-review` gotowego kandydata planu;
+- tworzy kompletny plan, wykonuje jeden critical review i zawsze wykonuje
+  odrębną fazę read-only `$code-review` gotowego kandydata planu;
 - zadaje wyłącznie pytania blokujące;
 - wyprowadza wynik `ready` albo `blocked` bezpośrednio z Markdowna.
 
@@ -51,6 +51,8 @@ Task-plan nie:
 - implementuje kodu ani konfiguracji;
 - tworzy lub modyfikuje issue, branchy i PR-ów;
 - uruchamia `$code-implement`, `$qa-run` ani workerów;
+- deleguje fazy review do osobnego wykonawcy; review planu wykonuje bieżący agent
+  jako odrębną fazę read-only;
 - formalnie zatwierdza planu lub poszczególnych work packages;
 - importuje planów, decyzji, mutacji ani statusów utworzonych przez task-plan v1;
 - prowadzi event sourcingu, dziennika mutacji ani ręcznych przejść faz.
@@ -170,8 +172,8 @@ intake
   → pytania blokujące, jeśli istnieją
   → aktualizacja całego planu po odpowiedzi
   → zapis i walidacja kompletnego kandydata planu
-  → niezależny `$code-review` planu
-  → rewizja findings, walidacja i re-review zmienionych fragmentów
+  → odrębna faza read-only `$code-review` planu
+  → decyzja helpera: stop, jedna rewizja i delta-review albo blocked
   → ready
 ```
 
@@ -344,6 +346,18 @@ Nazwa może być identyfikatorem (`R3`, `A2`, `Q5`) albo nazwą pola
 <skill_dir>/scripts/edit.mjs remove-question
   --file ./docs/plan/<plan>.md
   --id Q<number>
+
+<skill_dir>/scripts/edit.mjs apply-operations
+  --file ./docs/plan/<plan>.md
+  --input ./plan-operations.json
+
+# plan-operations.json
+{
+  "operations": [
+    {"type": "edit-bullet", "work_package": "WP1", "id": "Goal", "value": "..."},
+    {"type": "add-bullet", "section": "Risks and discovery debt", "id": "R7", "status": "low", "value": "..."}
+  ]
+}
 ```
 
 `add-bullet` wymaga nowego identyfikatora, a `edit-bullet` i `remove-bullet`
@@ -354,6 +368,10 @@ muszą być sztucznie numerowane. Pytania `Q<number>` są blokami z podpunktami
 `Answer` i `Source`, więc obsługują je wyłącznie wrappery pytaniowe. `edit-question`
 zmienia prompt, status i/lub odpowiedź (przejście do `answered` wymaga
 odpowiedzi), a `remove-question` usuwa cały blok pytania.
+
+`apply-operations` stosuje całą paczkę w pamięci na jednym odczycie, przerywa
+całość przy pierwszym błędzie i zapisuje dokument raz — jedna logiczna poprawka
+odpowiada jednej rewizji. Wynik domyślnie nie zawiera pełnego Markdowna.
 
 `edit.mjs` wymaga kanonicznego pliku planu, jednoznacznego selektora i
 zwalidowanego dokumentu. Brak albo duplikat sekcji, WP, punktu lub pytania kończy
@@ -525,35 +543,91 @@ finding staje się pytaniem blokującym albo ryzykiem w planie.
 Po odpowiedzi użytkownika sprawdź ponownie tylko zmienione fragmenty. Jeśli
 problem pozostaje, pokaż blocker zamiast uruchamiać pętlę review lub restart.
 
-### 5. Niezależny code review planu
+### 5. Faza read-only code review planu i decyzja cyklu
 
 Po wewnętrznym critical review, rozstrzygnięciu pytań blokujących oraz zapisie i
-walidacji kompletnego kandydata uruchom zawsze `$code-review` z targetem
-`plan`. Następuje to przed pokazaniem użytkownikowi komunikatu `ready`.
-Reviewer otrzymuje kanoniczny Markdown planu oraz referencje do source artifact,
-context reportu i kryteriów, jeśli istnieją.
+walidacji kompletnego kandydata wykonaj zawsze `$code-review` z targetem `plan`.
+Następuje to przed pokazaniem użytkownikowi komunikatu `ready`. Reviewer otrzymuje
+kanoniczny Markdown planu oraz referencje do source artifact, context reportu i
+kryteriów, jeśli istnieją.
 
-`$code-review` pozostaje niezależny i read-only: nie zmienia Markdowna, nie
-tworzy pytań, nie ustawia statusu ani nie uruchamia repository-context. Ocena
-planu sprawdza source coverage, ownership, granice i zależności WP, kolejność,
-kryteria akceptacji, verification oraz evidence proponowanych zmian. Nie
-powtarza szerokiego discovery; brak lub nieaktualność artefaktu zgłasza jako lukę
-pokrycia.
+Review planu jest odrębną fazą read-only bieżącego agenta, nie osobnym
+wykonawcą. `$code-review` nie zmienia Markdowna, nie tworzy pytań, nie ustawia
+statusu ani nie uruchamia repository-context. Ocena planu sprawdza source
+coverage, ownership, granice i zależności WP, kolejność, kryteria akceptacji,
+verification oraz evidence proponowanych zmian. Nie powtarza szerokiego
+discovery; brak lub nieaktualność artefaktu zgłasza jako lukę pokrycia.
 
-Jeśli review zgłosi finding wymagający zmiany, `$task-plan` ocenia go wobec
-źródła i evidence, a następnie aktualizuje pełny Markdown przez `store.mjs`:
+#### Decyzja ownera
+
+Działanie po review wyprowadza bezstanowy helper `<skill_dir>/scripts/review-cycle.mjs`.
+Owner przekazuje mu wyłącznie jawne dane: werdykt, liczniki pełnych i delta-review,
+findings ze stabilnym ID, klasyfikacją, severity i liczbą prób naprawy, jawne
+rozstrzygnięcie każdego wcześniejszego ID oraz — po pierwszym delta-review —
+artefakt delta z plan ID, rewizjami, hashami, zmienionymi sekcjami/WP,
+wcześniejszymi ID i dozwolonymi bezpośrednimi zależnościami. Helper sprawdza
+kompletność i spójność tych danych oraz zwraca dokładnie jedno działanie. Nie
+ocenia prawdziwości ocen semantycznych ani nie utrwala stanu cyklu.
+
+Tabela werdyktów:
+
+| Werdykt review | Działanie ownera |
+| --- | --- |
+| `PLAN READY` | Zakończ jako `ready`; brak actionable findings. |
+| `PLAN READY WITH CAVEAT` | Zakończ jako `ready` tylko dla kwestii nieactionable, zależnych od decyzji poza zakresem albo jawnie zaakceptowanych przez użytkownika z referencją; zachowaj caveat. |
+| `PLAN DISCUSS` | Ustaw `blocked` i zadaj pytanie albo wskaż konkretną lukę dowodową. |
+| `PLAN CHANGES REQUESTED` | Popraw jednym spójnym pakietem wszystkie actionable `BLOCKER`, `MAJOR` i `MINOR`, zwaliduj plan i wykonaj delta-review, o ile pozwala na to budżet oraz progress gate. |
+| `PLAN BLOCKED` | Ustaw `blocked`; nie rozpoczynaj automatycznej naprawy ani kolejnego review. |
+
+`SUGGESTION` nie uruchamia edycji ani re-review. Actionable `MINOR` jest
+rzeczywistym findingiem z konkretną, proporcjonalną poprawką i poprawia się go
+tak samo jak `BLOCKER` lub `MAJOR`; nie wolno go przemianować na `SUGGESTION`
+wyłącznie po to, aby zakończyć workflow. Approval-affecting `QUESTION` blokuje,
+nawet gdy werdykt brzmi `PLAN READY`.
+
+Budżet i progress gate:
+
+- jedno pełne review kompletnego kandydata i najwyżej trzy delta-review, po
+  jednym dla każdej rewizji naprawczej;
+- kolejna runda jest dozwolona tylko wtedy, gdy co najmniej jeden wcześniejszy
+  finding został rozwiązany albo jego severity spadło, żaden wcześniejszy finding
+  nie został pogorszony, a nowe findings wynikają z ostatniej poprawki lub jej
+  bezpośrednich zależności;
+- nawrót tego samego failure mode bez nowego dowodu nie otwiera rundy; owner
+  wiąże go z wcześniejszym ID i przekazuje jawną ocenę tożsamości failure mode
+  oraz nowości evidence;
+- brak mierzalnego postępu, przetrwanie dwóch prób naprawy, brak potrzebnej
+  decyzji lub evidence, wyczerpanie budżetu przy actionable findings oraz
+  werdykt `PLAN DISCUSS` albo `PLAN BLOCKED` ustawiają plan jako `blocked`;
+- pierwsza poprawka nie wymaga fikcyjnego wcześniejszego postępu; dalsza decyzja
+  korzysta z jawnej oceny dokonanej poprawki.
+
+Nowy finding spoza zmienionych linii może wejść do rundy tylko z konkretnym
+dowodem pochodzenia z poprawki albo z bezpośredniej zależności. Obserwacje z
+niezmienionego i niezależnego zakresu trafiają do `SUGGESTION` albo są odrzucane.
+Hashe dokumentów identyfikują wersje dokumentu, nie znaczenie findingu.
+
+Po decyzji `apply-repair` wykonaj jedną spójną rewizję całego Markdowna.
+Zapis i walidacja przechodzą przez `<skill_dir>/scripts/store.mjs`; punktowe
+zmiany wykonuj przez `edit.mjs` z jedną paczką operacji, aby jedna logiczna
+poprawka odpowiadała dokładnie jednej rewizji. Nie zapisuj osobnego lifecycle
+findings ani statusu review: źródłem prawdy pozostaje aktualny Markdown, a przyjęte
+findings muszą być odzwierciedlone w jego treści.
+
+Zaklasyfikuj każdy finding wobec źródła i evidence i rozstrzygnij go w planie:
 
 - rozstrzygalny fakt techniczny koryguje w planie;
 - brakujący dowód uruchamia zwykłą ścieżkę criterion/context albo evidence gate;
 - decyzja biznesowa tworzy pytanie `[open]`;
 - niepotwierdzony albo nierozstrzygnięty finding pozostawia plan `blocked`.
 
+Finding wymagający decyzji użytkownika albo evidence spoza dostępnego zakresu
+blokuje rundę zamiast uruchamiać kolejną poprawkę.
+
 Po każdej rewizji uruchom walidację, a następnie ponów `$code-review` dla
-zmienionych fragmentów planu i ich bezpośrednich zależności. Powtarzaj ten cykl,
-dopóki review nie pozostawia findings wymagających zmiany albo plan nie stanie
-się `blocked`. Nie zapisuj osobnego lifecycle findings ani statusu review:
-źródłem prawdy pozostaje aktualny Markdown, a przyjęte findings muszą być
-odzwierciedlone w jego treści.
+zmienionych fragmentów planu i ich bezpośrednich zależności. Powtarzaj ten cykl
+wyłącznie w granicach budżetu i progress gate; po wyczerpaniu albo przy braku
+postępu ustaw plan jako `blocked` zamiast otwierać kolejną rundę.
 
 ### 6. Pytania blokujące
 
@@ -601,8 +675,8 @@ odpowiedzią na pytanie, akceptacją WP ani zgodą na implementację.
 
 ### 7. Ready i handoff
 
-Przed `ready` uruchom `<skill_dir>/scripts/validate.mjs`, a następnie wymagany
-niezależny `$code-review` zgodnie z poprzednią sekcją. Status jest dozwolony,
+Przed `ready` uruchom `<skill_dir>/scripts/validate.mjs`, a następnie wymaganą
+fazę read-only `$code-review` zgodnie z poprzednią sekcją. Status jest dozwolony,
 gdy:
 
 - wszystkie wymagane sekcje istnieją;
@@ -624,10 +698,14 @@ gdy:
 - każdy proponowany trwały test przeszedł bramkę „Trwałe testy a jednorazowa
   weryfikacja zmiany”; `Verification` odróżnia trwałe testy od jednorazowych
   checków i nie utrwala osobnych scenariuszy uzasadnionych wyłącznie historią;
-- source i context artefakty istnieją i mają hashe zgodne z frontmatterem.
+- source i context artefakty istnieją i mają hashe zgodne z frontmatterem;
+- decyzja helpera z sekcji 5 zwraca `finish-ready`, a wszystkie powierzone jej
+  dane są kompletne i spójne.
 
-Nie pokazuj użytkownikowi komunikatu `ready`, dopóki niezależny review nie
-zakończy się bez findings wymagających zmiany.
+Nie pokazuj użytkownikowi komunikatu `ready`, dopóki faza read-only review nie
+zakończy się bez findings wymagających zmiany, a helper nie zwróci
+`finish-ready` dla werdyktu `PLAN READY` albo `PLAN READY WITH CAVEAT` bez
+actionable kwestii. Caveat pozostaje widoczny w handoffie.
 
 Po `ready` pokaż:
 
@@ -683,6 +761,8 @@ rekonstrukcji z danych v1.
 <skill_dir>/scripts/atomic-file.mjs
 <skill_dir>/scripts/source.mjs
 <skill_dir>/scripts/store.mjs
+<skill_dir>/scripts/edit.mjs
+<skill_dir>/scripts/review-cycle.mjs
 <skill_dir>/scripts/validate.mjs
 ```
 
@@ -690,8 +770,12 @@ Publiczne role:
 
 - `source.mjs`: normalizacja GitHub/file/user input, bezpieczny odczyt i trwały
   source artifact;
-- `store.mjs`: stabilny plan ID, pełny atomowy zapis Markdowna, resume i
-  oznaczanie ukończenia pojedynczego WP;
+- `store.mjs`: stabilny plan ID, pełny atomowy zapis Markdowna z tokenem
+  rzeczywistej bazy, resume i oznaczanie ukończenia pojedynczego WP;
+- `edit.mjs`: deterministyczna edycja strukturalna, w tym jedna paczka operacji
+  odpowiadająca jednej rewizji;
+- `review-cycle.mjs`: bezstanowa decyzja po review na jawnych danych ownera i
+  minimalny artefakt delta-review; nie ocenia semantyki i nie zapisuje stanu;
 - `validate.mjs`: strukturalna bramka `ready`, bez udawania oceny semantycznej;
 - `atomic-file.mjs`: atomowy zapis pojedynczego artefaktu.
 
@@ -702,11 +786,14 @@ node <skill_dir>/scripts/source.mjs persist --input ./source.json --root "$PWD"
 # Dla bieżącej konwersacji: JSON źródła podaj przez stdin w heredoc (patrz wyżej).
 node <skill_dir>/scripts/store.mjs save --input ./plan-input.json
 node <skill_dir>/scripts/store.mjs load --source-identity 'owner/repository#123' --root "$PWD"
+node <skill_dir>/scripts/edit.mjs apply-operations --file ./docs/plans/<plan-id>.md --input ./plan-operations.json --root "$PWD"
+node <skill_dir>/scripts/review-cycle.mjs decide --input ./review-input.json
+node <skill_dir>/scripts/review-cycle.mjs delta-input --input ./delta-review.json
 node <skill_dir>/scripts/store.mjs complete-wp --file ./docs/plans/<plan-id>.md --wp WP1 --evidence "focused test passed" --root "$PWD"
 node <skill_dir>/scripts/validate.mjs validate --file ./docs/plans/<plan-id>.md --root "$PWD"
 ```
 
-`plan-input.json` zawiera wyłącznie:
+`plan-input.json` przy tworzeniu planu zawiera wyłącznie:
 
 ```json
 {
@@ -717,8 +804,44 @@ node <skill_dir>/scripts/validate.mjs validate --file ./docs/plans/<plan-id>.md 
 }
 ```
 
+Aktualizacja istniejącego planu wymaga tokenu rzeczywistej bazy odczytanej do
+przygotowania treści; autorem tokenu jest wywołujący, a `savePlan` nie odświeża go
+sam z najnowszego pliku:
+
+```json
+{
+  "repo_root": "/repo",
+  "source_identity": "owner/repository#123",
+  "markdown_body": "# Pełny plan...",
+  "expected_revision": 3,
+  "base_sha256": "<sha256 bajtów odczytanego dokumentu>"
+}
+```
+
+`edit.mjs` i `complete-wp` biorą token z własnego pojedynczego odczytu faktycznie
+transformowanego dokumentu, więc nie wymagają tokenu wyboru WP. Punktowe zmiany
+zbieraj w jednej paczce operacji, aby jedna logiczna poprawka odpowiadała jednej
+rewizji:
+
+```json
+{
+  "operations": [
+    {"type": "edit-bullet", "work_package": "WP1", "id": "Goal", "value": "Poprawiony cel."},
+    {"type": "add-bullet", "section": "Risks and discovery debt", "id": "R7", "status": "low", "value": "Nowe ryzyko."}
+  ]
+}
+```
+
 `context`, jeśli istnieje, zawiera finalny `status`, ścieżki raportu i kryteriów
 oraz ich SHA-256. `save --input -` przyjmuje ten JSON przez stdin.
+
+`review-cycle.mjs` przyjmuje przez JSON wyłącznie jawne dane ownera: werdykt,
+liczniki, findings ze stabilnym ID/klasyfikacją/severity i liczbą prób naprawy,
+rozstrzygnięcia wcześniejszych ID oraz artefakt delta. Wynik `delta-input` służy
+jako wejście delta-review do ponownego `decide`. Brak albo sprzeczność
+niezbędnych danych blokuje kolejną rundę; delta opisuje dokładnie jedną następną
+rewizję i musi mieć różne hashe dokumentu bazowego i bieżącego. Helper nie ocenia
+prawdziwości danych semantycznych.
 
 Testy skilla znajdują się w `tests/skills/task-plan/` i działają bez live GitHub,
 live repository-context i implementacji aplikacji.

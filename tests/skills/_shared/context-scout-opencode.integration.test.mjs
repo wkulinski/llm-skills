@@ -139,7 +139,10 @@ test("OpenCode resolves model and thinking for every project subagent", {timeout
     }
 });
 
-test("benchmark adapters are debug-audited before a cohort", async () => {
+// Installs benchmark agent adapters and debug-audits them, spawning
+// `opencode debug agent` repeatedly, so its runtime scales with the agent count
+// and exceeds the default 30s integration timeout.
+test("benchmark adapters are debug-audited before a cohort", {timeout: 120_000}, async () => {
     const snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), "context-scout-adapter-audit-"));
     fs.copyFileSync(path.join(ROOT, "opencode.jsonc"), path.join(snapshotDir, "opencode.jsonc"));
     fs.mkdirSync(path.join(snapshotDir, "bin"), {recursive: true});

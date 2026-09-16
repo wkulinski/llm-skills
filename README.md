@@ -182,7 +182,7 @@ To configure a subagent, edit the `agent` section in the project's `opencode.jso
             "variant": "high"
         },
         "context-scout-fast": {
-            "model": "opencode-go/deepseek-v4.1-flash",
+            "model": "commandcode/deepseek/deepseek-v4.1-flash",
             "options": {
                 "thinking": {
                     "type": "disabled"
@@ -203,6 +203,20 @@ opencode debug agent context-scout-fast
 ```
 
 Do not put model or thinking settings back into `.opencode/agents/*.md`, and do not add `OPENCODE_AGENT_*` variables to `.env`; those files have different responsibilities.
+
+##### Removing an agent and orphan overrides
+
+Removing a managed agent means removing both the file and its `agent` entry. An existing consumer instance can keep an `agent` key after the matching `.opencode/agents/<name>.md` disappears; OpenCode can then recreate that agent from the leftover key with default mode and permissions. Treat such an orphan override as a migration defect, not as a harmless leftover.
+
+Before removing an agent role from this catalog:
+
+1. remove `.opencode/agents/<name>.md` and the `agent.<name>` key from `opencode.jsonc` together;
+2. keep every remaining `agent` key backed by a file, or by a documented built-in such as `build` and `title`;
+3. after publishing the change, ask consumers to drop the removed key from their `opencode.jsonc` and restart OpenCode, because a running instance keeps the configuration it loaded at startup.
+
+Detection of orphan overrides belongs to the synchronizer that manages downstream configuration (LSM), so that it can compare resolved runtime agents with published agent files and warn about keys that no longer have an owning file. That follow-up is generic: it must not special-case the name of one removed role.
+
+For consumers that previously synchronized the removed `diff-reviewer` role, migration is a one-off cleanup: delete the stale `diff-reviewer` key from `opencode.jsonc`, remove any leftover `.opencode/agents/diff-reviewer.md`, and restart OpenCode. Naming that removed role here is migration provenance only; it is not a permanent blacklist, so no current skill, agent, or test needs to forbid the string.
 
 ### Tool entrypoints
 Proxy wrappers are optional.

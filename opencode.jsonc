@@ -59,11 +59,11 @@
             }
         },
         "context-refresher": {
-            "model": "opencode-go/deepseek-v4.1-flash",
+            "model": "commandcode/deepseek/deepseek-v4.1-flash",
             "variant": "max"
         },
         "context-scout-fast": {
-            "model": "opencode-go/deepseek-v4.1-flash",
+            "model": "commandcode/deepseek/deepseek-v4.1-flash",
             "options": {
                 "thinking": {
                     "type": "disabled"
@@ -79,11 +79,11 @@
             "variant": "max"
         },
         "implementation-worker": {
-            "model": "opencode-go/deepseek-v4.1-flash",
+            "model": "commandcode/deepseek/deepseek-v4.1-flash",
             "variant": "max"
         },
         "runtime-diagnostician": {
-            "model": "opencode-go/deepseek-v4.1-flash",
+            "model": "commandcode/deepseek/deepseek-v4.1-flash",
             "variant": "max",
             "permission": {
                 "mate_*": "allow"

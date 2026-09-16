@@ -14,7 +14,7 @@
             "reasoning": "max"
         },
         {
-            "model": "opencode-go/deepseek-v4.1-flash",
+            "model": "commandcode/deepseek/deepseek-v4.1-flash",
             "reasoning": "max"
         },
         {
