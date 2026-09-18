@@ -333,6 +333,161 @@ it("compares the current profile with the selected work-package requirement", ()
     });
     assert.equal(stronger.sufficient, true);
     assert.equal(stronger.current.rank < stronger.required.rank, true);
+    assert.equal(equal.source, "flags");
+});
+
+it("resolves the current profile from the session environment without flags", () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "Session profile"}], "user-input:session-env");
+
+    const result = checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+        env: {
+            OPENCODE_SESSION_MODEL: "openai/gpt-5.6-sol",
+            OPENCODE_SESSION_VARIANT: "medium",
+        },
+    });
+
+    assert.equal(result.sufficient, true);
+    assert.equal(result.action, "execute");
+    assert.equal(result.source, "session-env");
+    assert.equal(result.current.model, "openai/gpt-5.6-sol");
+    assert.equal(result.current.reasoning, "medium");
+});
+
+it("lets explicit flags override the session environment", () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "Flag precedence"}], "user-input:flag-precedence");
+
+    const result = checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+        currentModel: "deepseek/deepseek-v4",
+        currentReasoning: "high",
+        env: {
+            OPENCODE_SESSION_MODEL: "openai/gpt-5.6-sol",
+            OPENCODE_SESSION_VARIANT: "medium",
+        },
+    });
+
+    assert.equal(result.source, "flags");
+    assert.equal(result.current.model, "deepseek/deepseek-v4");
+    assert.equal(result.sufficient, true);
+});
+
+it("fails closed when neither flags nor the session environment provide a profile", () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "Unknown profile"}], "user-input:unknown-profile");
+
+    assert.throws(
+        () => checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {env: {}}),
+        (error) => error instanceof PlanExecuteError && error.code === "SESSION_PROFILE_UNKNOWN",
+    );
+});
+
+it("rejects a partial explicit override instead of mixing flag and environment sources", () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "Partial override"}], "user-input:partial-override");
+
+    assert.throws(
+        () => checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+            currentModel: "openai/gpt-5.6-sol",
+            env: {OPENCODE_SESSION_VARIANT: "medium"},
+        }),
+        (error) => error instanceof PlanExecuteError && error.code === "INVALID_ARGUMENT",
+    );
+});
+
+it("reports an unranked session profile instead of guessing its position", () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "Unranked"}], "user-input:unranked-profile");
+
+    assert.throws(
+        () => checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+            env: {
+                OPENCODE_SESSION_MODEL: "openai/gpt-5.6-unknown",
+                OPENCODE_SESSION_VARIANT: "max",
+            },
+        }),
+        (error) => error instanceof PlanExecuteError && error.code === "UNRANKED_CURRENT_PROFILE",
+    );
+});
+
+it("accepts an explicit user attestation as the portable fallback for harnesses without a session profile", () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{
+        id: "WP1",
+        title: "Attested",
+        model: "deepseek/deepseek-v4",
+        reasoning: "high",
+        justification: "higher capability required",
+    }], "user-input:user-attested");
+
+    const result = checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+        userAttested: true,
+        env: {},
+    });
+
+    assert.equal(result.action, "execute");
+    assert.equal(result.sufficient, true);
+    assert.equal(result.attested, true);
+    assert.equal(result.source, "user-attested");
+    assert.equal(result.current, null);
+    assert.deepEqual(result.required, {
+        model: "deepseek/deepseek-v4",
+        reasoning: "high",
+        rank: 0,
+    });
+    assert.equal(result.selected.id, "WP1");
+});
+
+it("still validates the hierarchy for a user attestation instead of trusting blindly", () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "Attested unranked"}], "user-input:attested-unranked");
+    const hierarchyPath = path.join(root, ".agents", "config", "model-hierarchy.json");
+    const reduced = JSON.parse(fs.readFileSync(hierarchyPath, "utf8"));
+    reduced.profiles = [{model: "other/only", reasoning: "low"}];
+    const fsOps = {
+        ...fs,
+        readFileSync(file, ...args) {
+            if (path.resolve(file) === hierarchyPath) {
+                return `${JSON.stringify(reduced, null, 2)}\n`;
+            }
+            return fs.readFileSync(file, ...args);
+        },
+    };
+
+    assert.throws(
+        () => checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {userAttested: true, fsOps}),
+        (error) => error instanceof PlanExecuteError && error.code === "UNRANKED_REQUIRED_PROFILE",
+    );
+});
+
+it("keeps the environment path authoritative when a session profile is available", () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "Env wins"}], "user-input:env-wins");
+
+    const result = checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+        env: {
+            OPENCODE_SESSION_MODEL: "openai/gpt-5.6-sol",
+            OPENCODE_SESSION_VARIANT: "medium",
+        },
+    });
+
+    assert.equal("attested" in result, false);
+    assert.equal(result.source, "session-env");
+    assert.notEqual(result.current, null);
+});
+
+it("rejects a user attestation combined with explicit flags", () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "Attested plus flags"}], "user-input:attested-flags");
+
+    assert.throws(
+        () => checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+            userAttested: true,
+            currentModel: "deepseek/deepseek-v4",
+            currentReasoning: "high",
+        }),
+        (error) => error instanceof PlanExecuteError && error.code === "INVALID_ARGUMENT",
+    );
 });
 
 it("requests an environment change when the current profile ranks below the WP requirement", () => {

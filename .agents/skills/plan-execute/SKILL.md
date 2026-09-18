@@ -104,25 +104,60 @@ Wynik zawiera także `Estimated size` oraz rekomendowane `model` i `reasoning`.
 Override przypisany do WP ma pierwszeństwo przed wartościami domyślnymi planu.
 Rozmiar jest informacją dla wykonawcy.
 
-Przed implementacją odczytaj faktycznie ustawiony model i reasoning z bieżącego
-środowiska, a następnie uruchom deterministyczny preflight:
+Przed implementacją uruchom deterministyczny preflight. Profil bieżącej sesji
+ustal w tej kolejności i użyj pierwszej dostępnej metody:
 
-```bash
-node <skill_dir>/scripts/execute.mjs check-environment \
-  --path ./docs/plans/<plan-id>.md \
-  --current-model provider/model-b \
-  --current-reasoning medium
-```
+1. **Środowisko sesji (preferowane, OpenCode).** Wywołaj helper bez flag:
 
-Helper porównuje dokładne pary `model + reasoning` według project-relative
-`.agents/config/model-hierarchy.json` i zwraca `sufficient: true` albo
-`sufficient: false`. Przy `false` poproś użytkownika o zmianę na rekomendowany
-lub wyższy profil. Brak bieżącego reasoning albo profil spoza konfiguracji jest
-jawnym błędem; nie zgaduj pozycji. Nie pobieraj leaderboardu ani innych danych z
-sieci.
+   ```bash
+   node <skill_dir>/scripts/execute.mjs check-environment \
+     --path ./docs/plans/<plan-id>.md
+   ```
+
+   Helper sam odczytuje `OPENCODE_SESSION_MODEL` i `OPENCODE_SESSION_VARIANT`,
+   które w każdym wywołaniu bash agenta ustawia projektowy plugin
+   `./.opencode/plugins/session-model-env.js`. Wynik ma
+   `source: "session-env"`.
+
+2. **Jawny override.** Gdy harness nie eksportuje tych zmiennych, ale znasz
+   dokładny profil (np. znasz flagi CLI harnessa albo prowadzisz diagnostykę),
+   podaj obie wartości:
+
+   ```bash
+   node <skill_dir>/scripts/execute.mjs check-environment \
+     --path ./docs/plans/<plan-id>.md \
+     --current-model provider/model-b --current-reasoning medium
+   ```
+
+   Wynik ma `source: "flags"`.
+
+3. **Atestacja użytkownika (przenośny fallback).** Gdy harness nie udostępnia
+   profilu, zapytaj użytkownika wprost, czy aktualny model i poziom rozumowania
+   są nie gorsze niż wymaganie WP, i dopiero po potwierdzeniu użyj:
+
+   ```bash
+   node <skill_dir>/scripts/execute.mjs check-environment \
+     --path ./docs/plans/<plan-id>.md --user-attested
+   ```
+
+   Helper nadal waliduje wymaganie WP wobec `.agents/config/model-hierarchy.json`
+   i zwraca `source: "user-attested"`, `attested: true` oraz `current: null`.
+   To jawna, audytowalna atestacja użytkownika, a nie zgadywanie modelu — nie
+   używaj tej flagi bez potwierdzenia użytkownika.
+   Gdy użytkownik jej odmówi albo nie potrafi potwierdzić, przerwij preflight
+   z `SESSION_PROFILE_UNKNOWN` i wskaż metodę 1 lub 2.
+
+Nie szukaj modelu w logach, bazie sesji ani w sieci. Profil spoza konfiguracji
+jest jawnym błędem; nie zgaduj pozycji. Nie pobieraj leaderboardu ani innych
+danych z sieci.
+
+Wynik preflightu zawiera porównanie dokładnych par `model + reasoning` według
+project-relative `.agents/config/model-hierarchy.json`; helper zwraca
+`sufficient: true` albo `sufficient: false`. Przy `false` poproś użytkownika o
+zmianę na rekomendowany lub wyższy profil.
 
 Wymaganie wstępne: w projekcie musi istnieć `.agents/config/model-hierarchy.json`
-(skopiuj szablon poniżej); w przeciwnym razie `check-environment` zgłosi
+(kopiuj szablon poniżej); w przeciwnym razie `check-environment` zgłosi
 `MODEL_HIERARCHY_NOT_FOUND`. Szablon konfiguracji znajduje się w
 `<skill_dir>/model-hierarchy.json.dist`. Skopiuj go do projektu i usuń przykładowe
 profile:
@@ -131,6 +166,12 @@ profile:
 mkdir -p .agents/config
 cp <skill_dir>/model-hierarchy.json.dist .agents/config/model-hierarchy.json
 ```
+
+W OpenCode projekt powinien mieć także plugin
+`./.opencode/plugins/session-model-env.js` (część tego katalogu skills), żeby
+metoda 1 działała bez pytań do użytkownika; plugin wymaga restartu OpenCode po
+dodaniu. Kontrakt zmiennych opisuje `./README.md`. W innym harnessie metody 2–3
+pozostają dostępne bez pluginu.
 
 Szablon pozostaje zwykłym JSON-em i zamiast komentarzy używa pól `_comment`.
 
@@ -191,7 +232,11 @@ check-environment — porównaj bieżący profil z wymaganiem WP
 complete — ustaw pointer na jawnie wskazany plan i przekaż ukończenie WP do task-plan
 ```
 
-Porównuje tylko dwie pozycje z lokalnej, zwalidowanej hierarchii.
+`check-environment` przyjmuje profil z pierwszej dostępnej metody:
+`OPENCODE_SESSION_MODEL`/`OPENCODE_SESSION_VARIANT` (`source: "session-env"`),
+flag `--current-model`/`--current-reasoning` (`source: "flags"`) albo jawnej
+atestacji użytkownika `--user-attested` (`source: "user-attested"`). Porównuje
+tylko dwie pozycje z lokalnej, zwalidowanej hierarchii.
 
 ## Warunki przerwania
 
@@ -200,6 +245,10 @@ Porównuje tylko dwie pozycje z lokalnej, zwalidowanej hierarchii.
 - brak pliku `.agents/config/model-hierarchy.json` (skopiuj szablon
   `model-hierarchy.json.dist` do projektu) — `check-environment` kończy się błędem
   `MODEL_HIERARCHY_NOT_FOUND`;
+- brak profilu sesji (`SESSION_PROFILE_UNKNOWN`) i brak potwierdzenia
+  użytkownika dla `--user-attested` — w OpenCode sprawdź plugin
+  `./.opencode/plugins/session-model-env.js` i restart; w innym harnessie użyj
+  `--current-model`/`--current-reasoning` albo zapytaj użytkownika;
 - rekomendowany model albo reasoning nie jest dostępny w bieżącym środowisku;
 - wybrany WP wymaga decyzji użytkownika albo zmiany planu;
 - `$code-implement` nie zakończył WP lub nie dostarczył evidence;
