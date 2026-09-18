@@ -107,20 +107,71 @@ export function selectNextWorkPackage(plan) {
     };
 }
 
-export function checkExecutionEnvironment(plan, {currentModel, currentReasoning, fsOps = fs} = {}) {
+export const SESSION_MODEL_ENV = "OPENCODE_SESSION_MODEL";
+export const SESSION_REASONING_ENV = "OPENCODE_SESSION_VARIANT";
+
+export function checkExecutionEnvironment(plan, {currentModel, currentReasoning, userAttested = false, env = process.env, fsOps = fs} = {}) {
     const selection = selectNextWorkPackage(plan);
     if (selection.action === "complete") {
         return {action: "complete", sufficient: true, selected: null};
+    }
+    const hasModelFlag = typeof currentModel === "string" && currentModel !== "";
+    const hasReasoningFlag = typeof currentReasoning === "string" && currentReasoning !== "";
+    if (hasModelFlag !== hasReasoningFlag) {
+        throw new PlanExecuteError(
+            "INVALID_ARGUMENT",
+            "Pass both --current-model and --current-reasoning, or neither to use the session environment.",
+        );
+    }
+    if (userAttested && hasModelFlag) {
+        throw new PlanExecuteError(
+            "INVALID_ARGUMENT",
+            "--user-attested cannot be combined with --current-model/--current-reasoning.",
+        );
+    }
+    if (userAttested) {
+        return attestExecutionEnvironment(selection, fsOps, plan.repoRoot);
+    }
+    const source = hasModelFlag ? "flags" : "session-env";
+    const model = hasModelFlag ? currentModel : env?.[SESSION_MODEL_ENV];
+    const reasoning = hasReasoningFlag ? currentReasoning : env?.[SESSION_REASONING_ENV];
+    if (!model || !reasoning) {
+        throw new PlanExecuteError(
+            "SESSION_PROFILE_UNKNOWN",
+            `Cannot determine the current session model/reasoning. In OpenCode install .opencode/plugins/session-model-env.js (provides ${SESSION_MODEL_ENV} and ${SESSION_REASONING_ENV}) and restart. In any harness pass --current-model/--current-reasoning, or ask the user and pass --user-attested.`,
+        );
     }
     try {
         const hierarchy = loadModelHierarchy({repoRoot: plan.repoRoot, fsOps});
         const comparison = compareModelProfiles(hierarchy, {
             required: selection.selected.environment,
-            current: {model: currentModel, reasoning: currentReasoning},
+            current: {model, reasoning},
         });
         return {
             action: comparison.sufficient ? "execute" : "change-environment",
             ...comparison,
+            source,
+            selected: selection.selected,
+        };
+    } catch (error) {
+        throw translateExecutionError(error);
+    }
+}
+
+function attestExecutionEnvironment(selection, fsOps, repoRoot) {
+    const required = selection.selected.environment;
+    try {
+        const hierarchy = loadModelHierarchy({repoRoot, fsOps});
+        // Reuse the deterministic comparator to prove the required profile is ranked,
+        // without measuring a current profile that this harness cannot report.
+        const probe = compareModelProfiles(hierarchy, {required, current: required});
+        return {
+            action: "execute",
+            sufficient: true,
+            attested: true,
+            source: "user-attested",
+            required: probe.required,
+            current: null,
             selected: selection.selected,
         };
     } catch (error) {
@@ -215,7 +266,7 @@ function usage() {
         "Usage:",
         "  execute.mjs resolve [--path <plan>] [--root <repo>] [--cache-path <dir>]",
         "  execute.mjs next [--path <plan>] [--root <repo>] [--cache-path <dir>]",
-        "  execute.mjs check-environment [--path <plan>] --current-model <model> --current-reasoning <level> [--root <repo>] [--cache-path <dir>]",
+        "  execute.mjs check-environment [--current-model <model> --current-reasoning <level> | --user-attested] [--path <plan>] [--root <repo>] [--cache-path <dir>]",
         "  execute.mjs complete --path <plan> --wp <WPn> --evidence <text> [--root <repo>] [--cache-path <dir>]",
     ].join("\n");
 }
@@ -254,15 +305,10 @@ async function main(argv) {
         } else if (command === "next") {
             result = selectNextWorkPackage(loadExecutionPlan({planPath: resolved.absolute, repoRoot}));
         } else if (command === "check-environment") {
-            if (!args.current_model || !args.current_reasoning) {
-                throw new PlanExecuteError(
-                    "INVALID_ARGUMENT",
-                    "check-environment requires both --current-model and --current-reasoning.",
-                );
-            }
             result = checkExecutionEnvironment(loadExecutionPlan({planPath: resolved.absolute, repoRoot}), {
-                currentModel: args.current_model,
-                currentReasoning: args.current_reasoning,
+                currentModel: typeof args.current_model === "string" ? args.current_model : null,
+                currentReasoning: typeof args.current_reasoning === "string" ? args.current_reasoning : null,
+                userAttested: args.user_attested === true,
             });
         } else {
             throw new PlanExecuteError("INVALID_ARGUMENT", usage());

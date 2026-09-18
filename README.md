@@ -204,6 +204,40 @@ opencode debug agent context-scout-fast
 
 Do not put model or thinking settings back into `.opencode/agents/*.md`, and do not add `OPENCODE_AGENT_*` variables to `.env`; those files have different responsibilities.
 
+##### Session model environment (`.opencode/plugins/session-model-env.js`)
+
+OpenCode 1.18.x does not expose the active model or reasoning level to shell commands (upstream requests [#10453](https://github.com/anomalyco/opencode/issues/10453) and [#10247](https://github.com/anomalyco/opencode/issues/10247) remain closed and unimplemented). Skills that must compare the current profile against a work-package requirement would otherwise guess it from logs, the session database, or the user.
+
+The project plugin `.opencode/plugins/session-model-env.js` closes that gap. It caches the resolved model on `chat.message` and falls back to `client.session.get` on a cold session, then adds these variables to every agent shell command through the `shell.env` hook:
+
+| Variable | Example | Meaning |
+|---|---|---|
+| `OPENCODE_SESSION_MODEL` | `commandcode/deepseek/deepseek-v4.1-flash` | `provider/model`, exactly the identifier used by `model-hierarchy.json` |
+| `OPENCODE_SESSION_VARIANT` | `max` | Resolved reasoning variant; omitted when the runtime reports the neutral `default` |
+| `OPENCODE_SESSION_AGENT` | `build` | Agent name, for diagnostics |
+| `OPENCODE_SESSION_ID` | `ses_…` | Session id, for diagnostics |
+
+```bash
+# The plugin is loaded automatically from the project directory.
+# After a restart, ask the agent to print the resolved profile:
+opencode run "Run exactly: echo \"MODEL=\$OPENCODE_SESSION_MODEL VARIANT=\$OPENCODE_SESSION_VARIANT\""
+```
+
+`$plan-execute` uses this contract with harness-portable fallbacks. `execute.mjs check-environment` resolves the current profile from the first available source:
+
+1. `OPENCODE_SESSION_MODEL`/`OPENCODE_SESSION_VARIANT` (`source: "session-env"`, the plugin path);
+2. explicit `--current-model`/`--current-reasoning` (`source: "flags"`, e.g. a harness that exposes its own model flags);
+3. an explicit user attestation via `--user-attested` (`source: "user-attested"`), used in harnesses without model introspection after the user confirms the current model and reasoning are not weaker than the WP requirement.
+
+In the attestation path the helper still validates the required profile against the project hierarchy (`UNRANKED_REQUIRED_PROFILE` when unknown), records `attested: true` and `current: null`, and never fabricates a measured profile. Missing or unranked profiles fail closed with `SESSION_PROFILE_UNKNOWN` or `UNRANKED_CURRENT_PROFILE`.
+
+Operational notes:
+- The plugin loads once at startup, like `opencode.jsonc`; restart OpenCode after adding or changing it.
+- Consumer projects must receive `.opencode/plugins/session-model-env.js` together with the skills, the same way LSM synchronizes `.opencode/agents/*.md`; a project without the plugin falls back to explicit flags or a user attestation instead of guessing.
+- Terminal `!` commands (PTY) in 1.18.31 do not receive a `sessionID` on `shell.env`; the variables are available in agent bash calls, which is the path all skills use.
+- The lookup is best-effort: a failed or slow session API call never breaks the shell command, it only leaves the variables unset.
+- When upstream ships native `OPENCODE_MODEL_FULL_ID`-style variables (draft PR [#10451](https://github.com/anomalyco/opencode/pull/10451)), this plugin can be removed in favor of the built-in contract.
+
 ##### Removing an agent and orphan overrides
 
 Removing a managed agent means removing both the file and its `agent` entry. An existing consumer instance can keep an `agent` key after the matching `.opencode/agents/<name>.md` disappears; OpenCode can then recreate that agent from the leftover key with default mode and permissions. Treat such an orphan override as a migration defect, not as a harmless leftover.

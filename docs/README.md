@@ -5,6 +5,7 @@ This repository stores reusable LLM skills under `.agents/skills/`.
 ## Scope
 - Skill instructions live in `.agents/skills/<skill-name>/SKILL.md`.
 - Optional helper scripts live in `.agents/skills/<skill-name>/scripts/`.
+- Project-local OpenCode extensions live in `.opencode/` (agents in `agents/`, plugins in `plugins/`); see the root `README.md` for their runtime contracts.
 - Tests for repository tooling live in `tests/skills/`.
 - Ready execution plans live in `docs/plans/`; working drafts remain in `docs/drafts/`.
 
