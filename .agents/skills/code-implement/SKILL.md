@@ -13,6 +13,7 @@ shared_files:
     - _shared/references/skill-routing-policy.md
     - _shared/references/runtime-collaboration-guidelines.md
     - _shared/references/runtime-quality-procedures.md
+    - _shared/references/rule-conformance-policy.md
     - _shared/references/php-symfony-postgres-standards.md
     - _shared/references/cqrs-monolith-standard-overrides.md
     - _shared/references/symbolic-navigation-and-editing-policy.md
@@ -96,6 +97,7 @@ Mechanizmy:
 - zasady współpracy/runtime: `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`
 - routing nadrzędnego workflow: `<skills_root>/_shared/references/skill-routing-policy.md`
 - checklisty jakości: `<skills_root>/_shared/references/runtime-quality-procedures.md`
+- kontrakt zgodności z regułami: `<skills_root>/_shared/references/rule-conformance-policy.md`
 - baseline techniczny stacka: `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
 - override architektoniczny (warunkowy): `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` — tylko gdy aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`
 - polityka wyboru nawigacji symbolicznej, zwykłego patcha i narzędzi refactor: `<skills_root>/_shared/references/symbolic-navigation-and-editing-policy.md`
@@ -362,7 +364,9 @@ To krótka, numerowana lista wymagań z prompta (R1..Rn), utrzymywana w `STATE_P
 Reguły (format + kiedy + użycie):
 - wymagania mają być konkretne i testowalne (“po kliknięciu X dzieje się Y”),
 - statusy: `TODO` / `IN_PROGRESS` / `DONE` / `BLOCKED` / `OUT-OF-SCOPE`,
-- `DONE` tylko gdy **wszystkie** Kryteria są spełnione i masz wpisane Dowody,
+- dla wymagania wskaż istotne reguły/ograniczenia i ich wynik zgodności; semantykę wyników definiuje `<skills_root>/_shared/references/rule-conformance-policy.md`,
+- `DONE` tylko gdy **wszystkie** Kryteria są spełnione, masz wpisane Dowody, a dla istotnych reguł dotkniętych wymaganiem nie pozostaje nierozwiązane twarde naruszenie ani luka uniemożliwiająca ocenę zgodności,
+- brak punktowego testu, gdy zgodność potwierdza wystarczający odczyt kodu, to `verification_gap`, a nie blokada `DONE`,
 - aktualizuj Ledger przy każdym: nowym wymaganiu od użytkownika, zmianie zakresu, ukończeniu części prac, końcu iteracji,
 - na start iteracji wybierz R# jako cel i odwołuj się do niego w odpowiedzi,
 - w pytaniach zawsze wskazuj, które R# blokuje brak informacji,
@@ -384,6 +388,10 @@ Twarde reguły statusów:
 - `critical_scope_expansion`
 - `env_blocker`
 - `qa_iteration_limit_reached`
+
+Sam poziom `HIGH` z `$review-quick` nie jest kodem blokera ani powodem `BLOCKED`.
+Gdy potrzebna jest decyzja albo wyjście poza zakres, użyj wyłącznie istniejącego,
+rzeczywiście pasującego `STOP_CODE`; lista pozostaje zamknięta.
 
 ### Słownik `STOP_CODES` (znaczenie + kiedy użyć)
 #### `missing_acceptance_criteria`
@@ -439,8 +447,9 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
 2. Zbierz minimalne kryteria akceptacji:
    - “co ma działać” (scenariusze),
    - “co nie może się zmienić” (inwarianty),
-   - “jak to przetestujemy” (manualnie/testami).
-3. Wyprowadź Rejestr wymagań (R1..Rn) i zapisz w `STATE_PATH`.
+   - “jak to przetestujemy” (manualnie/testami),
+   - “jakie istotne reguły/ograniczenia obowiązują” — według `<skills_root>/_shared/references/rule-conformance-policy.md` i aktywnych źródeł repo.
+3. Wyprowadź Rejestr wymagań (R1..Rn) i zapisz w `STATE_PATH`; zapisz też istotne ograniczenia/reguły, zanim podejmiesz decyzje implementacyjne.
 4. Kompromis “ocena prompta 1–10”:
    - wykonaj ocenę **tylko jeśli** zadanie jest niejednoznaczne, przekrojowe albo wchodzi w obszary ryzykowne (patrz Stop-conditions),
    - jeśli ocena <10: zaproponuj doprecyzowania (lista pytań) + opcja “zostaw bez zmian” i wstrzymaj implementację do decyzji.
@@ -489,7 +498,7 @@ kopiuje macierzy ani nie powtarza zakazów broad rediscovery i read-before-write
 2. Jeśli w trakcie okaże się, że zakres rośnie: zatrzymaj się, zaktualizuj plan i poproś o potwierdzenie.
 
 ### 4) Implementacja (zasady + bramki)
-1. Implementuj zgodnie z `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`, baseline `<skills_root>/_shared/references/php-symfony-postgres-standards.md` oraz aktywnym override (jeśli flaga włączona).
+1. Implementuj zgodnie z `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`, baseline `<skills_root>/_shared/references/php-symfony-postgres-standards.md` oraz aktywnym override (jeśli flaga włączona). Rozliczaj istotne reguły dotknięte zmianą według `<skills_root>/_shared/references/rule-conformance-policy.md` i zapisz wyniki w Dowodach wymagania — nie zamiast statusu R#.
 2. Twierdzenia oparte na dowodach (anty-“kłamstwo”):
    - nie pisz “sprawdziłem/zweryfikowałem/przeczytałem”, jeśli nie wykonałeś realnego odczytu pliku lub komendy w tej sesji,
    - jeśli nie wiesz (albo nie sprawdziłeś): powiedz wprost i sprawdź,
@@ -550,6 +559,7 @@ Gdy użytkownik zgłasza błąd/uwagę po Twojej implementacji:
 3. Jeśli zmiany obejmują którekolwiek z typów:
    - PHP (`.php`), Twig (`.twig`), JS/TS (`.js/.jsx/.ts/.tsx`), CSS/SCSS (`.css/.scss`), YAML (`.yml/.yaml`), tłumaczenia (`translations/**` lub `src/*/UI/Translation/**`)
    to wykonaj `$review-quick`.
+   Niezależnie od typów plików rozlicz zgodność istotnych reguł dla ostatniego przyrostu i jego bezpośrednich zależności zgodnie z `<skills_root>/_shared/references/rule-conformance-policy.md`; dokumentacja i mała zmiana nie zwalniają z tej oceny.
 4. Jeśli trzeba wykonać test/lint, najpierw uruchom `node <skills_root>/_shared/scripts/targeted-check-decision.mjs` z jawnymi danymi o źródle celu, zakresie i dostępnej komendzie matrixa. Zastosuj wynik bez reinterpretacji:
    - `RUN_TARGETED_TEST`: uruchom bezpośrednio test wskazany przez kryterium akceptacji albo feedback, ograniczony do jednego pliku lub 1–3 metod; entrypoint (`codecept`, `phpunit`, `yarn` itp.) zawsze wyznacz przez `resolve_tool_cmd`,
    - `RUN_MATRIX_CHECK`: uruchom punktową komendę 1:1 z matrixa, bezpośrednio powiązaną z ostatnim przyrostem,
@@ -581,6 +591,7 @@ Zakończ odpowiedź w stałej strukturze:
   - punktowy test/lint — wykonano / pominięto (dlaczego),
   - `$qa-run` — wykonano tylko na wyraźne polecenie użytkownika / pominięto (dlaczego).
 - Iteracje QA: jeśli użytkownik wyraźnie zlecił `$qa-run`, podaj `Wykonano iteracji: X/20` i `Status końcowy: PASS | BLOCKED`.
+- Zgodność reguł: naruszenia, wyjątki i luki istotnych reguł dla zrealizowanego zakresu (jeśli dotyczy).
 - Ryzyka/Błędy: co wymaga uwagi (jeśli dotyczy).
 - Testy: sugerowane scenariusze lub testy do dodania (jeśli dotyczy).
 - Blokery: jeśli wystąpiły, podaj `STOP_CODE` + przyczynę.
@@ -599,14 +610,17 @@ Zakończ odpowiedź w stałej strukturze:
 ## Warunek zakończenia skilla
 - Skill kończy się wyłącznie, gdy:
   - wszystkie R# są `DONE`, albo
-  - istnieją `BLOCKED` z kodami `STOP_CODES` i jasnym uzasadnieniem.
+  - istnieją `BLOCKED` z kodami `STOP_CODES` i jasnym uzasadnieniem, albo
+  - występuje uczciwy handoff z R# w `IN_PROGRESS`, gdy konkretny brakujący dowód nie pozwala rozstrzygnąć zgodności z istotną regułą; handoff nazywa brakujący dowód i sposób jego uzyskania i nie tworzy nowego statusu ani kodu.
+- `DONE` nie nadawaj przy nierozwiązanym twardym naruszeniu istotnej reguły dotkniętej wymaganiem ani przy luce uniemożliwiającej ocenę jego spełnienia; pozostaw `IN_PROGRESS` i wykonaj poprawkę w zakresie.
 - Odpowiedź finalna musi zawierać:
   - status każdego R# (skrót),
   - dowody dla `DONE`,
+  - wyniki zgodności istotnych reguł (naruszenia, wyjątki, luki),
   - listę blockerów (jeśli są),
   - informację czy wykonano `$review-quick`, punktowy test/lint i/lub `$qa-run`.
 
 ## Przypadki brzegowe
 - Jeśli użytkownik prosi “zakomituj” → użyj `$git-commit`, nie `$code-implement`.
-- Jeśli zmiany są tylko w docs/skillach → pomiń `$review-quick`, punktowy test/lint i `$qa-run`, chyba że użytkownik prosi inaczej.
+- Jeśli zmiany są tylko w docs/skillach → pomiń `$review-quick`, punktowy test/lint i `$qa-run`, chyba że użytkownik prosi inaczej. Nie zwalnia to z rozliczenia zgodności istotnych reguł dla przyrostu zgodnie z `<skills_root>/_shared/references/rule-conformance-policy.md`.
 - Jeśli użytkownik wyraźnie każe wyczyścić stan: uruchom `<skill_dir>/scripts/state-clear.mjs` i zakończ bez dalszych zmian.

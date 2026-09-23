@@ -2,6 +2,9 @@
 name: frontend-ui-consistency
 description: Konsultuje, audytuje, uspójnia, modyfikuje i tworzy elementy istniejącego interfejsu na podstawie jego wzorców. Używaj także do opiniowania widoków i proponowania zmian przed implementacją. Chroni kontrakty Twig, Symfony UX Live Components i Stimulus oraz wymaga proporcjonalnej weryfikacji przez Playwright CLI.
 compatibility: opencode
+shared_files:
+  - _shared/references/playwright-cli-verification.md
+  - _shared/scripts/playwright-preflight.sh
 metadata:
   version: "1.3.0"
   language: "pl"
@@ -30,7 +33,7 @@ Nie twórz nowego języka wizualnego ani nie przeprowadzaj redesignu, jeżeli u�
 ## Warunek wstępny: Playwright CLI
 
 Dla każdego zadania dotyczącego renderowanego UI wykonaj preflight przed odkryciem,
-audytem i edycją, zgodnie z `<skill_dir>/references/playwright-cli-verification.md`.
+audytem i edycją, zgodnie z `<skills_root>/_shared/references/playwright-cli-verification.md`.
 `playwright-cli` jest jedynym entrypointem CLI używanym przez ten skill.
 
 Jeżeli CLI, browser albo połączenie CDP nie działają, przerwij zadanie przed
@@ -371,7 +374,7 @@ Odczytaj tylko pliki wymagane przez zadanie:
 | Twig Component, macro lub partial | `<skill_dir>/references/twig-components.md` |
 | Symfony UX Live Component | `<skill_dir>/references/symfony-live-components.md` |
 | Stimulus lub zmiana interakcji/DOM | `<skill_dir>/references/stimulus-controllers.md` |
-| każde zadanie dotyczące renderowanego UI, niezależnie od `execution_mode` | `<skill_dir>/references/playwright-cli-verification.md` |
+| każde zadanie dotyczące renderowanego UI, niezależnie od `execution_mode` | `<skills_root>/_shared/references/playwright-cli-verification.md` |
 | większy audyt, konsultacja całego widoku lub porównanie wizualne | `<skill_dir>/references/visual-consistency-checklist.md` |
 | polish albo konsultacja dotycząca profesjonalnego wykończenia | `<skill_dir>/references/aesthetic-quality-review.md` |
 | raport końcowy | `<skill_dir>/references/report-format.md` |

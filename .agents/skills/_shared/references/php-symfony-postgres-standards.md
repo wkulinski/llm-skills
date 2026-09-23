@@ -19,13 +19,17 @@ Ten dokument opisuje **domyślny baseline** dla skilli używanych w projektach P
 ## 3. Symfony i struktura aplikacji
 - Utrzymuj kontrolery/komendy CLI cienkie: walidacja wejścia + delegacja logiki do warstw aplikacyjnych.
 - Serwisy utrzymuj możliwie bezstanowe (stateless), z jawnie wstrzykniętymi zależnościami.
+- Nie opieraj poprawności działania na stanie zgromadzonym w poprzednich żądaniach ani na rozgrzaniu cache; stan współdzielony między żądaniami opisuj jawnie wraz z jego cyklem życia.
 - Nie mutuj superglobali (`$_ENV`, `$_SERVER`, `$_SESSION`, itp.).
 - Trzymaj jasny podział odpowiedzialności między warstwą wejścia, aplikacyjną i domenową.
 
 ## 4. Doctrine i PostgreSQL
 - Typy kolumn deklaruj przez `Types::*` lub stałe customowych typów, nie przez surowe stringi.
 - Daty i timestampy trzymaj jako immutable oraz w UTC.
-- Unikaj operacji, które ładują duże zbiory danych bez potrzeby; filtruj jak najbliżej bazy.
+- Unikaj operacji, które ładują duże zbiory danych bez potrzeby; filtruj jak najbliżej bazy i oceniaj koszt całego przepływu, a nie pojedynczego wywołania.
+- Nie powtarzaj odczytu tego samego zbioru ani nie indeksuj wielokrotnie tych samych danych w ramach jednego przepływu. Nieuzasadnione N+1 oceniaj względem realistycznego obciążenia, a nie liczby pętli w kodzie.
+- Rekordy i relacje identyfikuj stabilnym kluczem, nie etykietą, nazwą ani wartością prezentacyjną, które mogą się powtarzać. Dwa rekordy o tej samej nazwie muszą pozostać rozróżnialne w kodzie, kluczach i mapowaniach.
+- Dla cache ustal jawnie zakres, klucz i cykl życia. Brak wpisu w cache nie może maskować brakującej inicjalizacji ani zmieniać obserwowalnego wyniku.
 - Model danych i migracje utrzymuj spójne z rzeczywistym kontraktem aplikacji.
 
 ## 5. Walidacja, bezpieczeństwo i niezawodność
@@ -37,6 +41,7 @@ Ten dokument opisuje **domyślny baseline** dla skilli używanych w projektach P
 ## 6. Testy i jakość
 - Każdy naprawiany błąd powinien mieć test regresyjny (jeśli kontekst projektu na to pozwala).
 - Dla większych zmian sugeruj scenariusze unit/functional/integration.
+- Jeżeli brak I/O, izolacja od stanu zewnętrznego albo koszt odczytu są częścią kontraktu, pokryj je testem wykrywającym naruszenie (np. brak odczytu w warstwie bez I/O, powtórzenie tego samego odczytu albo odczyt zbiorczy zamiast N+1), a nie testem potwierdzającym samo istnienie wywołania.
 - Nie wyłączaj lokalnie lintów/testów/supresji jako „naprawy” problemu jakości.
 
 ## 7. Współdziałanie ze skillami

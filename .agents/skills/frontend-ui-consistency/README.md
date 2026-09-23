@@ -6,7 +6,9 @@ estetyczną i proporcjonalną weryfikację przez Playwright CLI.
 
 ## Instalacja
 
-Skopiuj katalog do `.agents/skills/frontend-ui-consistency/`.
+Skopiuj katalog do `.agents/skills/frontend-ui-consistency/` oraz katalog
+`_shared` do `.agents/skills/_shared/`. Skill korzysta ze współdzielonego
+preflightu i kontraktu Playwright wskazanych w `shared_files`.
 
 ## Playwright CLI
 
@@ -15,19 +17,19 @@ Zainstaluj CLI i browser używany przez skill:
 ```bash
 npm install -g @playwright/cli@0.1.17
 playwright-cli install-browser chrome-for-testing
-bash <skill_dir>/scripts/playwright-preflight.sh
+bash <skills_root>/_shared/scripts/playwright-preflight.sh
 ```
 
-Helper jest jedynym entrypointem preflightu. Rozwiązuje `playwright-cli` dokładnie
+Współdzielony helper jest jedynym entrypointem preflightu. Rozwiązuje `playwright-cli` dokładnie
 raz przez `resolve_tool_cmd playwright-cli playwright-cli`: najpierw sprawdza
 `BIN_PATH`, a następnie używa `PATH` jako fallbacku. Globalna komenda w `PATH` nie
 jest więc wymagana, jeśli `BIN_PATH` wskazuje wykonywalny CLI.
 
-Po instalacji zweryfikuj działanie obowiązkowym helperem skilla (nie składaj
-preflightu ręcznie):
+Po instalacji zweryfikuj działanie obowiązkowym współdzielonym helperem (nie
+składaj preflightu ręcznie):
 
 ```bash
-bash <skill_dir>/scripts/playwright-preflight.sh
+bash <skills_root>/_shared/scripts/playwright-preflight.sh
 ```
 
 Helper waliduje resolved CLI przez `--help`, a następnie otwiera `about:blank` w
@@ -35,7 +37,7 @@ Chromium i zamyka sesję. W WSL można użyć dedykowanej przeglądarki uruchomi
 po stronie Windows przez CDP: ustaw `PLAYWRIGHT_MCP_CDP_ENDPOINT` na endpoint
 instancji z włączonym remote debugging, a helper sam wykona `attach --cdp` i
 `detach`. Znaczenie wyniku i kodów wyjścia opisuje
-`<skill_dir>/references/playwright-cli-verification.md`.
+`<skills_root>/_shared/references/playwright-cli-verification.md`.
 
 ## Dostęp do aplikacji
 

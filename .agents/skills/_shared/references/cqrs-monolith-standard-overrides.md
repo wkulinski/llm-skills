@@ -291,6 +291,14 @@ Przy dodawaniu nowej klasy przejdź przez poniższe pytania w kolejności:
 - Dla submitów preferuj jednolity schemat dispatchu oparty o zweryfikowane dane formularza.
 - Endpointy bez formularza nie podlegają regułom FCF.
 
+### 11.1 Odczyt danych dla pól formularza
+- Typy pól, opcje, callbacki etykiet i transformery identyfikatorów nie wykonują biznesowych odczytów — bezpośrednio ani przez `CommandBus`/`QueryBus`.
+- Dane dla pól i etykiet dostarcza jawny use case wywołany z dopuszczalnego entrypointu zgodnie z pkt 3; warstwa formularza tylko prezentuje i mapuje otrzymane dane.
+- Zbiór aktywnych, historycznych i administracyjnych wartości wyboru oraz dopuszczone wyjątki ustala `Application`/`Domain`, nie UI.
+- Filtr UI zawęża prezentację, ale nie zastępuje walidacji zapisu; brakującej wartości nie maskuj dokładaniem opcji w warstwie formularza.
+- Wyjątek historyczny dopuszcza wyłącznie konkretny, jawnie wskazany identyfikator albo zakres, nigdy dowolne niedozwolone ID.
+- Reguła dotyczy pól formularza; nie zakazuje odczytów w jawnych akcjach wyszukiwania inicjowanych przez użytkownika ani nie nakazuje przenoszenia do use case każdej istniejącej ścieżki odczytu UI.
+
 ## 12. Frontend (override, gdy repo używa Twig/LiveComponent)
 
 ### TwigComponents i LiveComponents
