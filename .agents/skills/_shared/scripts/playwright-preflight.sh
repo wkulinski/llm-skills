@@ -10,10 +10,10 @@ usage() {
     cat <<'EOF'
 Usage: playwright-preflight.sh [-h|--help]
 
-Runs the mandatory Playwright CLI preflight for the frontend-ui-consistency
-skill. Resolves playwright-cli through _shared/scripts/env-load.sh
-(resolve_tool_cmd), opens about:blank in local Chromium, or attaches through
-CDP when PLAYWRIGHT_MCP_CDP_ENDPOINT is set, and always cleans up the session.
+Runs the shared Playwright CLI preflight for browser verification. Resolves
+playwright-cli through _shared/scripts/env-load.sh (resolve_tool_cmd), opens
+about:blank in local Chromium, or attaches through CDP when
+PLAYWRIGHT_MCP_CDP_ENDPOINT is set, and always cleans up the session.
 
 Output:
   CLI: OK|MISSING|INVALID
@@ -62,7 +62,7 @@ if [[ -n "${PLAYWRIGHT_MCP_CDP_ENDPOINT:-}" ]]; then
     mode="cdp-attach"
 fi
 
-session="frontend-ui-preflight-$$-${RANDOM}"
+session="playwright-preflight-$$-${RANDOM}"
 cleanup_done=0
 cleanup_status=1
 

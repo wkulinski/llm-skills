@@ -1,5 +1,9 @@
 # Weryfikacja przez Playwright CLI
 
+Wspólny kontrakt weryfikacji przeglądarkowej dla skilli: preflight, bezpieczna
+sesja, dowody i artefakty. Nie zawiera reguł estetycznych, wzorców UI ani
+polityki spójności wizualnej — te pozostają w skillach domenowych.
+
 ## Cel
 
 Playwright CLI dostarcza trzy różne rodzaje dowodu:
@@ -20,10 +24,10 @@ oficjalnego skilla Playwright i nie zakładaj opcji niewymienionej przez aktualn
 ## Preflight
 
 Preflight jest obowiązkowy i wykonywalny. Przed odkryciem, audytem i edycją
-renderowanego UI uruchom helper skilla zamiast składać komendy ręcznie:
+renderowanego UI uruchom współdzielony helper zamiast składać komendy ręcznie:
 
 ```bash
-bash <skill_dir>/scripts/playwright-preflight.sh
+bash <skills_root>/_shared/scripts/playwright-preflight.sh
 ```
 
 Helper ładuje `<skills_root>/_shared/scripts/env-load.sh`, raz rozwiązuje CLI
@@ -112,7 +116,7 @@ checkpointu.
 
 ## Profile weryfikacji
 
-Zakres wynika z profilu skilla:
+Zakres wynika z profilu zadania przyjętego przez skill konsumujący:
 
 - **minimalny** — jeden viewport i zmieniony stan,
 - **standardowy** — mobile + desktop, before/after i najważniejsze stany,
@@ -157,7 +161,7 @@ Przed zapisem sprawdź, czy katalog jest ignorowany przez Git. Screenshoty, trac
 Jeżeli katalog artefaktów w repozytorium nie jest potwierdzony jako ignorowany,
 nie zmieniaj automatycznie `.gitignore`. Użyj zatwierdzonego katalogu
 tymczasowego poza repozytorium, np.
-`${TMPDIR:-/tmp}/opencode/frontend-ui/<zadanie>/`, po uprzednim sprawdzeniu jego
+`${TMPDIR:-/tmp}/opencode/playwright/<zadanie>/`, po uprzednim sprawdzeniu jego
 rodzica. Uruchamiaj całą sesję `playwright-cli` z tym katalogiem jako katalogiem
 roboczym, aby także automatyczne snapshoty i logi konsoli pozostały poza repo.
 Nie pozostawiaj artefaktów jako nieśledzonych plików repo.

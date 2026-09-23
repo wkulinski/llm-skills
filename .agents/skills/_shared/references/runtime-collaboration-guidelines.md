@@ -23,6 +23,10 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
   - `<skills_root>/_shared/...` dla plików współdzielonych,
   - `<skills_root>/<nazwa-skilla>/SKILL.md` dla odwołań do innych skilli.
 - Nie używaj w treści `SKILL.md` gołych ścieżek względnych typu `scripts/...`, `references/...`, `assets/...`, `templates/...`, `_shared/...` ani `../...`.
+- Skill nie odwołuje się do wewnętrznych plików innego skilla (`<skills_root>/<inny-skill>/scripts|references|assets|templates|...`), ani w treści, ani w kodzie.
+  - Wspólny artefakt potrzebny więcej niż jednemu skillowi przenieś do `<skills_root>/_shared/...`; nie kopiuj go do drugiego skilla i nie sięgaj po wersję z jego katalogu.
+  - Odwołanie do innego skilla jest dozwolone wyłącznie jako wskazanie właściciela procedury przez `<skills_root>/<nazwa-skilla>/SKILL.md`, zgodnie z §6 (linkuj do źródła prawdy, nie duplikuj procedury).
+  - Naruszenie tej reguły to dług strukturalny: przy dotknięciu obszaru przenieś artefakt do `_shared` zamiast utrwalać zależność.
 - W `shared_files` ścieżki pozostają relative względem `skills_root` z powodów kompatybilności z toolingiem repo.
 - Zalecany porządek priorytetu reguł w skillach:
   1. Instrukcje systemowe/developerskie środowiska

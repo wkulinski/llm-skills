@@ -8,9 +8,12 @@ shared_files:
   - _shared/references/skill-routing-policy.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
+  - _shared/references/rule-conformance-policy.md
   - _shared/references/repository-context-hybrid.md
   - _shared/references/context-subagent-contract.md
+  - _shared/references/playwright-cli-verification.md
   - _shared/scripts/change-inventory.mjs
+  - _shared/scripts/playwright-preflight.sh
 ---
 
 # Code Review
@@ -187,6 +190,25 @@ Use the project's documented commands and execution environment whenever possibl
 Technology-specific knowledge should come from the model, the code, and repository documentation. The skill defines **what must be investigated**, not a tutorial for each technology.
 
 When a read of a rule, contract, or documentation section that applies to the reviewed behavior is truncated, complete the part that governs the behavior before relying on it. A cut-off excerpt does not cover the omitted text, and the verdict must not rest on an unread applicable section.
+
+### Applicable rules
+
+Before judging the artifact, determine which rules actually apply to the reviewed
+scope, using `<skills_root>/_shared/references/rule-conformance-policy.md` for the
+semantics of sources, scope, force, evidence and result.
+
+- Derive the active sources for the touched paths from repository instructions,
+  the `docs_map` documents, shared references, path-specific instructions and
+  conditional profiles, respecting the repository's existing precedence and
+  environment-level instructions.
+- Select only the rules relevant to the reviewed scope; do not enumerate or number
+  every rule in the repository.
+- Record for each selected rule: source (file and section), force
+  (`mandatory`/`recommendation`/`exception`), application to the change, evidence,
+  and result (`SATISFIED`/`VIOLATED`/`NOT_APPLICABLE`/`NOT_VERIFIED`/`EXEMPTED`).
+  Group identical applications of the same rule into one entry.
+- An inactive conditional profile contributes no rule and no violation. An
+  unresolved activation is `NOT_VERIFIED`, never assumed conformance.
 
 For a `plan` target, also read the relevant `$task-plan` contract
 (`<skills_root>/task-plan/SKILL.md`) and only the
@@ -494,6 +516,28 @@ For `BLOCKER`, require direct reproduction when practical, such as:
 
 If a serious issue is plausible but not proven, lower confidence/severity or classify it as `QUESTION`.
 
+### Rule violations
+
+A violated mandatory contract is a finding on its own evidence. It does not need an
+additional runtime failure, a contradiction with green tests, or a reproduction to
+be reported:
+
+- name the rule's source (file and section) and its force from the applicable-rules
+  register, and state how it applies to the reviewed scope rather than to the
+  repository in general;
+- keep the provenance requirement: the violation must be introduced or extended by
+  the reviewed change, or reachable from it. Pre-existing, independent debt stays
+  outside the change and is reported as `SUGGESTION` or discounted, not used to
+  block;
+- if an authoritative, scoped exception exists, record `EXEMPTED` and do not raise
+  a finding for that rule;
+- if an unresolved conflict between active rules affects the decision, record
+  `NOT_VERIFIED` and report the needed decision instead of picking the convenient
+  side or declaring conformance;
+- if the applicable rule cannot be evaluated, record `NOT_VERIFIED` with the
+  missing evidence instead of downgrading the question to taste or promoting it to
+  a violation.
+
 Passing lint/typecheck/build is hygiene evidence, not behavioral proof.
 
 This skill is **read-only**, which means it must not edit source, change Git
@@ -514,13 +558,13 @@ Do not expand a focused check into a broader run merely because it is available.
 For a change affecting rendered UI, run a proportional Playwright checkpoint
 when `playwright-cli` and a safe application target are available. First run the
 sole preflight entrypoint,
-`<skills_root>/frontend-ui-consistency/scripts/playwright-preflight.sh`; it
+`<skills_root>/_shared/scripts/playwright-preflight.sh`; it
 validates `--help` through the resolved CLI and reports launch/attach and
 cleanup. A status 2 blocks before the UI checkpoint, status 3 reports a
 launch/attach failure (including cleanup failure), and status 4 reports cleanup
 failure after a successful launch/attach. Then follow the safe-session and
 artifact rules in
-`<skills_root>/frontend-ui-consistency/references/playwright-cli-verification.md`.
+`<skills_root>/_shared/references/playwright-cli-verification.md`.
 The checkpoint should cover the changed state and relevant interaction, use a
 stable snapshot/role/selector, and check new console or request errors. Add a
 relevant viewport or accessibility/state check when the change's risk requires
@@ -547,6 +591,11 @@ For each candidate ask:
 6. Is the severity proportional to actual impact?
 7. Can the user act on the finding?
 8. Is the cited location real and relevant?
+
+When an applicable-rules register was produced, also check that no relevant rule
+was dropped: revisit the active sources and the reviewed scope, confirm that every
+selected rule has a recorded result, and verify that a result invalidated by a
+change of scope, rule or evidence was re-established instead of carried over.
 
 For every surviving candidate, record the strongest counterargument you actually
 considered and the resulting classification from the publication gate. A
@@ -582,6 +631,12 @@ sections, open questions, discovery debt, evidence artifacts, and execution
 readiness. Do not treat a complete plan document as proof that its contents are
 correct.
 
+When an applicable-rules register was produced, account separately for each
+selected rule's result
+(`SATISFIED`/`VIOLATED`/`NOT_APPLICABLE`/`NOT_VERIFIED`/`EXEMPTED`) next to the
+per-file inventory outcomes. The register covers the reviewed artifact and its
+scope; it is not a statement of repository-wide conformance.
+
 ## 9. Severity
 
 Use exactly:
@@ -591,6 +646,13 @@ Use exactly:
 - **MINOR** — real but limited defect or maintainability risk with concrete impact; merge may proceed with caveat
 - **QUESTION** — unresolved behavior/product decision that materially affects confidence and needs clarification
 - **SUGGESTION** — optional improvement; not counted as a defect and never blocks
+
+A hard architectural boundary or invariant that the reviewed change violates or
+extends outside an authoritative, scoped exception is at least **MAJOR**, even when
+tests are green and no runtime failure is observed; `BLOCKER` still requires the
+existing risk criteria above. Deviations from a `recommendation` and cosmetic
+issues keep the proportional assessment and do not become a hard boundary merely
+because they appear in a register.
 
 Do not inflate severity to make a review look useful.
 
@@ -604,6 +666,9 @@ For a `code` target, choose one:
 - **PASS WITH CAVEAT** — only MINOR findings remain
 - **PASS** — no unresolved defects and no material coverage gap
 
+A significant applicable rule left `NOT_VERIFIED` excludes an unconditional
+`PASS`; when that gap affects acceptance of the reviewed change, use `DISCUSS`.
+
 For a `plan` target, use plan-specific wording:
 
 - **PLAN BLOCKED** — a BLOCKER, invalid plan structure, or execution-blocking coverage gap remains;
@@ -611,6 +676,11 @@ For a `plan` target, use plan-specific wording:
 - **PLAN DISCUSS** — an approval-affecting QUESTION or high-risk `NOT_COVERED` area remains;
 - **PLAN READY WITH CAVEAT** — only MINOR findings that are non-actionable or explicitly accepted by the user remain; an actionable MINOR forces `PLAN CHANGES REQUESTED` instead;
 - **PLAN READY** — no unresolved plan defects or material coverage gaps remain.
+
+For a `plan` target, a violated hard rule maps to `PLAN CHANGES REQUESTED`, and an
+unresolved application of a hard rule maps to `PLAN DISCUSS`. This reuses the
+existing plan verdicts; do not add new verdicts, edit the plan, or change the
+review-cycle helper.
 
 `PLAN READY` is a result of this read-only review phase, not the `$task-plan`
 `ready` status. The canonical plan validator and plan owner remain responsible for
@@ -643,7 +713,8 @@ Then provide:
 ### Coverage
 
 A compact table/list of reviewed areas and any `NOT_COVERED` surfaces.
-Include the `Complexity/value gate` outcome when the gate was relevant.
+Include the applicable-rules results for the reviewed scope when a register was
+produced, and the `Complexity/value gate` outcome when the gate was relevant.
 
 ### Finding resolutions
 

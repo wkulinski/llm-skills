@@ -12,7 +12,7 @@ const envDist = read(".env.dist");
 const gitignore = read(".gitignore");
 const skill = read(".agents/skills/frontend-ui-consistency/SKILL.md");
 const readme = read(".agents/skills/frontend-ui-consistency/README.md");
-const playwrightReference = read(".agents/skills/frontend-ui-consistency/references/playwright-cli-verification.md");
+const playwrightReference = read(".agents/skills/_shared/references/playwright-cli-verification.md");
 const reportFormat = read(".agents/skills/frontend-ui-consistency/references/report-format.md");
 
 describe("frontend application access contract", () => {
