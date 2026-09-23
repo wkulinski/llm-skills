@@ -498,6 +498,8 @@ Before publication, every candidate must pass this ordered publication gate:
 4. **strongest counterargument considered** — the best available reason the observation may be expected, already prevented elsewhere, or out of scope;
 5. **classification** — exactly one outcome: `finding`, `QUESTION`, `SUGGESTION`, or rejected candidate.
 
+When a candidate depends on an evolving contract, establish which contract applies to the exact resource and the execution stage or supported path at issue. A historical implementation is not sufficient evidence that its assumptions still apply; check relevant superseding changes where needed. Conversely, a valid final state does not disprove a failure during a supported transition. Bound this verification to the candidate and apply the existing evidence and classification requirements.
+
 The publication gate is not independent verification of interpretation. Re-reading
 the same location, running a test that the candidate itself points to, or passing
 the report's structural validation do not, by themselves, establish that the
