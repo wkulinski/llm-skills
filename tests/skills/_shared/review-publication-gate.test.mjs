@@ -33,6 +33,15 @@ describe("review publication gate", () => {
         expect(gate).toMatch(/`finding`, `QUESTION`, `SUGGESTION`, or rejected candidate/);
     });
 
+    it("checks evolving contracts for the exact resource and execution path", () => {
+        const gate = section(read(CODE_REVIEW), "## 6. Verify candidate findings", "## 7. Review the review");
+
+        expect(gate).toMatch(/evolving contract, establish which contract applies to the exact resource and the execution stage or supported path at issue/);
+        expect(gate).toMatch(/historical implementation is not sufficient evidence that its assumptions still apply/);
+        expect(gate).toMatch(/valid final state does not disprove a failure during a supported transition/);
+        expect(gate).toMatch(/Bound this verification to the candidate and apply the existing evidence and classification requirements/);
+    });
+
     it("forbids auxiliary-channel verdicts and pseudo-verification", () => {
         const content = read(CODE_REVIEW);
 
