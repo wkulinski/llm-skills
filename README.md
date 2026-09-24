@@ -241,9 +241,10 @@ Operational notes:
 ##### Context price guard (`.opencode/plugins/context-price-guard.js`)
 
 The project-local plugin tracks request input tokens, including cache-read and
-cache-write tokens, for the OpenAI `gpt-5.5` and `gpt-5.6` model families. When a
+cache-write tokens, for every model used through the OpenAI provider. When a
 session reaches a higher warning level, it posts a no-reply notification with
-the current token count and a handoff recommendation:
+the current token count and a handoff recommendation. The same fixed thresholds
+apply to every OpenAI model:
 
 | Input-token threshold | Notification |
 |---|---|
@@ -251,12 +252,13 @@ the current token count and a handoff recommendation:
 | 240,000 | Handoff recommended |
 | 250,000 | Handoff now |
 | 265,000 | Critical context |
-| More than 272,000 | Long-context pricing may apply |
+| More than 272,000 | Configured high-token threshold exceeded |
 
-The plugin does not send these notifications for other providers or model
-families. If token usage drops below the last reached level, crossing that level
-again can produce another notification. Restart OpenCode after adding or
-changing the plugin.
+The plugin does not send these notifications for other providers. It does not
+derive thresholds from a model's context window or pricing schedule, so a model
+whose context limit is below a warning level may not reach that level. If token
+usage drops below the last reached level, crossing that level again can produce
+another notification. Restart OpenCode after adding or changing the plugin.
 
 ##### Removing an agent and orphan overrides
 
