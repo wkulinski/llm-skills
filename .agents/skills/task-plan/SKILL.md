@@ -290,6 +290,32 @@ Zapisz pełny dokument przez `<skill_dir>/scripts/store.mjs`. Każda aktualizacj
 zastępuje cały Markdown; nie podmieniaj wybranych sekcji i nie utrzymuj drugiej
 kopii work packages w JSON.
 
+#### Język planu
+
+- Stosuj język dokumentacji wskazany w `AGENTS.md` repozytorium konsumenta. Jeśli
+  nie określono tam języka, domyślnie pisz poprawną, naturalną polszczyzną
+  techniczną — bez stylizacji literackiej i bez telegraficznych mieszanek.
+- Jeśli użytkownik jawnie wybierze ASD-STE100 i zasady repozytorium na to
+  pozwalają, cały opis planu ma być jednolicie napisany w tym standardzie. Nie
+  przełączaj języka na podstawie języka źródła ani między sekcjami lub WP.
+- Wymagane nazwy sekcji i klucze pól, np. `## Source and objective` i
+  `- Goal:`, pozostają dokładnie w postaci wymaganej przez kontrakt planu. Treść
+  po kluczu pisz w wybranym języku.
+- Zachowuj dokładną pisownię nazw klas, metod, symboli, plików, ścieżek, komend,
+  pól API i słów kluczowych języka programowania; zapisuj je w zapisie kodowym
+  Markdownu.
+  Objaśnij pojęcie w wybranym języku przy pierwszym użyciu, np. „klasa
+  (`class`)”. Nie używaj angielskiego identyfikatora jako zamiennika zwykłego
+  słowa w zdaniu.
+- Używaj polskiego odpowiednika dla zwykłych pojęć technicznych, jeśli jest
+  jednoznaczny. Jeśli trzeba zachować angielski termin lub skrót, wyjaśnij go
+  przy pierwszym użyciu; nie twórz własnego rozwinięcia niepotwierdzonego
+  dowodami.
+- Nie zapisuj treści opisowej jako mieszanki polskiej składni i angielskich
+  haseł. Unikaj urwanych równoważników, nieobjaśnionych skrótów oraz list
+  połączonych ukośnikami, strzałkami lub średnikami, gdy zastępują opis relacji
+  między krokami.
+
 ### Deterministyczna edycja istniejącego planu
 
 Do punktowej aktualizacji już zapisanego planu używaj
@@ -488,6 +514,67 @@ Puste kategorie zapisuj jako `none`. `Candidate paths` są hipotezami i nie mog�
 być przedstawione w handoffie jako potwierdzone. Jeśli ścieżka nie została
 potwierdzona, użyj konkretnego `Discovery required` zamiast zgadywania.
 
+#### Czytelność i wykonalność pakietu roboczego
+
+Każdy pakiet roboczy (WP) ma być zrozumiały dla człowieka oraz wykonalny przez
+agenta o niskim poziomie rozumowania bez odgadywania intencji autora. Oceniaj
+cały opisowy tekst planu, nie tylko WP. Zachowaj wymagane klucze schematu, ale
+ich wartości zapisuj pełnymi zdaniami w wybranym języku.
+
+- `Goal` zaczyna od oczekiwanego zachowania lub rezultatu, a nie od skrótu
+  implementacyjnego. Najpierw opisz, co ma się zmienić dla użytkownika lub
+  systemu, a potem — jeśli jest to potwierdzone — jaką odpowiedzialność
+  techniczną należy zmienić.
+- W `Scope` opisz działania w kolejności wykonania. Każde zdanie ma wskazywać
+  konkretny obiekt lub zachowanie oraz rezultat działania. Nie łącz kilku
+  niezależnych kroków w hasłową listę; użyj jasnych łączników, np. „najpierw”,
+  „następnie” i „po tym”.
+- Gdy działanie zależy od zdarzenia, stanu lub wyniku diagnozy, nazwij warunek i
+  opisz skutek. Dla każdej istotnej gałęzi podaj: jakie dowody ją potwierdzają,
+  co wtedy zrobić oraz kiedy zakończyć WP albo przekazać problem do rozstrzygnięcia.
+  Nie zostawiaj wykonawcy wyboru między różnymi naprawami.
+- Każdą istotną gałąź zapisz osobno, np. „Jeśli dowody potwierdzą [warunek],
+  wykonaj [działanie] i sprawdź [wynik]. Jeśli potwierdzą [inny warunek],
+  wykonaj [inne działanie]. Jeśli nie da się zebrać dowodów, [jawny krok
+  kończący lub eskalujący WP]”. Nie łącz gałęzi w skrótową frazę z ukośnikami.
+- `Out of scope` określa zachowania lub obszary, których nie zmieniać. Zapisuj
+  granicę konkretnie; samo „bez zmian pobocznych” nie wystarcza.
+- Każde `Acceptance criteria` ma wskazywać warunek początkowy lub dane wejściowe
+  (jeśli mają znaczenie), działanie albo sytuację oraz obserwowalny wynik, który
+  rozstrzyga zaliczenie. Stosuj wzór: „Gdy [warunek], po [działaniu] następuje
+  [obserwowalny wynik]”. Unikaj ocen typu „działa poprawnie” bez opisu tego, co
+  dokładnie ma się wydarzyć.
+- `Verification` wskazuje trwały test albo jednorazowe sprawdzenie oraz oczekiwany
+  wynik. Zachowaj rozróżnienie opisane w bramce „Trwałe testy a jednorazowa
+  weryfikacja zmiany”.
+- Opis nie może wymagać znajomości wcześniejszej rozmowy ani niejawnego
+  dopowiadania brakującego wymagania. Jeśli odpowiedź może zmienić zachowanie
+  publiczne, model danych, podział odpowiedzialności, granice WP lub kryteria
+  akceptacji, rozstrzygnij ją przed `ready` na podstawie dowodów albo pytania
+  użytkownika; nierozstrzygnięta blokada oznacza `blocked`, a nie swobodę
+  wykonawcy.
+- Przed zamknięciem WP sprawdź, czy na podstawie jego tekstu i wskazanych źródeł
+  można odpowiedzieć: jaki jest warunek wejścia, co zrobić i w jakiej
+  kolejności, jaki wynik uznać za poprawny, czego nie zmieniać, jak wynik
+  zweryfikować oraz co zrobić dla każdej opisanej gałęzi. Jeśli odpowiedź wymaga
+  odgadywania, doprecyzuj plan albo pozostaw go `blocked`.
+
+Przykład przeredagowania zakresu. Fragment oznaczony jako antywzorzec służy
+wyłącznie do pokazania formy odrzucanej; nie kopiuj go do planu.
+
+**Antywzorzec — forma odrzucana (nie kopiować):**
+
+> AC1: wiersz exposes native anchor z tym samym permitted URL; AC2: lewy click
+> zostaje w bieżącej karcie, native context menu otwiera nową.
+
+**Wzorzec docelowy — tak formułuj zakres:**
+
+> Wiersz sprawy ma zawierać zwykły link HTML prowadzący do tego samego adresu co
+> dotychczas, z zachowaniem obecnych uprawnień. Zwykłe kliknięcie nadal otwiera
+> sprawę w bieżącej karcie. Menu kontekstowe przeglądarki ma umożliwiać otwarcie
+> linku w nowej karcie. Nie dodawaj własnego menu kontekstowego ani kodu
+> JavaScript otwierającego kartę po kliknięciu prawym przyciskiem myszy.
+
 Przed wpisaniem do `Scope` operacji „dodać”, „zmienić”, „zaimplementować” albo
 równoważnej sprawdź punktowo obecnego właściciela mechanizmu. Proponowana zmiana
 pozostaje w `Scope` tylko wtedy, gdy evidence potwierdza brak albo konkretną lukę.
@@ -529,6 +616,7 @@ review: popraw plan, zbierz evidence albo oznacz go jako `blocked`.
 | **Minimalność:** Czy mniejsza zmiana osiągnęłaby ten sam rezultat? | Zastąp kierunek mniejszą zmianą i sprawdź ponownie pokrycie źródła oraz kryteria akceptacji. Jeżeli mniejsza zmiana zmienia lub usuwa punkt źródła, zastosuj wiersz `Pokrycie źródła`. | Kontynuuj review. |
 | **Weryfikacja:** Czy każde kryterium akceptacji ma konkretny test albo check? | Kontynuuj review. | Dopisz konkretny test albo check dla właściciela zmienianego zachowania. Jeśli właściciel lub właściwy poziom testu nie jest potwierdzony, wykonaj najpierw punktowy odczyt testów. |
 | **Trwałość testów:** Czy każdy proponowany trwały test przeszedł bramkę „Trwałe testy a jednorazowa weryfikacja zmiany” — czy osobny scenariusz byłby potrzebny bez znajomości historii zmiany? | Kontynuuj review. | Usuń scenariusz uzasadniony wyłącznie historią z zakresu trwałych testów; potrzebny dowód wykonania zmiany przenieś do jednorazowych checków w `Verification`. Jeśli test ma chronić regułę już pokrytą, zaplanuj aktualizację jej istniejącego testu zamiast duplikatu. |
+| **Język i samodzielna wykonalność:** Czy cały opisowy tekst stosuje język wybrany zgodnie z `Język planu`, jest zapisany pełnymi zdaniami i nie miesza języków ani nie urywa myśli? Czy każdy WP pozwala człowiekowi i agentowi o niskim poziomie rozumowania ustalić warunek rozpoczęcia, kolejność działań, oczekiwany wynik, granice, sposób weryfikacji i dalsze kroki dla każdej opisanej gałęzi — bez odgadywania niewypowiedzianych decyzji? | Kontynuuj review. | Przeredaguj tekst i doprecyzuj kroki lub warunki. Jeśli niejasność wymaga decyzji biznesowej albo dowodów mogących zmienić plan, rozstrzygnij ją przed `ready`; w przeciwnym razie pozostaw plan `blocked`. Nie przenoś brakującej decyzji do wykonawcy. |
 | **Inwarianty planu:** Czy plan spełnia inwarianty treści i nie przepisuje reguł globalnych? | Kontynuuj review. | Popraw naruszony inwariant albo usuń przepisane reguły globalne, a przed `ready` uruchom walidację strukturalną planu. |
 | **Discovery required:** Czy wynik któregokolwiek wpisu `Discovery required` może unieważnić wybraną naprawę albo zmienić ownership, granice WP, model danych, zachowanie publiczne lub kryteria akceptacji? | Plan nie może być `ready`, dopóki niewiadoma nie zostanie rozstrzygnięta. Jeśli odpowiedź może dostarczyć repository-context, utwórz criterion i wykonaj canonical context lifecycle. Jeśli potrzebna jest decyzja biznesowa, utwórz pytanie `[open]`. Jeśli potrzebna jest reprodukcja, log albo inne evidence runtime, zapisz konkretny evidence gate fazy planowania. Uzyskaj evidence przed wyborem naprawy; gdy jest niedostępne, pozostaw plan `blocked`. | Wpis może pozostać w `Discovery required` jako szczegół wykonawczy niezmieniający planu. |
 
@@ -550,6 +638,11 @@ walidacji kompletnego kandydata wykonaj zawsze `$code-review` z targetem `plan`.
 Następuje to przed pokazaniem użytkownikowi komunikatu `ready`. Reviewer otrzymuje
 kanoniczny Markdown planu oraz referencje do source artifact, context reportu i
 kryteriów, jeśli istnieją.
+
+Read-only review ma sprawdzić również język, format i samodzielną wykonalność
+każdego WP według wymagań powyżej. Poprawna walidacja struktury nie wystarcza,
+jeśli opis nadal wymaga od czytelnika odgadywania intencji albo wyboru
+nierozstrzygniętej naprawy.
 
 Review planu jest odrębną fazą read-only bieżącego agenta, nie osobnym
 wykonawcą. `$code-review` nie zmienia Markdowna, nie tworzy pytań, nie ustawia

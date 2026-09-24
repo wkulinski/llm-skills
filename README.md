@@ -238,6 +238,26 @@ Operational notes:
 - The lookup is best-effort: a failed or slow session API call never breaks the shell command, it only leaves the variables unset.
 - When upstream ships native `OPENCODE_MODEL_FULL_ID`-style variables (draft PR [#10451](https://github.com/anomalyco/opencode/pull/10451)), this plugin can be removed in favor of the built-in contract.
 
+##### Context price guard (`.opencode/plugins/context-price-guard.js`)
+
+The project-local plugin tracks request input tokens, including cache-read and
+cache-write tokens, for the OpenAI `gpt-5.5` and `gpt-5.6` model families. When a
+session reaches a higher warning level, it posts a no-reply notification with
+the current token count and a handoff recommendation:
+
+| Input-token threshold | Notification |
+|---|---|
+| 230,000 | Context heads-up |
+| 240,000 | Handoff recommended |
+| 250,000 | Handoff now |
+| 265,000 | Critical context |
+| More than 272,000 | Long-context pricing may apply |
+
+The plugin does not send these notifications for other providers or model
+families. If token usage drops below the last reached level, crossing that level
+again can produce another notification. Restart OpenCode after adding or
+changing the plugin.
+
 ##### Removing an agent and orphan overrides
 
 Removing a managed agent means removing both the file and its `agent` entry. An existing consumer instance can keep an `agent` key after the matching `.opencode/agents/<name>.md` disappears; OpenCode can then recreate that agent from the leftover key with default mode and permissions. Treat such an orphan override as a migration defect, not as a harmless leftover.
