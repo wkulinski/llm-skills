@@ -1,4 +1,4 @@
-const PRICING_THRESHOLD = 272_000;
+const TOKEN_WARNING_THRESHOLD = 272_000;
 
 const LEVELS = [
     {
@@ -31,21 +31,15 @@ const LEVELS = [
     },
     {
         level: 5,
-        min: PRICING_THRESHOLD + 1,
-        label: "LONG-CONTEXT PRICING",
+        min: TOKEN_WARNING_THRESHOLD + 1,
+        label: "HIGH TOKEN USE",
         recommendation:
-      "The last request crossed the long-context pricing threshold. Handoff to a fresh session before continuing.",
+      "The configured token warning threshold was crossed. Check this model's context and pricing limits before continuing.",
     },
 ];
 
-const TRACKED_MODELS = [
-    /^gpt-5\.5(?:$|-)/i,
-    /^gpt-5\.6(?:$|-)/i,
-];
-
-function isTrackedModel(providerID, modelID) {
-    if (providerID !== "openai") { return false; }
-    return TRACKED_MODELS.some((pattern) => pattern.test(modelID));
+function isOpenAIProvider(providerID) {
+    return providerID === "openai";
 }
 
 function getLevel(tokens) {
@@ -65,24 +59,24 @@ function formatNumber(value) {
 }
 
 function buildMessage(tokens, level, modelID) {
-    const percent = (tokens / PRICING_THRESHOLD) * 100;
-    const remaining = PRICING_THRESHOLD - tokens;
+    const percent = (tokens / TOKEN_WARNING_THRESHOLD) * 100;
+    const remaining = TOKEN_WARNING_THRESHOLD - tokens;
     const levelConfig = LEVELS.find((item) => item.level === level);
     const label = levelConfig?.label ?? "CONTEXT";
 
     const lines = [
         `[Context Price Guard] ${label}`,
         `Model: ${modelID}`,
-        `Last request input: ${formatNumber(tokens)} / ${formatNumber(PRICING_THRESHOLD)} tokens (${percent.toFixed(1)}%)`,
+        `Last request input: ${formatNumber(tokens)} / ${formatNumber(TOKEN_WARNING_THRESHOLD)} tokens (${percent.toFixed(1)}%)`,
     ];
 
     if (remaining >= 0) {
         lines.push(
-            `${formatNumber(remaining)} tokens remaining before the long-context pricing threshold.`,
+            `${formatNumber(remaining)} tokens remaining before the configured high-token threshold.`,
         );
     } else {
         lines.push(
-            `Threshold exceeded by ${formatNumber(Math.abs(remaining))} tokens; long-context pricing may apply to that request.`,
+            `Configured high-token threshold exceeded by ${formatNumber(Math.abs(remaining))} tokens; this model's context and pricing limits may differ.`,
         );
     }
 
@@ -120,7 +114,7 @@ export default async function ContextPriceGuard({ client, directory }) {
         const current = state(sessionID);
 
         if (!current.providerID || !current.modelID) { return; }
-        if (!isTrackedModel(current.providerID, current.modelID)) { return; }
+        if (!isOpenAIProvider(current.providerID)) { return; }
         if (current.inputTokens <= 0) { return; }
 
         const level = getLevel(current.inputTokens);
