@@ -14,6 +14,22 @@ Playwright CLI dostarcza trzy różne rodzaje dowodu:
 
 Żadne z nich nie zastępuje pozostałych.
 
+## Routing dla skilli
+
+Ta referencja jest jednym źródłem prawdy dla **każdego** skilla lub agenta,
+który zdecyduje się na checkpoint renderowanego UI (implementacja, szybki lub
+pełny review). Skill decyduje **czy** checkpoint jest potrzebny i jakie
+interakcje wolno wykonać; nie tworzy własnej ścieżki uruchomienia Playwright.
+Po ustaleniu bezpiecznego URL-a wykonaj tylko
+`playwright-access-prepare.sh` (z `--protected` dla chronionej strony), a potem
+otwórz osobną sesję aplikacji według sekcji „Kontrakt URL-a i chronionej
+nawigacji”. Przy `Access: BLOCKED` nie nawiguj; zgłoś blokadę lub lukę
+weryfikacji zgodnie z aktywnym skillem. Brak URL-a nie uprawnia do zgadywania.
+`playwright-preflight.sh` i `playwright-auth-bootstrap.sh` są wewnętrznymi
+krokami prepare, a nie alternatywnymi instrukcjami dla agenta. Nie przekazuj
+credentiali do `fill` ani argumentów CLI; nie używaj własnego helpera,
+bezpośredniego SDK lub innego entrypointu zamiast tego kontraktu.
+
 ## Źródło prawdy dla składni
 
 Aktualność składni jest sprawdzana przez `--help` wykonane na resolved CLI w
@@ -24,13 +40,24 @@ oficjalnego skilla Playwright i nie zakładaj opcji niewymienionej przez aktualn
 ## Preflight
 
 Preflight jest obowiązkowy i wykonywalny. Przed odkryciem, audytem i edycją
-renderowanego UI uruchom współdzielony helper zamiast składać komendy ręcznie:
+renderowanego UI użyj jednego kroku przygotowania dostępu (przy znanym
+chronionym URL-u dodaj `--protected`):
 
 ```bash
-bash <skills_root>/_shared/scripts/playwright-preflight.sh
+bash <skills_root>/_shared/scripts/playwright-access-prepare.sh
+# Dla znanego chronionego URL-a zamiast powyższego:
+bash <skills_root>/_shared/scripts/playwright-access-prepare.sh --protected
 ```
 
-Helper ładuje `<skills_root>/_shared/scripts/env-load.sh`, raz rozwiązuje CLI
+Krok przygotowania uruchamia `playwright-preflight.sh`, a tylko z
+`--protected` sprawdza istniejący state i w razie potrzeby wywołuje
+`playwright-auth-bootstrap.sh`. `Access: READY` oznacza gotowość infrastruktury
+i pliku state, **nie** dowód dostępu do chronionej strony: wynik sprawdź dopiero
+po `state-load` i nawigacji. `Access: BLOCKED` oznacza, że nie należy nawigować.
+Gdy preflight działa przez CDP, ale nie ma lokalnej przeglądarki do bootstrapu,
+raportuj `browser-unavailable` zamiast próbować ręcznego logowania.
+
+Helper preflightu ładuje `<skills_root>/_shared/scripts/env-load.sh`, raz rozwiązuje CLI
 przez `resolve_tool_cmd playwright-cli playwright-cli` i wykonuje `--help` na
 tym samym resolved command. Dopiero po poprawnej walidacji tworzy unikalną
 sesję, wykonuje `open about:blank --browser=chromium` i `close` albo — gdy
@@ -72,21 +99,46 @@ browsera również blokuje zadanie.
 Najpierw rozwiąż URL aplikacji bez zgadywania trasy: jawny URL z promptu lub
 zadania ma pierwszeństwo, potem `PLAYWRIGHT_GUI_BASE_URL`, a przy braku obu
 zapytaj użytkownika albo zgłoś blokadę. Nie używaj domyślnego `localhost`.
-`PLAYWRIGHT_GUI_LOGIN_URL` służy wyłącznie jawnej, projektowej recipe logowania
-wraz z `PLAYWRIGHT_GUI_USER_LOGIN` i `PLAYWRIGHT_GUI_USER_PASSWORD`; nie jest
-fallbackiem URL-a ani generycznym konsumentem `fill`.
+`PLAYWRIGHT_GUI_LOGIN_URL` nie jest fallbackiem URL-a aplikacji. Jest adresem
+logowania używanym wyłącznie przez współdzielony helper bootstrapu razem z
+`PLAYWRIGHT_GUI_USER_LOGIN` i `PLAYWRIGHT_GUI_USER_PASSWORD`.
 
-Jeśli chroniony URL wymaga storage state, przed uruchomieniem aplikacji sprawdź
-samą ścieżkę `PLAYWRIGHT_GUI_STORAGE_STATE`, bez czytania zawartości. Musi być
-repo-relative, po rozwiązaniu pozostać pod `.playwright-cli/auth/`, wskazywać
-`regular file` i przejść `git check-ignore`. Nie przekazuj zawartości state,
-credentiali ani sekretów do CLI. Gdy state jest nieobecny lub nie przechodzi
-walidacji, zatrzymaj nawigację i skieruj użytkownika do jawnego bootstrapu albo
-konkretnej projektowej recipe.
+Jeśli chroniony URL wymaga storage state, wykonaj przygotowanie z
+`--protected`. Wewnątrz helpera obowiązuje kolejność:
 
-Po udanym preflight użyj oddzielnej, unikalnej sesji aplikacji. Sesja aplikacji
-używa tego samego, raz rozwiązanego CLI co preflight — nigdy nie wywołuj
-bezpośrednio `playwright-cli`, bo konfiguracja `BIN_PATH`-only przeszłaby
+1. **Stan istnieje** — gdy `PLAYWRIGHT_GUI_STORAGE_STATE` jest ważny albo pod
+   domyślną ścieżką `.playwright-cli/auth/storage-state.json` istnieje ważny,
+   ignorowany plik stanu, użyj go przez `state-load <filename>`. Waliduj samą
+   ścieżkę, bez czytania zawartości: musi być repo-relative, po rozwiązaniu
+   pozostać pod `.playwright-cli/auth/`, wskazywać `regular file` i przejść
+   `git check-ignore`.
+2. **Bootstrap** — gdy stanu brakuje, `PLAYWRIGHT_GUI_LOGIN_URL`,
+   `PLAYWRIGHT_GUI_USER_LOGIN` i `PLAYWRIGHT_GUI_USER_PASSWORD` są kompletne, a
+   host logowania jest loopback (`localhost`, `127.0.0.1`, `::1`), prepare
+   uruchamia wewnętrznie `_shared/scripts/playwright-auth-bootstrap.sh`.
+   Po `Authentication: OK` użyj zwróconej ścieżki stanu i dopiero wtedy wykonaj
+   `state-load <filename>`. Bootstrap wymaga widocznego pola loginu, hasła i
+   submittera, a przed podaniem credentiali sprawdza końcowy host strony oraz
+   rzeczywisty cel wysyłki formularza (`formaction`/`action` z base URL);
+   nierozpoznany formularz kończy się `Reason: form-not-recognized`. Odrzuca
+   także symlinki katalogów state.
+3. **Brak możliwości uwierzytelnienia** — w pozostałych przypadkach zgłoś
+   `authentication unavailable`; nie przechodź do chronionego URL-a.
+
+Wartości credentiali przechodzą wyłącznie przez helper bootstrapu w pamięci
+procesu. Helper nie tworzy plików tymczasowych, nie wypisuje wartości
+credentiali i nie zapisuje stanu poza `.playwright-cli/auth/`. Zawartości state,
+credentiali ani sekretów nie wolno odczytywać, wypisywać, commitować ani
+umieszczać w ogólnych argumentach CLI. Po pozytywnej walidacji przekaż CLI
+wyłącznie zweryfikowaną nazwę pliku do `state-load <filename>`.
+Ukrycie pola hasła jest sygnałem zakończenia formularza, a nie niezależnym
+potwierdzeniem uwierzytelnienia; nie raportuj sukcesu aplikacji przed
+checkpointem na chronionym URL-u.
+
+Po `Access: READY` użyj oddzielnej, unikalnej sesji aplikacji. Przygotowanie
+dostępu działa w osobnych procesach, więc sesja aplikacji ponownie rozwiązuje
+CLI przez **ten sam resolver** `env-load.sh`/`resolve_tool_cmd`. Nigdy nie
+wywołuj bezpośrednio `playwright-cli`, bo konfiguracja `BIN_PATH`-only przeszłaby
 preflight, a checkpoint aplikacji nie uruchomiłby się:
 
 ```bash
@@ -95,24 +147,34 @@ PW_CLI="$(resolve_tool_cmd playwright-cli playwright-cli)" || { printf 'CLI: MIS
 ```
 
 Otwórz bezpieczny pusty kontekst, a dla chronionego URL-a wykonaj kolejno
-walidację, dokładnie `state-load <filename>` i dopiero nawigację. Poniższy
-przebieg pokazuje kolejność (placeholdery nie są wartościami domyślnymi):
+walidację, `state-load` i dopiero nawigację. `STATE_FILE` ustaw na dokładną,
+repo-relative ścieżkę z `Storage state:` wypisaną przez prepare; dla publicznej
+strony pomiń wiersz `state-load`. Poniższy schemat pokazuje chronioną nawigację
+(placeholdery nie są wartościami domyślnymi):
 
 ```bash
 APP_SESSION="ui-review-<task>-application"
-"$PW_CLI" -s="$APP_SESSION" open about:blank --browser=chromium
+if [[ -n "${PLAYWRIGHT_MCP_CDP_ENDPOINT:-}" ]]; then
+    "$PW_CLI" -s="$APP_SESSION" attach --cdp="$PLAYWRIGHT_MCP_CDP_ENDPOINT"
+else
+    "$PW_CLI" -s="$APP_SESSION" open about:blank --browser=chromium
+fi
 # Po walidacji metadanych state, bez odczytywania jego zawartości:
-"$PW_CLI" -s="$APP_SESSION" state-load <filename>
+"$PW_CLI" -s="$APP_SESSION" state-load "$STATE_FILE"
 # Tylko po udanym state-load; URL został wcześniej jawnie rozwiązany.
 "$PW_CLI" -s="$APP_SESSION" goto "$RESOLVED_APPLICATION_URL"
 # Wykonaj także po błędzie walidacji, ładowania lub nawigacji.
-"$PW_CLI" -s="$APP_SESSION" close
+if [[ -n "${PLAYWRIGHT_MCP_CDP_ENDPOINT:-}" ]]; then
+    "$PW_CLI" -s="$APP_SESSION" detach
+else
+    "$PW_CLI" -s="$APP_SESSION" close
+fi
 ```
 
-Błąd `state-load` klasyfikuj jako `authentication unavailable`. Nie próbuj
-generycznego `fill` ani innego automatycznego logowania. Sesja preflightu jest
-własnością helpera i helper ją zamyka; sesję aplikacji zawsze zamyka właściciel
-checkpointu.
+Błąd `state-load` klasyfikuj jako `authentication unavailable`. Agent nie
+wykonuje ręcznego `fill` z wartościami credentiali ani innego automatycznego
+logowania. Sesja preflightu jest własnością helpera i helper ją sprząta; sesję
+aplikacji właściciel checkpointu zawsze kończy przez `close` albo `detach`.
 
 ## Profile weryfikacji
 
@@ -124,27 +186,23 @@ Zakres wynika z profilu zadania przyjętego przez skill konsumujący:
 
 ## Sesja
 
-Wszystkie komendy sesji wykonuj przez `"$PW_CLI"` rozwiązane raz w kontrakcie
+Wszystkie komendy sesji wykonuj przez `"$PW_CLI"` rozwiązane w kontrakcie
 powyżej; bezpośrednie `playwright-cli` jest niedozwolone. Używaj unikalnej nazwy
-dla sesji checkpointu aplikacji, np.:
+dla sesji checkpointu aplikacji. Sekwencja otwarcia pustego kontekstu, opcjonalnego
+`state-load`, nawigacji i sprzątania jest opisana wyłącznie w sekcji „Kontrakt
+URL-a i chronionej nawigacji”; nie otwieraj URL-a aplikacji jako pierwszej
+komendy sesji. Do dalszych przykładów przypisz tę samą nazwę:
 
 ```bash
-SESSION="ui-review-grid-header"
-mkdir -p .playwright-cli/ui-review/zadanie
-"$PW_CLI" -s="$SESSION" open "$RESOLVED_APPLICATION_URL" --headed --browser=chromium
+SESSION="$APP_SESSION"
 ```
 
 `RESOLVED_APPLICATION_URL` musi pochodzić z jawnego URL-a zadania albo z
 `PLAYWRIGHT_GUI_BASE_URL` zgodnie z kontraktem powyżej; nie zastępuj go zgadywaną
 trasą.
 
-Po zmianie DOM pobierz nowy snapshot; refs mogą być nieaktualne.
-
-Na końcu:
-
-```bash
-"$PW_CLI" -s="$SESSION" close
-```
+Po zmianie DOM pobierz nowy snapshot; refs mogą być nieaktualne. Sesję zakończ
+przez `close` lub `detach` zgodnie z trybem preflightu i sekwencją powyżej.
 
 Nie używaj wspólnej sesji, gdy inne procesy mogą pracować równolegle.
 
@@ -168,10 +226,13 @@ Nie pozostawiaj artefaktów jako nieśledzonych plików repo.
 
 Storage state i profile przechowuj pod ignorowanym `.playwright-cli/auth/`. Nie zapisuj sekretów, danych produkcyjnych ani PII w artefaktach.
 
-W `execution_mode: advisory` nie zapisuj storage state w repozytorium i nie
-wykonuj operacji zmieniających dane lub stan aplikacji. Dopuszczalne są
-niemutujące interakcje potrzebne do obejrzenia widoku, np. przełączenie zakładki,
-rozwinięcie panelu lub zmiana viewportu, o ile nie zapisują danych.
+W `execution_mode: advisory` wolno wykonać bootstrap logowania opisany
+w „Kontrakcie URL-a i chronionej nawigacji” i zapisać storage state w
+ignorowanym `.playwright-cli/auth/`; logowanie i stan sesji są przygotowaniem
+dostępu, a nie zmianą danych. Nie wykonuj operacji zmieniających dane biznesowe
+lub konfigurację aplikacji. Dopuszczalne są niemutujące interakcje potrzebne do
+obejrzenia widoku, np. przełączenie zakładki, rozwinięcie panelu lub zmiana
+viewportu, o ile nie zapisują danych.
 
 ## Stabilny stan porównawczy
 

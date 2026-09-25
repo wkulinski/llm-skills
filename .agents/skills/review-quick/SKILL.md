@@ -9,7 +9,12 @@ shared_files:
   - _shared/references/php-symfony-postgres-standards.md
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/references/symbolic-navigation-and-editing-policy.md
+  - _shared/references/playwright-cli-verification.md
   - _shared/scripts/env-load.sh
+  - _shared/scripts/playwright-access-prepare.sh
+  - _shared/scripts/playwright-preflight.sh
+  - _shared/scripts/playwright-auth-bootstrap.sh
+  - _shared/scripts/playwright-auth-bootstrap.mjs
 ---
 
 # $review-quick
@@ -49,6 +54,16 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
 - Jeśli review dotyczy regresji runtime, logów, profilera albo DI:
   - możesz pomocniczo użyć `$dev-mate` (`<skills_root>/dev-mate/SKILL.md`),
   - ale findings nadal mają mapować się do kodu, konfiguracji lub zachowania aplikacji.
+- Gdy ostatni przyrost dotyczy renderowanego UI i bezpieczny URL jest dostępny,
+  możesz wykonać proporcjonalny, niemutujący checkpoint Playwright jako dowód
+  dla quick-check. Najpierw zastosuj
+  `<skills_root>/_shared/references/playwright-cli-verification.md`: jedynym
+  przygotowaniem dostępu jest
+  `bash <skills_root>/_shared/scripts/playwright-access-prepare.sh`
+  (dla chronionej strony z `--protected`). `Access: BLOCKED` albo brak bezpiecznego
+  URL-a zgłoś jako lukę weryfikacji, nie improwizuj loginu, preflightu, sesji
+  ani innej ścieżki CLI. `Access: READY` nie zastępuje checkpointu w oddzielnej
+  sesji; zachowaj tryb review-only i nie zapisuj danych w aplikacji.
 
 ## Kontrakt wykonania (quick-check)
 1. Zidentyfikuj zakres przeglądu na podstawie prompta i zmienionych plików.
