@@ -19,6 +19,7 @@ shared_files:
     - _shared/references/symbolic-navigation-and-editing-policy.md
     - _shared/references/context-subagent-contract.md
     - _shared/references/repository-context-hybrid.md
+    - _shared/references/playwright-cli-verification.md
     - _shared/references/repository-context-scout-playbook.md
     - _shared/references/context-scout-report-protocol.md
     - _shared/scripts/context-criteria.mjs
@@ -31,6 +32,10 @@ shared_files:
     - _shared/scripts/read-purpose.mjs
     - _shared/scripts/secret-detector.mjs
     - _shared/scripts/env-load.sh
+    - _shared/scripts/playwright-access-prepare.sh
+    - _shared/scripts/playwright-preflight.sh
+    - _shared/scripts/playwright-auth-bootstrap.sh
+    - _shared/scripts/playwright-auth-bootstrap.mjs
     - _shared/scripts/targeted-check-decision.mjs
 ---
 
@@ -210,6 +215,14 @@ Jeśli wskazany agent lub entrypoint jest niedostępny, wykonaj właściwy skill
 bezpośrednio albo użyj opisanego fallbacku. Nie deleguj automatycznie
 `$review-quick` ani `$qa-run`; ich procedury już ograniczają output i stanowią
 część głównego workflow jakości.
+
+Jeśli implementacja albo jej punktowa weryfikacja wymaga renderowanej
+przeglądarki, skieruj agenta (także specjalistę od UI) do
+`<skills_root>/_shared/references/playwright-cli-verification.md`. Jedynym
+przygotowaniem dostępu jest `playwright-access-prepare.sh` z `--protected` dla
+chronionego URL-a; nie twórz równoległego preflightu lub logowania. Decyzja,
+czy checkpoint jest konieczny, pozostaje w aktywnym skillu; `Access: READY`
+nie dowodzi działania aplikacji.
 
 Wybór narzędzia do odczytu i edycji kodu prowadź według
 `<skills_root>/_shared/references/symbolic-navigation-and-editing-policy.md`.

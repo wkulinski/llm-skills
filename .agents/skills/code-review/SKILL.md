@@ -13,7 +13,10 @@ shared_files:
   - _shared/references/context-subagent-contract.md
   - _shared/references/playwright-cli-verification.md
   - _shared/scripts/change-inventory.mjs
+  - _shared/scripts/playwright-access-prepare.sh
   - _shared/scripts/playwright-preflight.sh
+  - _shared/scripts/playwright-auth-bootstrap.sh
+  - _shared/scripts/playwright-auth-bootstrap.mjs
 ---
 
 # Code Review
@@ -558,15 +561,15 @@ user explicitly requests it. `$qa-run` remains the normal workflow for full QA.
 Do not expand a focused check into a broader run merely because it is available.
 
 For a change affecting rendered UI, run a proportional Playwright checkpoint
-when `playwright-cli` and a safe application target are available. First run the
-sole preflight entrypoint,
-`<skills_root>/_shared/scripts/playwright-preflight.sh`; it
-validates `--help` through the resolved CLI and reports launch/attach and
-cleanup. A status 2 blocks before the UI checkpoint, status 3 reports a
-launch/attach failure (including cleanup failure), and status 4 reports cleanup
-failure after a successful launch/attach. Then follow the safe-session and
-artifact rules in
-`<skills_root>/_shared/references/playwright-cli-verification.md`.
+when `playwright-cli` and a safe application target are available. Follow
+`<skills_root>/_shared/references/playwright-cli-verification.md` for the sole
+preparation entrypoint: `bash <skills_root>/_shared/scripts/playwright-access-prepare.sh`
+(add `--protected` for a protected URL). Do not run preflight or bootstrap
+separately, invent a login flow, or pass credentials through `fill` or CLI
+arguments. `Access: BLOCKED` is a verification gap; `Access: READY` still
+requires a separate safe application session and an actual checkpoint, with
+`state-load` before protected navigation. Follow that reference for URL
+selection, CLI resolution, session cleanup and artifacts.
 The checkpoint should cover the changed state and relevant interaction, use a
 stable snapshot/role/selector, and check new console or request errors. Add a
 relevant viewport or accessibility/state check when the change's risk requires

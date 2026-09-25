@@ -17,19 +17,19 @@ Zainstaluj CLI i browser używany przez skill:
 ```bash
 npm install -g @playwright/cli@0.1.17
 playwright-cli install-browser chrome-for-testing
-bash <skills_root>/_shared/scripts/playwright-preflight.sh
+bash <skills_root>/_shared/scripts/playwright-access-prepare.sh
 ```
 
-Współdzielony helper jest jedynym entrypointem preflightu. Rozwiązuje `playwright-cli` dokładnie
-raz przez `resolve_tool_cmd playwright-cli playwright-cli`: najpierw sprawdza
+Współdzielony helper przygotowania wywołuje preflight, który rozwiązuje `playwright-cli`
+przez `resolve_tool_cmd playwright-cli playwright-cli`: najpierw sprawdza
 `BIN_PATH`, a następnie używa `PATH` jako fallbacku. Globalna komenda w `PATH` nie
 jest więc wymagana, jeśli `BIN_PATH` wskazuje wykonywalny CLI.
 
-Po instalacji zweryfikuj działanie obowiązkowym współdzielonym helperem (nie
+Po instalacji zweryfikuj działanie jednym krokiem przygotowania dostępu (nie
 składaj preflightu ręcznie):
 
 ```bash
-bash <skills_root>/_shared/scripts/playwright-preflight.sh
+bash <skills_root>/_shared/scripts/playwright-access-prepare.sh
 ```
 
 Helper waliduje resolved CLI przez `--help`, a następnie otwiera `about:blank` w
@@ -45,17 +45,21 @@ URL wybieraj w kolejności: jawny URL z promptu/zadania, następnie
 `PLAYWRIGHT_GUI_BASE_URL`, a przy braku obu — zapytaj użytkownika lub zgłoś
 blokadę. Nie zgaduj trasy i nie używaj domyślnego `localhost`.
 
-Sesja aplikacji używa tego samego, raz rozwiązanego CLI co preflight (`PW_CLI`
-przez `resolve_tool_cmd`); bezpośrednie `playwright-cli` nie działa w konfiguracji
+Sesja aplikacji ponownie rozwiązuje CLI przez ten sam `resolve_tool_cmd` co
+preflight (`PW_CLI`); bezpośrednie `playwright-cli` nie działa w konfiguracji
 `BIN_PATH`-only.
 
 Opcjonalny `PLAYWRIGHT_GUI_STORAGE_STATE` musi być repo-relative, rozwiązywać się
 do regular file pod `.playwright-cli/auth/` i być ignorowany przez Git. Przed
 chronioną nawigacją osobna, unikalna sesja aplikacji otwiera pusty kontekst,
 waliduje state i wykonuje `state-load <filename>`; dopiero potem nawiguje.
-Nieudane ładowanie raportuj jako `authentication unavailable`, bez generycznego
-`fill`, i zawsze zamykaj tę sesję. Brak state kieruj do jawnego bootstrapu albo
-projektowej recipe logowania. Szczegółowy kontrakt i blokady są w `SKILL.md`.
+Dla chronionego URL-a uruchom
+`bash <skills_root>/_shared/scripts/playwright-access-prepare.sh --protected`;
+helper sam użyje istniejącego state albo uruchomi `playwright-auth-bootstrap.sh`
+tylko gdy brakuje state i dostępne są dane logowania loopback. Po
+`Authentication: OK` użyj wypisanej ścieżki stanu i dopiero wtedy wykonaj
+`state-load`. W pozostałych przypadkach raportuj `authentication unavailable`.
+Sesję zawsze zamykaj. Szczegółowy kontrakt i blokady są w `SKILL.md`.
 
 ## Artefakty i dane
 

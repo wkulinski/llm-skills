@@ -12,7 +12,9 @@ problemem aplikacji ani uwierzytelnienia:
 - **Application** — wybrany jawnie URL oraz wynik nawigacji/checkpointu;
 - **Authentication** — walidacja i `state-load` opcjonalnego state. Użyj
   `authentication unavailable`, gdy state jest nieobecny, nieprawidłowy albo
-  ładowanie się nie udało; nie maskuj tego generycznym logowaniem.
+  ładowanie się nie udało; nie maskuj tego generycznym logowaniem. Gdy stan
+  powstał przez współdzielony helper bootstrapu, użyj wartości
+  `created via bootstrap`.
 
 Nie wpisuj zawartości storage state, credentiali ani sekretów. Dla publicznego
 URL-a wynik Authentication może być `not required`; nadal zachowaj osobną

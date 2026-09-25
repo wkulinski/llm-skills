@@ -6,11 +6,11 @@
     "order": "strongest-to-weakest",
     "profiles": [
         {
-            "model": "openai/gpt-5.6-sol",
+            "model": "openai/gpt-6-sol",
             "reasoning": "medium"
         },
         {
-            "model": "openai/gpt-5.6-luna",
+            "model": "openai/gpt-6-luna",
             "reasoning": "max"
         },
         {
@@ -18,12 +18,8 @@
             "reasoning": "max"
         },
         {
-            "model": "openai/gpt-5.6-luna",
+            "model": "openai/gpt-6-luna",
             "reasoning": "xhigh"
-        },
-        {
-            "model": "openai/gpt-5.6-luna",
-            "reasoning": "high"
         }
     ]
 }
