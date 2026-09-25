@@ -1,7 +1,8 @@
 {
     "_comment": "Copy this file to <project-root>/.agents/config/model-hierarchy.json, then replace every example profile with an exact model and reasoning pair available in that project.",
+    "_matching_comment": "Model identity is compared without the provider prefix: `commandcode/deepseek/model-x` and `deepseek/model-x` describe the same profile, while the reasoning level must match exactly.",
     "_ordering_comment": "Keep profiles ordered from the strongest pair to the weakest acceptable pair, like a leaderboard. The executor compares array indexes and treats a current profile as sufficient when its index is less than or equal to the required profile index.",
-    "_reasoning_comment": "Each model and reasoning combination is a separate profile. Use the exact identifiers exposed by the runtime; do not add aliases or profiles whose reasoning level cannot be observed.",
+    "_reasoning_comment": "Each model and reasoning combination is a separate profile. Use identifiers exposed by the runtime; the provider prefix may be omitted because matching ignores it, but the reasoning level must be observable and exact.",
     "version": 1,
     "order": "strongest-to-weakest",
     "profiles": [

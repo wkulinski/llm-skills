@@ -6,6 +6,7 @@ import {it} from "vitest";
 
 import {
     compareModelProfiles,
+    hasModelProfile,
     loadModelHierarchy,
     ModelHierarchyError,
 } from "../../../.agents/skills/_shared/scripts/model-hierarchy.mjs";
@@ -24,7 +25,7 @@ function repositoryWithProfiles(profiles) {
     return root;
 }
 
-it("compares exact model and reasoning profiles by configured order", () => {
+it("compares model profiles by configured order regardless of the provider prefix", () => {
     const root = repositoryWithProfiles([
         {model: "model/b", reasoning: "high"},
         {model: "model/b", reasoning: "medium"},
@@ -40,6 +41,57 @@ it("compares exact model and reasoning profiles by configured order", () => {
         required: {model: "model/b", reasoning: "high"},
         current: {model: "model/a", reasoning: "medium"},
     }).sufficient, false);
+});
+
+it("matches the same model with or without a provider prefix in both directions", () => {
+    const hierarchy = loadModelHierarchy({repoRoot: repositoryWithProfiles([
+        {model: "deepseek/deepseek-v4.1-flash", reasoning: "max"},
+        {model: "openai/gpt-6-sol", reasoning: "medium"},
+    ])});
+
+    const comparison = compareModelProfiles(hierarchy, {
+        required: {model: "deepseek/deepseek-v4.1-flash", reasoning: "max"},
+        current: {model: "commandcode/deepseek/deepseek-v4.1-flash", reasoning: "max"},
+    });
+    assert.equal(comparison.sufficient, true);
+    assert.equal(comparison.current.rank, 0);
+
+    assert.equal(compareModelProfiles(hierarchy, {
+        required: {model: "commandcode/openai/gpt-6-sol", reasoning: "medium"},
+        current: {model: "gpt-6-sol", reasoning: "medium"},
+    }).sufficient, true);
+
+    assert.equal(hasModelProfile(hierarchy, {
+        model: "commandcode/deepseek/deepseek-v4.1-flash",
+        reasoning: "max",
+    }), true);
+    assert.equal(hasModelProfile(hierarchy, {model: "deepseek-v4.1-flash", reasoning: "max"}), true);
+    assert.equal(hasModelProfile(hierarchy, {
+        model: "commandcode/deepseek/deepseek-v4.1-flash",
+        reasoning: "high",
+    }), false);
+});
+
+it("does not match a different model that only shares a segment prefix", () => {
+    const hierarchy = loadModelHierarchy({repoRoot: repositoryWithProfiles([
+        {model: "openai/gpt-6-sol", reasoning: "medium"},
+        {model: "openai/gpt-6-luna", reasoning: "max"},
+    ])});
+
+    assert.equal(hasModelProfile(hierarchy, {model: "openai/gpt-6-sol-lite", reasoning: "medium"}), false);
+    assert.equal(hasModelProfile(hierarchy, {model: "openai/gpt-6", reasoning: "medium"}), false);
+    assert.equal(hasModelProfile(hierarchy, {model: "openai/gpt-6-sol", reasoning: "max"}), false);
+    assert.equal(hasModelProfile(hierarchy, {model: "gpt-6-luna", reasoning: "max"}), true);
+});
+
+it("rejects provider-agnostic duplicates at the same reasoning level", () => {
+    assert.throws(
+        () => loadModelHierarchy({repoRoot: repositoryWithProfiles([
+            {model: "openai/gpt-6-sol", reasoning: "medium"},
+            {model: "commandcode/openai/gpt-6-sol", reasoning: "medium"},
+        ])}),
+        (error) => error instanceof ModelHierarchyError && error.code === "DUPLICATE_MODEL_PROFILE",
+    );
 });
 
 it("rejects duplicate and unranked profiles instead of guessing", () => {

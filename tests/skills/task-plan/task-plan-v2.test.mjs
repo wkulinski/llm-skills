@@ -296,14 +296,34 @@ it("requires concrete size, model and reasoning recommendations", () => {
     prepareSource(root);
     const invalidSize = completePlanBody().replace("- Estimated size: medium", "- Estimated size: huge");
     const invalidModel = completePlanBody().replace("- Default model: openai/gpt-5.6-sol", "- Default model: other/unranked");
+    const emptyModel = completePlanBody().replace("- Default model: openai/gpt-5.6-sol", "- Default model: none");
     const invalidReasoning = completePlanBody().replace("- Default reasoning: medium", "- Default reasoning: none");
 
-    for (const body of [invalidSize, invalidModel, invalidReasoning]) {
+    for (const body of [invalidSize, invalidModel, emptyModel, invalidReasoning]) {
         assert.throws(
             () => savePlan(saveInput(root, {markdown_body: body}), {now: NOW}),
             (error) => error instanceof StoreError && error.code === "INVALID_PLAN",
         );
     }
+});
+
+it("accepts the same model profile with or without the provider prefix", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+
+    const providerless = completePlanBody().replace(
+        "- Default model: openai/gpt-5.6-sol",
+        "- Default model: gpt-5.6-sol",
+    );
+    const saved = savePlan(saveInput(root, {markdown_body: providerless}), {now: NOW, verbose: true});
+    assert.equal(saved.validation.valid, true);
+
+    const prefixed = completePlanBody().replace(
+        "- Default model: openai/gpt-5.6-sol",
+        "- Default model: commandcode/openai/gpt-5.6-sol",
+    );
+    const updated = savePlan(saveInput(root, {markdown_body: prefixed, ...updateToken(saved)}), {now: NOW, verbose: true});
+    assert.equal(updated.validation.valid, true);
 });
 
 it("requires the project-local model hierarchy", () => {

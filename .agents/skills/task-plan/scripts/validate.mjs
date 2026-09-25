@@ -38,7 +38,6 @@ export const REQUIRED_PACKAGE_FIELDS = Object.freeze([
 ]);
 
 const ESSENTIAL_PACKAGE_FIELDS = new Set(["Source", "Goal", "Scope", "Estimated size", "Acceptance criteria", "Verification"]);
-const CONCRETE_MODEL_PATTERN = /^[^/\s]+\/[^/\s]+$/;
 
 export const REQUIRED_DIRECTION_FIELDS = Object.freeze([
     "Existing mechanism reused",
@@ -233,8 +232,8 @@ export function parseExecutionEnvironment(body) {
 export function validateExecutionEnvironment(body, packages = extractPackages(body), options = {}) {
     const environment = parseExecutionEnvironment(body);
     const errors = [...environment.errors];
-    if (!CONCRETE_MODEL_PATTERN.test(environment.defaultModel)) {
-        errors.push("Execution environment Default model must be a concrete provider/model identifier.");
+    if (!isConcreteValue(environment.defaultModel)) {
+        errors.push("Execution environment Default model must be concrete.");
     }
     if (!isConcreteValue(environment.defaultReasoning)) {
         errors.push("Execution environment Default reasoning must be concrete.");
@@ -257,8 +256,8 @@ export function validateExecutionEnvironment(body, packages = extractPackages(bo
             errors.push(`Execution environment contains duplicate WP override: ${override.id}.`);
         }
         seen.add(override.id);
-        if (!CONCRETE_MODEL_PATTERN.test(override.model)) {
-            errors.push(`Execution environment ${override.id} model must be a concrete provider/model identifier.`);
+        if (!isConcreteValue(override.model)) {
+            errors.push(`Execution environment ${override.id} model must be concrete.`);
         }
         if (!isConcreteValue(override.reasoning)) {
             errors.push(`Execution environment ${override.id} reasoning must be concrete.`);
@@ -275,13 +274,13 @@ export function validateExecutionEnvironment(body, packages = extractPackages(bo
         errors.push(error instanceof Error ? error.message : String(error));
         return errors;
     }
-    if (CONCRETE_MODEL_PATTERN.test(environment.defaultModel)
+    if (isConcreteValue(environment.defaultModel)
         && isConcreteValue(environment.defaultReasoning)
         && !hasModelProfile(hierarchy, {model: environment.defaultModel, reasoning: environment.defaultReasoning})) {
         errors.push("Execution environment default model/reasoning profile is not present in the project hierarchy.");
     }
     for (const override of environment.overrides) {
-        if (CONCRETE_MODEL_PATTERN.test(override.model)
+        if (isConcreteValue(override.model)
             && isConcreteValue(override.reasoning)
             && !hasModelProfile(hierarchy, override)) {
             errors.push(`Execution environment ${override.id} model/reasoning profile is not present in the project hierarchy.`);
