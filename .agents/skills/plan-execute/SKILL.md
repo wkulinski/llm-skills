@@ -151,10 +151,12 @@ Nie szukaj modelu w logach, bazie sesji ani w sieci. Profil spoza konfiguracji
 jest jawnym błędem; nie zgaduj pozycji. Nie pobieraj leaderboardu ani innych
 danych z sieci.
 
-Wynik preflightu zawiera porównanie dokładnych par `model + reasoning` według
+Wynik preflightu zawiera porównanie par `model + reasoning` według
 project-relative `.agents/config/model-hierarchy.json`; helper zwraca
-`sufficient: true` albo `sufficient: false`. Przy `false` poproś użytkownika o
-zmianę na rekomendowany lub wyższy profil.
+`sufficient: true` albo `sufficient: false`. Tożsamość modelu jest porównywana
+bez prefiksu dostawcy, więc `commandcode/deepseek/model` odpowiada profilowi
+`deepseek/model`; reasoning musi zgadzać się dokładnie. Przy `false` poproś
+użytkownika o zmianę na rekomendowany lub wyższy profil.
 
 Wymaganie wstępne: w projekcie musi istnieć `.agents/config/model-hierarchy.json`
 (kopiuj szablon poniżej); w przeciwnym razie `check-environment` zgłosi

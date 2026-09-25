@@ -588,7 +588,9 @@ steruje batchingiem ani trwałym stanem wykonania.
 Po oszacowaniu WP wybierz z `.agents/config/model-hierarchy.json` najsłabszy
 profil, który wystarczy do realizacji planu. Profile są uporządkowane od
 najsilniejszego do najsłabszego. Użyj override tylko dla WP wymagającego
-silniejszego profilu. Brak konfiguracji, duplikat albo rekomendacja spoza
+silniejszego profilu. Model porównuj bez prefiksu dostawcy: profil
+`commandcode/deepseek/model` i `deepseek/model` to ten sam model, a reasoning
+musi zgadzać się dokładnie. Brak konfiguracji, duplikat albo rekomendacja spoza
 hierarchii blokuje walidację; nie zgaduj ani nie dopisuj profilu. Szablon znajduje
 się w `<skills_root>/plan-execute/model-hierarchy.json.dist`.
 

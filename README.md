@@ -212,7 +212,7 @@ The project plugin `.opencode/plugins/session-model-env.js` closes that gap. It 
 
 | Variable | Example | Meaning |
 |---|---|---|
-| `OPENCODE_SESSION_MODEL` | `commandcode/deepseek/deepseek-v4.1-flash` | `provider/model`, exactly the identifier used by `model-hierarchy.json` |
+| `OPENCODE_SESSION_MODEL` | `commandcode/deepseek/deepseek-v4.1-flash` | Runtime `provider/model` identifier; `model-hierarchy.json` comparison ignores the provider prefix |
 | `OPENCODE_SESSION_VARIANT` | `max` | Resolved reasoning variant; omitted when the runtime reports the neutral `default` |
 | `OPENCODE_SESSION_AGENT` | `build` | Agent name, for diagnostics |
 | `OPENCODE_SESSION_ID` | `ses_…` | Session id, for diagnostics |
@@ -228,6 +228,8 @@ opencode run "Run exactly: echo \"MODEL=\$OPENCODE_SESSION_MODEL VARIANT=\$OPENC
 1. `OPENCODE_SESSION_MODEL`/`OPENCODE_SESSION_VARIANT` (`source: "session-env"`, the plugin path);
 2. explicit `--current-model`/`--current-reasoning` (`source: "flags"`, e.g. a harness that exposes its own model flags);
 3. an explicit user attestation via `--user-attested` (`source: "user-attested"`), used in harnesses without model introspection after the user confirms the current model and reasoning are not weaker than the WP requirement.
+
+Profile matching compares the model path without the provider prefix: `commandcode/deepseek/deepseek-v4.1-flash` and `deepseek/deepseek-v4.1-flash` are the same profile, while the reasoning level must match exactly. Distinct model names that only share a segment prefix (for example `gpt-6-sol` and `gpt-6-sol-lite`) never match.
 
 In the attestation path the helper still validates the required profile against the project hierarchy (`UNRANKED_REQUIRED_PROFILE` when unknown), records `attested: true` and `current: null`, and never fabricates a measured profile. Missing or unranked profiles fail closed with `SESSION_PROFILE_UNKNOWN` or `UNRANKED_CURRENT_PROFILE`.
 

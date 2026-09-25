@@ -354,6 +354,23 @@ it("resolves the current profile from the session environment without flags", ()
     assert.equal(result.current.reasoning, "medium");
 });
 
+it("matches the session profile across provider prefixes", () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "Provider agnostic"}], "user-input:provider-agnostic");
+
+    const result = checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+        env: {
+            OPENCODE_SESSION_MODEL: "commandcode/openai/gpt-5.6-sol",
+            OPENCODE_SESSION_VARIANT: "medium",
+        },
+    });
+
+    assert.equal(result.sufficient, true);
+    assert.equal(result.action, "execute");
+    assert.equal(result.current.model, "commandcode/openai/gpt-5.6-sol");
+    assert.equal(result.current.rank, 1);
+});
+
 it("lets explicit flags override the session environment", () => {
     const root = temporaryRepository();
     const {planPath} = makePlan(root, [{id: "WP1", title: "Flag precedence"}], "user-input:flag-precedence");
