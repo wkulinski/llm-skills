@@ -1,13 +1,11 @@
 ---
 name: module-atlas-sync
 description: >-
-  Utrzymuj atlas modułów wskazany przez `MODULE_INDEX_DOC` jako zwięzłą mapę
-  ról modułów: pilnuj ról modułów, punktów wejścia, powiązań, API modułów oraz
-  odnośników do `MAIN_DOC` i README modułów wskazanych przez
-  `MODULE_DOCS_GLOB`. Używaj, gdy zmienia się struktura modułów, dokumentacja
-  modułów, relacje między modułami, publiczne API modułów albo gdy trzeba
-  świadomie zaktualizować atlas.
+  Utrzymuje atlas modułów wskazany przez `MODULE_INDEX_DOC` jako zwięzłą mapę
+  ról, punktów wejścia, powiązań i API modułów oraz odnośników do `MAIN_DOC`.
+  Użyj, gdy zmienia się struktura lub dokumentacja modułów.
 shared_files:
+  - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/symbolic-navigation-and-editing-policy.md
   - _shared/scripts/env-load.sh
@@ -15,14 +13,10 @@ shared_files:
 
 # $module-atlas-sync
 
-## Reguły rozwiązywania ścieżek
-- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
-
-## Priorytet zasad (globalny kontrakt)
-1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+## Kontrakt struktury skilla
+- Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
+  ścieżek, priorytet zasad i semantyka `shared_files` (deklaracja dostępności
+  i odczyt na żądanie).
 
 ## Cel
 Utrzymuj i aktualizuj atlas modułów wskazany przez `MODULE_INDEX_DOC` tak, aby

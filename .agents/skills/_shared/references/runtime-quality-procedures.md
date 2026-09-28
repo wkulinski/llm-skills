@@ -17,7 +17,7 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
    - `resolve_tool_cmd` ładuje aktywne pliki env repo automatycznie.
    - wyjątek: `$qa-run` w trybie macierzy JSON uruchamia komendy 1:1 z `.agents/qa-run.matrix.json` (bez discovery entrypointów).
    - punktowe testy i komendy diagnostyczne uruchamiaj wyłącznie przez kanoniczny entrypoint repozytorium; nie składaj równoległych komend, które tworzą inne środowisko niż kanoniczne, w tym inną tożsamość projektu Compose.
-4. Jeśli pracujesz jako główny agent LLM lub użytkownik prosi o odświeżenie kontekstu, uruchom `$context-refresh`. Delegowane subagenty nie uruchamiają go automatycznie; stosują kontrakt swojego promptu i manifest przekazany przez agenta głównego. Wyjątkiem jest jawnie zlecony `context-refresher`.
+4. Uruchom `$context-refresh` tylko wtedy, gdy brakuje ważnego manifestu kontekstu, kontekst jest nieaktualny albo zadanie jest przekrojowe lub nieznane; użytkownik może też jawnie zlecić odświeżenie kontekstu. Gdy ważny manifest istnieje, działaj na nim i wykonuj odczyty punktowe. Delegowane subagenty nie uruchamiają go automatycznie; stosują kontrakt swojego promptu i manifest przekazany przez agenta głównego. Wyjątkiem jest jawnie zlecony `context-refresher`.
 
 ## 2. Po utworzeniu nowego pliku
 1. Podejrzyj zawartość pliku i sprawdź, czy powstał poprawnie.

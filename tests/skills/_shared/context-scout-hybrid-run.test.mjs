@@ -1002,17 +1002,22 @@ test("staged worktree drift during evaluate aborts before accepting a report", (
 });
 
 test("unstaged worktree drift during evaluate aborts before accepting a report", () => {
-    const relativePath = "AGENTS.md";
+    const relativePath = `.context-unstaged-drift-${process.pid}-${Date.now()}`;
     const absolutePath = path.join(ROOT, relativePath);
-    const original = fs.readFileSync(absolutePath, "utf8");
-    const clean = spawnSync("git", ["diff", "--quiet", "--", relativePath], {cwd: ROOT, encoding: "utf8"});
-    assert.equal(clean.status, 0, "AGENTS.md must be clean before the drift test");
     const prepared = prepare(makeFixtureDir(), "stale-unstaged-worktree");
 
     assertEvaluateRejectsWorktreeDrift(
         prepared,
-        () => fs.writeFileSync(absolutePath, `${original}\nunstaged drift\n`),
-        () => fs.writeFileSync(absolutePath, original),
+        () => {
+            fs.writeFileSync(absolutePath, "unstaged drift\n");
+            const intent = spawnSync("git", ["add", "-N", "--", relativePath], {cwd: ROOT, encoding: "utf8"});
+            assert.equal(intent.status, 0, intent.stderr);
+        },
+        () => {
+            const reset = spawnSync("git", ["reset", "--quiet", "--", relativePath], {cwd: ROOT, encoding: "utf8"});
+            assert.equal(reset.status, 0, reset.stderr);
+            fs.rmSync(absolutePath, {force: true});
+        },
         "unstaged_sha256",
     );
 });

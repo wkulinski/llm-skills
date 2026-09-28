@@ -1,10 +1,11 @@
 ---
 name: context-refresh
 description: >-
-  Inicjalizacja i odświeżenie kontekstu projektu. Intencje: załaduj/odśwież
-  kontekst, wczytaj dokumenty startowe, sprawdź stan repo. Użyj, gdy proszą o
-  załadowanie kontekstu lub gdy uruchamiany jest $context-refresh.
+  Inicjalizuje lub odświeża kontekst projektu: wczytuje dokumenty startowe,
+  reguły, env i stan repo oraz tworzy manifest kontekstu. Użyj, gdy brakuje
+  ważnego manifestu, kontekst jest nieaktualny albo zadanie jest przekrojowe.
 shared_files:
+  - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
@@ -18,14 +19,10 @@ shared_files:
 
 # $context-refresh
 
-## Reguły rozwiązywania ścieżek
-- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
-
-## Priorytet zasad (globalny kontrakt)
-1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+## Kontrakt struktury skilla
+- Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
+  ścieżek, priorytet zasad i semantyka `shared_files` (deklaracja dostępności
+  i odczyt na żądanie).
 
 ## Cel
 Celem jest załadowanie lub odświeżenie kontekstu projektu w sposób spójny i skalowalny, tak aby dalsze działania były oparte na:
@@ -35,17 +32,22 @@ Celem jest załadowanie lub odświeżenie kontekstu projektu w sposób spójny i
 
 ## Role i lifecycle
 
-Ten skill jest procedurą dla agenta głównego oraz jawnie delegowanego agenta
-`context-refresher`. Przy rozpoczęciu
-nowej sesji lub jawnym odświeżeniu agent główny standardowo deleguje pełny refresh
-do `context-refresher` i korzysta z bezpośredniego wykonania skilla wyłącznie
-jako fallbacku po niedostępności delegacji, statusie `BLOCKED`/`INCOMPLETE` albo
+Ten skill jest procedurą wykonania refreshu dla agenta głównego oraz jawnie
+delegowanego agenta `context-refresher`. Kiedy refresh jest wymagany, wyznacza
+`<skills_root>/_shared/references/runtime-quality-procedures.md`; root
+`AGENTS.md` jest tylko entrypointem. Gdy istnieje ważny manifest kontekstu,
+kontekst nie jest nieaktualny, a zadanie nie jest przekrojowe ani nieznane,
+agent główny może pominąć refresh i działać na tym manifeście oraz odczytach
+punktowych.
+
+Gdy refresh jest wykonywany przy rozpoczęciu nowej sesji lub na jawne
+odświeżenie, agent główny standardowo deleguje pełny refresh do
+`context-refresher` i korzysta z bezpośredniego wykonania skilla wyłącznie jako
+fallbacku po niedostępności delegacji, statusie `BLOCKED`/`INCOMPLETE` albo
 nieudanym `validate`/`verify` manifestu. Delegowane role repozytoryjne, w
 szczególności `context-scout`, nie uruchamiają tego skilla automatycznie.
 Otrzymują od agenta głównego manifest i wykonują wyłącznie zakres opisany w
 kontrakcie `<skills_root>/_shared/references/context-subagent-contract.md`.
-
-W tym repozytorium źródłem prawdy dla “procedury startowej” jest ten skill (root `AGENTS.md` jest tylko entrypointem).
 
 ## Wymagane klucze dokumentacji (docs_map)
 - Wymagane:
@@ -79,13 +81,14 @@ Cel: pełniejszy obraz repo + dokumentacji, kosztem czasu i kontekstu.
 
 ### Jak wybrać tryb
 Tryb dotyczy przede wszystkim **zakresu ładowanej dokumentacji**, a nie automatycznego “czytania wszystkich diffów”.
+Refresh pomiń, gdy istnieje ważny manifest kontekstu, kontekst nie jest nieaktualny, a zadanie nie jest przekrojowe ani nieznane; wtedy działaj na manifeście i odczytach punktowych.
 1. Jeśli użytkownik wyraźnie prosi o pełny kontekst: użyj **Full**.
 2. Jeśli zadanie jest przekrojowe (np. zmiany architektury, procesów, wielu modułów) i bez pełnej dokumentacji łatwo popełnić błąd: użyj **Full**.
 3. W pozostałych przypadkach: użyj **Quick**, a brakujące informacje doczytuj **lazy/on-demand** (patrz krok 5).
 
 ## Kroki
-### 0) Wybór trybu (zawsze)
-Ustal, czy wykonujesz `$context-refresh` w trybie **Quick** czy **Full** (sekcja wyżej) i trzymaj się konsekwentnie wybranego trybu.
+### 0) Wybór trybu (gdy refresh jest wykonywany)
+Jeśli zgodnie z sekcją „Jak wybrać tryb” refresh jest pomijany, przejdź od razu do pracy na istniejącym manifeście i odczytach punktowych. W przeciwnym razie ustal, czy wykonujesz `$context-refresh` w trybie **Quick** czy **Full** (sekcja wyżej) i trzymaj się konsekwentnie wybranego trybu.
 
 ### 1) Snapshot repo (zawsze)
 1. Sprawdź `git status -sb`.

@@ -1,9 +1,11 @@
 ---
 name: gh-issue-status-set
 description: >-
-  Ustawia status issue w GitHub Projects v2 na podstawie brancha/issue i danych
-  z GitHub. Dopytuje tylko, gdy brakuje kluczowych danych.
+  Ustawia status issue w GitHub Projects v2 na podstawie brancha lub numeru
+  issue i danych z GitHub; dopytuje tylko o brakujące dane. Użyj, gdy chcesz
+  zaktualizować status issue w projekcie.
 shared_files:
+  - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh
   - _shared/scripts/issue-branch.mjs
@@ -12,14 +14,10 @@ shared_files:
 
 # $gh-issue-status-set
 
-## Reguły rozwiązywania ścieżek
-- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
-
-## Priorytet zasad (globalny kontrakt)
-1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+## Kontrakt struktury skilla
+- Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
+  ścieżek, priorytet zasad i semantyka `shared_files` (deklaracja dostępności
+  i odczyt na żądanie).
 
 ## Cel
 Ustawić status issue w GitHub Projects v2 na podstawie bieżącego brancha, numeru issue i danych z GitHub. Najpierw próbujemy ustalić wszystko automatycznie; dopytujemy tylko, gdy brakuje danych lub jest konflikt.

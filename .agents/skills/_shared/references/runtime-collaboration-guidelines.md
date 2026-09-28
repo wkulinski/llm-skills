@@ -73,6 +73,33 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
   - shape błędów `400` / `403` / `422`, jeśli jest częścią kontraktu i testów,
   - publicznego interface/portu używanego poza lokalnym miejscem implementacji.
 
+## 2b. Bezpieczne workflow bez dodatkowej zgody
+
+Poniższe lokalne, nieinwazyjne czynności wykonuj bez pytania, o ile nie zachodzi
+`STOP_CODE` ani bramka opisana niżej:
+
+- odczyty stanu repozytorium w trybie read-only (`git status`, `git diff`,
+  `git log`, odczyty plików, inspekcja konfiguracji) — bez zmian stanu;
+- punktowe testy i reruny delta wyznaczone przez `targeted-check-decision`,
+  wykonywane na fixture'ach bez dostępu produkcyjnego i ograniczone do
+  `RUN_TARGETED_TEST` (jeden plik testowy albo 1–3 wskazane metody);
+- preflight narzędzi oraz `--help`/`-h` lokalnych entrypointów ustalanych przez
+  `resolve_tool_cmd` (`env-load.sh`), w tym sprawdzenie wersji bibliotek;
+- odczyty plików potrzebne do `read-before-write`, gdy aktualny kontekst nie
+  obejmuje jeszcze ich treści.
+
+Ta lista nie luzuje żadnej bramki:
+
+- nie zmienia ani nie usuwa `STOP_CODES`; blokery nadal wymagają decyzji
+  użytkownika;
+- nie zmienia bramek dla security, migracji i zmian zależności — te nadal
+  wymagają świadomej zgody użytkownika;
+- nie zmienia bramki commitów: `$git-commit` wykonuj wyłącznie po jednoznacznym
+  poleceniu użytkownika;
+- nie zmienia polityki pełnego QA: pełne `$qa-run` nadal wymaga wyraźnego
+  polecenia użytkownika, a lista nie rozszerza punktowego checka do pełnego
+  suite ani pełnej macierzy.
+
 ## 3. Zasady bezpiecznej edycji
 - Nie nadpisuj cudzych zmian i nie edytuj plików „w ciemno”.
 - Przed modyfikacją pliku już zmienionego w repo przeczytaj jego aktualną treść i diff,

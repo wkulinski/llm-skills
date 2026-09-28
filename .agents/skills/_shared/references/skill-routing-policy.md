@@ -13,8 +13,8 @@ procedur wykonawczych opisanych w poszczególnych skillach.
 - **Bezpośrednia implementacja** — zmiana opisana bez odwołania do istniejącego
   planu lub work package.
 - **Jawne wywołanie skilla** — użytkownik wskazuje skill albo jego workflow wprost,
-  np. `$plan-execute`, `$code-implement`, `$task-plan`, `$code-review`, `$review-quick` lub
-  `$git-commit`.
+  np. `$plan-execute`, `$code-implement`, `$task-plan`, `$code-review`, `$review-quick`,
+  `$skill-review` lub `$git-commit`.
 - **Handoff wykonawczy** — `$plan-execute` przekazuje jeden wybrany WP do
   `$code-implement`; nie jest to nowe, niezależne wywołanie orkiestratora.
 
@@ -33,6 +33,8 @@ Stosuj następującą kolejność:
       istniejącego planu → `$code-implement`;
     - pełny albo głęboki przegląd implementacji → `$code-review` w trybie `code`;
     - szybki przegląd bieżących zmian → `$review-quick`;
+    - audyt zgodności skilla, agenta albo reguł instrukcji („zaudytuj
+      skill/instrukcje”) → `$skill-review` w trybie `conformance` albo `standard-gap`;
     - przygotowanie lub wykonanie commita → `$git-commit`.
 3. Jeśli prośba łączy słowa „WP”, „work package”, „plan”, „kontynuuj plan” albo
    „zrealizuj kolejny pakiet” z implementacją, a użytkownik nie wskazał
@@ -89,6 +91,20 @@ Jawne polecenie „zaimplementuj ten już wybrany WP bezpośrednio przez
 `$code-implement` nadal nie zapisuje statusu planu; odpowiedzialność za
 `complete-wp` pozostaje po stronie `$plan-execute` lub użytkownika.
 
+### `$skill-review` jako audytor instrukcji
+
+`$skill-review`:
+
+- ocenia pojedynczy artefakt instrukcji (skill, reguły lokalne albo agenta) albo
+  cały katalog w trybie `catalog` względem standardu autorskiego;
+- zwraca findings z severity i evidence `file:line` albo propozycje
+  `standard-gap`; nie edytuje plików i nie zmienia standardu;
+- **not for**: kod i plany → `$code-review`; dokumentacja domenowa → `$docs-sync`;
+  synchronizacja i edycja reguł lokalnych → `$rules-sync`; odświeżenie indeksu
+  skilli → `$skills-index-refresh`; runtime behavior agentów →
+  `$opencode-workflow-economics` i `$runtime-diagnostician`; tworzenie albo
+  zmiana skilla → `$task-plan` + `$code-implement`.
+
 ## Wznowienie i częściowo wykonany WP
 
 Bieżący working tree, raport implementacji i lokalny stan skilla mogą wskazywać,
@@ -117,6 +133,7 @@ jasnego pytania — nie cichego pominięcia orkiestratora ani zmiany zakresu.
 | Niezależny review istniejącego planu | `$code-review` (`plan`) | findings-first + plan coverage + readiness verdict |
 | Pełny albo głęboki przegląd implementacji | `$code-review` (`code`) | findings-first + coverage + merge verdict |
 | Przejrzyj bieżące zmiany | `$review-quick` | raport findings-first |
+| Zaudytuj skill, instrukcje, agenta albo cały katalog | `$skill-review` | findings-first + severity/evidence; bez edycji plików |
 | Zrób commit | `$git-commit` | procedura QA i commit |
 
 ## Zasada dla dokumentacji skilli

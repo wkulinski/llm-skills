@@ -1,6 +1,10 @@
 ---
 name: frontend-ui-consistency
-description: Konsultuje, audytuje, uspójnia, modyfikuje i tworzy elementy istniejącego interfejsu na podstawie jego wzorców. Używaj także do opiniowania widoków i proponowania zmian przed implementacją. Chroni kontrakty Twig, Symfony UX Live Components i Stimulus oraz wymaga proporcjonalnej weryfikacji przez Playwright CLI.
+description: >-
+  Konsultuje, audytuje i uspójnia elementy istniejącego interfejsu na podstawie
+  jego wzorców; chroni kontrakty Twig, Symfony UX Live Components i Stimulus oraz
+  weryfikuje zmiany przez Playwright CLI. Użyj, gdy tworzysz lub opiniujesz
+  widoki przed implementacją.
 compatibility: opencode
 shared_files:
   - _shared/references/playwright-cli-verification.md

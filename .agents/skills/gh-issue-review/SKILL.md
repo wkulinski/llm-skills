@@ -1,9 +1,10 @@
 ---
 name: gh-issue-review
 description: >-
-  Zlecenie review: push brancha, PR do domyślnej gałęzi repo, status In review,
-  opcjonalny reviewer.
+  Wypycha gałąź, otwiera PR do domyślnej gałęzi repo, ustawia status In review
+  i opcjonalnie przydziela reviewera. Użyj, gdy issue jest gotowe do review.
 shared_files:
+  - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh
   - _shared/scripts/issue-branch.mjs
@@ -12,14 +13,10 @@ shared_files:
 
 # $gh-issue-review
 
-## Reguły rozwiązywania ścieżek
-- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
-
-## Priorytet zasad (globalny kontrakt)
-1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+## Kontrakt struktury skilla
+- Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
+  ścieżek, priorytet zasad i semantyka `shared_files` (deklaracja dostępności
+  i odczyt na żądanie).
 
 ## Cel
 Zautomatyzować zlecenie review: push brancha na origin, utworzenie PR do domyślnej gałęzi repo (lub `--base`), ustawienie statusu w Projects v2 na **In review** oraz (opcjonalnie) request review.

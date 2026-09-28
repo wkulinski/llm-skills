@@ -1,9 +1,11 @@
 ---
 name: review-quick
 description: >-
-  Szybka auto‑weryfikacja bieżących zmian bez pełnej procedury commit. Intencje:
-  szybki review, sprawdź zmiany, szybka weryfikacja. Użyj przy $review-quick.
+  Wykonuje szybką auto-weryfikację bieżących zmian: sprawdza zakres, zgodność
+  z regułami i ryzyka przed commitem. Użyj, gdy potrzebujesz szybkiego review
+  albo wstępnej oceny zmian.
 shared_files:
+  - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/rule-conformance-policy.md
   - _shared/references/php-symfony-postgres-standards.md
@@ -19,14 +21,10 @@ shared_files:
 
 # $review-quick
 
-## Reguły rozwiązywania ścieżek
-- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
-
-## Priorytet zasad (globalny kontrakt)
-1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+## Kontrakt struktury skilla
+- Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
+  ścieżek, priorytet zasad i semantyka `shared_files` (deklaracja dostępności
+  i odczyt na żądanie).
 
 ## Cel
 Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem i zasadami projektu, bez uruchamiania pełnego QA. Ma to wychwycić oczywiste braki, ryzyka i potrzeby testów.

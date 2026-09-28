@@ -1,6 +1,9 @@
 ---
 name: opencode-workflow-economics
-description: Diagnose OpenCode session history to find recurring costly main-agent work, evaluate subagent and fallback economics, and detect possible child-to-parent work duplication. OpenCode-specific collector; diagnostic only.
+description: >-
+  Diagnozuje historię sesji OpenCode: wykrywa powtarzalną kosztowną pracę agenta
+  głównego, ocenia ekonomię subagentów i fallbacków oraz duplikację pracy.
+  Użyj, gdy analizujesz koszty workflow OpenCode. Tylko diagnostyka.
 ---
 
 # OWE — OpenCode Workflow Economics
