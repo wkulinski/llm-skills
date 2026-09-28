@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 HARD=0
 case "${1:-}" in
@@ -10,9 +10,8 @@ case "${1:-}" in
 Usage: paseo-refresh [--hard]
 
 Default:
-  1. Sync skills/agents/profiles with LSM
-  2. Refresh the OpenCode provider in Paseo
-  3. Reload all Paseo agents
+  1. Refresh the OpenCode provider in Paseo
+  2. Reload all Paseo agents
 
 --hard:
   Additionally clear the CommandCode/OpenCode provider cache and restart
@@ -32,22 +31,22 @@ ok()   { printf '\033[1;32mOK:\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mWARN:\033[0m %s\n' "$*" >&2; }
 fail() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; }
 
+wait_for_daemon_ready() {
+  local timeout="${1:-30}" deadline
+  deadline=$((SECONDS + timeout))
+  while (( SECONDS < deadline )); do
+    if paseo daemon status --no-color 2>/dev/null | grep -q '^connectedDaemon: reachable$'; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  return 1
+}
+
 command -v paseo >/dev/null 2>&1 || {
   fail "paseo not found in PATH"
   exit 1
 }
-command -v npx >/dev/null 2>&1 || {
-  fail "npx not found in PATH"
-  exit 1
-}
-
-step "Syncing skills / agents / profiles"
-if npx lsm sync; then
-  ok "LSM sync complete"
-else
-  fail "npx lsm sync failed"
-  exit 1
-fi
 
 if (( HARD )); then
   step "Hard refresh: clearing CommandCode/OpenCode provider cache"
@@ -69,6 +68,17 @@ if (( HARD )); then
       fail "Could not restart Paseo daemon"
       exit 1
     fi
+  fi
+fi
+
+if (( HARD )); then
+  ready_timeout="${PASEO_READY_TIMEOUT:-30}"
+  step "Waiting for Paseo daemon readiness"
+  if wait_for_daemon_ready "$ready_timeout"; then
+    ok "Paseo daemon reachable"
+  else
+    fail "Paseo daemon did not become reachable within ${ready_timeout}s"
+    exit 1
   fi
 fi
 

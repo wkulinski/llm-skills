@@ -54,6 +54,25 @@ function configuredAgentNames() {
     return names;
 }
 
+// Returns the raw text of one `agent.<name>` entry using balanced braces, so
+// nested option objects stay inside the extracted block.
+function configuredAgentBlock(name) {
+    const config = read("opencode.jsonc");
+    const section = config.indexOf('"agent": {');
+    expect(section).toBeGreaterThan(-1);
+    const start = config.indexOf(`"${name}": {`, section);
+    expect(start).toBeGreaterThan(-1);
+    let depth = 0;
+    for (let index = config.indexOf("{", start); index < config.length; index += 1) {
+        if (config[index] === "{") { depth += 1; }
+        if (config[index] === "}") {
+            depth -= 1;
+            if (depth === 0) { return config.slice(start, index + 1); }
+        }
+    }
+    return "";
+}
+
 describe("context scout agent contracts", () => {
     it("requires the shared playbook and retains safety guards", () => {
         expect(fs.existsSync(path.join(ROOT, PLAYBOOK))).toBe(true);
@@ -167,16 +186,27 @@ describe("context scout agent contracts", () => {
         }
     });
 
-    it("documents Luna High as the bounded stronger fallback through the project config runtime contract", () => {
+    it("documents the bounded stronger fallback role through the project config runtime contract", () => {
         const canonical = read(".agents/skills/_shared/references/repository-context-hybrid.md");
         const config = read("opencode.jsonc");
 
-        expect(canonical).toMatch(/`context-scout` \(Luna High\)/);
+        // The policy describes roles, not concrete model names.
+        expect(canonical).toMatch(/The primary is `context-scout-fast`: a fast model with codebase-memory \(CMM\)/);
+        expect(canonical).toMatch(/The fallback is the independent `context-scout`/);
         expect(canonical).toMatch(/higher-reasoning second pass/);
         expect(canonical).toMatch(/at most one fallback/);
-        expect(canonical).not.toMatch(/Luna Low/);
+        expect(canonical).not.toMatch(/Luna|DeepSeek|deepseek|gpt-5|gpt-6/);
 
-        expect(config).toMatch(/"context-scout": \{\s*"model": "openai\/gpt-5\.6-luna",\s*"variant": "high"\s*\}/);
+        // Concrete model and reasoning pairs come from the runtime configuration.
+        expect(canonical).toMatch(/opencode\.jsonc/);
+        expect(canonical).toMatch(/\.agents\/config\/model-hierarchy\.json/);
+
+        // Both roles stay backed by project configuration with a model and a reasoning setting.
+        for (const name of ["context-scout-fast", "context-scout"]) {
+            const block = configuredAgentBlock(name);
+            expect(block).toMatch(/"model":/);
+            expect(block).toMatch(/"variant"|"thinking"/);
+        }
 
         expect(config).not.toMatch(/OPENCODE_AGENT_/);
 

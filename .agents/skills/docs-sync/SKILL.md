@@ -1,11 +1,11 @@
 ---
 name: docs-sync
 description: >-
-  Aktualizacja i porządkowanie dokumentacji po większych zmianach. Intencje:
-  sprawdź spójność dokumentacji, scal duplikaty, usuń rozbieżności, zaktualizuj
-  odwołania. Użyj, gdy proszą o przegląd spójności dokumentów lub przy
-  $docs-sync.
+  Aktualizuje i porządkuje dokumentację po większych zmianach: scala duplikaty,
+  usuwa rozbieżności, aktualizuje odwołania i sprawdza spójność. Użyj, gdy
+  dokumenty wymagają przeglądu po zmianach w kodzie lub strukturze.
 shared_files:
+  - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/cqrs-monolith-standard-overrides.md
@@ -14,14 +14,10 @@ shared_files:
 
 # $docs-sync
 
-## Reguły rozwiązywania ścieżek
-- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
-
-## Priorytet zasad (globalny kontrakt)
-1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+## Kontrakt struktury skilla
+- Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
+  ścieżek, priorytet zasad i semantyka `shared_files` (deklaracja dostępności
+  i odczyt na żądanie).
 
 ## Cel
 Celem jest wykrycie i usunięcie duplikatów lub sprzeczności w dokumentacji oraz przywrócenie zasady jednego źródła prawdy.

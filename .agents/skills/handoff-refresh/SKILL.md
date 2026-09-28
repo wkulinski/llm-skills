@@ -1,23 +1,20 @@
 ---
 name: handoff-refresh
 description: >-
-  Przygotuj zrzut bieżącego stanu kontekstu dla kolejnego agenta LLM. Intencje:
-  handoff, przekazanie kontekstu, podsumuj stan dla kolejnego agenta. Użyj przy
-  $handoff-refresh.
+  Przygotowuje zrzut bieżącego stanu kontekstu dla kolejnego agenta LLM.
+  Użyj, gdy przekazujesz kontekst dalej, kończysz sesję lub wznawiasz pracę
+  w nowej sesji.
 shared_files:
+  - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
 ---
 
 # $handoff-refresh
 
-## Reguły rozwiązywania ścieżek
-- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
-
-## Priorytet zasad (globalny kontrakt)
-1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+## Kontrakt struktury skilla
+- Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
+  ścieżek, priorytet zasad i semantyka `shared_files` (deklaracja dostępności
+  i odczyt na żądanie).
 
 ## Cel
 Celem jest przygotowanie zwięzłego handoffu dla kolejnego agenta, zawierającego aktualny stan, ryzyka i kolejne kroki. Dzięki temu następna osoba może płynnie kontynuować pracę.

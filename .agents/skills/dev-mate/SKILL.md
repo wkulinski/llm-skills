@@ -1,26 +1,22 @@
 ---
 name: dev-mate
 description: >-
-  Orkiestracja komend CLI AI Mate do diagnozy runtime i introspekcji aplikacji:
-  analiza logów Monolog, profilera Symfony, listy serwisów DI oraz sanity
-  checków środowiska przez entrypoint repo wyznaczony przez `resolve_tool_cmd`.
-  Użyj, gdy trzeba zebrać ustrukturyzowane dowody przed implementacją, review
-  albo analizą błędu.
+  Orkiestruje komendy CLI AI Mate do diagnozy runtime i introspekcji aplikacji:
+  logi Monolog, profiler Symfony, lista serwisów DI i sanity checki środowiska.
+  Użyj, gdy potrzebujesz ustrukturyzowanych dowodów przed implementacją, review
+  lub analizą błędu.
 shared_files:
+  - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh
 ---
 
 # $dev-mate
 
-## Reguły rozwiązywania ścieżek
-- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
-
-## Priorytet zasad (globalny kontrakt)
-1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+## Kontrakt struktury skilla
+- Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
+  ścieżek, priorytet zasad i semantyka `shared_files` (deklaracja dostępności
+  i odczyt na żądanie).
 
 ## Cel
 Użyć komend CLI AI Mate jako warstwy diagnostycznej do zbierania ustrukturyzowanych dowodów z logów, profilera, kontenera DI i środowiska uruchomieniowego. Skill ma pomóc przejść od potrzeby diagnostycznej do konkretnego zestawu komend, a potem do kolejnego kroku w repo.

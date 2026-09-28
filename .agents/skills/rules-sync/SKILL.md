@@ -1,11 +1,11 @@
 ---
 name: rules-sync
 description: >-
-  Synchronizacja lokalnych wytycznych współpracy i jakości z baseline
-  `skills/_shared`: usuwa duplikaty z `AGENTS.md`/docs, zostawia lokalne
-  nadpisania i raportuje je jawnie. Użyj po synchronizacji skilli lub przy
-  porządkowaniu zasad.
+  Synchronizuje lokalne wytyczne współpracy i jakości z baseline `_shared`:
+  usuwa duplikaty z `AGENTS.md` i docs, zostawia lokalne nadpisania i raportuje
+  je jawnie. Użyj, gdy porządkujesz zasady po synchronizacji skilli.
 shared_files:
+  - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
@@ -14,14 +14,10 @@ shared_files:
 
 # $rules-sync
 
-## Reguły rozwiązywania ścieżek
-- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
-
-## Priorytet zasad (globalny kontrakt)
-1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+## Kontrakt struktury skilla
+- Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
+  ścieżek, priorytet zasad i semantyka `shared_files` (deklaracja dostępności
+  i odczyt na żądanie).
 
 ## Cel
 Celem jest precyzyjna synchronizacja lokalnych zasad repo z aktualnym stanem skilli i `_shared`, tak aby:

@@ -1,10 +1,15 @@
 ---
 name: code-review
-description: Deep, read-only review of software changes and task plans. Reviews working-tree, staged, commit-range, branch, PR, file, pasted-code, or existing-plan targets against requirements and repository conventions. Uses risk-based review depth, traces blast radius or plan dependencies beyond the artifact, validates findings with evidence, and filters false positives before a merge or execution-readiness verdict. Use with `$code-review` for a full review.
+description: >-
+  Dogłębny, tylko odczytowy przegląd zmian w kodzie i planów zadań: ocenia je
+  względem wymagań i konwencji repo, śledzi wpływ poza artefaktem i filtruje
+  fałszywe trafienia. Użyj, gdy potrzebujesz werdyktu przed merge lub wdrożeniem
+  planu.
 compatibility: Git-based projects.
 metadata:
   mode: read-only
 shared_files:
+  - code-review/references/review-checklists.md
   - _shared/references/skill-routing-policy.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
@@ -54,6 +59,20 @@ Prefer a small number of high-confidence findings over speculative noise, but do
 - Never invent line numbers, commands, repository conventions, runtimes, package managers, container names, test scripts, or framework behavior.
 - Every accepted finding must be independently checked by the coordinating reviewer before final output.
 - If review coverage is materially limited, say so. Never present a partial review as complete.
+
+## Reference routing
+
+Read only the files required by the active step. Declared references are available on demand, not as mandatory reading.
+
+| Condition | File |
+|---|---|
+| deep review checklists for the active target and risk depth (correctness and propagation, contracts and integrations, state/persistence/data flow, security and privacy, reliability and concurrency, performance, architecture and maintainability, tests and verification) | `<skill_dir>/references/review-checklists.md` |
+| workflow routing and skill-selection guard before this skill starts | `<skills_root>/_shared/references/skill-routing-policy.md` |
+| repository reconnaissance, broad versus targeted reads, and scout lifecycle | `<skills_root>/_shared/references/repository-context-hybrid.md` |
+| applicable-rules register semantics (source, scope, force, evidence, result) | `<skills_root>/_shared/references/rule-conformance-policy.md` |
+| working-tree change inventory | `<skills_root>/_shared/scripts/change-inventory.mjs` |
+| rendered UI change and Playwright checkpoint | `<skills_root>/_shared/references/playwright-cli-verification.md` |
+| plan target contract owned by `$task-plan` | `<skills_root>/task-plan/SKILL.md` |
 
 ## 1. Resolve review target and scope
 
@@ -221,7 +240,7 @@ second full implementation discovery pass.
 
 ## 4. Assess risk and choose review depth
 
-Use one coordinating reviewer for every review. A small/local change with simple behavior needs only the directly relevant checks. A cross-system or high-risk change needs several bounded passes by the same coordinator, selected from the review lenses in Section 5.
+Use one coordinating reviewer for every review. A small/local change with simple behavior needs only the directly relevant checks. A cross-system or high-risk change needs several bounded passes by the same coordinator, selected from the deep review checklists referenced in Section 5.
 
 Increase review depth when the change spans subsystems or has material risk involving one or more of:
 
@@ -264,186 +283,10 @@ Record one gate outcome in the coverage/summary:
 
 ## 5. Deep review contract
 
-Trace risk beyond edited lines as far as needed to evaluate behavior.
-
-### Correctness and propagation
-
-Check where relevant:
-
-- requirements/spec alignment
-- branch, state-machine, and lifecycle logic
-- boundary, empty, invalid, and exceptional inputs
-- error propagation and recovery paths
-- callers, alternate entry points, and consumers
-- stale assumptions in tests, fixtures, configuration, or documentation that are behaviorally significant
-
-If a public name, signature, field, message, event, configuration key, output, or other contract changes, search for producers, consumers, and assertions of the old contract.
-
-### Contracts and integrations
-
-When behavior crosses a boundary, inspect both sides of that boundary.
-
-Examples include:
-
-- request/response or command/event contracts
-- serialization/deserialization
-- internal module interfaces
-- external integrations
-- generated artifacts and source-of-truth relationships
-- compatibility with older/newer consumers when compatibility matters
-
-Do not assume a local change is safe merely because the edited file is internally consistent.
-
-### State, persistence, and data flow
-
-When stateful behavior changes, inspect where relevant:
-
-- creation and consumption of identifiers/values being matched
-- deduplication, early-return, skip, cache, and guard logic
-- migrations and existing-data implications
-- transactional/atomicity boundaries
-- partial failure and retry behavior
-- data loss, duplication, stale state, or inconsistent state transitions
-- serialization and compatibility of stored data
-
-### Security and privacy
-
-Inspect only relevant trust boundaries, including where applicable:
-
-- authorization and isolation
-- untrusted input crossing into privileged operations
-- injection or unsafe interpretation of input
-- path/filesystem/network/command boundaries
-- secret or sensitive-data exposure
-- data newly visible to a broader observer
-- unsafe deserialization or dynamic execution
-
-A pre-existing datum exposed to a new observer is still a security/privacy change.
-
-### Reliability and concurrency
-
-Where relevant, inspect:
-
-- retries and idempotency
-- ordering guarantees
-- duplicate delivery/execution
-- races and lost updates
-- locking or atomicity assumptions
-- timeout/cancellation behavior
-- cleanup on failure
-- restart/resume behavior
-- scheduled or bulk execution blast radius
-
-### Performance
-
-Report performance issues only when they are meaningful for realistic workloads.
-
-Look for:
-
-- repeated remote/storage I/O
-- unbounded work or result sets
-- accidental multiplicative work
-- pathological algorithmic growth
-- missing batching/pagination/streaming where scale requires it
-- expensive work in hot paths
-- resource growth in long-running processes
-
-Do not report micro-optimizations without evidence of practical impact.
-
-### Architecture and maintainability
-
-Review architecture only when it affects correctness, change risk, or long-term maintainability.
-
-Check:
-
-- consistency with established project boundaries
-- misplaced or duplicated business policy
-- inappropriate coupling across boundaries
-- abstractions that hide important behavior or multiply failure modes
-- dependency additions that duplicate established capabilities
-- changes that make future correctness materially harder to reason about
-
-When a change modifies or removes a mechanism, check whether the artifacts that
-describe the target state now match it: the instructions an agent follows, the
-documentation, the scope of new plans, and the tests. A named exception that only
-preserves the old implementation is removed or replaced by the general target rule.
-An exception that carries necessary provenance or a concrete migration contract
-stays. This is an assessment of relevance, not a blacklist of a name.
-
-Do not block on “I would design it differently.”
-
-### Tests and verification
-
-Treat test quality as first-class.
-
-Check whether tests:
-
-- cover the intended changed behavior
-- include regression coverage for bug fixes
-- exercise meaningful negative/error/boundary paths
-- cover distinct execution paths that can actually fail
-- validate contracts rather than implementation trivia
-- can fail for the defect they claim to prevent
-- derive their expected result from an authoritative requirement, contract, or
-  independently established invariant rather than the implementation's current
-  output
-- would have failed before the regression was fixed when that can be safely
-  established, rather than merely passing against the new implementation
-- control or explicitly isolate time, time zone, locale, randomness, ordering,
-  asynchronous completion, external I/O, and shared state whenever they can
-  affect the result
-- use stable contracts, roles, or selectors. A test may cover translated or
-  rendered UI behavior, but should not couple to incidental copy, fragile DOM
-  structure, or parser output when a stable behavioral contract exists
-- are not duplicates whose only difference is data that cannot change the
-  exercised behavior
-- exercise the meaningful failure mode of a stateful, cross-boundary, or
-  otherwise complex mechanism; a trivial unit assertion is not sufficient as
-  the only evidence for the mechanism's higher-risk behavior
-
-Do not request tests that merely vary values without exercising a distinct behavior.
-
-Do not reject a test merely because it uses a translation, DOM, or fixture. The
-defect is unstable coupling or an untrustworthy oracle, not the technology in
-isolation.
-
-#### Durable tests versus one-off change verification
-
-Apply this gate to both implemented tests and tests proposed in a plan. A proof
-that a change was completed is not automatically a lasting specification of the
-system. Do not turn the change list into a list of permanent tests.
-
-For each proposed permanent test, identify the rule of the target system and
-ask: **Would we need this separate scenario if the system had been built from
-scratch to the target contract, without knowing the removed code, old limit, or
-history of the task?** Check the need for the scenario, its special input values,
-and its assertions—not just its name or stated justification.
-
-- If removing that history removes the reason for the separate scenario, require
-  its removal from the permanent suite or planned test scope. Keep any necessary
-  proof of the change as a one-off execution check.
-- If an existing test owns the target rule, prefer updating that test. A new
-  permanent scenario needs a distinct case justified by the target contract,
-  not merely a difference between the old and new implementation.
-- A test failing before the fix is useful regression evidence, but is not by
-  itself a reason to retain a separate test. Apply both this gate and the
-  regression checks above.
-- History alone is not a defect. A scenario that verifies an actual migration
-  contract, a compatibility guarantee, or a target invariant that the system must
-  hold independently of the removed implementation keeps its permanent place.
-  Distinguish that case from a scenario whose only reason to exist is the removed
-  implementation, and decide each planned test separately rather than replacing the
-  whole question with a general coverage statement.
-
-Example: after removing a limit of 10 records, a separate “displays 11 records”
-test justified only by the old limit is change verification, not a permanent
-scenario. A test that the list contains the complete expected set of eligible
-records can specify the target contract, if that is the requirement; first check
-whether the existing list test already owns it. The number 11 in a fixture is
-not itself a defect. Renaming the test or replacing 11 with 17 does not repair a
-scenario whose only reason to exist is the removed limit. Likewise, a negative
-assertion is legitimate when the target contract independently requires an
-absence; removal history alone does not establish that requirement.
+Trace risk beyond edited lines as far as needed to evaluate behavior. Apply only
+the checklists required by the active target and the depth chosen in Section 4;
+they live in `<skill_dir>/references/review-checklists.md` (see "Reference
+routing").
 
 ### Active-plan alignment for code
 
@@ -475,7 +318,7 @@ contract (`<skills_root>/task-plan/SKILL.md`) without editing it:
 - `Direction, simplicity and consistency` names the existing mechanism, simpler alternatives, minimality, and ownership rather than asserting them generically;
 - each WP has an actionable goal, scope, out-of-scope boundary, discovery notes, acceptance criteria, and verification;
 - acceptance criteria have a concrete test or check, and the execution environment/command contract is internally consistent;
-- every planned permanent test passes the **Durable tests versus one-off change verification** gate above, applied to each listed test rather than replaced by a general coverage statement; history-only scenarios are removed from permanent test scope, while a scenario verifying an actual migration contract or target invariant stays, and any necessary one-off checks are explicitly distinguished in `Verification`;
+- every planned permanent test passes the **Durable tests versus one-off change verification** gate from the deep review checklists, applied to each listed test rather than replaced by a general coverage statement; history-only scenarios are removed from permanent test scope, while a scenario verifying an actual migration contract or target invariant stays, and any necessary one-off checks are explicitly distinguished in `Verification`;
 - open questions, missing evidence, or discovery debt that could change public behavior, ownership, WP boundaries, data models, or acceptance criteria are treated as blockers or questions;
 - the plan does not copy global workflow rules, describe its own drafting history, or claim `ready` independently of `$task-plan` validation.
 

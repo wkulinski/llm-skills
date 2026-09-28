@@ -10,7 +10,7 @@ This repository stores reusable LLM skills under `.agents/skills/`.
 - Ready execution plans live in `docs/plans/`; working drafts remain in `docs/drafts/`.
 
 ## Documentation Map
-- [Skills index](./SKILLS.md)
+- [Skills index](./SKILLS.md) — alfabetyczna lista skilli i tabela triggerów (intencja → skill → następny krok); routing głównego workflow opisuje [skill-routing-policy.md](../.agents/skills/_shared/references/skill-routing-policy.md)
 - [Module index](./modules/README.md)
 - [Context scout benchmark](./benchmark/context-scout-fast-vs-inline.md)
 - [Repository-context hybrid protocol](../.agents/skills/_shared/references/repository-context-hybrid.md)

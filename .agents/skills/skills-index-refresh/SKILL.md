@@ -1,26 +1,24 @@
 ---
 name: skills-index-refresh
 description: >-
-  Aktualizacja indeksu lokalnych skills w dokumentacji wskazanej przez
-  AGENTS.md. Intencje: odśwież listę skilli, zaktualizuj indeks SKILLS. Użyj
-  przy $skills-index-refresh.
+  Aktualizuje indeks lokalnych skilli w dokumentacji wskazanej przez
+  `AGENTS.md`. Użyj, gdy lista skilli, ich opisy lub tabela triggerów wymagają
+  odświeżenia.
 shared_files:
+  - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/references/skill-routing-policy.md
 ---
 
 # $skills-index-refresh
 
-## Reguły rozwiązywania ścieżek
-- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
-
-## Priorytet zasad (globalny kontrakt)
-1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+## Kontrakt struktury skilla
+- Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
+  ścieżek, priorytet zasad i semantyka `shared_files` (deklaracja dostępności
+  i odczyt na żądanie).
 
 ## Cel
-Celem jest odświeżenie indeksu skilli tak, aby odzwierciedlał aktualny stan katalogu `../`. Dzięki temu dokumentacja skilli pozostaje kompletna i spójna.
+Celem jest odświeżenie indeksu skilli tak, aby odzwierciedlał aktualny stan katalogu `<skills_root>` i pozwalał wybrać skill po intencji. Indeks zawiera alfabetyczną listę wszystkich skilli oraz tabelę triggerów (intencja → skill → następny krok); odświeżenie aktualizuje lub zachowuje oba elementy i nie zastępuje tabeli gołą listą. Routing głównego workflow pozostaje własnością `<skills_root>/_shared/references/skill-routing-policy.md`.
 
 ## Wymagane klucze dokumentacji (docs_map)
 - Wymagane:
@@ -31,10 +29,13 @@ Celem jest odświeżenie indeksu skilli tak, aby odzwierciedlał aktualny stan k
 2. Odczytaj klucz `SKILLS_INDEX_DOC`.
    - Jeśli mapy lub klucza brakuje: zatrzymaj się i dopytaj użytkownika o ścieżkę indeksu skilli.
    - Jeśli plik nie istnieje: utwórz go razem z brakującymi katalogami nadrzędnymi.
-3. Przejrzyj katalog `../` i zbierz wszystkie dostępne skille.
-4. Zaktualizuj `SKILLS_INDEX_DOC`, aby lista skilli była kompletna i posortowana alfabetycznie po nazwie skilla.
-5. Usuń odwołania do nieistniejących skilli i dodaj brakujące.
-6. Upewnij się, że nazwy w indeksie mają prefiks `$`.
+3. Przejrzyj katalog `<skills_root>` i zbierz wszystkie dostępne skille oraz ich triggery z pól `description` (`Użyj, gdy …`).
+4. Zaktualizuj `SKILLS_INDEX_DOC`, zachowując oba elementy formatu:
+   - alfabetyczną listę wszystkich skilli z prefiksem `$`;
+   - tabelę triggerów w kolumnach `Intencja | Skill | Następny krok`, pogrupowaną na planowanie, implementację, review kodu i planu, review instrukcji, QA i commit, dokumentację, obsługę issue oraz diagnostykę, pokrywającą wszystkie skille z listy.
+5. Dla wierszy głównego workflow użyj tabeli routingu z `<skills_root>/_shared/references/skill-routing-policy.md` jako źródła; nie zmieniaj tej polityki lokalnie i nie kopiuj z niej reguł, których indeks nie potrzebuje.
+6. Usuń odwołania do nieistniejących skilli, dodaj brakujące i uzupełnij brakujące triggery na podstawie opisu skilla.
+7. Upewnij się, że nazwy w indeksie mają prefiks `$`.
 
 ## Format odpowiedzi
 - Wynik: krótka informacja, czy indeks został zaktualizowany lub czy nie było zmian.
@@ -58,9 +59,11 @@ Celem jest odświeżenie indeksu skilli tak, aby odzwierciedlał aktualny stan k
   ```
 
 ## Efekt
-`SKILLS_INDEX_DOC` zawiera aktualną, alfabetyczną listę skilli z prefiksem `$` albo potwierdzenie braku zmian.
+`SKILLS_INDEX_DOC` zawiera aktualną, alfabetyczną listę skilli z prefiksem `$` oraz tabelę triggerów pokrywającą wszystkie skille, albo potwierdzenie braku zmian.
 
 ## Przypadki brzegowe
 - Katalog skilla bez `SKILL.md` — zgłoś i pomiń.
+- Istniejący indeks bez tabeli triggerów — dodaj tabelę zamiast poprzestawać na liście.
+- Skill bez czytelnego triggera w `description` — zbuduj intencję z opisu i zgłoś to w Uwagach.
 - Brak mapy `docs_map` w `AGENTS.md` — dopytaj użytkownika o ścieżkę indeksu skilli.
 - Brak klucza `SKILLS_INDEX_DOC` w `docs_map` — dopytaj użytkownika o ścieżkę indeksu skilli.

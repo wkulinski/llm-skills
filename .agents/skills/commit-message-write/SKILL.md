@@ -1,10 +1,11 @@
 ---
 name: commit-message-write
 description: >-
-  Generowanie treści commita na podstawie bieżących zmian i zapis do pliku
-  `COMMIT_MESSAGE_DIR/commit-message.txt`. Intencje: przygotuj treść commita,
-  zapisz commit message do pliku. Użyj przy $commit-message-write.
+  Generuje treść commita na podstawie bieżących zmian i zapisuje ją do
+  `COMMIT_MESSAGE_DIR/commit-message.txt`. Użyj, gdy chcesz przygotować commit
+  message przed `$git-commit`.
 shared_files:
+  - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
@@ -15,14 +16,10 @@ shared_files:
 
 # $commit-message-write
 
-## Reguły rozwiązywania ścieżek
-- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
-
-## Priorytet zasad (globalny kontrakt)
-1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+## Kontrakt struktury skilla
+- Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
+  ścieżek, priorytet zasad i semantyka `shared_files` (deklaracja dostępności
+  i odczyt na żądanie).
 
 ## Cel
 Celem jest przygotowanie kompletnej treści commita (subject + body) na podstawie bieżących zmian i zapisanie jej do jednego pliku roboczego:

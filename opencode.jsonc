@@ -23,12 +23,7 @@
             "*.env.example": "allow",
             "**/.*": "allow",
             "**/.*/*": "allow",
-            "**/.*/*/**": "allow",
-            // Scout attempts must not read primary artifacts from another attempt.
-            // The benchmark/helper use separate report paths; the deny rules are
-            // intentionally narrower than the existing workspace/tmp policy.
-            "**/*primary*.report.json": "deny",
-            "**/*primary*.ledger.json": "deny"
+            "**/.*/*/**": "allow"
         },
         "external_directory": {
             "/tmp/*": "allow",

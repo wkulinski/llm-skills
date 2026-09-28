@@ -37,7 +37,7 @@ Match the language and tone of the existing skill when extending it.
 When adding a skill, include at least one concrete command example in `SKILL.md`.
 
 ## Commit & Pull Request Guidelines
-This branch currently has no commit history, so no existing commit convention can be inferred. Use clear, conventional messages:
+Keep each commit scoped to one change and use clear, conventional messages:
 
 - `docs(skills): add contributor notes for qa-run`
 - `fix(code-implement): guard missing state file`
@@ -56,12 +56,17 @@ PRs should include:
 ## Documentation path map contract
 Skills that read/write project documentation use a path map from the **consumer project** `AGENTS.md`.
 
-Minimal example (for this repo):
+Active `docs_map` for this repository:
 ```yaml
 docs_map:
     MAIN_DOC: docs/README.md
+    AGENT_RULES_DOC: AGENTS.md
+    MODULE_INDEX_DOC: docs/modules/README.md
+    MODULE_DOCS_GLOB: docs/modules/*/README.md
+    COMMIT_MESSAGE_DIR: /tmp/
     HANDOFF_DOC: var/agent/HANDOFF.md
     SKILLS_INDEX_DOC: docs/SKILLS.md
+    CACHE_PATH: var/agent/cache/
 ```
 
 Notes:
@@ -69,42 +74,16 @@ Notes:
 - In target projects define only keys required by skills you plan to run.
 - Missing required key should block only that skill and trigger a question for the missing path.
 
-### Documentation path map contract (project `AGENTS.md`)
-Skills that read/write project documentation use a path map from the **consumer project** `AGENTS.md`.
-
-Use this block in project `AGENTS.md`:
-```yaml
-docs_map:
-    MAIN_DOC: docs/README.md
-    AGENT_RULES_DOC: AGENTS.md
-    MODULE_INDEX_DOC: docs/modules/README.md
-    MODULE_DOCS_GLOB: docs/modules/*/README.md
-    COMMIT_MESSAGE_DIR: /tmp/
-    HANDOFF_DOC: var/agent/HANDOFF.md
-    SKILLS_INDEX_DOC: docs/SKILLS.md
-    CACHE_PATH: var/agent/cache/
-```
-
-## Active docs_map
-```yaml
-docs_map:
-    MAIN_DOC: docs/README.md
-    AGENT_RULES_DOC: AGENTS.md
-    MODULE_INDEX_DOC: docs/modules/README.md
-    MODULE_DOCS_GLOB: docs/modules/*/README.md
-    COMMIT_MESSAGE_DIR: /tmp/
-    HANDOFF_DOC: var/agent/HANDOFF.md
-    SKILLS_INDEX_DOC: docs/SKILLS.md
-    CACHE_PATH: var/agent/cache/
-```
-
 ## Role agentów i lifecycle kontekstu
 
 Agent główny odpowiada za rozmowę z użytkownikiem, interpretację issue, kryteria
-akceptacji i lifecycle kontekstu projektu. Przy rozpoczęciu sesji agenta
-głównego uruchom `$context-refresh`, chyba że aktywny workflow jawnie deleguje
-repozytoryjny rekonesans przez `context-scout-hybrid-run.mjs` i zapisuje ważny
-manifest kontekstu.
+akceptacji i lifecycle kontekstu projektu. Właścicielem procedury startowej jest
+`.agents/skills/_shared/references/runtime-quality-procedures.md`.
+
+Przy rozpoczęciu sesji agenta głównego uruchom `$context-refresh` wyłącznie, gdy
+brakuje ważnego manifestu kontekstu, kontekst jest nieaktualny albo zadanie jest
+przekrojowe lub nieznane. Gdy ważny manifest istnieje, działaj na nim i wykonuj
+odczyty punktowe zamiast powtarzać pełny refresh.
 
 Delegowane subagenty **nie** uruchamiają automatycznie `$context-refresh`.
 Otrzymują zwarty handoff/manifest zamiast kopii treści issue lub pełnej

@@ -1,23 +1,20 @@
 ---
 name: qa-run
 description: >-
-  Deterministyczne uruchomienie QA (linty/testy + review-quick) na podstawie
-  repo-konfigurowalnej macierzy komend JSON, snapshotów i sesji QA. Użyj przy
-  $qa-run.
+  Uruchamia deterministyczne QA (linty, testy i review-quick) na podstawie
+  repo-konfigurowalnej macierzy komend JSON, snapshotów i sesji QA. Użyj, gdy
+  uruchamiasz `$qa-run`.
 shared_files:
+  - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
 ---
 
 # $qa-run
 
-## Reguły rozwiązywania ścieżek
-- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
-
-## Priorytet zasad (globalny kontrakt)
-1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+## Kontrakt struktury skilla
+- Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
+  ścieżek, priorytet zasad i semantyka `shared_files` (deklaracja dostępności
+  i odczyt na żądanie).
 
 ## Cel
 Uruchomić QA w sposób deterministyczny:

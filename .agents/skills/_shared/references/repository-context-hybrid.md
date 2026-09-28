@@ -3,10 +3,16 @@
 ## Purpose
 
 Use one deterministic primary/fallback flow for repository-context discovery.
-The primary is `context-scout-fast` (DeepSeek V4 Flash Max + CMM); the fallback
-is the independent `context-scout` (Luna High). Luna High is intentionally the
-higher-reasoning second pass. Its additional cost is bounded because the helper
+The primary is `context-scout-fast`: a fast model with codebase-memory (CMM)
+access. The fallback is the independent `context-scout`: a separate,
+higher-reasoning second pass without CMM. The fallback is intentionally the
+stronger reasoning role. Its additional cost is bounded because the helper
 authorizes at most one fallback and only after the primary is rejected.
+
+Concrete model and reasoning pairs are runtime configuration, not part of this
+policy: they live in the project `opencode.jsonc` `agent` section and are ranked
+by `.agents/config/model-hierarchy.json`. Keep this document role-based so it
+stays portable across projects and harnesses.
 
 This policy applies to every `repository-context` brief, including `targeted`
 and `cross-layer`. There is no direct scout route: targeted work also starts in

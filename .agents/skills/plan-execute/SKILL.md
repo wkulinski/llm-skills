@@ -1,12 +1,9 @@
 ---
 name: plan-execute
 description: >-
-  Wykonuje gotowy, zwalidowany plan task-plan sekwencyjnie: wybiera pierwszy
-  niezakończony work package, przekazuje go do code-implement i zleca
-  task-plan zapis ukończenia wraz z dowodem. Użyj, gdy użytkownik chce
-  zrealizować istniejący plan (utworzony przez skill task-plan) krok po kroku,
-  wskazuje WP albo prosi o kontynuację/wznowienie planu; nie używaj go do
-  tworzenia nowego planu ani do bezpośredniej implementacji pojedynczej zmiany.
+  Wykonuje gotowy plan task-plan sekwencyjnie: wybiera pierwszy niezakończony
+  work package, zleca implementację i zapis ukończenia z dowodem. Użyj, gdy
+  chcesz zrealizować lub wznowić istniejący plan.
 shared_files:
   - _shared/references/skill-routing-policy.md
   - _shared/scripts/model-hierarchy.mjs

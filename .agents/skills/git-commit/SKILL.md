@@ -1,10 +1,11 @@
 ---
 name: git-commit
 description: >-
-  Pełna procedura testów, walidacji, przygotowania commit message i commita.
-  Intencje: zrób commit, przygotuj commit, pełna procedura QA+commit-message+commit.
-  Użyj przy $git-commit.
+  Przeprowadza pełną procedurę testów, walidacji i przygotowania treści commita,
+  a następnie tworzy commit. Użyj, gdy chcesz zacommitować zmiany zgodnie
+  z workflow repo.
 shared_files:
+  - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
@@ -13,14 +14,10 @@ shared_files:
 
 # $git-commit
 
-## Reguły rozwiązywania ścieżek
-- Stosuj globalny kontrakt ścieżek z root `AGENTS.md`.
-
-## Priorytet zasad (globalny kontrakt)
-1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+## Kontrakt struktury skilla
+- Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
+  ścieżek, priorytet zasad i semantyka `shared_files` (deklaracja dostępności
+  i odczyt na żądanie).
 
 ## Cel
 Celem jest przeprowadzenie kompletnej procedury QA, przygotowania commit message i commita zgodnie z lokalnymi zasadami. Chodzi o to, by commit był spójny z dokumentacją, procedurami i stanem repozytorium.

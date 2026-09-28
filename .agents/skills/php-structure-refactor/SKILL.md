@@ -1,11 +1,9 @@
 ---
 name: php-structure-refactor
 description: >-
-  Wykonawcze operacje strukturalne i refaktoryzacje kodu PHP z użyciem
-  Phpactora, Rectora oraz opcjonalnego php-cs-fixer po transformacji. Użyj,
-  gdy po zawężeniu zakresu potrzebne są operacje typu move/copy/new class,
-  rename z aktualizacją referencji, transformacje klas/memberów, akcje
-  edytorowe Phpactora albo powtarzalne transformacje AST przez Rectora.
+  Wykonuje operacje strukturalne i refaktoryzacje kodu PHP z użyciem Phpactora,
+  Rectora i opcjonalnego php-cs-fixer. Użyj, gdy po zawężeniu zakresu potrzebujesz
+  move/copy/rename, transformacji klas lub AST.
 shared_files:
   - _shared/scripts/env-load.sh
   - _shared/references/symbolic-navigation-and-editing-policy.md
