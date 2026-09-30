@@ -21,6 +21,7 @@ describe("frontend application access contract", () => {
             "PLAYWRIGHT_GUI_BASE_URL",
             "PLAYWRIGHT_GUI_LOGIN_URL",
             "PLAYWRIGHT_GUI_STORAGE_STATE",
+            "PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR",
             "PLAYWRIGHT_GUI_USER_LOGIN",
             "PLAYWRIGHT_GUI_USER_PASSWORD",
         ];
@@ -60,9 +61,9 @@ describe("frontend application access contract", () => {
     });
 
     it("documents the state, bootstrap, unavailable order and loopback scope without a recipe key", () => {
-        const stateStep = playwrightReference.indexOf("**Stan istnieje**");
-        const bootstrapStep = playwrightReference.indexOf("**Bootstrap**");
-        const unavailableStep = playwrightReference.indexOf("**Brak możliwości uwierzytelnienia**");
+        const stateStep = playwrightReference.indexOf("**Istniejący stan**");
+        const bootstrapStep = playwrightReference.indexOf("**Bootstrap/odnowienie**");
+        const unavailableStep = playwrightReference.indexOf("**Brak dostępu**");
 
         expect(stateStep).toBeGreaterThan(-1);
         expect(bootstrapStep).toBeGreaterThan(stateStep);

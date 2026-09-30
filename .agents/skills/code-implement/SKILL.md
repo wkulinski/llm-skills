@@ -33,6 +33,7 @@ shared_files:
     - _shared/scripts/playwright-preflight.sh
     - _shared/scripts/playwright-auth-bootstrap.sh
     - _shared/scripts/playwright-auth-bootstrap.mjs
+    - _shared/scripts/playwright-auth-finalize.mjs
     - _shared/scripts/targeted-check-decision.mjs
     - _shared/scripts/targeted-check-decision.test.mjs
 ---
@@ -232,8 +233,9 @@ część głównego workflow jakości.
 Jeśli implementacja albo jej punktowa weryfikacja wymaga renderowanej
 przeglądarki, skieruj agenta (także specjalistę od UI) do
 `<skills_root>/_shared/references/playwright-cli-verification.md`. Jedynym
-przygotowaniem dostępu jest `playwright-access-prepare.sh` z `--protected` dla
-chronionego URL-a; nie twórz równoległego preflightu lub logowania. Decyzja,
+przygotowaniem dostępu jest
+`<skills_root>/_shared/scripts/playwright-access-prepare.sh` z `--protected`
+dla chronionego URL-a; nie twórz równoległego preflightu lub logowania. Decyzja,
 czy checkpoint jest konieczny, pozostaje w aktywnym skillu; `Access: READY`
 nie dowodzi działania aplikacji.
 

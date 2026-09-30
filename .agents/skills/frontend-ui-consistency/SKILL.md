@@ -12,6 +12,7 @@ shared_files:
   - _shared/scripts/playwright-access-prepare.sh
   - _shared/scripts/playwright-auth-bootstrap.sh
   - _shared/scripts/playwright-auth-bootstrap.mjs
+  - _shared/scripts/playwright-auth-finalize.mjs
 metadata:
   version: "1.4.0"
   language: "pl"
@@ -78,10 +79,14 @@ Kolejność `state` → wewnętrzny bootstrap → `authentication unavailable`,
 walidację state pod `.playwright-cli/auth/`, zakres loopback (`localhost`,
 `127.0.0.1`, `::1`), bezpieczeństwo credentiali oraz `state-load` określa
 wyłącznie `<skills_root>/_shared/references/playwright-cli-verification.md`.
-Nie uruchamiaj `_shared/scripts/playwright-auth-bootstrap.sh` ani
-`playwright-preflight.sh` bezpośrednio; są wewnętrznymi etapami prepare.
-`Access: READY` potwierdza gotowość przeglądarki i pliku state, nie zalogowanie
-do aplikacji. Potwierdź wynik na chronionym URL-u po `state-load`; przy
+Nie uruchamiaj
+`<skills_root>/_shared/scripts/playwright-auth-bootstrap.sh` ani
+`<skills_root>/_shared/scripts/playwright-preflight.sh` bezpośrednio; są
+wewnętrznymi etapami prepare.
+`Access: READY` dla chronionej strony potwierdza dostęp z odtworzonego stanu,
+ale nie zastępuje checkpointu widoku ani potwierdzenia kontekstu zadania.
+`Access: ACTION_REQUIRED` wymaga dokończenia dozwolonych niesekretnych kroków
+i finalizacji przez ten sam entrypoint zgodnie ze wspólną referencją; przy
 `Access: BLOCKED` przerwij. CDP-only bez lokalnej przeglądarki do bootstrapu
 raportuje `browser-unavailable` (brak automatycznego fallbacku logowania).
 

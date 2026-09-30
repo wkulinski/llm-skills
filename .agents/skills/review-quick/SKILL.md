@@ -17,6 +17,7 @@ shared_files:
   - _shared/scripts/playwright-preflight.sh
   - _shared/scripts/playwright-auth-bootstrap.sh
   - _shared/scripts/playwright-auth-bootstrap.mjs
+  - _shared/scripts/playwright-auth-finalize.mjs
 ---
 
 # $review-quick

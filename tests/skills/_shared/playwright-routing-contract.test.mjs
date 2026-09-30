@@ -7,6 +7,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.
 const SKILLS = path.join(ROOT, ".agents/skills");
 const REFERENCE = "_shared/references/playwright-cli-verification.md";
 const PREPARE = "_shared/scripts/playwright-access-prepare.sh";
+const FINALIZE = "_shared/scripts/playwright-auth-finalize.mjs";
 
 function read(relativePath) {
     return readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -36,6 +37,7 @@ describe("shared Playwright routing", () => {
             const frontmatter = source.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
             expect(frontmatter, entry.name).toContain(`- ${REFERENCE}`);
             expect(frontmatter, entry.name).toContain(`- ${PREPARE}`);
+            expect(frontmatter, entry.name).toContain(`- ${FINALIZE}`);
             expect(source, entry.name).not.toMatch(/\bbash\s+[^\n]*playwright-(?:preflight|auth-bootstrap)\.sh/);
         }
         expect(consumers).toEqual(expect.arrayContaining([
@@ -53,5 +55,8 @@ describe("shared Playwright routing", () => {
         expect(checkpoint.indexOf('goto "$RESOLVED_APPLICATION_URL"')).toBeGreaterThan(checkpoint.indexOf('state-load "$STATE_FILE"'));
         expect(contract).not.toContain('open "$RESOLVED_APPLICATION_URL"');
         expect(contract).toContain('"$PW_CLI" -s="$APP_SESSION" detach');
+        expect(contract).toContain("--finalize --session");
+        expect(contract).toContain("ensure_repo_env_loaded");
+        expect(contract).toContain("Access: ACTION_REQUIRED");
     });
 });

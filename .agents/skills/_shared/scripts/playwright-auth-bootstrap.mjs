@@ -1,13 +1,18 @@
 #!/usr/bin/env node
 
 import {spawnSync} from "node:child_process";
-import {lstatSync, mkdirSync, realpathSync, rmSync} from "node:fs";
+import {randomUUID} from "node:crypto";
+import {chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync} from "node:fs";
 import {createRequire} from "node:module";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 
 const AUTH_OK = "Authentication: OK";
 const AUTH_FAIL = "Authentication: FAIL";
+const AUTH_ACTION_REQUIRED = "Authentication: ACTION_REQUIRED";
+
+const STATUS_READY = "READY";
+const STATUS_ACTION_REQUIRED = "ACTION_REQUIRED";
 
 const EXIT_OK = 0;
 const EXIT_INTERNAL = 1;
@@ -25,6 +30,7 @@ const REASON_INTERNAL_ERROR = "internal-error";
 const DEFAULT_STATE_PATH = ".playwright-cli/auth/storage-state.json";
 const STATE_DIRECTORY_PREFIX = `.playwright-cli${path.sep}auth${path.sep}`;
 const LOGIN_CONFIRM_TIMEOUT_MS = 15000;
+const STATE_FILE_MODE = 0o600;
 
 const PASSWORD_SELECTOR = 'input[type="password"]';
 const LOGIN_SELECTORS = [
@@ -44,7 +50,11 @@ function defaultLog(line) {
     process.stdout.write(`${line}\n`);
 }
 
-function createSafeLog(log, env) {
+function isConfigured(value) {
+    return typeof value === "string" && value.length > 0;
+}
+
+export function createSafeLog(log, env) {
     const secrets = [env?.PLAYWRIGHT_GUI_USER_LOGIN, env?.PLAYWRIGHT_GUI_USER_PASSWORD]
         .filter((value) => typeof value === "string" && value.length > 0)
         .sort((left, right) => right.length - left.length);
@@ -58,7 +68,7 @@ function createSafeLog(log, env) {
     };
 }
 
-function isLoopbackUrl(rawUrl) {
+export function isHttpUrl(rawUrl) {
     if (typeof rawUrl !== "string" || rawUrl.length === 0) {
         return false;
     }
@@ -70,6 +80,16 @@ function isLoopbackUrl(rawUrl) {
         return false;
     }
 
+    if (parsed.username.length > 0 || parsed.password.length > 0) {
+        return false;
+    }
+
+    return ["http:", "https:"].includes(parsed.protocol);
+}
+
+export function isLoopbackUrl(rawUrl) {
+    if (!isHttpUrl(rawUrl)) { return false; }
+    const parsed = new URL(rawUrl);
     const hostname = parsed.hostname.startsWith("[") && parsed.hostname.endsWith("]")
         ? parsed.hostname.slice(1, -1)
         : parsed.hostname;
@@ -77,7 +97,29 @@ function isLoopbackUrl(rawUrl) {
     return ["http:", "https:"].includes(parsed.protocol) && LOOPBACK_HOSTS.has(hostname);
 }
 
-function resolveStatePath(env, cwd) {
+function isSameOrigin(candidateUrl, baseUrl) {
+    try {
+        return new URL(candidateUrl).origin === new URL(baseUrl).origin;
+    } catch {
+        return false;
+    }
+}
+
+function isLoginUrl(candidateUrl, loginUrl) {
+    if (!isConfigured(loginUrl)) {
+        return false;
+    }
+
+    try {
+        const candidate = new URL(candidateUrl);
+        const login = new URL(loginUrl);
+        return candidate.origin === login.origin && candidate.pathname === login.pathname;
+    } catch {
+        return false;
+    }
+}
+
+export function resolveStatePath(env, cwd) {
     const configured = env?.PLAYWRIGHT_GUI_STORAGE_STATE;
     const candidate = typeof configured === "string" && configured.length > 0
         ? configured
@@ -102,7 +144,7 @@ function isRegularFile(filePath) {
     }
 }
 
-function hasSafeStateDirectories(statePath, cwd) {
+export function hasSafeStateDirectories(statePath, cwd) {
     if (statePath === null) {
         return false;
     }
@@ -125,19 +167,19 @@ function hasSafeStateDirectories(statePath, cwd) {
     return true;
 }
 
-function isIgnoredByGit(cwd, filePath) {
+export function isIgnoredByGit(cwd, filePath) {
     const result = spawnSync("git", ["check-ignore", "-q", "--", filePath], {cwd, encoding: "utf8"});
     return !result.error && result.status === 0;
 }
 
-function isUsableExistingState(statePath, cwd) {
+export function isUsableExistingState(statePath, cwd) {
     return statePath !== null
         && hasSafeStateDirectories(statePath, cwd)
         && isRegularFile(statePath.absolute)
         && isIgnoredByGit(cwd, statePath.absolute);
 }
 
-function isAcceptableStateTarget(statePath) {
+export function isAcceptableStateTarget(statePath) {
     if (statePath === null) {
         return false;
     }
@@ -149,16 +191,104 @@ function isAcceptableStateTarget(statePath) {
     }
 }
 
-function removeStateFile(statePath) {
-    if (statePath === null) {
+function removeStateFile(absolutePath) {
+    if (typeof absolutePath !== "string" || absolutePath.length === 0) {
         return;
     }
 
     try {
-        rmSync(statePath.absolute, {force: true});
+        rmSync(absolutePath, {force: true});
     } catch {
         // Best-effort cleanup; the invalid state outcome is already decided.
     }
+}
+
+function createPendingStatePath(statePath) {
+    const name = `pending-${randomUUID()}.json`;
+
+    return {
+        absolute: path.join(path.dirname(statePath.absolute), name),
+        relative: path.posix.join(path.posix.dirname(statePath.relative), name),
+    };
+}
+
+/**
+ * Copies a validated existing storage state to a unique provisional file so an
+ * agent can inspect it without another login attempt. Never touches the
+ * canonical state file.
+ *
+ * @returns {string|null} Repo-relative pending path or null when the state
+ *   cannot be staged safely.
+ */
+function stageExistingStateAsPending(statePath, cwd) {
+    if (!hasSafeStateDirectories(statePath, cwd)) {
+        return null;
+    }
+
+    const pending = createPendingStatePath(statePath);
+    if (!isAcceptableStateTarget(pending) || !isIgnoredByGit(cwd, pending.absolute)) {
+        return null;
+    }
+
+    let contents;
+    try {
+        contents = readFileSync(statePath.absolute);
+    } catch {
+        return null;
+    }
+
+    try {
+        writeFileSync(pending.absolute, contents, {flag: "wx", mode: STATE_FILE_MODE});
+        chmodSync(pending.absolute, STATE_FILE_MODE);
+    } catch {
+        removeStateFile(pending.absolute);
+        return null;
+    }
+
+    if (!isRegularFile(pending.absolute) || !isIgnoredByGit(cwd, pending.absolute)) {
+        removeStateFile(pending.absolute);
+        return null;
+    }
+
+    return pending.relative;
+}
+
+/**
+ * Saves the post-login browser state to a unique provisional file. The canonical
+ * state file is never overwritten during bootstrap.
+ *
+ * @returns {Promise<string|null>} Repo-relative pending path or null when the
+ *   state cannot be staged safely.
+ */
+async function saveProvisionalState(context, statePath, cwd) {
+    const pending = createPendingStatePath(statePath);
+
+    try {
+        mkdirSync(path.dirname(statePath.absolute), {recursive: true});
+        if (!hasSafeStateDirectories(statePath, cwd) || !isAcceptableStateTarget(pending)
+            || !isIgnoredByGit(cwd, pending.absolute)) {
+            return null;
+        }
+        writeFileSync(pending.absolute, "", {flag: "wx", mode: STATE_FILE_MODE});
+        await context.storageState({path: pending.absolute});
+        chmodSync(pending.absolute, STATE_FILE_MODE);
+    } catch {
+        removeStateFile(pending.absolute);
+        return null;
+    }
+
+    if (!isRegularFile(pending.absolute) || !isIgnoredByGit(cwd, pending.absolute)) {
+        removeStateFile(pending.absolute);
+        return null;
+    }
+
+    return pending.relative;
+}
+
+function infrastructureError(reason) {
+    const error = new Error(reason);
+    error.reason = reason;
+    return error;
 }
 
 async function firstVisible(root, selectors) {
@@ -205,6 +335,87 @@ export async function discoverLoginForm(page) {
 }
 
 /**
+ * Verifies an existing storage state against the protected application page in
+ * a fresh browser context. Returns false for an authentication denial or an
+ * unusable state file; throws an explicit infrastructure error when the browser
+ * cannot be used (never reported as expired authentication).
+ *
+ * @param {{
+ *   playwright: object,
+ *   statePath: {absolute: string, relative: string},
+ *   url: string,
+ *   selector: string,
+ *   loginUrl?: string,
+ * }} options
+ * @returns {Promise<boolean>}
+ */
+export async function verifyAuthenticatedState({playwright, statePath, url, selector, loginUrl} = {}) {
+    if (statePath === null || typeof statePath !== "object" || typeof statePath.absolute !== "string") {
+        return false;
+    }
+    if (!isConfigured(selector) || !isHttpUrl(url)) {
+        return false;
+    }
+
+    let browser = null;
+    try {
+        try {
+            browser = await playwright.chromium.launch();
+        } catch {
+            throw infrastructureError(REASON_BROWSER_UNAVAILABLE);
+        }
+
+        let context;
+        try {
+            context = await browser.newContext({storageState: statePath.absolute});
+        } catch {
+            return false;
+        }
+
+        let page;
+        let response;
+        try {
+            page = await context.newPage();
+            response = await page.goto(url);
+        } catch {
+            throw infrastructureError(REASON_BROWSER_UNAVAILABLE);
+        }
+
+        if (response === null || response === undefined
+            || typeof response.status !== "function" || response.status() >= 400) {
+            return false;
+        }
+
+        if (await firstVisible(page, [selector]) === null) {
+            try {
+                await page.locator(selector).first().waitFor({state: "visible", timeout: 5000});
+            } catch {
+                // Another matching responsive element may have become visible instead.
+            }
+        }
+        const finalUrl = page.url();
+        if (!isSameOrigin(finalUrl, url) || isLoginUrl(finalUrl, loginUrl)) {
+            return false;
+        }
+
+        const password = await firstVisible(page, [PASSWORD_SELECTOR]);
+        if (password !== null) {
+            return false;
+        }
+
+        return await firstVisible(page, [selector]) !== null;
+    } finally {
+        if (browser !== null) {
+            try {
+                await browser.close();
+            } catch {
+                // Browser teardown is best effort; the verification result is authoritative.
+            }
+        }
+    }
+}
+
+/**
  * Resolves the browser's effective submission URL for the discovered submitter.
  *
  * @param {{submit: object}} form Discovered form controls.
@@ -242,25 +453,41 @@ async function isLoopbackFormTarget(page, form) {
 /**
  * Runs the authentication bootstrap against a resolved Playwright module.
  *
+ * An existing state is only reported as OK after it is verified on the
+ * protected page. A successful login stages a unique provisional state and
+ * returns ACTION_REQUIRED; the canonical state is never overwritten here and
+ * the login is attempted at most once.
+ *
  * @param {{
  *   env?: object,
  *   cwd?: string,
  *   resolvePlaywright?: () => object,
  *   log?: (line: string) => void,
+ *   refresh?: boolean,
  * }} options
- * @returns {Promise<{code: number, reason: string|null}>}
+ * @returns {Promise<{code: number, reason: string|null, status?: string}>}
  */
-export async function runAuthBootstrap({env = {}, cwd = process.cwd(), resolvePlaywright, log = defaultLog} = {}) {
+export async function runAuthBootstrap({env = {}, cwd = process.cwd(), resolvePlaywright, log = defaultLog, refresh = false} = {}) {
     const safeLog = createSafeLog(log, env);
     const fail = (code, reason) => {
         safeLog(AUTH_FAIL);
         safeLog(`Reason: ${reason}`);
         return {code, reason};
     };
-    const succeed = (relativePath) => {
+    const succeedReady = (relativePath) => {
         safeLog(AUTH_OK);
         safeLog(`Storage state: ${relativePath}`);
-        return {code: EXIT_OK, reason: null};
+        return {code: EXIT_OK, reason: null, status: STATUS_READY};
+    };
+    const actionRequired = (relativePath, continuationUrl = null) => {
+        safeLog(AUTH_ACTION_REQUIRED);
+        safeLog(`Provisional state: ${relativePath}`);
+        if (continuationUrl !== null) {
+            const parsed = new URL(continuationUrl);
+            // Query and fragment can contain tokens; never publish them in helper output.
+            safeLog(`Continuation URL: ${parsed.origin}${parsed.pathname}`);
+        }
+        return {code: EXIT_OK, reason: null, status: STATUS_ACTION_REQUIRED};
     };
 
     try {
@@ -268,10 +495,60 @@ export async function runAuthBootstrap({env = {}, cwd = process.cwd(), resolvePl
         if (!hasSafeStateDirectories(statePath, cwd)) {
             return fail(EXIT_EXECUTION, REASON_STATE_INVALID);
         }
-        if (isUsableExistingState(statePath, cwd)) {
-            return succeed(statePath.relative);
+
+        let playwright = null;
+        const resolvePlaywrightOnce = async () => {
+            if (playwright === null) {
+                playwright = await resolvePlaywright();
+            }
+            if (playwright === null || playwright === undefined) {
+                throw new Error("playwright module unavailable");
+            }
+            return playwright;
+        };
+
+        const existingState = isUsableExistingState(statePath, cwd);
+        const canValidateState = isConfigured(env.PLAYWRIGHT_GUI_BASE_URL)
+            && isConfigured(env.PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR);
+
+        if (!refresh && existingState) {
+            if (!canValidateState) {
+                const staged = stageExistingStateAsPending(statePath, cwd);
+                if (staged === null) {
+                    return fail(EXIT_EXECUTION, REASON_STATE_INVALID);
+                }
+                return actionRequired(staged);
+            }
+
+            let verificationPlaywright;
+            try {
+                verificationPlaywright = await resolvePlaywrightOnce();
+            } catch {
+                return fail(EXIT_PRECONDITION, REASON_PLAYWRIGHT_MODULE_UNAVAILABLE);
+            }
+
+            let verified;
+            try {
+                verified = await verifyAuthenticatedState({
+                    playwright: verificationPlaywright,
+                    statePath,
+                    url: env.PLAYWRIGHT_GUI_BASE_URL,
+                    selector: env.PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR,
+                    loginUrl: env.PLAYWRIGHT_GUI_LOGIN_URL,
+                });
+            } catch (error) {
+                if (error?.reason === REASON_BROWSER_UNAVAILABLE) {
+                    return fail(EXIT_PRECONDITION, REASON_BROWSER_UNAVAILABLE);
+                }
+                return fail(EXIT_INTERNAL, REASON_INTERNAL_ERROR);
+            }
+
+            if (verified) {
+                return succeedReady(statePath.relative);
+            }
         }
-        if (!isAcceptableStateTarget(statePath) || isRegularFile(statePath.absolute)) {
+
+        if (!isAcceptableStateTarget(statePath)) {
             return fail(EXIT_EXECUTION, REASON_STATE_INVALID);
         }
 
@@ -279,13 +556,9 @@ export async function runAuthBootstrap({env = {}, cwd = process.cwd(), resolvePl
             return fail(EXIT_PRECONDITION, "env-missing");
         }
 
-        let playwright;
         try {
-            playwright = await resolvePlaywright();
+            playwright = await resolvePlaywrightOnce();
         } catch {
-            return fail(EXIT_PRECONDITION, REASON_PLAYWRIGHT_MODULE_UNAVAILABLE);
-        }
-        if (playwright === null || playwright === undefined) {
             return fail(EXIT_PRECONDITION, REASON_PLAYWRIGHT_MODULE_UNAVAILABLE);
         }
 
@@ -330,27 +603,16 @@ export async function runAuthBootstrap({env = {}, cwd = process.cwd(), resolvePl
                 return fail(EXIT_EXECUTION, REASON_LOGIN_NOT_CONFIRMED);
             }
 
-            if (!hasSafeStateDirectories(statePath, cwd) || !isAcceptableStateTarget(statePath)) {
+            if (!isLoopbackUrl(page.url())) {
+                return fail(EXIT_PRECONDITION, REASON_SCOPE_NOT_LOOPBACK);
+            }
+
+            const staged = await saveProvisionalState(context, statePath, cwd);
+            if (staged === null) {
                 return fail(EXIT_EXECUTION, REASON_STATE_INVALID);
             }
 
-            try {
-                mkdirSync(path.dirname(statePath.absolute), {recursive: true});
-                if (!hasSafeStateDirectories(statePath, cwd)) {
-                    return fail(EXIT_EXECUTION, REASON_STATE_INVALID);
-                }
-                await context.storageState({path: statePath.absolute});
-            } catch {
-                removeStateFile(statePath);
-                return fail(EXIT_EXECUTION, REASON_STATE_INVALID);
-            }
-
-            if (!isRegularFile(statePath.absolute) || !isIgnoredByGit(cwd, statePath.absolute)) {
-                removeStateFile(statePath);
-                return fail(EXIT_EXECUTION, REASON_STATE_INVALID);
-            }
-
-            return succeed(statePath.relative);
+            return actionRequired(staged, page.url());
         } finally {
             if (browser !== null) {
                 try {
@@ -388,7 +650,7 @@ function resolveCliRealpath(cliPath) {
     return null;
 }
 
-function defaultResolvePlaywright(cliPath, cwd) {
+export function defaultResolvePlaywright(cliPath, cwd) {
     const resolutionBases = [];
     const cliRealpath = resolveCliRealpath(cliPath);
     if (cliRealpath !== null) {
@@ -410,9 +672,14 @@ function defaultResolvePlaywright(cliPath, cwd) {
 
 function parseCliArgs(args) {
     let cliPath = "";
+    let refresh = false;
 
     for (let index = 0; index < args.length; index += 1) {
         const argument = args[index];
+        if (argument === "--refresh") {
+            refresh = true;
+            continue;
+        }
         if (argument !== "--cli") {
             throw new Error(`Unknown argument: ${argument}`);
         }
@@ -426,18 +693,19 @@ function parseCliArgs(args) {
         index += 1;
     }
 
-    return {cliPath};
+    return {cliPath, refresh};
 }
 
 async function main() {
     const cwd = process.cwd();
 
     try {
-        const {cliPath} = parseCliArgs(process.argv.slice(2));
+        const {cliPath, refresh} = parseCliArgs(process.argv.slice(2));
         const result = await runAuthBootstrap({
             env: process.env,
             cwd,
             resolvePlaywright: () => defaultResolvePlaywright(cliPath, cwd),
+            refresh,
         });
         process.exitCode = result.code;
     } catch {
