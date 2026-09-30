@@ -53,13 +53,14 @@ Opcjonalny `PLAYWRIGHT_GUI_STORAGE_STATE` musi być repo-relative, rozwiązywać
 do regular file pod `.playwright-cli/auth/` i być ignorowany przez Git. Przed
 chronioną nawigacją osobna, unikalna sesja aplikacji otwiera pusty kontekst,
 waliduje state i wykonuje `state-load <filename>`; dopiero potem nawiguje.
-Dla chronionego URL-a uruchom
-`bash <skills_root>/_shared/scripts/playwright-access-prepare.sh --protected`;
-helper sam użyje istniejącego state albo uruchomi `playwright-auth-bootstrap.sh`
-tylko gdy brakuje state i dostępne są dane logowania loopback. Po
-`Authentication: OK` użyj wypisanej ścieżki stanu i dopiero wtedy wykonaj
-`state-load`. W pozostałych przypadkach raportuj `authentication unavailable`.
-Sesję zawsze zamykaj. Szczegółowy kontrakt i blokady są w `SKILL.md`.
+Dostęp chroniony może wymagać dokończenia niesekretnych kroków logowania
+(`Access: ACTION_REQUIRED`) i finalizacji, zanim stan będzie potwierdzony
+(`Access: READY`). Przy `Access: BLOCKED` przerwij; sesję zawsze zamykaj.
+Jedynym entrypointem przygotowania i finalizacji jest
+`<skills_root>/_shared/scripts/playwright-access-prepare.sh`. Szczegółowy
+kontrakt, kolejność i blokady określa
+`<skills_root>/_shared/references/playwright-cli-verification.md`, wskazana
+także w `SKILL.md`.
 
 ## Artefakty i dane
 
