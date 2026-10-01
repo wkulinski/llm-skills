@@ -4,7 +4,7 @@ import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
-import {discoverLoginForm, runAuthBootstrap, verifyAuthenticatedState} from "../../../.agents/skills/_shared/scripts/playwright-auth-bootstrap.mjs";
+import {discoverLoginForm, runAuthBootstrap, verifyStateAccess} from "../../../.agents/skills/_shared/scripts/playwright-auth-bootstrap.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const CORE = path.join(ROOT, ".agents/skills/_shared/scripts/playwright-auth-bootstrap.mjs");
@@ -259,7 +259,7 @@ function setupStub(tempRoot) {
     return {binDir, log};
 }
 
-function createVerificationStack({marker = true, password = false, status = 200, finalUrl = "http://localhost:4173/", launchError = false, invalidState = false, duplicate = false} = {}) {
+function createVerificationStack({password = false, status = 200, finalUrl = "http://localhost:4173/", launchError = false, invalidState = false, duplicate = false} = {}) {
     const record = {launches: 0, closes: 0, contexts: []};
     const locator = (visible) => ({
         count: async () => visible && duplicate ? 2 : 1,
@@ -268,7 +268,7 @@ function createVerificationStack({marker = true, password = false, status = 200,
     });
     const page = {
         goto: async () => ({status: () => status}), url: () => finalUrl,
-        locator: (selector) => locator(selector === 'input[type="password"]' ? password : marker),
+        locator: () => locator(password),
     };
     const browser = {
         newContext: async (options) => {
@@ -291,9 +291,9 @@ describe("fresh-context authentication proof", () => {
         "http://localhost:4173/",
     ])("can verify explicit remote application state with login URL %s without extending credential bootstrap beyond loopback", async (loginUrl) => {
         const stack = createVerificationStack({finalUrl: "https://staging.example.test/"});
-        expect(await verifyAuthenticatedState({
+        expect(await verifyStateAccess({
             playwright: stack.playwright, statePath: {absolute: "/unused-state.json"},
-            url: "https://staging.example.test/", selector: "#authenticated", loginUrl,
+            url: "https://staging.example.test/", loginUrl,
         })).toBe(true);
     });
 
@@ -312,14 +312,14 @@ describe("fresh-context authentication proof", () => {
     });
 
     it.each([
-        [{}, true], [{duplicate: true}, true], [{marker: false}, false], [{password: true}, false],
-        [{status: 403}, false], [{finalUrl: LOGIN_URL}, false],
+        [{}, true], [{password: true}, false], [{password: true, duplicate: true}, false],
+        [{status: 403}, false], [{status: 500}, false], [{finalUrl: `${LOGIN_URL}?next=dashboard#step`}, false],
         [{finalUrl: "https://example.com/"}, false], [{invalidState: true}, false],
-    ])("requires a positive protected-page marker and rejects denial: %j", async (options, expected) => {
+    ])("checks technical usability in an isolated context and rejects denial: %j", async (options, expected) => {
         const stack = createVerificationStack(options);
-        expect(await verifyAuthenticatedState({
+        expect(await verifyStateAccess({
             playwright: stack.playwright, statePath: {absolute: "/unused-state.json"},
-            url: "http://localhost:4173/", selector: "#authenticated", loginUrl: LOGIN_URL,
+            url: "http://localhost:4173/", loginUrl: LOGIN_URL,
         })).toBe(expected);
         expect(stack.record.closes).toBe(1);
         expect(stack.record.contexts).toEqual([{storageState: "/unused-state.json"}]);
@@ -327,33 +327,27 @@ describe("fresh-context authentication proof", () => {
 
     it("reports infrastructure failure rather than treating it as stale authentication", async () => {
         const stack = createVerificationStack({launchError: true});
-        await expect(verifyAuthenticatedState({
+        await expect(verifyStateAccess({
             playwright: stack.playwright, statePath: {absolute: "/unused-state.json"},
-            url: "http://localhost:4173/", selector: "#authenticated",
+            url: "http://localhost:4173/",
         })).rejects.toMatchObject({reason: "browser-unavailable"});
     });
 
-    it.each([false, true])("checks existing authentication, then renews at most once if invalid=%s", async (invalid) => {
+    it("always copies existing state for agent assessment without browser or login", async () => {
         const cwd = createRepo("pw-auth-verify-");
         try {
             const canonical = path.join(cwd, STORAGE_STATE_PATH);
             mkdirSync(path.dirname(canonical), {recursive: true});
             writeFileSync(canonical, "old-state");
-            const verification = createVerificationStack({marker: !invalid});
             const login = createFakeStack();
-            let launches = 0;
-            const playwright = {chromium: {launch: async () => {
-                launches += 1;
-                return launches === 1 ? verification.browser : login.playwright.chromium.launch();
-            }}};
             const captured = captureLog();
             const result = await runAuthBootstrap({
-                cwd, env: baseEnv({PLAYWRIGHT_GUI_BASE_URL: "http://localhost:4173/", PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR: "#authenticated"}),
-                resolvePlaywright: () => playwright, log: captured.log,
+                cwd, env: baseEnv({PLAYWRIGHT_GUI_BASE_URL: "http://localhost:4173/"}),
+                resolvePlaywright: () => { throw Error("must not resolve browser"); }, log: captured.log,
             });
-            expect(result.status).toBe(invalid ? "ACTION_REQUIRED" : "READY");
-            expect(launches).toBe(invalid ? 2 : 1);
-            expect(login.record.clicks).toBe(invalid ? 1 : 0);
+            expect(result.status).toBe("ACTION_REQUIRED");
+            expect(captured.lines[1]).toMatch(/^Candidate state: \.playwright-cli\/auth\/candidate-[\w-]+\.json$/);
+            expect(login.record.clicks).toBe(0);
             expect(readFileSync(canonical, "utf8")).toBe("old-state");
         } finally { rmSync(cwd, {recursive: true, force: true}); }
     });
@@ -381,7 +375,6 @@ function isolatedEnv(binDir, extra = {}) {
         PATH: `${binDir}:${process.env.PATH ?? ""}`,
         PLAYWRIGHT_GUI_LOGIN_URL: "",
         PLAYWRIGHT_GUI_BASE_URL: "",
-        PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR: "",
         PLAYWRIGHT_GUI_STORAGE_STATE: "",
         PLAYWRIGHT_GUI_USER_LOGIN: "",
         PLAYWRIGHT_GUI_USER_PASSWORD: "",
@@ -405,8 +398,8 @@ describe("playwright auth bootstrap core", () => {
 
             expect(result).toEqual({code: 0, reason: null, status: "ACTION_REQUIRED"});
             expect(captured.lines[0]).toBe("Authentication: ACTION_REQUIRED");
-            expect(captured.lines[1]).toMatch(/^Provisional state: \.playwright-cli\/auth\/pending-[\w-]+\.json$/);
-            const stateFile = path.join(tempRoot, captured.lines[1].slice("Provisional state: ".length));
+            expect(captured.lines[1]).toMatch(/^Candidate state: \.playwright-cli\/auth\/candidate-[\w-]+\.json$/);
+            const stateFile = path.join(tempRoot, captured.lines[1].slice("Candidate state: ".length));
             expect(existsSync(path.join(tempRoot, STORAGE_STATE_PATH))).toBe(false);
             expect(lstatSync(stateFile).mode & 0o777).toBe(0o600);
             expect(existsSync(stateFile)).toBe(true);
@@ -444,7 +437,7 @@ describe("playwright auth bootstrap core", () => {
 
             expect(result).toEqual({code: 0, reason: null, status: "ACTION_REQUIRED"});
             expect(captured.lines[0]).toBe("Authentication: ACTION_REQUIRED");
-            const staged = path.join(tempRoot, captured.lines[1].slice("Provisional state: ".length));
+            const staged = path.join(tempRoot, captured.lines[1].slice("Candidate state: ".length));
             expect(readFileSync(staged, "utf8")).toBe("{}\n");
             expect(lstatSync(staged).mode & 0o777).toBe(0o600);
             expect(readFileSync(stateFile, "utf8")).toBe("{}\n");
@@ -815,21 +808,21 @@ describe("playwright auth bootstrap core", () => {
 });
 
 describe("playwright auth bootstrap wrapper", () => {
-    it("applies explicit URL/selector after repository env and forwards refresh", () => {
+    it("applies explicit URL after repository env and forwards refresh", () => {
         const cwd = createRepo("pw-auth-overrides-");
         try {
             const {binDir} = setupStub(cwd);
             const marker = path.join(cwd, "overrides.txt");
-            writeFileSync(path.join(cwd, ".env.local"), "PLAYWRIGHT_GUI_BASE_URL=http://localhost:4173/default\nPLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR=default\n");
+            writeFileSync(path.join(cwd, ".env.local"), "PLAYWRIGHT_GUI_BASE_URL=http://localhost:4173/default\n");
             const node = path.join(binDir, "node");
-            writeFileSync(node, `#!${BASH}\nprintf '%s\\n' "$PLAYWRIGHT_GUI_BASE_URL" "$PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR" "$*" > "${marker}"\n`, "utf8");
+            writeFileSync(node, `#!${BASH}\nprintf '%s\\n' "$PLAYWRIGHT_GUI_BASE_URL" "$*" > "${marker}"\n`, "utf8");
             chmodSync(node, 0o755);
-            const result = spawnSync(BASH, [WRAPPER, "--refresh", "--url", "http://localhost:4173/task", "--selector", "#authenticated"], {
+            const result = spawnSync(BASH, [WRAPPER, "--refresh", "--url", "http://localhost:4173/task"], {
                 cwd, env: isolatedEnv(binDir, {APP_ENV: "dev"}), encoding: "utf8",
             });
             expect(result.status).toBe(0);
             const output = readFileSync(marker, "utf8");
-            expect(output).toContain("http://localhost:4173/task\n#authenticated\n");
+            expect(output).toContain("http://localhost:4173/task\n");
             expect(output).toContain("--refresh");
         } finally { rmSync(cwd, {recursive: true, force: true}); }
     });
@@ -882,7 +875,7 @@ describe("playwright auth bootstrap wrapper", () => {
             });
 
             expect(result.status).toBe(0);
-            expect(result.stdout).toMatch(/^Authentication: ACTION_REQUIRED\nProvisional state: \.playwright-cli\/auth\/pending-[\w-]+\.json\n$/);
+            expect(result.stdout).toMatch(/^Authentication: ACTION_REQUIRED\nCandidate state: \.playwright-cli\/auth\/candidate-[\w-]+\.json\n$/);
             expect(existsSync(log)).toBe(false);
         } finally {
             rmSync(tempRoot, {force: true, recursive: true});
@@ -909,7 +902,6 @@ describe("playwright auth bootstrap wrapper", () => {
                     BIN_PATH: "",
                     PLAYWRIGHT_GUI_LOGIN_URL: "",
                     PLAYWRIGHT_GUI_BASE_URL: "",
-                    PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR: "",
                     PLAYWRIGHT_GUI_USER_LOGIN: "",
                     PLAYWRIGHT_GUI_USER_PASSWORD: "",
                     PLAYWRIGHT_GUI_STORAGE_STATE: "",
@@ -918,7 +910,7 @@ describe("playwright auth bootstrap wrapper", () => {
             });
 
             expect(result.status).toBe(0);
-            expect(result.stdout).toMatch(/^Authentication: ACTION_REQUIRED\nProvisional state: \.playwright-cli\/auth\/pending-[\w-]+\.json\n$/);
+            expect(result.stdout).toMatch(/^Authentication: ACTION_REQUIRED\nCandidate state: \.playwright-cli\/auth\/candidate-[\w-]+\.json\n$/);
         } finally {
             rmSync(tempRoot, {force: true, recursive: true});
         }

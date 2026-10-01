@@ -7,11 +7,9 @@ import {createRequire} from "node:module";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 
-const AUTH_OK = "Authentication: OK";
 const AUTH_FAIL = "Authentication: FAIL";
 const AUTH_ACTION_REQUIRED = "Authentication: ACTION_REQUIRED";
 
-const STATUS_READY = "READY";
 const STATUS_ACTION_REQUIRED = "ACTION_REQUIRED";
 
 const EXIT_OK = 0;
@@ -203,8 +201,8 @@ function removeStateFile(absolutePath) {
     }
 }
 
-function createPendingStatePath(statePath) {
-    const name = `pending-${randomUUID()}.json`;
+export function createCandidateStatePath(statePath) {
+    const name = `candidate-${randomUUID()}.json`;
 
     return {
         absolute: path.join(path.dirname(statePath.absolute), name),
@@ -217,15 +215,15 @@ function createPendingStatePath(statePath) {
  * agent can inspect it without another login attempt. Never touches the
  * canonical state file.
  *
- * @returns {string|null} Repo-relative pending path or null when the state
+ * @returns {string|null} Repo-relative candidate path or null when the state
  *   cannot be staged safely.
  */
-function stageExistingStateAsPending(statePath, cwd) {
+function stageExistingStateAsCandidate(statePath, cwd) {
     if (!hasSafeStateDirectories(statePath, cwd)) {
         return null;
     }
 
-    const pending = createPendingStatePath(statePath);
+    const pending = createCandidateStatePath(statePath);
     if (!isAcceptableStateTarget(pending) || !isIgnoredByGit(cwd, pending.absolute)) {
         return null;
     }
@@ -257,11 +255,11 @@ function stageExistingStateAsPending(statePath, cwd) {
  * Saves the post-login browser state to a unique provisional file. The canonical
  * state file is never overwritten during bootstrap.
  *
- * @returns {Promise<string|null>} Repo-relative pending path or null when the
+ * @returns {Promise<string|null>} Repo-relative candidate path or null when the
  *   state cannot be staged safely.
  */
 async function saveProvisionalState(context, statePath, cwd) {
-    const pending = createPendingStatePath(statePath);
+    const pending = createCandidateStatePath(statePath);
 
     try {
         mkdirSync(path.dirname(statePath.absolute), {recursive: true});
@@ -344,16 +342,15 @@ export async function discoverLoginForm(page) {
  *   playwright: object,
  *   statePath: {absolute: string, relative: string},
  *   url: string,
- *   selector: string,
  *   loginUrl?: string,
  * }} options
  * @returns {Promise<boolean>}
  */
-export async function verifyAuthenticatedState({playwright, statePath, url, selector, loginUrl} = {}) {
+export async function verifyStateAccess({playwright, statePath, url, loginUrl} = {}) {
     if (statePath === null || typeof statePath !== "object" || typeof statePath.absolute !== "string") {
         return false;
     }
-    if (!isConfigured(selector) || !isHttpUrl(url)) {
+    if (!isHttpUrl(url)) {
         return false;
     }
 
@@ -386,13 +383,6 @@ export async function verifyAuthenticatedState({playwright, statePath, url, sele
             return false;
         }
 
-        if (await firstVisible(page, [selector]) === null) {
-            try {
-                await page.locator(selector).first().waitFor({state: "visible", timeout: 5000});
-            } catch {
-                // Another matching responsive element may have become visible instead.
-            }
-        }
         const finalUrl = page.url();
         if (!isSameOrigin(finalUrl, url) || isLoginUrl(finalUrl, loginUrl)) {
             return false;
@@ -403,7 +393,8 @@ export async function verifyAuthenticatedState({playwright, statePath, url, sele
             return false;
         }
 
-        return await firstVisible(page, [selector]) !== null;
+        // This only excludes technical denials. The agent evaluates actual access.
+        return true;
     } finally {
         if (browser !== null) {
             try {
@@ -453,8 +444,8 @@ async function isLoopbackFormTarget(page, form) {
 /**
  * Runs the authentication bootstrap against a resolved Playwright module.
  *
- * An existing state is only reported as OK after it is verified on the
- * protected page. A successful login stages a unique provisional state and
+ * An existing state is copied privately for agent inspection, never verified
+ * here. A successful login stages a unique candidate state and
  * returns ACTION_REQUIRED; the canonical state is never overwritten here and
  * the login is attempted at most once.
  *
@@ -474,14 +465,9 @@ export async function runAuthBootstrap({env = {}, cwd = process.cwd(), resolvePl
         safeLog(`Reason: ${reason}`);
         return {code, reason};
     };
-    const succeedReady = (relativePath) => {
-        safeLog(AUTH_OK);
-        safeLog(`Storage state: ${relativePath}`);
-        return {code: EXIT_OK, reason: null, status: STATUS_READY};
-    };
     const actionRequired = (relativePath, continuationUrl = null) => {
         safeLog(AUTH_ACTION_REQUIRED);
-        safeLog(`Provisional state: ${relativePath}`);
+        safeLog(`Candidate state: ${relativePath}`);
         if (continuationUrl !== null) {
             const parsed = new URL(continuationUrl);
             // Query and fragment can contain tokens; never publish them in helper output.
@@ -508,44 +494,12 @@ export async function runAuthBootstrap({env = {}, cwd = process.cwd(), resolvePl
         };
 
         const existingState = isUsableExistingState(statePath, cwd);
-        const canValidateState = isConfigured(env.PLAYWRIGHT_GUI_BASE_URL)
-            && isConfigured(env.PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR);
-
         if (!refresh && existingState) {
-            if (!canValidateState) {
-                const staged = stageExistingStateAsPending(statePath, cwd);
-                if (staged === null) {
-                    return fail(EXIT_EXECUTION, REASON_STATE_INVALID);
-                }
-                return actionRequired(staged);
+            const staged = stageExistingStateAsCandidate(statePath, cwd);
+            if (staged === null) {
+                return fail(EXIT_EXECUTION, REASON_STATE_INVALID);
             }
-
-            let verificationPlaywright;
-            try {
-                verificationPlaywright = await resolvePlaywrightOnce();
-            } catch {
-                return fail(EXIT_PRECONDITION, REASON_PLAYWRIGHT_MODULE_UNAVAILABLE);
-            }
-
-            let verified;
-            try {
-                verified = await verifyAuthenticatedState({
-                    playwright: verificationPlaywright,
-                    statePath,
-                    url: env.PLAYWRIGHT_GUI_BASE_URL,
-                    selector: env.PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR,
-                    loginUrl: env.PLAYWRIGHT_GUI_LOGIN_URL,
-                });
-            } catch (error) {
-                if (error?.reason === REASON_BROWSER_UNAVAILABLE) {
-                    return fail(EXIT_PRECONDITION, REASON_BROWSER_UNAVAILABLE);
-                }
-                return fail(EXIT_INTERNAL, REASON_INTERNAL_ERROR);
-            }
-
-            if (verified) {
-                return succeedReady(statePath.relative);
-            }
+            return actionRequired(staged);
         }
 
         if (!isAcceptableStateTarget(statePath)) {
@@ -698,6 +652,10 @@ function parseCliArgs(args) {
 
 async function main() {
     const cwd = process.cwd();
+    if (process.argv.length === 3 && ["--help", "-h"].includes(process.argv[2])) {
+        process.stdout.write("Usage: playwright-auth-bootstrap.mjs [--cli <cli>] [--refresh]\nPrepares a private candidate for agent assessment; never promotes canonical state.\n");
+        return;
+    }
 
     try {
         const {cliPath, refresh} = parseCliArgs(process.argv.slice(2));

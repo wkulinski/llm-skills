@@ -21,7 +21,6 @@ describe("frontend application access contract", () => {
             "PLAYWRIGHT_GUI_BASE_URL",
             "PLAYWRIGHT_GUI_LOGIN_URL",
             "PLAYWRIGHT_GUI_STORAGE_STATE",
-            "PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR",
             "PLAYWRIGHT_GUI_USER_LOGIN",
             "PLAYWRIGHT_GUI_USER_PASSWORD",
         ];
@@ -80,6 +79,27 @@ describe("frontend application access contract", () => {
         expect(playwrightReference).toContain("`localhost`, `127.0.0.1`, `::1`");
         expect(skill).toMatch(/`localhost`,\s*`127\.0\.0\.1`, `::1`/);
         expect(reportFormat).toContain("created via bootstrap");
+    });
+
+    it("requires agent assessment and a fresh isolated reassessment before evidence-backed promotion", () => {
+        const stages = ["**Istniejący stan**", "**Interakcja agenta**", "**Zapis kandydata**", "**Ponowna ocena i promocja**"]
+            .map((step) => playwrightReference.indexOf(step));
+        expect(stages.every((position) => position >= 0)).toBe(true);
+        expect(stages).toEqual([...stages].sort((left, right) => left - right));
+        expect(playwrightReference).toContain("Agent zawsze ocenia rzeczywisty widok aplikacji");
+        expect(playwrightReference).toMatch(/Obowiązkowo\s+otwórz świeżą, izolowaną sesję agenta/);
+        expect(playwrightReference).toContain("Wybór pochodzi wyłącznie z zadania");
+        expect(playwrightReference).toMatch(/przy niejednoznaczności zapytaj\s+użytkownika/);
+        expect(playwrightReference).toContain(' --stage --session "$APP_SESSION"');
+        expect(playwrightReference).toContain(' --promote --candidate "$STATE_FILE" --evidence "$ACCESS_EVIDENCE"');
+        expect(playwrightReference).toContain("Reason: evidence-missing");
+        expect(playwrightReference).toContain("verifyStateAccess");
+        expect(playwrightReference).toContain("nie używaj współdzielonego kontekstu CDP");
+        for (const source of [playwrightReference, skill, readme]) {
+            expect(source).toContain("Access: VERIFY_REQUIRED");
+            expect(source).toContain("--stage");
+            expect(source).toContain("--promote");
+        }
     });
 
     it("requires separate unique sessions and cleanup for the application checkpoint", () => {

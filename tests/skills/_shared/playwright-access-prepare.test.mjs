@@ -28,7 +28,6 @@ function setup() {
         PATH: `${binDir}:${process.env.PATH ?? ""}`,
         PLAYWRIGHT_GUI_LOGIN_URL: "",
         PLAYWRIGHT_GUI_BASE_URL: "",
-        PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR: "",
         PLAYWRIGHT_GUI_USER_LOGIN: "",
         PLAYWRIGHT_GUI_USER_PASSWORD: "",
         PLAYWRIGHT_GUI_STORAGE_STATE: "",
@@ -50,11 +49,11 @@ describe("one-step Playwright access preparation", () => {
         } finally { rmSync(cwd, {force: true, recursive: true}); }
     });
 
-    it("rejects refresh without protected mode and finalize without an agent session", () => {
+    it("rejects refresh without protected mode and stage without an agent session", () => {
         const {cwd, env} = setup();
         try {
             expect(spawnSync(BASH, [PREPARE, "--refresh"], {cwd, env}).status).toBe(2);
-            const result = spawnSync(BASH, [PREPARE, "--finalize"], {cwd, env, encoding: "utf8"});
+            const result = spawnSync(BASH, [PREPARE, "--stage"], {cwd, env, encoding: "utf8"});
             expect(result.status).toBe(2);
             expect(result.stdout).toContain("Reason: session-invalid\nAccess: BLOCKED");
         } finally { rmSync(cwd, {force: true, recursive: true}); }
@@ -81,7 +80,7 @@ describe("one-step Playwright access preparation", () => {
             const result = spawnSync(BASH, [PREPARE, "--protected"], {cwd, env, encoding: "utf8"});
             expect(result.status).toBe(0);
             expect(result.stdout).toContain("Browser launch: OK");
-            expect(result.stdout).toContain("Authentication: ACTION_REQUIRED\nProvisional state: .playwright-cli/auth/pending-");
+            expect(result.stdout).toContain("Authentication: ACTION_REQUIRED\nCandidate state: .playwright-cli/auth/candidate-");
             expect(result.stdout).toContain("Access: ACTION_REQUIRED\n");
             expect(result.stdout).not.toContain("Access: READY\n");
         } finally {
@@ -128,7 +127,7 @@ describe("one-step Playwright access preparation", () => {
         }
     });
 
-    it("promotes the agent session state through the prepare finalize entrypoint", () => {
+    it("stages then promotes through the entrypoint with the explicit candidate, task URL and evidence", () => {
         const {cwd, env} = setup();
         try {
             const moduleDir = path.join(cwd, "node_modules", "playwright");
@@ -150,13 +149,24 @@ module.exports = {chromium: {launch: async () => ({
             const cli = path.join(cwd, "bin", "playwright-cli");
             writeFileSync(cli, `#!${BASH}\nprintf 'completed-state\\n' > "$3"\n`, "utf8");
             chmodSync(cli, 0o755);
+            const staged = spawnSync(BASH, [PREPARE, "--stage", "--session", "agent-session"], {cwd, env, encoding: "utf8"});
+            expect(staged.status).toBe(0);
+            expect(staged.stdout).toContain("Access: VERIFY_REQUIRED");
+            const candidate = staged.stdout.match(/Candidate state: (.+)/)[1];
+            const canonical = path.join(cwd, ".playwright-cli/auth/storage-state.json");
+            expect(existsSync(canonical)).toBe(false);
+            const refused = spawnSync(BASH, [PREPARE, "--promote", "--candidate", candidate, "--url", "http://localhost:4173/"], {cwd, env, encoding: "utf8"});
+            expect(refused.status).toBe(2);
+            expect(refused.stdout).toContain("Reason: evidence-missing");
+            expect(existsSync(canonical)).toBe(false);
             const result = spawnSync(BASH, [
-                PREPARE, "--finalize", "--session", "agent-session",
-                "--url", "http://localhost:4173/", "--selector", "#authenticated",
+                PREPARE, "--promote", "--candidate", candidate,
+                "--url", "http://localhost:4173/", "--evidence", "Task view confirmed in isolated session",
             ], {cwd, env, encoding: "utf8"});
 
             expect(result.status).toBe(0);
-            expect(result.stdout).toContain("Authentication: OK\nStorage state: .playwright-cli/auth/storage-state.json\nAccess: READY\n");
+            expect(result.stdout).toContain("Authentication: OK\nStorage state: .playwright-cli/auth/storage-state.json\nEvidence: Task view confirmed in isolated session\nAccess: READY\n");
+            expect(existsSync(path.join(cwd, candidate))).toBe(false);
             expect(readFileSync(path.join(cwd, ".playwright-cli/auth/storage-state.json"), "utf8")).toBe("completed-state\n");
         } finally {
             rmSync(cwd, {force: true, recursive: true});

@@ -83,10 +83,13 @@ Nie uruchamiaj
 `<skills_root>/_shared/scripts/playwright-auth-bootstrap.sh` ani
 `<skills_root>/_shared/scripts/playwright-preflight.sh` bezpośrednio; są
 wewnętrznymi etapami prepare.
-`Access: READY` dla chronionej strony potwierdza dostęp z odtworzonego stanu,
+`Access: READY` dla chronionej strony jest wynikiem promocji po ocenie agenta
+i technicznym sprawdzeniu odtworzonego stanu,
 ale nie zastępuje checkpointu widoku ani potwierdzenia kontekstu zadania.
-`Access: ACTION_REQUIRED` wymaga dokończenia dozwolonych niesekretnych kroków
-i finalizacji przez ten sam entrypoint zgodnie ze wspólną referencją; przy
+`Access: ACTION_REQUIRED` zawsze wymaga oceny widoku, dozwolonych niesekretnych
+kroków i zapisu przez `--stage`. `Access: VERIFY_REQUIRED` wymaga ponownej oceny
+w świeżej, izolowanej sesji agenta przed `--promote --evidence`, przez ten sam
+entrypoint zgodnie ze wspólną referencją; przy
 `Access: BLOCKED` przerwij. CDP-only bez lokalnej przeglądarki do bootstrapu
 raportuje `browser-unavailable` (brak automatycznego fallbacku logowania).
 
