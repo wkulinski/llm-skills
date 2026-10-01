@@ -10,8 +10,13 @@ case "${1:-}" in
 Usage: paseo-refresh [--hard]
 
 Default:
-  1. Refresh the OpenCode provider in Paseo
+  1. Refresh the OpenCode and Claude provider catalogs in Paseo
+     (Claude: re-detects the Claude Code version and models from
+     ~/.claude/settings.json)
   2. Reload all Paseo agents
+
+Note: Paseo's built-in Claude model list ships with Paseo itself;
+models newer than the installed Paseo release require a Paseo upgrade.
 
 --hard:
   Additionally clear the CommandCode/OpenCode provider cache and restart
@@ -82,13 +87,19 @@ if (( HARD )); then
   fi
 fi
 
-step "Refreshing OpenCode provider"
-if paseo provider diagnostic opencode >/dev/null; then
-  ok "OpenCode provider refreshed"
-else
-  fail "OpenCode provider diagnostic failed"
-  exit 1
-fi
+refresh_provider() {
+  local provider="$1" label="$2"
+  step "Refreshing $label provider"
+  if paseo provider diagnostic "$provider" >/dev/null; then
+    ok "$label provider refreshed"
+  else
+    fail "$label provider diagnostic failed"
+    exit 1
+  fi
+}
+
+refresh_provider opencode OpenCode
+refresh_provider claude Claude
 
 step "Reloading all Paseo agents"
 if ! agent_output="$(paseo ls -g -q 2>/dev/null)"; then

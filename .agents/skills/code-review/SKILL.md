@@ -91,10 +91,46 @@ status, questions, or validation lifecycle, and the phase separation is not a cl
 of executor independence. `$task-plan` evaluates this skill's result after the
 phase ends.
 
+### Execution role
+
+The input `execution_role` selects who runs this methodology:
+
+- `coordinator` (default) — the current agent owns scope, context, commands, and
+  the verdict. Every section of this skill applies as written.
+- `executor` — a delegated reviewer applies the same methodology to context
+  prepared by a coordinating agent and returns a report to it. It is valid only
+  for the `code` target. For `plan`, or when the target is unclear, do not
+  review: return `INCOMPLETE` and state that the executor role does not accept
+  this target.
+
+The executor works from the supplied inputs: change inventory with its
+fingerprint, a separate staged diff, a separate unstaged diff, untracked paths,
+requirements, applicable rules, the mapped plan or work package when supplied,
+and references to validated context. It reads the actual files and the relations
+it needs one at a time. It judges staged changes from the supplied staged diff,
+not only from the current file content.
+
+The executor does not regenerate the inventory, follow the active-plan pointer,
+run `$context-refresh` or the repository-context hybrid, invoke other skills or
+agents, start Paseo sessions, or run commands. When a check needs a command
+(test, lint, build, reproduction, or Playwright checkpoint), it names the check
+for the coordinator, records a `verification_gap`, and limits the verdict
+instead of claiming the check ran. When essential input is missing, it returns
+`INCOMPLETE` with a concrete request for the missing input instead of
+collecting it itself.
+
+Sections 2–11 stay shared: expected behavior, applicable rules, checklists,
+the publication gate, the false-positive pass, coverage, severity, verdict, and
+the Section 11 report structure. A transport envelope added by the delegating
+workflow does not replace that structure. Where those sections mention commands,
+inventory regeneration, or the active-plan pointer, the executor applies the
+limits above.
+
 ### Read change inventory
 
-For a working-tree `code` review, always regenerate the change inventory at the
-beginning of the review:
+For a working-tree `code` review in the coordinator role, always regenerate the
+change inventory at the beginning of the review (the executor uses the supplied
+inventory instead):
 
 ```bash
 node <skills_root>/_shared/scripts/change-inventory.mjs build --output <CACHE_PATH>/repository-context/change-inventory.json
@@ -138,7 +174,8 @@ reconstruct or mutate the plan's identity.
 
 ### Active-plan context for code
 
-For a `code` target with no explicitly supplied plan, check whether
+For a `code` target in the coordinator role with no explicitly supplied plan,
+check whether
 `${CACHE_PATH:-var/agent/cache}/plan-execute/last-plan.txt` exists. This is the
 only automatic plan lookup: do not search every plan in the repository.
 
@@ -353,8 +390,11 @@ the report's structural validation do not, by themselves, establish that the
 interpretation is correct. Candidates supplied by auxiliary channels (another
 agent, a subagent report, a tool, or a reviewer hand-off) never carry a verdict
 with them; they enter this skill as unverified candidates and must pass the same
-gate as any other candidate. A plan or work package is a source of expected
-behavior only for the scope it actually maps to; it does not authorize
+gate as any other candidate. This includes a report from a reviewer in the
+`executor` role: the coordinator checks each received candidate through this
+gate with targeted reads of the cited locations and their direct relations,
+without a new full discovery pass, and decides the verdict itself.
+A plan or work package is a source of expected behavior only for the scope it actually maps to; it does not authorize
 expectations for behavior outside that mapped scope.
 
 For `BLOCKER`, require direct reproduction when practical, such as:
@@ -557,7 +597,9 @@ Then provide:
 
 ### Target
 
-`code` or `plan`, with the reviewed artifact and scope.
+`code` or `plan`, with the reviewed artifact and scope. In the `executor` role,
+also state the role, the snapshot fingerprint received, and whether the review
+is complete or `INCOMPLETE` with the requested inputs.
 
 ### Coverage
 
