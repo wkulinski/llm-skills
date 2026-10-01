@@ -28,6 +28,7 @@ znajduje się na końcu dokumentu.
 | --- | --- | --- |
 | Przeprowadź głęboki, niezależny review zmian albo planu | `$code-review` | werdykt przed merge lub wdrożeniem planu |
 | Szybko sprawdź bieżące zmiany przed commitem | `$review-quick` | raport findings-first bez pełnej procedury |
+| Zleć z OpenCode odczytowy review kodu Claude Code (Opus) przez Paseo | `$claude-review` | raport wykonawcy oceniany bramką `$code-review` |
 
 ### Review instrukcji
 
@@ -74,6 +75,7 @@ znajduje się na końcu dokumentu.
 ## Lista skilli
 
 - `$agent-cache-clear`
+- `$claude-review`
 - `$code-implement`
 - `$code-review`
 - `$commit-message-write`

@@ -43,6 +43,21 @@ Treat this repository as the source catalog, and use LSM as the default operatio
 
 Prefer LSM over manually copying or maintaining `.agents/skills/**` in downstream projects.
 
+### Claude Code access to skills
+`.agents/skills` is the only authored source. Claude Code reads skills from `.claude/skills`, which is materialized differently per environment:
+
+- **This repository (local only):** `.claude/skills` is a relative symlink to `../.agents/skills`. It is git-ignored, so create it once per checkout. Inspect the entry first and never replace a foreign file, directory or link:
+
+  ```bash
+  if [ ! -e .claude/skills ] && [ ! -L .claude/skills ]; then ln -s ../.agents/skills .claude/skills; fi
+  readlink .claude/skills   # expected: ../.agents/skills
+  ```
+
+  `tests/skills/_shared/claude-skills-access.test.mjs` checks that the link resolves every skill and `_shared` to the same physical files (skipped when the link is absent).
+- **Downstream projects:** skills arrive as regular physical copies installed by LSM, never as symlinks to this catalog. The copy contract this repository requires from LSM is described in `docs/drafts/lsm-skill-projection-brief.md`; it is a requirement, not a statement that a released LSM version already supports the Claude target.
+
+LSM does not synchronize configuration or memory: `.claude/settings.json`, `CLAUDE.md`, `AGENTS.md`, `opencode.jsonc`, `.mcp.json`, workspace trust and permissions stay owned by the consumer project. When the same skills exist as two physical copies (`.agents/skills` and `.claude/skills`), OpenCode may list them twice; the consumer can opt into `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`.
+
 ### What to paste into project `AGENTS.md`
 If a consumer project uses these skills, add the following blocks to that project's `AGENTS.md`.
 

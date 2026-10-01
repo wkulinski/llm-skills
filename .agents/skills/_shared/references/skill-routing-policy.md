@@ -32,6 +32,9 @@ Stosuj następującą kolejność:
     - implementacja konkretnej zmiany (w tym feature, bugfix lub refaktor) bez
       istniejącego planu → `$code-implement`;
     - pełny albo głęboki przegląd implementacji → `$code-review` w trybie `code`;
+      rola `execution_role: executor` nie jest wybierana z intencji użytkownika —
+      ustawia ją wyłącznie agent koordynujący, który jawnie deleguje review kodu;
+    - jawne zlecenie review kodu Claude Code z OpenCode → `$claude-review`;
     - szybki przegląd bieżących zmian → `$review-quick`;
     - audyt zgodności skilla, agenta albo reguł instrukcji („zaudytuj
       skill/instrukcje”) → `$skill-review` w trybie `conformance` albo `standard-gap`;

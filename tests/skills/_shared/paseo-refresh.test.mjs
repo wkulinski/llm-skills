@@ -81,6 +81,7 @@ describe("paseo refresh daemon readiness gate", () => {
             expect(result.status).toBe(0);
             expect(result.stdout).toContain("Paseo daemon reachable");
             expect(result.stdout).toContain("OpenCode provider refreshed");
+            expect(result.stdout).toContain("Claude provider refreshed");
             expect(result.stdout).toContain("(2 agent(s) reloaded)");
             expect(existsSync(cached)).toBe(false);
 
@@ -107,7 +108,13 @@ describe("paseo refresh daemon readiness gate", () => {
             expect(result.status).toBe(0);
             expect(result.stdout).not.toContain("Waiting for Paseo daemon readiness");
             expect(result.stdout).toContain("OpenCode provider refreshed");
-            expect(readCalls(sandbox.logPath).some((call) => call.startsWith("daemon status"))).toBe(false);
+            expect(result.stdout).toContain("Claude provider refreshed");
+
+            const calls = readCalls(sandbox.logPath);
+            expect(calls.some((call) => call.startsWith("daemon status"))).toBe(false);
+            expect(calls).toContain("provider diagnostic opencode");
+            expect(calls).toContain("provider diagnostic claude");
+            expect(calls.indexOf("provider diagnostic claude")).toBeLessThan(calls.findIndex((call) => call.startsWith("agent reload")));
         } finally {
             rmSync(sandbox.root, {force: true, recursive: true});
         }
