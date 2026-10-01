@@ -25,7 +25,8 @@ Po ustaleniu bezpiecznego URL-a wykonaj tylko
 dla chronionej strony), a potem
 otwórz osobną sesję aplikacji według sekcji „Kontrakt URL-a i chronionej
 nawigacji”. `Access: ACTION_REQUIRED` przekazuje dodatkowe, niesekretne kroki
-logowania agentowi; potem ten sam entrypoint przyjmuje `--finalize --session`.
+logowania agentowi; potem ten sam entrypoint przyjmuje `--stage --session`
+oraz, po ponownej ocenie w świeżej sesji, `--promote --candidate --evidence`.
 Przy `Access: BLOCKED` nie nawiguj; zgłoś blokadę lub lukę
 weryfikacji zgodnie z aktywnym skillem. Brak URL-a nie uprawnia do zgadywania.
 `<skills_root>/_shared/scripts/playwright-preflight.sh` i
@@ -55,12 +56,14 @@ bash <skills_root>/_shared/scripts/playwright-access-prepare.sh --protected
 
 Krok przygotowania uruchamia
 `<skills_root>/_shared/scripts/playwright-preflight.sh`, a tylko z
-`--protected` sprawdza istniejący state i w razie potrzeby wywołuje
+`--protected` przygotowuje prywatnego kandydata i w razie potrzeby wywołuje
 `<skills_root>/_shared/scripts/playwright-auth-bootstrap.sh`. Dla publicznej
-strony `Access: READY` oznacza gotową infrastrukturę. Dla chronionej strony oznacza również dowód dostępu
-z odtworzonego stanu na wskazanym URL-u i pozytywnym markerze. Nie zastępuje to
-checkpointu badanego widoku. `Access: ACTION_REQUIRED` oznacza stan tymczasowy,
-nie potwierdzone uwierzytelnienie. `Access: BLOCKED` zabrania dalszej nawigacji.
+strony `Access: READY` oznacza gotową infrastrukturę. Przygotowanie chronionej
+strony zawsze zwraca `Access: ACTION_REQUIRED`, nie potwierdzone uwierzytelnienie.
+`Access: VERIFY_REQUIRED` oznacza zapis kandydata wymagający ponownej oceny
+agenta. Dopiero promocja zwraca `Access: READY`: dowód agenta i techniczne
+sprawdzenie odtworzonego stanu, nie checkpoint badanego widoku.
+`Access: BLOCKED` zabrania dalszej nawigacji.
 Gdy preflight działa przez CDP, ale nie ma lokalnej przeglądarki do bootstrapu,
 raportuj `browser-unavailable` zamiast próbować ręcznego logowania.
 
@@ -117,13 +120,11 @@ Jeśli chroniony URL wymaga storage state, wykonaj przygotowanie z
    albo `.playwright-cli/auth/storage-state.json`. Musi być regular file — zwykłym,
    ignorowanym plikiem pod `.playwright-cli/auth/`, bez symlinków pliku i katalogów,
    i przechodzić `git check-ignore`.
-   Gdy skonfigurowano `PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR`, helper odtwarza
-   stan w nowym kontekście, odwiedza chroniony URL i wymaga pozytywnego markeru,
-   odpowiedzi HTTP bez błędu, właściwego originu i braku widocznego hasła.
-   Dopiero wtedy zwraca `Authentication: OK`, `Storage state:` i `Access: READY`.
-   Bez markeru zwraca prywatną kopię jako `Provisional state:` oraz
-   `Access: ACTION_REQUIRED` — same metadane pliku nie dowodzą zalogowania.
-2. **Bootstrap/odnowienie** — gdy stanu brakuje, jest nieskuteczny lub agent
+    Helper zawsze tworzy prywatną kopię `candidate-<uuid>.json` z uprawnieniami
+    `0600`, zwraca `Authentication: ACTION_REQUIRED`, `Candidate state:` oraz
+    `Access: ACTION_REQUIRED`. Nie uruchamia weryfikacji ani logowania dla
+    istniejącego bezpiecznego stanu; same metadane nie dowodzą dostępu.
+2. **Bootstrap/odnowienie** — gdy stanu brakuje lub agent
    jawnie używa `--protected --refresh`, prepare uruchamia wewnętrznie
    `<skills_root>/_shared/scripts/playwright-auth-bootstrap.sh`; helper wykonuje
    najwyżej jedną próbę podania credentiali. Wymaga kompletnych ustawień loginu
@@ -131,57 +132,87 @@ Jeśli chroniony URL wymaga storage state, wykonaj przygotowanie z
    (`localhost`, `127.0.0.1`, `::1`); sprawdza rzeczywisty cel formularza przed
    wypełnieniem. Brak przeglądarki nie jest interpretowany jako wygasła sesja.
    Ukrycie pola hasła kończy tylko etap credentiali. Helper zapisuje unikalny
-   plik `pending-*.json` z uprawnieniami `0600`, zwraca `Provisional state:`
+    plik `candidate-*.json` z uprawnieniami `0600`, zwraca `Candidate state:`
    i `Access: ACTION_REQUIRED`, nigdy nie nadpisuje wtedy kanonicznego pliku.
    `Continuation URL:` wskazuje stronę po wysłaniu formularza, bez query i
    fragmentu mogących zawierać tokeny. Nie zgaduj brakujących tokenów; przepływ
    wymagający ich do kontynuacji wymaga jawnego adaptera lub decyzji użytkownika.
-3. **Interakcja agenta** — w osobnej sesji załaduj wskazany provisional state
+3. **Interakcja agenta** — w osobnej sesji załaduj wskazany candidate state
    i otwórz jawny `Continuation URL:`; przy kopii istniejącego stanu bez tego
    adresu otwórz rozwiązany URL aplikacji. Agent może oglądać DOM i dokończyć
    niesekretne kroki wymagane przez aplikację, np. wybór właściwego kontekstu
    pracy. Wybór pochodzi wyłącznie z zadania; przy niejednoznaczności zapytaj
    użytkownika — nigdy nie wybieraj arbitralnie. Nie zatwierdzaj nieznanych
    zgód, aktywacji lub zmian uprawnień. Brak dodatkowego kroku również prowadzi
-   do finalizacji. Po ponownym użyciu stanu potwierdź, że kontekst odpowiada
+    do zapisu i ponownej oceny. Agent zawsze ocenia rzeczywisty widok aplikacji,
+    nie sam brak pola hasła. Po ponownym użyciu stanu potwierdź, że kontekst odpowiada
    zadaniu, zanim odczytasz dane lub wykonasz działania. `Access: READY`
-   potwierdza uwierzytelnienie, nie zastępuje tej decyzji domenowej.
+    po promocji nie zastępuje tej decyzji domenowej.
    Przy niezgodnym kontekście nie używaj stanu do pracy w aplikacji: odnowienie
    przez `--protected --refresh` pozwala dokończyć właściwy wybór.
-4. **Finalizacja** — po potwierdzeniu właściwego kontekstu i dodatniego markeru
-   uruchom ten sam entrypoint (na nadal otwartej sesji agenta):
+4. **Zapis kandydata** — po ocenie dostępu i właściwego kontekstu uruchom
+    ten sam entrypoint na nadal otwartej sesji agenta:
 
    ```bash
-   bash <skills_root>/_shared/scripts/playwright-access-prepare.sh --finalize --session "$APP_SESSION" --url "$RESOLVED_APPLICATION_URL" --selector "$AUTHENTICATED_SELECTOR"
+    bash <skills_root>/_shared/scripts/playwright-access-prepare.sh --stage --session "$APP_SESSION"
    ```
 
-   Selector musi wskazywać element dostępny dopiero po pełnym uwierzytelnieniu
-   na chronionej stronie, nie samo `body`, brak hasła lub sam wybór kontekstu.
-   Można pominąć `--selector`, jeśli ustawiono
-   `PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR`. Finalizer zapisuje sesję przez
-   resolved CLI do prywatnego kandydata, odtwarza go w nowym kontekście i dopiero
-   po pozytywnej weryfikacji atomowo zastępuje plik kanoniczny. Nie wystarcza
-   oświadczenie agenta „kliknięte”. Błąd zachowuje dotychczasowy plik kanoniczny
-   i usuwa kandydata finalizacji; wynik to `Access: BLOCKED`.
-5. **Brak dostępu** — jeśli agent zobaczy ponownie login, zamknij jego sesję
+    `--stage` zapisuje stan sesji przez resolved CLI do nowego, ignorowanego
+    `candidate-<uuid>.json` z uprawnieniami `0600`. Zwraca
+    `Authentication: ACTION_REQUIRED`, `Candidate state:` i `Access: VERIFY_REQUIRED`.
+    Nie sprawdza dostępu i nie promuje pliku; kanoniczny stan pozostaje nietknięty.
+5. **Ponowna ocena i promocja** — zamknij lub odłącz pierwszą sesję. Obowiązkowo
+    otwórz świeżą, izolowaną sesję agenta z unikalną nazwą, bez odziedziczonych
+    cookies i profilu pierwszej sesji. Załaduj dokładny plik z ostatniego
+    `Candidate state:` przed nawigacją do rozwiązanego URL-a aplikacji, zgodnie
+    z lifecycle poniżej. Sam nowy identyfikator sesji nie dowodzi izolacji;
+    nie używaj współdzielonego kontekstu CDP. Jeśli środowisko nie zapewnia
+    izolacji, zgłoś blokadę zamiast promować.
+    Agent ponownie ocenia rzeczywisty dostęp oraz zgodność kontekstu z zadaniem
+    na podstawie widoku, snapshotu i stosownych dowodów. Nie zastępuj oceny
+    oświadczeniem „kliknięte” ani samym brakiem pola hasła. Zapisz niepusty,
+    niesekretny opis obserwacji z tej drugiej sesji w `ACCESS_EVIDENCE`, np.
+    „Świeża izolowana sesja odtwarza widok zadania w wymaganym kontekście”.
+    Dopiero po pozytywnej ocenie wykonaj:
+
+    ```bash
+    bash <skills_root>/_shared/scripts/playwright-access-prepare.sh --promote --candidate "$STATE_FILE" --evidence "$ACCESS_EVIDENCE" --url "$RESOLVED_APPLICATION_URL"
+    ```
+
+    `STATE_FILE` jest tutaj kandydatem zwróconym przez `--stage`, nigdy plikiem
+    kanonicznym. Helper odrzuca również alias ścieżki i hardlink do celu.
+    Brak niepustego dowodu zwraca `Reason: evidence-missing`. Dowód nie może
+    zawierać sekretów ani danych wrażliwych, również w argumentach; redakcja
+    znanych credentiali w output nie uprawnia do przekazywania ich w dowodzie.
+    Helper wykonuje `verifyStateAccess` w kolejnym świeżym kontekście i odrzuca
+    HTTP 4xx/5xx, inny origin, widoczne pole hasła oraz powrót na login rozpoznany
+    po origin i pathname (nie query/fragment). Nie ocenia pozytywnie treści
+    widoku — ta odpowiedzialność należy do agenta. Po sukcesie atomowo
+    zastępuje plik kanoniczny i zwraca `Authentication: OK`, `Storage state:`,
+    zredagowane `Evidence:` i `Access: READY`; zużyty kandydat zostaje usunięty.
+    Nieudane sprawdzenie zachowuje dotychczasowy plik kanoniczny i usuwa
+    odrębnego kandydata promocji; wynik to `Access: BLOCKED`. Odmowa podania
+    pliku kanonicznego jako kandydata nie zmienia go ani nie usuwa.
+6. **Brak dostępu** — jeśli agent zobaczy ponownie login, zamknij jego sesję
    i wykonaj jeden `--protected --refresh` przez ten sam entrypoint. Nie twórz
    pętli ponowień. Kolejny brak dostępu, wygaśnięcie kroku pośredniego lub brak
-   credentiali to jawna blokada. Usuwaj własne pliki `pending-*.json` po zamknięciu
-   przepływu; nie usuwaj stanów innych równoległych zadań.
+    credentiali to jawna blokada. Po zamknięciu sesji usuwaj własne, odrębne
+    pliki `candidate-*.json` pozostałe po zakończonym lub porzuconym przepływie;
+    nie usuwaj stanów kanonicznych ani plików innych równoległych zadań.
 
 Wartości credentiali przechodzą wyłącznie przez helper bootstrapu w pamięci
 procesu. Helper nie zapisuje credentiali w plikach tymczasowych, nie wypisuje wartości
 credentiali i nie zapisuje stanu poza `.playwright-cli/auth/`. Agentowi nie wolno
 odczytywać zawartości state, credentiali ani sekretów, wypisywać ich, commitować ani
-umieszczać w ogólnych argumentach CLI. Po pozytywnej walidacji przekaż CLI
-wyłącznie zweryfikowaną nazwę pliku do `state-load <filename>`.
+umieszczać w ogólnych argumentach CLI. Po walidacji metadanych przekaż CLI
+wyłącznie bezpieczną nazwę pliku do `state-load <filename>`.
 Wyłącznie helper może wewnętrznie kopiować stan i przekazywać go bibliotece
 Playwright do odtworzenia; nie przekazuje jego zawartości agentowi ani do logów.
 Ukrycie pola hasła jest sygnałem zakończenia formularza, a nie niezależnym
 potwierdzeniem uwierzytelnienia; nie raportuj sukcesu aplikacji przed
 checkpointem na chronionym URL-u.
 
-Po `Access: READY` albo `Access: ACTION_REQUIRED` użyj oddzielnej, unikalnej
+Po `Access: READY`, `Access: ACTION_REQUIRED` albo `Access: VERIFY_REQUIRED` użyj oddzielnej, unikalnej
 sesji aplikacji. Przygotowanie
 dostępu działa w osobnych procesach, więc sesja aplikacji ponownie rozwiązuje
 CLI przez **ten sam resolver** `env-load.sh`/`resolve_tool_cmd`. Nigdy nie
@@ -198,12 +229,12 @@ Samo `source` definiuje funkcje, ale nie ładuje env. Resolver wywołany wewnąt
 `$(...)` ładuje env tylko w podpowłoce, więc nie dostarcza URL-i do powłoki
 agenta. `ensure_repo_env_loaded` przed sprawdzeniem URL-a jest obowiązkowe.
 Jawny URL zadania przekaż także helperowi jako `--url "$RESOLVED_APPLICATION_URL"`;
-ta opcja ma pierwszeństwo przed URL-em z env przy prepare i finalizacji.
+ta opcja ma pierwszeństwo przed URL-em z env przy prepare i promocji.
 
 Otwórz bezpieczny pusty kontekst, a dla chronionego URL-a wykonaj kolejno
 walidację, `state-load` i dopiero nawigację. `STATE_FILE` ustaw na dokładną,
-repo-relative ścieżkę z `Storage state:` lub `Provisional state:` wypisaną przez
-prepare; dla publicznej
+repo-relative ścieżkę z `Storage state:` lub ostatniego `Candidate state:` wypisaną
+przez prepare albo stage; dla publicznej
 strony pomiń wiersz `state-load`. Poniższy schemat pokazuje chronioną nawigację
 (placeholdery nie są wartościami domyślnymi):
 
@@ -223,8 +254,11 @@ if [[ "${ACCESS_STATUS:-}" == ACTION_REQUIRED && -n "${CONTINUATION_URL:-}" ]]; 
 else
     "$PW_CLI" -s="$APP_SESSION" goto "$RESOLVED_APPLICATION_URL"
 fi
-# Przy ACTION_REQUIRED: snapshot, dozwolone kroki niesekretne i --finalize
-# wykonaj tutaj, PRZED close/detach; checkpoint widoku dopiero po Access: READY.
+# Przy ACTION_REQUIRED: oceń widok, wykonaj dozwolone kroki i --stage
+# PRZED close/detach. Potem powtórz lifecycle w świeżej izolowanej sesji
+# z kandydatem stage: ponowna ocena i --promote z dowodem, bez kroków logowania.
+# Przy VERIFY_REQUIRED nie używaj współdzielonego CDP; potwierdź izolację.
+# Checkpoint badanego widoku dopiero po Access: READY.
 # Wykonaj także po błędzie walidacji, ładowania lub nawigacji.
 if [[ -n "${PLAYWRIGHT_MCP_CDP_ENDPOINT:-}" ]]; then
     "$PW_CLI" -s="$APP_SESSION" detach

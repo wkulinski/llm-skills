@@ -7,7 +7,7 @@
     "order": "strongest-to-weakest",
     "profiles": [
         {
-            "model": "openai/gpt-6-sol",
+            "model": "openai/gpt-6.1-sol",
             "reasoning": "medium"
         },
         {
@@ -15,7 +15,7 @@
             "reasoning": "max"
         },
         {
-            "model": "commandcode/deepseek/deepseek-v4.1-flash",
+            "model": "deepseek/deepseek-v4.1-flash",
             "reasoning": "max"
         },
         {

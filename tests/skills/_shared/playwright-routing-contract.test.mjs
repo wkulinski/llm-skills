@@ -55,8 +55,11 @@ describe("shared Playwright routing", () => {
         expect(checkpoint.indexOf('goto "$RESOLVED_APPLICATION_URL"')).toBeGreaterThan(checkpoint.indexOf('state-load "$STATE_FILE"'));
         expect(contract).not.toContain('open "$RESOLVED_APPLICATION_URL"');
         expect(contract).toContain('"$PW_CLI" -s="$APP_SESSION" detach');
-        expect(contract).toContain("--finalize --session");
+        expect(contract).toContain('--stage --session "$APP_SESSION"');
+        expect(contract).toContain('--promote --candidate "$STATE_FILE" --evidence "$ACCESS_EVIDENCE"');
+        expect(contract.indexOf("**Ponowna ocena i promocja**")).toBeGreaterThan(contract.indexOf("**Zapis kandydata**"));
         expect(contract).toContain("ensure_repo_env_loaded");
         expect(contract).toContain("Access: ACTION_REQUIRED");
+        expect(contract).toContain("Access: VERIFY_REQUIRED");
     });
 });

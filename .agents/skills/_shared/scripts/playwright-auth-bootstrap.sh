@@ -6,13 +6,12 @@ readonly EXIT_PRECONDITION=2
 
 usage() {
     cat <<'EOF'
-Usage: playwright-auth-bootstrap.sh [--refresh] [--url <protected-url>] [--selector <css>]
+Usage: playwright-auth-bootstrap.sh [--refresh] [--url <protected-url>]
 
 Bootstraps the shared Playwright authentication storage state for local
 application verification. Resolves playwright-cli and node through
 _shared/scripts/env-load.sh (resolve_tool_cmd; BIN_PATH first, then PATH),
-verifies an existing state on the protected application page when the
-authenticated marker is configured, and delegates to
+copies an existing state privately for agent inspection, and delegates to
 playwright-auth-bootstrap.mjs. Credential values are passed in the process
 environment only; they never appear in argv, stdout, or stderr. A successful
 login only stages a unique, regular, git-ignored provisional file under
@@ -21,13 +20,12 @@ never overwritten during bootstrap. With --refresh an existing state is not
 reused and a single fresh login is attempted.
 
 Output:
-  Authentication: OK|ACTION_REQUIRED|FAIL
+  Authentication: ACTION_REQUIRED|FAIL
   Reason: <code> (only when authentication fails)
-  Storage state: <repo-relative path> (only when the existing state is verified)
-  Provisional state: <repo-relative path> (only when agent action is required)
+  Candidate state: <repo-relative path> (when agent action is required)
 
 Exit codes:
-  0  existing state verified, or a provisional pending state was staged
+  0  private candidate state was staged for agent assessment
   1  unexpected internal error (internal-error)
   2  precondition not met (cli-missing, env-missing, node-missing,
      playwright-module-unavailable, scope-not-loopback, browser-unavailable)
@@ -38,7 +36,6 @@ EOF
 
 refresh_requested=0
 url_override=""
-selector_override=""
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
         -h|--help)
@@ -49,9 +46,9 @@ while [[ "$#" -gt 0 ]]; do
             refresh_requested=1
             shift
             ;;
-        --url|--selector)
+        --url)
             [[ "$#" -ge 2 && -n "$2" ]] || { usage >&2; exit "$EXIT_PRECONDITION"; }
-            if [[ "$1" == --url ]]; then url_override="$2"; else selector_override="$2"; fi
+            url_override="$2"
             shift 2
             ;;
         *)
@@ -77,7 +74,6 @@ skills_root="$(cd "${script_dir}/../.." && pwd)"
 # loaded values visible to the Node process (and to resolve_tool_cmd itself).
 ensure_repo_env_loaded
 if [[ -n "$url_override" ]]; then export PLAYWRIGHT_GUI_BASE_URL="$url_override"; fi
-if [[ -n "$selector_override" ]]; then export PLAYWRIGHT_GUI_AUTHENTICATED_SELECTOR="$selector_override"; fi
 
 # Playwright debug output bypasses the core logger and can echo credentials;
 # the bootstrap never needs it.

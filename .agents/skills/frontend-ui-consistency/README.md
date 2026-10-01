@@ -53,10 +53,12 @@ Opcjonalny `PLAYWRIGHT_GUI_STORAGE_STATE` musi być repo-relative, rozwiązywać
 do regular file pod `.playwright-cli/auth/` i być ignorowany przez Git. Przed
 chronioną nawigacją osobna, unikalna sesja aplikacji otwiera pusty kontekst,
 waliduje state i wykonuje `state-load <filename>`; dopiero potem nawiguje.
-Dostęp chroniony może wymagać dokończenia niesekretnych kroków logowania
-(`Access: ACTION_REQUIRED`) i finalizacji, zanim stan będzie potwierdzony
-(`Access: READY`). Przy `Access: BLOCKED` przerwij; sesję zawsze zamykaj.
-Jedynym entrypointem przygotowania i finalizacji jest
+Dostęp chroniony zawsze wymaga oceny widoku przez agenta
+(`Access: ACTION_REQUIRED`), dozwolonych niesekretnych kroków oraz zapisu przez
+`--stage`. Wynik `Access: VERIFY_REQUIRED` wymaga ponownej oceny kandydata
+w świeżej, izolowanej sesji przed `--promote --evidence`; dopiero promocja
+zwraca `Access: READY`. Przy `Access: BLOCKED` przerwij; obie sesje zawsze zamykaj.
+Jedynym entrypointem przygotowania, zapisu i promocji jest
 `<skills_root>/_shared/scripts/playwright-access-prepare.sh`. Szczegółowy
 kontrakt, kolejność i blokady określa
 `<skills_root>/_shared/references/playwright-cli-verification.md`, wskazana
