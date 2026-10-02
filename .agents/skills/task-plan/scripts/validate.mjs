@@ -131,7 +131,37 @@ export function validatePlanDocument(markdown, options = {}) {
 
     return result(errors, packages, questionResult.questions, parsed.metadata, {
         contextBlocked: ["INCOMPLETE", "BLOCKED"].includes(parsed.metadata.context_status),
+        reviewPending: isReviewPending(parsed.metadata, parsed.body),
     });
+}
+
+/**
+ * Hash the plan body that a review decision covers.
+ *
+ * The `## Execution` checklist is excluded so that completing work packages
+ * does not withdraw a recorded review.
+ */
+export function reviewBodyHash(body) {
+    const heading = /^## Execution[ \t]*$/m.exec(body);
+    let reviewed = body;
+    if (heading) {
+        const nextHeading = body.indexOf("\n## ", heading.index + heading[0].length);
+        reviewed = `${body.slice(0, heading.index)}${nextHeading >= 0 ? body.slice(nextHeading + 1) : ""}`;
+    }
+    return sha256(reviewed.trim());
+}
+
+/**
+ * A plan whose front matter carries review keys is ready only while the
+ * recorded review matches its current revision and body. Plans written before
+ * the review keys existed have no keys and keep the previous behaviour.
+ */
+function isReviewPending(metadata, body) {
+    if (!Object.hasOwn(metadata, "reviewed_revision") && !Object.hasOwn(metadata, "reviewed_body_sha256")) {
+        return false;
+    }
+    return metadata.reviewed_revision !== metadata.revision
+        || metadata.reviewed_body_sha256 !== reviewBodyHash(body);
 }
 
 export function parsePlanDocument(markdown) {
@@ -393,10 +423,20 @@ export function parseQuestions(body) {
 
 function result(errors, packages, questions, metadata, options = {}) {
     const uniqueErrors = [...new Set(errors)];
+    const blockedByContent = options.contextBlocked || questions.some((question) => question.status === "open");
+    const reviewPending = uniqueErrors.length === 0 && !blockedByContent && options.reviewPending === true;
     const status = uniqueErrors.length > 0
         ? "invalid"
-        : options.contextBlocked || questions.some((question) => question.status === "open") ? "blocked" : "ready";
-    return {valid: uniqueErrors.length === 0, status, errors: uniqueErrors, metadata, packages, questions};
+        : blockedByContent || reviewPending ? "blocked" : "ready";
+    return {
+        valid: uniqueErrors.length === 0,
+        status,
+        blocked_reason: reviewPending ? "review_pending" : null,
+        errors: uniqueErrors,
+        metadata,
+        packages,
+        questions,
+    };
 }
 
 function validateMetadata(metadata) {
@@ -425,6 +465,7 @@ function validateMetadata(metadata) {
     if (!CONTEXT_STATUSES.includes(metadata.context_status)) {
         errors.push(`Front matter context_status must be one of: ${CONTEXT_STATUSES.join(", ")}.`);
     }
+    errors.push(...validateReviewMetadata(metadata));
     for (const field of FORBIDDEN_METADATA) {
         if (Object.hasOwn(metadata, field)) {
             errors.push(`Front matter must not contain sidecar-era field: ${field}.`);
@@ -452,6 +493,57 @@ function validateMetadata(metadata) {
         }
         if (hasHash && !/^[a-f0-9]{64}$/.test(metadata[hashField])) {
             errors.push(`Front matter ${hashField} must be a lowercase SHA-256 hash.`);
+        }
+    }
+    return errors;
+}
+
+function validateReviewMetadata(metadata) {
+    const errors = [];
+    if (Object.hasOwn(metadata, "previous_sha256")) {
+        if (metadata.revision === 1) {
+            if (metadata.previous_sha256 !== null) {
+                errors.push("Front matter previous_sha256 must be null for revision 1.");
+            }
+        } else if (Number.isInteger(metadata.revision) && !/^[a-f0-9]{64}$/.test(metadata.previous_sha256 ?? "")) {
+            errors.push("Front matter previous_sha256 must be a lowercase SHA-256 hash from revision 2.");
+        }
+    }
+    const hasRevision = Object.hasOwn(metadata, "reviewed_revision");
+    const hasHash = Object.hasOwn(metadata, "reviewed_body_sha256");
+    if (hasRevision !== hasHash) {
+        errors.push("Front matter reviewed_revision and reviewed_body_sha256 must be provided together.");
+        return errors;
+    }
+    if (hasRevision) {
+        const revisionSet = metadata.reviewed_revision !== null;
+        const hashSet = metadata.reviewed_body_sha256 !== null;
+        if (revisionSet !== hashSet) {
+            errors.push("Front matter reviewed_revision and reviewed_body_sha256 must both be null or both be set.");
+        } else if (revisionSet) {
+            if (!Number.isInteger(metadata.reviewed_revision) || metadata.reviewed_revision < 1) {
+                errors.push("Front matter reviewed_revision must be a positive integer or null.");
+            }
+            if (!/^[a-f0-9]{64}$/.test(metadata.reviewed_body_sha256 ?? "")) {
+                errors.push("Front matter reviewed_body_sha256 must be a lowercase SHA-256 hash or null.");
+            }
+        }
+    }
+    const hasBaseRevision = Object.hasOwn(metadata, "review_base_revision");
+    if (hasBaseRevision !== Object.hasOwn(metadata, "review_base_sha256")) {
+        errors.push("Front matter review_base_revision and review_base_sha256 must be provided together.");
+    } else if (hasBaseRevision) {
+        const baseRevisionSet = metadata.review_base_revision !== null;
+        if (baseRevisionSet !== (metadata.review_base_sha256 !== null)) {
+            errors.push("Front matter review_base_revision and review_base_sha256 must both be null or both be set.");
+        } else if (baseRevisionSet) {
+            if (!Number.isInteger(metadata.review_base_revision) || metadata.review_base_revision < 1
+                || (Number.isInteger(metadata.revision) && metadata.review_base_revision > metadata.revision)) {
+                errors.push("Front matter review_base_revision must be a positive integer not greater than revision, or null.");
+            }
+            if (!/^[a-f0-9]{64}$/.test(metadata.review_base_sha256 ?? "")) {
+                errors.push("Front matter review_base_sha256 must be a lowercase SHA-256 hash or null.");
+            }
         }
     }
     return errors;
@@ -715,6 +807,7 @@ export function projectValidationOutput(validation, markdown, {verbose = false, 
         ok: validation.valid,
         valid: validation.valid,
         status: validation.status,
+        blocked_reason: validation.blocked_reason ?? null,
         changed: false,
         plan_id: validation.metadata?.plan_id ?? null,
         revision: validation.metadata?.revision ?? null,

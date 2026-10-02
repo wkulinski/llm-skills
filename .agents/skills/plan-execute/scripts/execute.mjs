@@ -59,8 +59,10 @@ export function loadExecutionPlan({planPath, repoRoot = process.cwd(), fsOps = f
         throw translateExecutionError(error);
     }
     if (loaded.status !== "ready") {
-        throw new PlanExecuteError("PLAN_NOT_READY", `Plan validation status is ${loaded.status}.`, {
+        const reason = loaded.validation?.blocked_reason ?? null;
+        throw new PlanExecuteError("PLAN_NOT_READY", `Plan validation status is ${loaded.status}${reason ? ` (${reason})` : ""}.`, {
             errors: loaded.validation?.errors ?? [],
+            blocked_reason: reason,
         });
     }
     const parsed = parsePlanDocument(loaded.markdown);

@@ -2,16 +2,18 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {spawnSync} from "node:child_process";
 import {it} from "vitest";
 
 import {editPlan} from "../../../.agents/skills/task-plan/scripts/edit.mjs";
 import {
     buildDeltaReviewInput,
+    buildDeltaReviewInputFromPlan,
     decideReviewCycle,
     REVIEW_ACTIONS,
 } from "../../../.agents/skills/task-plan/scripts/review-cycle.mjs";
 import {normalizeUserInput, persistSource} from "../../../.agents/skills/task-plan/scripts/source.mjs";
-import {loadPlan, loadPlanFile, savePlan} from "../../../.agents/skills/task-plan/scripts/store.mjs";
+import {loadPlan, loadPlanFile, recordReview, savePlan} from "../../../.agents/skills/task-plan/scripts/store.mjs";
 import {parsePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
 
 const NOW = "2026-09-16T12:00:00.000Z";
@@ -371,10 +373,190 @@ it("keeps the full save token bound to the transformation base", () => {
 
         assert.equal(saved.changed, true);
         assert.equal(saved.revision, before.revision + 1);
-        assert.equal(loadPlanFile({
+        const pending = loadPlanFile({repoRoot: fixture.root, planPath: fixture.planPath});
+        assert.equal(pending.status, "blocked");
+        assert.equal(pending.validation.blocked_reason, "review_pending");
+        recordReview({
             repoRoot: fixture.root,
             planPath: fixture.planPath,
-        }).status, "ready");
+            decision: decideReviewCycle(reviewInput({plan: planReference(fixture, snapshot(fixture))})),
+        });
+        assert.equal(loadPlanFile({repoRoot: fixture.root, planPath: fixture.planPath}).status, "ready");
+    } finally {
+        cleanup(fixture);
+    }
+});
+
+const REVIEW_CYCLE_SCRIPT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../.agents/skills/task-plan/scripts/review-cycle.mjs");
+
+function planReference(fixture, state) {
+    return {plan_id: fixture.saved.plan_id, revision: state.revision, content_sha256: state.content_sha256};
+}
+
+/** Record a full review of the current revision that requests one repair. */
+function recordRepairReview(fixture) {
+    const reviewed = snapshot(fixture);
+    const decision = decideReviewCycle(reviewInput({
+        verdict: "PLAN CHANGES REQUESTED",
+        findings: [finding()],
+        plan: planReference(fixture, reviewed),
+    }));
+    assert.equal(decision.action, REVIEW_ACTIONS.APPLY_REPAIR);
+    recordReview({repoRoot: fixture.root, planPath: fixture.planPath, decision});
+    return reviewed;
+}
+
+function repairGoal(fixture, value = "Exercise the bounded review cycle after one repair.") {
+    return editPlan({
+        file: fixture.planPath,
+        operation: {type: "edit-bullet", work_package: "WP1", id: "Goal", value},
+    }, {repoRoot: fixture.root});
+}
+
+function semanticDeltaInput(overrides = {}) {
+    return {
+        changed_sections: ["Work packages"],
+        changed_work_packages: ["WP1"],
+        previous_finding_ids: ["F1"],
+        allowed_direct_dependencies: ["Acceptance and verification"],
+        ...overrides,
+    };
+}
+
+it("derives delta input from the last recorded review so the base hash cannot be lost", () => {
+    const fixture = createFixture();
+    try {
+        const reviewed = recordRepairReview(fixture);
+        repairGoal(fixture);
+        const after = snapshot(fixture);
+
+        const built = buildDeltaReviewInputFromPlan({repoRoot: fixture.root, planPath: fixture.planPath, input: semanticDeltaInput()});
+        assert.equal(built.ok, true, JSON.stringify(built.errors));
+        assert.deepEqual(built.delta_review, deltaBetween(fixture, reviewed, after));
+        assert.deepEqual(built.sources, {base_sha256: "plan", current_sha256: "plan"});
+
+        const input = path.join(fixture.root, "delta.json");
+        fs.writeFileSync(input, JSON.stringify(semanticDeltaInput()), "utf8");
+        const cli = spawnSync(process.execPath, [
+            REVIEW_CYCLE_SCRIPT, "delta-input", "--file", fixture.planPath, "--root", fixture.root, "--input", input,
+        ], {encoding: "utf8"});
+        assert.equal(cli.status, 0, cli.stderr);
+        assert.deepEqual(JSON.parse(cli.stdout).delta_review, built.delta_review);
+    } finally {
+        cleanup(fixture);
+    }
+});
+
+it("covers a repair saved in several revisions with one delta from the reviewed revision", () => {
+    const fixture = createFixture();
+    try {
+        const reviewed = recordRepairReview(fixture);
+        repairGoal(fixture, "First part of the repair.");
+        repairGoal(fixture, "Second part of the repair.");
+        const after = snapshot(fixture);
+        assert.equal(after.revision, reviewed.revision + 2);
+
+        const built = buildDeltaReviewInputFromPlan({repoRoot: fixture.root, planPath: fixture.planPath, input: semanticDeltaInput()});
+        assert.equal(built.ok, true, JSON.stringify(built.errors));
+        assert.equal(built.delta_review.base_revision, reviewed.revision);
+        assert.equal(built.delta_review.base_sha256, reviewed.content_sha256);
+        assert.equal(built.delta_review.current_revision, after.revision);
+        assert.equal(built.delta_review.current_sha256, after.content_sha256);
+    } finally {
+        cleanup(fixture);
+    }
+});
+
+it("fails hard instead of inferring delta input without a recorded review", () => {
+    const fixture = createFixture();
+    try {
+        repairGoal(fixture);
+        assert.throws(
+            () => buildDeltaReviewInputFromPlan({repoRoot: fixture.root, planPath: fixture.planPath, input: semanticDeltaInput()}),
+            (error) => error.code === "DELTA_BASE_UNAVAILABLE",
+        );
+
+        recordRepairReview(fixture);
+        assert.throws(
+            () => buildDeltaReviewInputFromPlan({repoRoot: fixture.root, planPath: fixture.planPath, input: semanticDeltaInput()}),
+            (error) => error.code === "DELTA_NOTHING_TO_REVIEW",
+        );
+
+        repairGoal(fixture, "Repair after the recorded review.");
+        const markdown = fs.readFileSync(path.join(fixture.root, fixture.planPath), "utf8");
+        fs.writeFileSync(path.join(fixture.root, fixture.planPath), markdown.replace(/^review_base_sha256: .*\n/m, ""), "utf8");
+        assert.throws(
+            () => buildDeltaReviewInputFromPlan({repoRoot: fixture.root, planPath: fixture.planPath, input: semanticDeltaInput()}),
+            (error) => error.code === "DELTA_BASE_HASH_MISSING",
+        );
+
+        const input = path.join(fixture.root, "delta.json");
+        fs.writeFileSync(input, JSON.stringify(semanticDeltaInput()), "utf8");
+        const cli = spawnSync(process.execPath, [
+            REVIEW_CYCLE_SCRIPT, "delta-input", "--file", fixture.planPath, "--root", fixture.root, "--input", input,
+        ], {encoding: "utf8"});
+        assert.equal(cli.status, 2);
+        assert.equal(cli.stdout, "");
+        assert.equal(JSON.parse(cli.stderr).error, "DELTA_BASE_HASH_MISSING");
+    } finally {
+        cleanup(fixture);
+    }
+});
+
+it("keeps explicit hash input as an override and rejects contradictory revisions", () => {
+    const fixture = createFixture();
+    try {
+        recordRepairReview(fixture);
+        repairGoal(fixture);
+        const override = "a".repeat(64);
+        const built = buildDeltaReviewInputFromPlan({
+            repoRoot: fixture.root,
+            planPath: fixture.planPath,
+            input: semanticDeltaInput({base_sha256: override}),
+        });
+        assert.equal(built.ok, true, JSON.stringify(built.errors));
+        assert.equal(built.delta_review.base_sha256, override);
+        assert.deepEqual(built.sources, {base_sha256: "input-override", current_sha256: "plan"});
+
+        assert.throws(
+            () => buildDeltaReviewInputFromPlan({
+                repoRoot: fixture.root,
+                planPath: fixture.planPath,
+                input: semanticDeltaInput({base_revision: 7}),
+            }),
+            (error) => error.code === "DELTA_INPUT_CONFLICT",
+        );
+    } finally {
+        cleanup(fixture);
+    }
+});
+
+it("walks the whole review cycle through to a recorded ready decision", () => {
+    const fixture = createFixture();
+    try {
+        recordRepairReview(fixture);
+        const repaired = repairGoal(fixture);
+        assert.equal(repaired.status, "blocked");
+        assert.equal(repaired.blocked_reason, "review_pending");
+
+        const delta = buildDeltaReviewInputFromPlan({repoRoot: fixture.root, planPath: fixture.planPath, input: semanticDeltaInput()});
+        const decision = decideReviewCycle(reviewInput({
+            delta_review_count: 1,
+            previous_findings: [{id: "F1", severity: "MINOR"}],
+            previous_resolutions: [{id: "F1", status: "resolved"}],
+            delta_review: delta.delta_review,
+        }));
+        assert.equal(decision.action, REVIEW_ACTIONS.FINISH_READY);
+        assert.deepEqual(decision.plan, {
+            plan_id: fixture.saved.plan_id,
+            revision: repaired.revision,
+            content_sha256: delta.delta_review.current_sha256,
+        });
+
+        const recorded = recordReview({repoRoot: fixture.root, planPath: fixture.planPath, decision});
+        assert.equal(recorded.status, "ready");
+        assert.equal(recorded.reviewed_revision, repaired.revision);
+        assert.equal(recorded.review_base_revision, repaired.revision);
     } finally {
         cleanup(fixture);
     }

@@ -334,16 +334,36 @@ describe("review-cycle completeness and delta provenance", () => {
         expect(result.errors.map((entry) => entry.code)).toContain("MISSING_FINDING_PROVENANCE");
     });
 
-    it("rejects an unchanged or skipped revision as a delta artifact", () => {
+    it("rejects an unchanged delta artifact and accepts several revisions since the reviewed base", () => {
         const unchanged = validateReviewCycleInput(laterReview({
             delta_review: deltaInput({current_sha256: BASE_HASH}),
         }));
         expect(unchanged.map((entry) => entry.code)).toContain("UNCHANGED_DELTA_DOCUMENT");
 
-        const skipped = validateReviewCycleInput(laterReview({
+        const spanning = validateReviewCycleInput(laterReview({
             delta_review: deltaInput({current_revision: 4}),
         }));
-        expect(skipped.map((entry) => entry.code)).toContain("NON_SEQUENTIAL_DELTA_REVISION");
+        expect(spanning).toEqual([]);
+    });
+
+    it("binds the decision to the reviewed plan revision", () => {
+        const plan = {plan_id: "plan-1", revision: 1, content_sha256: BASE_HASH};
+        expect(decideReviewCycle(reviewInput({plan}))).toMatchObject({action: REVIEW_ACTIONS.FINISH_READY, plan});
+        expect(decideReviewCycle(reviewInput())).toMatchObject({ok: true, plan: null});
+
+        const delta = deltaInput();
+        expect(decideReviewCycle(laterReview({delta_review: delta})).plan).toEqual({
+            plan_id: delta.plan_id,
+            revision: delta.current_revision,
+            content_sha256: delta.current_sha256,
+        });
+
+        const conflict = decideReviewCycle(laterReview({plan: {...plan, revision: delta.current_revision}}));
+        expect(conflict).toMatchObject({ok: false, plan: null});
+        expect(conflict.errors.map((entry) => entry.code)).toContain("PLAN_REFERENCE_CONFLICT");
+
+        const invalid = validateReviewCycleInput(reviewInput({plan: {plan_id: "", revision: 0, content_sha256: "x"}}));
+        expect(invalid.map((entry) => entry.code)).toEqual(expect.arrayContaining(["INVALID_PLAN_REFERENCE"]));
     });
 
     it("allows a new actionable finding only from a declared changed area or dependency", () => {

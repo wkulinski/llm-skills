@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {pathToFileURL} from "node:url";
+
+import {loadPlanFile} from "./store.mjs";
 
 export const REVIEW_ACTIONS = Object.freeze({
     FINISH_READY: "finish-ready",
@@ -37,10 +40,23 @@ const MAX_DELTA_REVIEWS = 3;
  * Semantic claims such as recurrence and provenance are trusted inputs; this
  * helper validates their completeness and consistency, not their truth.
  *
+ * A valid decision carries `plan`: the plan id, revision and document hash the
+ * review covered, taken from the input `plan` reference or from the current
+ * side of the delta artifact. `record-review` accepts only a bound decision.
+ *
+ * @param {JsonObject} [input]
+ * @returns {{ok: boolean, action: string, reason: string, actionable_finding_ids: string[], errors: ValidationIssue[], plan: JsonObject|null}}
+ */
+export function decideReviewCycle(input = {}) {
+    const result = deriveAction(input);
+    return {...result, plan: result.ok ? reviewedPlan(input) : null};
+}
+
+/**
  * @param {JsonObject} [input]
  * @returns {{ok: boolean, action: string, reason: string, actionable_finding_ids: string[], errors: ValidationIssue[]}}
  */
-export function decideReviewCycle(input = {}) {
+function deriveAction(input = {}) {
     const errors = validateReviewCycleInput(input);
     const source = isRecord(input) ? input : {};
     const findings = Array.isArray(source.findings) ? source.findings : [];
@@ -170,8 +186,45 @@ export function validateReviewCycleInput(input = {}) {
     } else if (typeof input.delta_review !== "undefined" && input.delta_review !== null) {
         errors.push(error("UNEXPECTED_DELTA_INPUT", "delta_review is only valid after at least one delta review."));
     }
+    validatePlanReference(input, errors);
 
     return errors;
+}
+
+/**
+ * Resolve the plan revision a decision covers.
+ *
+ * @param {JsonObject} input
+ * @returns {{plan_id: string, revision: number, content_sha256: string}|null}
+ */
+function reviewedPlan(input) {
+    if (isRecord(input.plan)) {
+        return {plan_id: input.plan.plan_id.trim(), revision: input.plan.revision, content_sha256: input.plan.content_sha256};
+    }
+    if (input.delta_review_count > 0 && isRecord(input.delta_review)) {
+        const delta = input.delta_review;
+        return {plan_id: delta.plan_id.trim(), revision: delta.current_revision, content_sha256: delta.current_sha256};
+    }
+    return null;
+}
+
+function validatePlanReference(input, errors) {
+    if (typeof input.plan === "undefined" || input.plan === null) {
+        return;
+    }
+    if (!isRecord(input.plan)) {
+        errors.push(error("INVALID_PLAN_REFERENCE", "plan must be an object with plan_id, revision and content_sha256."));
+        return;
+    }
+    requireString(input.plan.plan_id, "plan.plan_id", errors, "INVALID_PLAN_REFERENCE");
+    validatePositiveInteger(input.plan.revision, "plan.revision", errors);
+    validateHash(input.plan.content_sha256, "plan.content_sha256", errors);
+    const delta = input.delta_review_count > 0 && isRecord(input.delta_review) ? input.delta_review : null;
+    if (delta && (input.plan.plan_id !== delta.plan_id
+        || input.plan.revision !== delta.current_revision
+        || input.plan.content_sha256 !== delta.current_sha256)) {
+        errors.push(error("PLAN_REFERENCE_CONFLICT", "plan must match plan_id, current_revision and current_sha256 of delta_review."));
+    }
 }
 
 /**
@@ -191,10 +244,6 @@ export function validateDeltaReviewInput(input = {}) {
     if (Number.isInteger(input.base_revision) && Number.isInteger(input.current_revision)
         && input.current_revision <= input.base_revision) {
         errors.push(error("INVALID_DELTA_REVISIONS", "current_revision must be greater than base_revision."));
-    }
-    if (Number.isInteger(input.base_revision) && Number.isInteger(input.current_revision)
-        && input.current_revision !== input.base_revision + 1) {
-        errors.push(error("NON_SEQUENTIAL_DELTA_REVISION", "current_revision must be the single revision immediately after base_revision."));
     }
     validateHash(input.base_sha256, "base_sha256", errors);
     validateHash(input.current_sha256, "current_sha256", errors);
@@ -240,6 +289,66 @@ export function buildDeltaReviewInput(input = {}) {
         },
         errors: [],
     };
+}
+
+export class ReviewCycleError extends Error {
+    constructor(code, message, details = {}) {
+        super(message);
+        this.name = "ReviewCycleError";
+        this.code = code;
+        this.details = details;
+    }
+}
+
+/**
+ * Build delta-review input from the plan file itself.
+ *
+ * The base is the last reviewed revision recorded by `store.mjs record-review`
+ * (`review_base_revision`, `review_base_sha256`), so a repair saved in several
+ * revisions is reviewed as one delta. Plan id, current revision and both
+ * document hashes come from the plan, and the owner only supplies the semantic
+ * fields. Missing history is a hard error: values are never inferred.
+ * `base_sha256` and `current_sha256` in `input` are explicit overrides and are
+ * reported as such in `sources`.
+ *
+ * @param {{repoRoot?: string, planPath: string, input?: JsonObject, fsOps?: typeof fs}} options
+ * @returns {{ok: boolean, delta_review: JsonObject|null, errors: ValidationIssue[], sources: JsonObject}}
+ */
+export function buildDeltaReviewInputFromPlan({repoRoot = process.cwd(), planPath, input = {}, fsOps = fs} = {}) {
+    const loaded = loadPlanFile({repoRoot, planPath, fsOps});
+    const metadata = loaded.metadata;
+    const revision = metadata.revision;
+    const baseRevision = metadata.review_base_revision;
+    if (!Number.isInteger(baseRevision) || baseRevision < 1) {
+        throw new ReviewCycleError("DELTA_BASE_UNAVAILABLE", "The plan has no recorded review; run store.mjs record-review with the decision of the previous review before requesting a delta review.", {revision: revision ?? null});
+    }
+    if (!validHash(metadata.review_base_sha256)) {
+        throw new ReviewCycleError("DELTA_BASE_HASH_MISSING", "The plan has no review_base_sha256 in its front matter; record the previous review through store.mjs record-review. Do not supply the hash by hand or review without it.", {revision, base_revision: baseRevision});
+    }
+    if (!Number.isInteger(revision) || revision <= baseRevision) {
+        throw new ReviewCycleError("DELTA_NOTHING_TO_REVIEW", "The plan has not changed since the last recorded review.", {revision: revision ?? null, base_revision: baseRevision});
+    }
+    if (!isRecord(input)) {
+        throw new ReviewCycleError("INVALID_INPUT", "delta-input --file expects an --input object with the semantic fields.");
+    }
+    const derived = {plan_id: metadata.plan_id, base_revision: baseRevision, current_revision: revision};
+    for (const [field, value] of Object.entries(derived)) {
+        if (typeof input[field] !== "undefined" && input[field] !== value) {
+            throw new ReviewCycleError("DELTA_INPUT_CONFLICT", `${field} in the input contradicts the plan (${JSON.stringify(value)}); remove it and let the plan supply it.`, {field, input: input[field], plan: value});
+        }
+    }
+    const currentSha256 = crypto.createHash("sha256").update(loaded.markdown).digest("hex");
+    const sources = {
+        base_sha256: typeof input.base_sha256 === "undefined" ? "plan" : "input-override",
+        current_sha256: typeof input.current_sha256 === "undefined" ? "plan" : "input-override",
+    };
+    const result = buildDeltaReviewInput({
+        ...input,
+        ...derived,
+        base_sha256: input.base_sha256 ?? metadata.review_base_sha256,
+        current_sha256: input.current_sha256 ?? currentSha256,
+    });
+    return {...result, sources};
 }
 
 function validateFinding(finding, errors) {
@@ -551,7 +660,7 @@ function isRecord(value) {
 }
 
 function parseArgs(argv) {
-    const result = {_command: null, input: null, help: false};
+    const result = {_command: null, input: null, file: null, root: null, help: false};
     for (let index = 0; index < argv.length; index += 1) {
         const token = argv[index];
         if (token === "--help" || token === "-h") {
@@ -560,6 +669,12 @@ function parseArgs(argv) {
             result._command = token;
         } else if (token === "--input") {
             result.input = argv[index + 1];
+            index += 1;
+        } else if (token === "--file") {
+            result.file = argv[index + 1];
+            index += 1;
+        } else if (token === "--root") {
+            result.root = argv[index + 1];
             index += 1;
         } else {
             throw new TypeError(`Unknown argument: ${token}`);
@@ -581,8 +696,15 @@ function usage() {
         "Usage:",
         "  review-cycle.mjs decide --input <file|->",
         "  review-cycle.mjs delta-input --input <file|->",
+        "  review-cycle.mjs delta-input --file <plan> [--root <repo>] --input <file|->",
         "",
         "The helper is stateless. Semantic assessments are explicit JSON input.",
+        "decide returns `plan` (plan_id, revision, content_sha256) from the input `plan` reference",
+        "or from delta_review; store.mjs record-review accepts only such a bound decision.",
+        "With --file, the base is the last review recorded in the plan (review_base_revision,",
+        "review_base_sha256); the input supplies only changed_sections, changed_work_packages,",
+        "previous_finding_ids and allowed_direct_dependencies. A missing review base is a hard error.",
+        "base_sha256/current_sha256 in the input remain explicit overrides, reported in `sources`.",
     ].join("\n");
 }
 
@@ -593,10 +715,15 @@ function main(argv) {
         return;
     }
     const input = readJsonInput(args.input);
+    if (args._command !== "delta-input" && (args.file !== null || args.root !== null)) {
+        throw new TypeError("--file and --root are only valid for delta-input.");
+    }
     const result = args._command === "decide"
         ? decideReviewCycle(input)
         : args._command === "delta-input"
-            ? buildDeltaReviewInput(input)
+            ? args.file === null
+                ? buildDeltaReviewInput(input)
+                : buildDeltaReviewInputFromPlan({repoRoot: args.root ?? process.cwd(), planPath: args.file, input})
             : null;
     if (result === null) {
         throw new TypeError("Command must be decide or delta-input.");
@@ -609,7 +736,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         main(process.argv.slice(2));
     } catch (caught) {
         const message = caught instanceof Error ? caught.message : String(caught);
-        process.stderr.write(`${JSON.stringify({error: "REVIEW_CYCLE_ERROR", message})}\n`);
+        process.stderr.write(`${JSON.stringify({error: caught?.code ?? "REVIEW_CYCLE_ERROR", message, details: caught?.details ?? {}})}\n`);
         process.exitCode = 2;
     }
 }

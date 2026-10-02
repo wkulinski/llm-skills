@@ -19,6 +19,7 @@ import {
     completeWorkPackage,
     loadPlan,
     loadPlanFile,
+    recordReview,
     resolvePlanPaths,
     savePlan,
     StoreError,
@@ -151,6 +152,17 @@ function contentHash(markdown) {
     return crypto.createHash("sha256").update(markdown).digest("hex");
 }
 
+const FINISH_READY = {ok: true, action: "finish-ready", reason: "plan-ready", actionable_finding_ids: [], errors: []};
+
+/** Record the review confirmation that lets a saved plan become ready. */
+function recordReady(root, saved, options = {verbose: true}) {
+    return recordReview({repoRoot: root, planPath: saved.paths?.draft_path ?? saved.plan_path, decision: boundFinishReady(saved)}, options);
+}
+
+function boundFinishReady(saved) {
+    return {...FINISH_READY, plan: {plan_id: saved.plan_id, revision: saved.revision, content_sha256: saved.content_sha256}};
+}
+
 function updateToken(saved) {
     return {expected_revision: saved.revision, base_sha256: saved.content_sha256};
 }
@@ -187,9 +199,10 @@ it("creates a plan from a GitHub issue containing only a title", () => {
         source_identity: titleOnly.identity,
         markdown_body: completePlanBody(),
         context: null,
-    }, {now: NOW});
+    }, {now: NOW, verbose: true});
 
-    assert.equal(saved.status, "ready");
+    assert.equal(saved.status, "blocked");
+    assert.equal(recordReady(root, saved).status, "ready");
     assert.equal(loadPersistedSource({repoRoot: root, sourceIdentity: titleOnly.identity}).source.body, "");
     assert.throws(
         () => normalizeGitHubIssue({owner: "owner", repo: "repository", issue_number: 322, title: "", body: ""}, {fetched_at: NOW}),
@@ -242,10 +255,12 @@ it("source-only is a valid resume point before a complete plan exists", () => {
 it("writes a ready Markdown plan without sidecar state", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const saved = savePlan(saveInput(root), {now: NOW, verbose: true});
+    const drafted = savePlan(saveInput(root), {now: NOW, verbose: true});
+    const saved = recordReady(root, drafted);
     const loaded = loadPlan({repoRoot: root, sourceIdentity: source().identity});
     const paths = resolvePlanPaths({repoRoot: root, sourceIdentity: source().identity});
 
+    assert.equal(drafted.status, "blocked");
     assert.equal(saved.status, "ready");
     assert.equal(loaded.status, "ready");
     assert.match(saved.markdown, /revision: 1/);
@@ -342,7 +357,7 @@ it("requires the project-local model hierarchy", () => {
 it("completes a work package through the task-plan store", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const saved = savePlan(saveInput(root), {now: NOW, verbose: true});
+    const saved = recordReady(root, savePlan(saveInput(root), {now: NOW, verbose: true}));
     const completed = completeWorkPackage({
         repoRoot: root,
         planPath: saved.paths.draft_path,
@@ -359,7 +374,7 @@ it("completes a work package through the task-plan store", () => {
 it("accepts pending and completed WP execution-checklist bullets without the named-bullet rule", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const saved = savePlan(saveInput(root), {now: NOW, verbose: true});
+    const saved = recordReady(root, savePlan(saveInput(root), {now: NOW, verbose: true}));
     const completed = completeWorkPackage({
         repoRoot: root,
         planPath: saved.paths.draft_path,
@@ -392,7 +407,7 @@ it("rejects a completed WP entry that omits the completion date and verification
 it("preserves replacement tokens in completion evidence", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const saved = savePlan(saveInput(root), {now: NOW, verbose: true});
+    const saved = recordReady(root, savePlan(saveInput(root), {now: NOW, verbose: true}));
     const completed = completeWorkPackage({
         repoRoot: root,
         planPath: saved.paths.draft_path,
@@ -423,10 +438,13 @@ it("derives blocked and ready from questions stored only in Markdown", () => {
     const answered = `- Q1 [answered]: Which existing contract should remain the owner?
   - Answer: Keep the existing Core contract.
   - Source: current conversation`;
-    const ready = savePlan(saveInput(root, {markdown_body: completePlanBody({decisions: answered}), ...updateToken(blocked)}), {
+    const reviewPending = savePlan(saveInput(root, {markdown_body: completePlanBody({decisions: answered}), ...updateToken(blocked)}), {
         now: "2026-08-24T12:05:00.000Z",
         verbose: true,
     });
+    assert.equal(reviewPending.status, "blocked");
+    assert.equal(reviewPending.blocked_reason, "review_pending");
+    const ready = recordReady(root, reviewPending);
     assert.equal(ready.status, "ready");
     assert.equal(ready.metadata.revision, 2);
     assert.equal(ready.validation.questions[0].answer, "Keep the existing Core contract.");
@@ -554,7 +572,7 @@ it("stores and verifies canonical context references in plan front matter", () =
 it("withdraws ready while a material revision references an incomplete canonical run", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const ready = savePlan(saveInput(root), {now: NOW, verbose: true});
+    const ready = recordReady(root, savePlan(saveInput(root), {now: NOW, verbose: true}));
     const reportPath = path.join(root, "var", "agent", "incomplete-context.report.json");
     const criteriaPath = path.join(root, "var", "agent", "incomplete-context.criteria.json");
     fs.mkdirSync(path.dirname(reportPath), {recursive: true});
@@ -786,7 +804,13 @@ it("CLI persists source, saves and validates a plan without sidecar", () => {
     const saved = spawnSync(process.execPath, [storeScript, "save", "--input", planFile], {encoding: "utf8"});
     assert.equal(saved.status, 0, saved.stderr);
     const savedResult = JSON.parse(saved.stdout);
-    assert.equal(savedResult.status, "ready");
+    assert.equal(savedResult.status, "blocked");
+    assert.equal(savedResult.blocked_reason, "review_pending");
+    const decisionFile = path.join(root, "decision.json");
+    fs.writeFileSync(decisionFile, JSON.stringify(boundFinishReady(savedResult)), "utf8");
+    const recorded = spawnSync(process.execPath, [storeScript, "record-review", "--file", savedResult.plan_path, "--input", decisionFile, "--root", root], {encoding: "utf8"});
+    assert.equal(recorded.status, 0, recorded.stderr);
+    assert.equal(JSON.parse(recorded.stdout).status, "ready");
 
     const validated = spawnSync(process.execPath, [
         validateScript,
@@ -812,7 +836,9 @@ it("CLI store save stays compact by default and a separate load reads the full d
         assert.equal(saved.status, 0, saved.stderr);
         const compact = JSON.parse(saved.stdout);
         assert.equal(compact.ok, true);
-        assert.equal(compact.status, "ready");
+        assert.equal(compact.status, "blocked");
+        assert.equal(compact.blocked_reason, "review_pending");
+        assert.equal(compact.previous_sha256, null);
         assert.equal(compact.revision, 1);
         assert.match(compact.content_sha256, /^[a-f0-9]{64}$/);
         assert.equal(typeof compact.plan_path, "string");
@@ -857,11 +883,18 @@ it("CLI validate returns a compact projection and full payload with --verbose", 
         const saved = savePlan(saveInput(root), {now: NOW, verbose: true});
         const planFile = path.join(root, saved.paths.draft_path);
 
+        const pending = spawnSync(process.execPath, [validateScript, "validate", "--file", planFile, "--root", root], {encoding: "utf8"});
+        assert.equal(pending.status, 0, pending.stderr);
+        assert.equal(JSON.parse(pending.stdout).status, "blocked");
+        assert.equal(JSON.parse(pending.stdout).blocked_reason, "review_pending");
+        recordReady(root, saved);
+
         const compact = spawnSync(process.execPath, [validateScript, "validate", "--file", planFile, "--root", root], {encoding: "utf8"});
         assert.equal(compact.status, 0, compact.stderr);
         const compactResult = JSON.parse(compact.stdout);
         assert.equal(compactResult.valid, true);
         assert.equal(compactResult.status, "ready");
+        assert.equal(compactResult.blocked_reason, null);
         assert.match(compactResult.content_sha256, /^[a-f0-9]{64}$/);
         assert.equal(Object.hasOwn(compactResult, "packages"), false);
         assert.equal(Object.hasOwn(compactResult, "questions"), false);
@@ -913,7 +946,7 @@ it("normalizes a conversational source through stdin before persisting it", () =
             encoding: "utf8",
         });
         assert.equal(saved.status, 0, saved.stderr);
-        assert.equal(JSON.parse(saved.stdout).status, "ready");
+        assert.equal(JSON.parse(saved.stdout).status, "blocked");
     } finally {
         fs.rmSync(root, {force: true, recursive: true});
     }
@@ -957,7 +990,7 @@ it("prints source and store CLI help without inputs or side effects", () => {
 it("validation can run directly against persisted evidence", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const saved = savePlan(saveInput(root), {now: NOW, verbose: true});
+    const saved = recordReady(root, savePlan(saveInput(root), {now: NOW, verbose: true}));
     const validation = validatePlanDocument(saved.markdown, {repoRoot: root});
     assert.equal(validation.valid, true);
     assert.equal(validation.status, "ready");
@@ -971,7 +1004,8 @@ it("projects a compact default save result and exposes the full document on requ
     const compact = savePlan(saveInput(root), {now: NOW});
 
     assert.equal(compact.ok, true);
-    assert.equal(compact.status, "ready");
+    assert.equal(compact.status, "blocked");
+    assert.equal(compact.blocked_reason, "review_pending");
     assert.equal(compact.changed, true);
     assert.equal(compact.plan_id, savedPlanId(root));
     assert.equal(compact.revision, 1);
@@ -1015,7 +1049,7 @@ it("returns the canonical content hash consistently across save, load and no-op"
 it("projects complete-wp without the Markdown body and reports the changed package", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    const saved = savePlan(saveInput(root), {now: NOW});
+    const saved = recordReady(root, savePlan(saveInput(root), {now: NOW}), {});
     const completed = completeWorkPackage({
         repoRoot: root,
         planPath: saved.plan_path,
@@ -1026,6 +1060,8 @@ it("projects complete-wp without the Markdown body and reports the changed packa
     assert.equal(completed.ok, true);
     assert.equal(completed.changed, true);
     assert.equal(completed.revision, 2);
+    assert.equal(completed.status, "ready");
+    assert.equal(completed.previous_sha256, saved.content_sha256);
     assert.match(completed.content_sha256, /^[a-f0-9]{64}$/);
     assert.deepEqual(completed.changed_work_packages, ["WP1"]);
     assert.equal(Object.hasOwn(completed, "markdown"), false);
@@ -1052,7 +1088,7 @@ it("keeps product notes non-blocking while open questions still block", () => {
     const notes = [
         "- N1 [note]: Row click target; koszt: unpredictable result; podstawa: hipoteza; kierunek: confirm with the product owner.",
     ].join("\n");
-    const ready = savePlan(saveInput(root, {markdown_body: completePlanBody({decisions: notes})}), {now: NOW, verbose: true});
+    const ready = recordReady(root, savePlan(saveInput(root, {markdown_body: completePlanBody({decisions: notes})}), {now: NOW, verbose: true}));
     const readyValidation = validatePlanDocument(ready.markdown, {repoRoot: root});
     assert.equal(readyValidation.valid, true, readyValidation.errors.join("\n"));
     assert.equal(readyValidation.status, "ready");
