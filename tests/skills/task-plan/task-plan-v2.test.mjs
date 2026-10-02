@@ -1045,3 +1045,21 @@ it("documents the repository-level task-plan test directory", () => {
     assert.match(skill, /persist --input -/);
     assert.equal(fs.existsSync(path.join(ROOT, "tests/skills/task-plan/task-plan-v2.test.mjs")), true);
 });
+
+it("keeps product notes non-blocking while open questions still block", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const notes = [
+        "- N1 [note]: Row click target; koszt: unpredictable result; podstawa: hipoteza; kierunek: confirm with the product owner.",
+    ].join("\n");
+    const ready = savePlan(saveInput(root, {markdown_body: completePlanBody({decisions: notes})}), {now: NOW, verbose: true});
+    const readyValidation = validatePlanDocument(ready.markdown, {repoRoot: root});
+    assert.equal(readyValidation.valid, true, readyValidation.errors.join("\n"));
+    assert.equal(readyValidation.status, "ready");
+
+    const blocked = validatePlanDocument(
+        ready.markdown.replace(notes, `${notes}\n- Q1 [open]: Keep, reformulate, or exclude the row click?`),
+        {repoRoot: root},
+    );
+    assert.equal(blocked.status, "blocked");
+});

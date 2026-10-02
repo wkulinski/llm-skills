@@ -11,6 +11,7 @@ shared_files:
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/repository-context-hybrid.md
   - _shared/references/context-subagent-contract.md
+  - _shared/references/user-facing-behavior-assessment.md
   - _shared/scripts/env-load.sh
   - _shared/scripts/context-criteria.mjs
   - _shared/scripts/context-handoff.mjs
@@ -138,6 +139,7 @@ Odczytaj tylko pliki wymagane przez aktywny krok:
 | routing nadrzędnego workflow i guard wyboru skilla | `<skills_root>/_shared/references/skill-routing-policy.md` |
 | canonical lifecycle repository-context i macierz broad vs targeted | `<skills_root>/_shared/references/repository-context-hybrid.md` |
 | kontrakt kontekstu między agentami | `<skills_root>/_shared/references/context-subagent-contract.md` |
+| punkt źródła dotyczy nawigacji, interakcji, wyboru obiektu, komunikatu albo akcji o istotnych skutkach dla użytkownika | `<skills_root>/_shared/references/user-facing-behavior-assessment.md` |
 | zasady współpracy i wykonania technicznego | `<skills_root>/_shared/references/runtime-collaboration-guidelines.md` |
 | checklisty jakości | `<skills_root>/_shared/references/runtime-quality-procedures.md` |
 | odrębna faza read-only review planu | `$code-review` (`<skills_root>/code-review/SKILL.md`) |
@@ -172,17 +174,19 @@ Pierwszy zapisany plan ma być merytorycznie użyteczny.
    - obserwowane symptomy;
    - diagnozy techniczne oraz sugerowane rozwiązania autora;
    - twierdzenia potwierdzone dowodami i nadal niezweryfikowane;
-   - hipotezy agenta oraz bieżące, jawne decyzje użytkownika.
+   - hipotezy agenta oraz bieżące, jawne decyzje użytkownika;
+   - dla punktów dotyczących interakcji użytkownika: inwentarz interakcji
+     według `<skills_root>/_shared/references/user-facing-behavior-assessment.md`.
 4. Nie importuj odpowiedzi ani akceptacji z artefaktów v1.
 
 Każdy punkt źródła przypisz do WP. Jeśli evidence wskazuje, że punkt trzeba
 materialnie zmienić albo wykluczyć, nie rozstrzygaj tego samodzielnie: zadaj
 pytanie użytkownikowi. Dopiero odpowiedź pozwala zapisać uzasadnione wykluczenie.
 
-Potrzeba, symptom, diagnoza, architektura i wskazane pliki są twierdzeniami do
-oceny, nie faktami technicznymi. Weryfikuj je tylko w stopniu potrzebnym do
-przypisania punktu albo sformułowania pytania. Szczegół wykonawczy, który nie
-zmienia planu, jest discovery debt.
+Potrzeba, symptom, diagnoza, architektura, wskazane pliki oraz proponowana
+interakcja użytkownika są twierdzeniami do oceny, nie faktami technicznymi.
+Weryfikuj je tylko w stopniu potrzebnym do przypisania punktu albo sformułowania
+pytania. Szczegół wykonawczy, który nie zmienia planu, jest discovery debt.
 
 Dla planu naprawczego oddziel symptom, potwierdzoną przyczynę i proponowaną
 naprawę. Jeżeli przyczyna nie jest potwierdzona, a rozważane przyczyny prowadzą
@@ -288,6 +292,7 @@ review: popraw plan, zbierz evidence albo oznacz go jako `blocked`.
 | Pytania kontrolne | Gdy odpowiedź jest `tak` albo wszystkie są `tak` | Gdy odpowiedź jest `nie` albo choć jedna jest `nie` |
 | --- | --- | --- |
 | **Kierunek względem źródła:** Czy plan realizuje rzeczywisty rezultat źródła zamiast bezkrytycznie wdrażać jego sugerowaną diagnozę lub rozwiązanie? | Kontynuuj review. | Skoryguj kierunek. Jeżeli rezultat źródła pozostaje niejednoznaczny, utwórz pytanie `[open]`. |
+| **Rezultat dla użytkownika:** Czy rozjazdy, niespójności i zmiany warunków z inwentarza interakcji są rozstrzygnięte pytaniem, uwagą produktową albo checkiem zgodnie z `<skills_root>/_shared/references/user-facing-behavior-assessment.md`? | Kontynuuj review. | Sklasyfikuj każdy nierozstrzygnięty wynik według referencji. Pytanie blokujące zapisz jako `[open]` z opcjami: utrzymać, przeformułować albo wykluczyć punkt; nie zmieniaj punktu samodzielnie. Uwagi produktowe zapisz jako `N<number> [note]` w `Decisions and open questions`. |
 | **Pokrycie źródła:** Czy wszystkie punkty źródła są zrealizowane albo jawnie wyłączone? <br> **Przypisanie:** Czy każdy punkt źródła został przypisany albo wykluczony po odpowiedzi użytkownika? | Kontynuuj review. | Przypisz punkt źródła do WP. Wykluczenie albo materialne przeformułowanie punktu wymaga pokazania evidence i pytania użytkownika, czy punkt utrzymać, przeformułować czy wykluczyć. |
 | **Wsparcie evidence:** Czy potwierdzone dowody rzeczywiście wspierają proponowane zmiany? <br> **Potrzeba zmiany:** Czy potrzeba każdej proponowanej zmiany jest potwierdzona evidence? | Kontynuuj review. | Wykonaj punktowy odczyt właściciela mechanizmu albo innego źródła brakującego dowodu. Jeśli mechanizmu albo wymaganego zachowania brakuje, zachowaj zmianę i dopisz konkretne evidence. Jeśli mechanizm już istnieje, usuń zmianę albo przeformułuj ją na weryfikację; nie dodawaj równoległej odpowiedzialności. Jeśli niewiadoma nadal może zmienić plan, zastosuj wiersz `Discovery required`. |
 | **Istniejący mechanizm:** Czy plan używa istniejących wzorców zamiast równoległego rozwiązania? <br> **Brak duplikacji:** Czy żaden WP nie dubluje odpowiedzialności, stanu, algorytmu ani integracji innego WP? <br> **Spójność WP:** Czy ownership, kolejność i założenia są spójne między wszystkimi WP? | Kontynuuj review. | Zastosuj istniejący mechanizm albo skoryguj ownership, granice i kolejność WP. Scal lub rozdziel odpowiedzialności tylko wtedy, gdy plan po zmianie nadal pokrywa wynik źródła. |
@@ -452,6 +457,8 @@ gdy:
 
 - wszystkie wymagane sekcje istnieją;
 - source assessment oddziela intencję, symptomy, sugestie i zweryfikowane fakty;
+- żaden konflikt zmieniający kryteria akceptacji nie jest zapisany wyłącznie
+  jako uwaga produktowa;
 - sekcja kierunku uzasadnia reuse, minimalność i spójność ownership;
 - nie ma placeholderów;
 - każdy punkt źródła jest zmapowany do WP albo ma uzasadnione `excluded`;
@@ -487,6 +494,9 @@ a) rozpocznij implementację
 b) wprowadź poprawki do planu
 c) zakończ bez dalszej akcji
 ```
+
+Jeżeli plan zawiera uwagi produktowe `N<number> [note]`, wypisz je przed tym
+pytaniem.
 
 Wybór `a` jest jedynie jawnym żądaniem użytkownika. Task-plan nadal nie uruchamia
 automatycznie żadnego workflow implementacyjnego. Wybór `b` wycofuje gotowość
