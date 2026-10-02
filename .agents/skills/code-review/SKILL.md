@@ -17,6 +17,7 @@ shared_files:
   - _shared/references/repository-context-hybrid.md
   - _shared/references/context-subagent-contract.md
   - _shared/references/playwright-cli-verification.md
+  - _shared/references/user-facing-behavior-assessment.md
   - _shared/scripts/change-inventory.mjs
   - _shared/scripts/playwright-access-prepare.sh
   - _shared/scripts/playwright-preflight.sh
@@ -73,6 +74,7 @@ Read only the files required by the active step. Declared references are availab
 | applicable-rules register semantics (source, scope, force, evidence, result) | `<skills_root>/_shared/references/rule-conformance-policy.md` |
 | working-tree change inventory | `<skills_root>/_shared/scripts/change-inventory.mjs` |
 | rendered UI change and Playwright checkpoint | `<skills_root>/_shared/references/playwright-cli-verification.md` |
+| the code or plan changes navigation, interaction, object selection, messages, or consequential actions for the user | `<skills_root>/_shared/references/user-facing-behavior-assessment.md` |
 | plan target contract owned by `$task-plan` | `<skills_root>/task-plan/SKILL.md` |
 
 ## 1. Resolve review target and scope
@@ -218,6 +220,12 @@ behavior, but do not accept implementation merely because it appears to follow
 the plan.
 
 If expected behavior cannot be determined and the concern is a product choice, classify it as `QUESTION`, not a defect.
+
+An authoritative source settles what behavior is expected, not whether that
+behavior serves the user's task. When a source-prescribed interaction
+conflicts with the user's task under
+`<skills_root>/_shared/references/user-facing-behavior-assessment.md`, report a
+`QUESTION` with the concrete trade-off instead of a defect.
 
 For a `plan` target, the plan is the work product under review, not proof of its
 own claims. Compare it with the referenced source artifact, explicit user

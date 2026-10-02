@@ -151,8 +151,6 @@ wyszukiwania fragmentów tekstu.
 
 `Source assessment` zapisuje krytyczną interpretację materiału wejściowego:
 
-`Source assessment` zapisuje krytyczną interpretację materiału wejściowego:
-
 ```text
 - Requested outcome:
 - Observed symptoms:
@@ -165,8 +163,19 @@ wyszukiwania fragmentów tekstu.
 Oczekiwany rezultat, symptom i sugerowane rozwiązanie opisuj zgodnie z wynikiem
 oceny z intake. Przykład nie staje się pełnym wymaganiem bez potwierdzenia.
 
-`Direction, simplicity and consistency` jest zwięzłym, widocznym wynikiem
-critical review. Zawiera dokładnie informacje potrzebne do obrony kierunku:
+Dla punktów dotyczących interakcji użytkownika `Requested outcome` opisuje
+potrzebę użytkownika, a `Suggested diagnosis or solution` proponowaną
+interakcję; hipotezy o celu użytkownika trafiają do
+`Claims corrected or still unverified`.
+
+Uwagi produktowe w `Decisions and open questions` zapisuj w formacie:
+
+```md
+- N1 [note]: <interakcja>; koszt: <koszt dla użytkownika>; podstawa: <źródło | fakt kodowy | hipoteza>; kierunek: <kierunek albo pytanie>
+```
+
+Uwagi `N<number> [note]` nie są pytaniami i nie blokują `ready`. Konflikt
+zmieniający kryteria akceptacji zapisuj jako pytanie `Q<number> [open]`.
 
 `Direction, simplicity and consistency` jest zwięzłym, widocznym wynikiem
 critical review. Zawiera dokładnie informacje potrzebne do obrony kierunku:
