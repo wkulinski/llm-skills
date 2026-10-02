@@ -11,8 +11,16 @@ import {
     extractPackages,
     parseExecutionContract,
     parsePlanDocument,
+    reviewBodyHash,
     validatePlanDocument,
 } from "./validate.mjs";
+
+// Mirrors REVIEW_ACTIONS in review-cycle.mjs, which imports this module.
+const REVIEW_DECISION_ACTIONS = Object.freeze({
+    FINISH_READY: "finish-ready",
+    APPLY_REPAIR: "apply-repair",
+    BLOCK: "blocked",
+});
 
 export class StoreError extends Error {
     constructor(code, message, details = {}) {
@@ -120,8 +128,10 @@ export function completeWorkPackage({repoRoot = process.cwd(), planPath, wpId, e
             planId: loaded.metadata?.plan_id ?? null,
             revision: loaded.metadata?.revision ?? null,
             contentSha256: sha256(loaded.markdown),
+            previousSha256: loaded.metadata?.previous_sha256 ?? null,
             planPath: loaded.paths.draft_path,
             errors: loaded.validation?.errors ?? [],
+            blockedReason: loaded.validation?.blocked_reason ?? null,
             full: {
                 markdown: loaded.markdown,
                 metadata: loaded.metadata,
@@ -153,6 +163,96 @@ export function completeWorkPackage({repoRoot = process.cwd(), planPath, wpId, e
         changed: true,
         completed: {id, completed: true, completedAt, verification},
     };
+}
+
+/**
+ * Record a review decision for the plan revision it was made on.
+ *
+ * The decision is the JSON returned by `review-cycle.mjs decide`. It must be
+ * valid (`ok=true`) and bound through `plan` to the current plan id, revision
+ * and document hash, so a decision for an older revision cannot confirm newer
+ * content. Every recorded decision becomes the base of the next delta review
+ * (`review_base_revision`, `review_base_sha256`); only `finish-ready` also
+ * confirms readiness. The helper checks that the decision is consistent, not
+ * that the review was sound. The revision number is not bumped; only the
+ * review keys change.
+ */
+export function recordReview({repoRoot = process.cwd(), planPath, decision, fsOps = fs} = {}, options = {}) {
+    if (!decision || typeof decision !== "object" || Array.isArray(decision)
+        || decision.ok !== true || !Object.values(REVIEW_DECISION_ACTIONS).includes(decision.action)) {
+        throw new StoreError("REVIEW_DECISION_REJECTED", "record-review requires a valid review-cycle decision (ok=true).", {
+            ok: decision?.ok ?? null,
+            action: decision?.action ?? null,
+            reason: decision?.reason ?? null,
+        });
+    }
+    const reference = decision.plan;
+    if (!reference || typeof reference !== "object" || Array.isArray(reference)
+        || typeof reference.plan_id !== "string" || !Number.isInteger(reference.revision)
+        || !/^[a-f0-9]{64}$/.test(reference.content_sha256 ?? "")) {
+        throw new StoreError("REVIEW_DECISION_UNBOUND", "The decision has no plan reference; pass plan (plan_id, revision, content_sha256) or delta_review to review-cycle.mjs decide.");
+    }
+    const root = path.resolve(repoRoot);
+    const loaded = loadPlanFile({repoRoot: root, planPath, fsOps});
+    const paths = resolvePlanPaths({repoRoot: root, sourceIdentity: loaded.metadata.source_identity});
+    return withPlanLock(paths.draftPath, fsOps, () => {
+        const existing = readExistingPlan(paths.draftPath, fsOps);
+        if (!existing || sha256(existing.markdown) !== loaded.content_sha256) {
+            throw new StoreError("PLAN_CHANGED_DURING_READ", "The plan changed while the review was being recorded.");
+        }
+        // Recording rewrites the front matter, so a repeated call matches the recorded base instead of the file hash.
+        const alreadyRecorded = existing.metadata.review_base_revision === reference.revision
+            && existing.metadata.review_base_sha256 === reference.content_sha256;
+        if (reference.plan_id !== existing.metadata.plan_id
+            || reference.revision !== existing.metadata.revision
+            || (reference.content_sha256 !== sha256(existing.markdown) && !alreadyRecorded)) {
+            throw new StoreError("REVIEW_DECISION_STALE", "The decision covers a different plan revision or content; review the current revision.", {
+                decision_plan: reference,
+                plan_id: existing.metadata.plan_id,
+                revision: existing.metadata.revision,
+                content_sha256: sha256(existing.markdown),
+            });
+        }
+        const validation = validatePlanDocument(existing.markdown, {repoRoot: root, fsOps});
+        if (!validation.valid) {
+            throw new StoreError("INVALID_PLAN", validation.errors.join(" "), {errors: validation.errors});
+        }
+        const finishReady = decision.action === REVIEW_DECISION_ACTIONS.FINISH_READY;
+        const reviewedBodySha256 = reviewBodyHash(existing.body);
+        const metadata = {
+            ...existing.metadata,
+            ...(finishReady
+                ? {reviewed_revision: existing.metadata.revision, reviewed_body_sha256: reviewedBodySha256}
+                : {}),
+            review_base_revision: reference.revision,
+            review_base_sha256: reference.content_sha256,
+        };
+        const markdown = renderPlanDocument(existing.body, metadata);
+        const changed = markdown !== existing.markdown;
+        if (changed) {
+            writeFileAtomic(paths.draftPath, markdown, {rootDir: root, fsOps});
+        }
+        const after = changed ? validatePlanDocument(markdown, {repoRoot: root, fsOps}) : validation;
+        return projectPlanOutcome({
+            status: after.status,
+            changed,
+            planId: paths.planId,
+            revision: metadata.revision,
+            contentSha256: sha256(markdown),
+            previousSha256: metadata.previous_sha256 ?? null,
+            planPath: publicPaths(paths).draft_path,
+            errors: after.errors,
+            blockedReason: after.blocked_reason ?? null,
+            full: {markdown, metadata, validation: after, paths: publicPaths(paths)},
+            verbose: options.verbose === true,
+            extra: {
+                reviewed_revision: metadata.reviewed_revision ?? null,
+                reviewed_body_sha256: metadata.reviewed_body_sha256 ?? null,
+                review_base_revision: metadata.review_base_revision,
+                review_base_sha256: metadata.review_base_sha256,
+            },
+        });
+    });
 }
 
 export function savePlan(input = {}, options = {}) {
@@ -192,6 +292,8 @@ export function savePlan(input = {}, options = {}) {
             ? contextFromMetadata(existing?.metadata)
             : normalizeContext(input.context, repoRoot, fsOps);
         const updatedAt = validTimestamp(options.now ?? input.updated_at ?? new Date().toISOString(), "updated_at");
+        const body = normalizeMarkdownBody(input.markdown_body ?? input.markdown);
+        const previousSha256 = existing ? sha256(existing.markdown) : null;
         const metadata = {
             plan_id: paths.planId,
             revision,
@@ -199,9 +301,11 @@ export function savePlan(input = {}, options = {}) {
             source_artifact: source.source_artifact,
             source_sha256: source.source_sha256,
             ...context,
+            previous_sha256: previousSha256,
+            ...carriedReview(existing, body, revision),
+            ...carriedReviewBase(existing),
             updated_at: updatedAt,
         };
-        const body = normalizeMarkdownBody(input.markdown_body ?? input.markdown);
         const markdown = renderPlanDocument(body, metadata);
         const validation = validatePlanDocument(markdown, {repoRoot, fsOps});
         if (!validation.valid) {
@@ -215,10 +319,12 @@ export function savePlan(input = {}, options = {}) {
                 planId: paths.planId,
                 revision: existing.metadata.revision,
                 contentSha256: sha256(existing.markdown),
+                previousSha256: existing.metadata.previous_sha256 ?? null,
                 planPath: publicPaths(paths).draft_path,
                 beforeMarkdown: existing.markdown,
                 afterMarkdown: existing.markdown,
                 errors: existingValidation.errors,
+                blockedReason: existingValidation.blocked_reason ?? null,
                 full: {
                     markdown: existing.markdown,
                     metadata: existing.metadata,
@@ -235,10 +341,12 @@ export function savePlan(input = {}, options = {}) {
             planId: paths.planId,
             revision: metadata.revision,
             contentSha256: sha256(markdown),
+            previousSha256,
             planPath: publicPaths(paths).draft_path,
             beforeMarkdown: existing?.markdown ?? null,
             afterMarkdown: markdown,
             errors: validation.errors,
+            blockedReason: validation.blocked_reason ?? null,
             full: {
                 markdown,
                 metadata,
@@ -263,10 +371,12 @@ export function projectPlanOutcome({
     planId = null,
     revision = null,
     contentSha256 = null,
+    previousSha256 = null,
     planPath = null,
     beforeMarkdown = null,
     afterMarkdown = null,
     errors = [],
+    blockedReason = null,
     full = {},
     verbose = false,
     extra = {},
@@ -275,10 +385,12 @@ export function projectPlanOutcome({
     const result = {
         ok: true,
         status,
+        blocked_reason: blockedReason,
         changed,
         plan_id: planId,
         revision,
         content_sha256: contentSha256,
+        previous_sha256: previousSha256,
         plan_path: planPath,
         changed_sections: delta.sections,
         changed_work_packages: delta.workPackages,
@@ -315,6 +427,15 @@ function diffPlanSections(beforeMarkdown, afterMarkdown) {
     return {sections, workPackages};
 }
 
+// Plans written before these keys existed have none; they are rendered only when present.
+const OPTIONAL_METADATA_FIELDS = Object.freeze([
+    "previous_sha256",
+    "reviewed_revision",
+    "reviewed_body_sha256",
+    "review_base_revision",
+    "review_base_sha256",
+]);
+
 export function renderPlanDocument(body, metadata) {
     const fields = [
         "plan_id",
@@ -327,10 +448,18 @@ export function renderPlanDocument(body, metadata) {
         "context_report_sha256",
         "context_criteria",
         "context_criteria_sha256",
+        "previous_sha256",
+        "reviewed_revision",
+        "reviewed_body_sha256",
+        "review_base_revision",
+        "review_base_sha256",
         "updated_at",
     ];
     const lines = ["---"];
     for (const field of fields) {
+        if (OPTIONAL_METADATA_FIELDS.includes(field) && !Object.hasOwn(metadata, field)) {
+            continue;
+        }
         lines.push(`${field}: ${JSON.stringify(metadata[field] ?? null)}`);
     }
     lines.push("---", "");
@@ -757,14 +886,65 @@ function assertUpdateToken(input, existing) {
     }
 }
 
+/**
+ * Decide which review confirmation a new revision inherits.
+ *
+ * A confirmation survives only when the reviewed body (everything but the
+ * `## Execution` checklist) is unchanged, which is the `complete-wp` case.
+ * Otherwise the keys are reset, and plans that never had them stay without.
+ */
+function carriedReview(existing, body, revision) {
+    const empty = {reviewed_revision: null, reviewed_body_sha256: null};
+    if (!existing) {
+        return empty;
+    }
+    const bodyHash = reviewBodyHash(body);
+    if (reviewBodyHash(existing.body) !== bodyHash) {
+        return empty;
+    }
+    if (!Object.hasOwn(existing.metadata, "reviewed_revision") && !Object.hasOwn(existing.metadata, "reviewed_body_sha256")) {
+        return {};
+    }
+    const confirmed = existing.metadata.reviewed_revision === existing.metadata.revision
+        && existing.metadata.reviewed_body_sha256 === bodyHash;
+    return confirmed ? {reviewed_revision: revision, reviewed_body_sha256: bodyHash} : empty;
+}
+
+/**
+ * Keep the last reviewed revision across saves.
+ *
+ * It is the base of the next delta review, so it must survive every content
+ * change until `record-review` replaces it.
+ */
+function carriedReviewBase(existing) {
+    if (!existing) {
+        return {review_base_revision: null, review_base_sha256: null};
+    }
+    if (!Object.hasOwn(existing.metadata, "review_base_revision") && !Object.hasOwn(existing.metadata, "review_base_sha256")) {
+        return {};
+    }
+    return {
+        review_base_revision: existing.metadata.review_base_revision ?? null,
+        review_base_sha256: existing.metadata.review_base_sha256 ?? null,
+    };
+}
+
 function isSamePlanContent(existing, body, metadata) {
     const revision = Number(existing.metadata.revision);
     const updatedAt = existing.metadata.updated_at;
     if (!Number.isInteger(revision) || typeof updatedAt !== "string") {
         return false;
     }
-    const comparable = renderPlanDocument(body, {...metadata, revision, updated_at: updatedAt});
-    return comparable === existing.markdown;
+    // History and review keys describe the plan's revision trail, not its content.
+    const comparableMetadata = {...metadata, revision, updated_at: updatedAt};
+    for (const field of OPTIONAL_METADATA_FIELDS) {
+        if (Object.hasOwn(existing.metadata, field)) {
+            comparableMetadata[field] = existing.metadata[field];
+        } else {
+            delete comparableMetadata[field];
+        }
+    }
+    return renderPlanDocument(body, comparableMetadata) === existing.markdown;
 }
 
 function validateSourceMetadata(metadata, source, paths) {
@@ -904,10 +1084,15 @@ function usage() {
         "  store.mjs load --source-identity <id> [--root <repo>]",
         "  store.mjs paths --source-identity <id> [--root <repo>]",
         "  store.mjs complete-wp --file <plan> --wp <WPn> --evidence <text> [--root <repo>] [--verbose]",
+        "  store.mjs record-review --file <plan> --input <decision.json|-> [--root <repo>] [--verbose]",
         "",
         "The save JSON input must contain repo_root; save does not use --root.",
         "load, paths and complete-wp use --root for the repository when provided.",
         "--input <file|-> reads JSON from a file; use the literal --input - for stdin.",
+        "record-review takes the unchanged JSON returned by `review-cycle.mjs decide` after every review.",
+        "It accepts only ok=true decisions bound through `plan` to the current revision and content;",
+        "each one becomes the base of the next delta review, and finish-ready also confirms readiness.",
+        "A plan is `ready` only while that confirmation matches its current revision and body.",
         "By default save and complete-wp return a compact projection without Markdown;",
         "--verbose includes the full Markdown, metadata and validation payload.",
         "Help (`--help` or `-h`) exits with code 0 before command dispatch and never changes a plan.",
@@ -939,10 +1124,16 @@ async function main(argv) {
             wpId: args.wp,
             evidence: args.evidence,
         }, {verbose});
+    } else if (command === "record-review" && args.file && args.input) {
+        result = recordReview({
+            repoRoot: args.root ?? process.cwd(),
+            planPath: args.file,
+            decision: readJsonInput(args.input),
+        }, {verbose});
     } else if (command === "paths" && args.source_identity) {
         result = publicPaths(resolvePlanPaths({repoRoot: args.root ?? process.cwd(), sourceIdentity: args.source_identity}));
     } else {
-        throw new StoreError("INVALID_ARGUMENT", "Usage: store.mjs save --input <file|-> | load|paths --source-identity <id> [--root <repo>] | complete-wp --file <plan> --wp <WPn> --evidence <text> [--root <repo>]");
+        throw new StoreError("INVALID_ARGUMENT", "Usage: store.mjs save --input <file|-> | load|paths --source-identity <id> [--root <repo>] | complete-wp --file <plan> --wp <WPn> --evidence <text> [--root <repo>] | record-review --file <plan> --input <decision.json|-> [--root <repo>]");
     }
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }

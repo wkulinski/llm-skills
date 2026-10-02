@@ -424,6 +424,64 @@ oraz ich SHA-256. `save --input -` przyjmuje ten JSON przez stdin.
 liczniki, findings ze stabilnym ID/klasyfikacją/severity i liczbą prób naprawy,
 rozstrzygnięcia wcześniejszych ID oraz artefakt delta. Wynik `delta-input` służy
 jako wejście delta-review do ponownego `decide`. Brak albo sprzeczność
-niezbędnych danych blokuje kolejną rundę; delta opisuje dokładnie jedną następną
-rewizję i musi mieć różne hashe dokumentu bazowego i bieżącego. Helper nie ocenia
-prawdziwości danych semantycznych.
+niezbędnych danych blokuje kolejną rundę; delta opisuje zmiany od ostatniej
+przejrzanej rewizji do bieżącej (może obejmować kilka rewizji) i musi mieć różne
+hashe dokumentu bazowego i bieżącego. Opcjonalne pole `plan` (`plan_id`,
+`revision`, `content_sha256`) wskazuje przeglądaną rewizję przy pełnym review; przy
+delta-review musi być zgodne ze stroną bieżącą artefaktu delta
+(`PLAN_REFERENCE_CONFLICT`). Poprawna decyzja zwraca je jako `plan`, a bez niego
+`record-review` jej nie przyjmie. Helper nie ocenia prawdziwości danych
+semantycznych.
+
+### Front matter planu i potwierdzenie review
+
+`store.mjs` jest właścicielem front matter. Poza polami źródła i kontekstu zapisuje:
+
+| Pole | Wartość |
+| --- | --- |
+| `previous_sha256` | SHA-256 bajtów poprzedniej rewizji; `null` dla rewizji 1. Zwracane też jako `previous_sha256` w wyniku `save`, `edit` i `complete-wp`. |
+| `reviewed_revision` | Rewizja, dla której zapisano decyzję `finish-ready`; `null` przed review. |
+| `reviewed_body_sha256` | SHA-256 treści planu bez sekcji `## Execution` w chwili review; `null` przed review. |
+| `review_base_revision` | Rewizja objęta ostatnią zapisaną decyzją review (dowolne `action`); baza następnego delta-review; `null` przed review. |
+| `review_base_sha256` | SHA-256 bajtów dokumentu, który oceniło ostatnie zapisane review; `null` przed review. |
+
+Zasady:
+
+- `record-review --file <plan> --input <decision.json>` przyjmuje wynik
+  `review-cycle.mjs decide` tylko z `ok=true` i polem `plan` zgodnym z bieżącym
+  `plan_id`, rewizją i hashem dokumentu (`REVIEW_DECISION_UNBOUND`,
+  `REVIEW_DECISION_STALE`). Każda taka decyzja ustawia `review_base_*`; decyzja
+  `finish-ready` dodatkowo ustawia `reviewed_*`. Rewizja nie rośnie, a ponowny
+  zapis tej samej decyzji niczego nie zmienia.
+- Każdy zapis zmieniający treść (`save`, `edit`) zeruje oba pola `reviewed_*`;
+  `review_base_*` przechodzą bez zmian do kolejnej rewizji.
+  Zapis identycznej treści nie zmienia pliku, rewizji ani potwierdzenia.
+- `complete-wp` zmienia tylko `## Execution`, więc zachowuje potwierdzenie
+  (`reviewed_revision` wskazuje nową rewizję, hash treści jest ten sam).
+- `validate.mjs` zwraca `blocked` z `blocked_reason: review_pending` i pustą listą
+  `errors`, gdy plan nie ma otwartych pytań ani błędów, a pola review są `null`
+  albo nie zgadzają się z bieżącą rewizją lub hashem treści.
+- Plan zapisany przed wprowadzeniem tych pól nie ma ich w ogóle i zachowuje
+  dotychczasowy status do pierwszego zapisu zmieniającego treść; `complete-wp`
+  zachowuje brak kluczy.
+
+`delta-input --file <plan> [--root <repo>] --input <json>` wyprowadza z planu
+`plan_id`, `base_revision` (`review_base_revision`), `current_revision`,
+`base_sha256` (`review_base_sha256`) i `current_sha256` (hash bajtów pliku).
+`--input` zawiera tylko `changed_sections`, `changed_work_packages`,
+`previous_finding_ids` i `allowed_direct_dependencies`. Brak zapisanego review
+(`DELTA_BASE_UNAVAILABLE`), brak hasha bazy (`DELTA_BASE_HASH_MISSING`) lub brak
+zmian od ostatniego review (`DELTA_NOTHING_TO_REVIEW`) to twardy błąd bez wyniku;
+`plan_id` lub
+rewizje sprzeczne z planem to `DELTA_INPUT_CONFLICT`. `base_sha256` i
+`current_sha256` w `--input` pozostają jawnym nadpisaniem, oznaczonym w wyniku
+w `sources` jako `input-override`.
+
+### Lista kontrolna po zmianie planu po review
+
+1. Zapisz pełny wynik `save`/`edit` do pliku; nie filtruj go przez `grep` ani `jq`.
+2. `review-cycle.mjs delta-input --file <plan> --input <semantic.json>`.
+3. Wykonaj delta-review i `review-cycle.mjs decide --input <review-input.json>`.
+4. Przy każdej decyzji z `ok=true`: `store.mjs record-review --file <plan> --input <decision.json>`.
+5. `validate.mjs validate` musi zwrócić `ready`; `review_pending` oznacza pominięty
+   krok. Gdy helper zgłasza brak danych, zatrzymaj się i zapytaj użytkownika.

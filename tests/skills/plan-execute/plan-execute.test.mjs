@@ -6,7 +6,7 @@ import path from "node:path";
 import {it} from "vitest";
 
 import {persistSource, normalizeUserInput} from "../../../.agents/skills/task-plan/scripts/source.mjs";
-import {completeWorkPackage, savePlan, StoreError} from "../../../.agents/skills/task-plan/scripts/store.mjs";
+import {completeWorkPackage, recordReview, savePlan, StoreError} from "../../../.agents/skills/task-plan/scripts/store.mjs";
 import {parsePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
 import {
     completeExecutionWorkPackage,
@@ -45,12 +45,23 @@ function temporaryRepository() {
 function makePlan(root, packages, identity = `user-input:plan-execute-${packages.length}`) {
     const source = normalizeUserInput({identity, title: "Plan execute test", body: "Execute the requested plan."}, {fetched_at: NOW});
     persistSource(source, {repoRoot: root});
-    const saved = savePlan({
+    const drafted = savePlan({
         repo_root: root,
         source_identity: source.identity,
         markdown_body: planBody(packages),
     }, {now: NOW, verbose: true});
-    return {saved, planPath: path.join(root, saved.paths.draft_path)};
+    const planPath = path.join(root, drafted.paths.draft_path);
+    const saved = recordReview({
+        repoRoot: root,
+        planPath,
+        decision: {
+            ok: true,
+            action: "finish-ready",
+            reason: "plan-ready",
+            plan: {plan_id: drafted.plan_id, revision: drafted.revision, content_sha256: drafted.content_sha256},
+        },
+    }, {verbose: true});
+    return {saved, planPath};
 }
 
 function planBody(packages) {

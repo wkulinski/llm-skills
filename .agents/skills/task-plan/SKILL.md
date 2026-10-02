@@ -120,12 +120,22 @@ Dozwolone statusy:
 brak Markdowna              → plan jeszcze nie powstał
 otwarte pytanie w dokumencie → blocked
 INCOMPLETE/BLOCKED context   → blocked
-poprawny plan bez pytań      → ready
+brak potwierdzonego review   → blocked (blocked_reason: review_pending)
+poprawny plan bez pytań i z potwierdzonym review → ready
 błąd struktury lub evidence  → invalid
 ```
 
-`ready` oznacza kompletny plan bez otwartych blockerów. Nie oznacza zgody na
-implementację. Implementacja wymaga osobnego, jawnego polecenia użytkownika.
+`ready` oznacza kompletny plan bez otwartych blockerów, którego bieżąca rewizja
+ma zapisane w front matter potwierdzenie decyzji `finish-ready`
+(`reviewed_revision`, `reviewed_body_sha256`; patrz `record-review`). Nie oznacza
+zgody na implementację. Implementacja wymaga osobnego, jawnego polecenia
+użytkownika.
+
+Front matter przechowuje też `previous_sha256` (hash bajtów poprzedniej rewizji,
+ustawiany przez `store.mjs` przy każdym zapisie) oraz `review_base_revision` i
+`review_base_sha256` (rewizja i hash dokumentu ocenionego przez ostatnie zapisane
+review, ustawiane przez `record-review`). Dzięki nim baza delta-review nie zależy
+od pamięci agenta ani od przefiltrowanego wyniku polecenia.
 
 ## Routing do plików referencyjnych
 
@@ -341,9 +351,50 @@ Owner przekazuje mu wyłącznie jawne dane: werdykt, liczniki pełnych i delta-r
 findings ze stabilnym ID, klasyfikacją, severity i liczbą prób naprawy, jawne
 rozstrzygnięcie każdego wcześniejszego ID oraz — po pierwszym delta-review —
 artefakt delta z plan ID, rewizjami, hashami, zmienionymi sekcjami/WP,
-wcześniejszymi ID i dozwolonymi bezpośrednimi zależnościami. Helper sprawdza
-kompletność i spójność tych danych oraz zwraca dokładnie jedno działanie. Nie
-ocenia prawdziwości ocen semantycznych ani nie utrwala stanu cyklu.
+wcześniejszymi ID i dozwolonymi bezpośrednimi zależnościami. Przy pełnym review
+owner podaje też `plan` (`plan_id`, `revision`, `content_sha256` z wyniku
+`save`/`edit`/`validate` dla przeglądanej rewizji); przy delta-review helper bierze
+go z artefaktu delta. Helper sprawdza kompletność i spójność tych danych oraz
+zwraca dokładnie jedno działanie powiązane przez pole `plan` z przeglądaną
+rewizją. Nie ocenia prawdziwości ocen semantycznych ani nie utrwala stanu cyklu.
+
+Artefakt delta buduj wyłącznie poleceniem `review-cycle.mjs delta-input --file
+<plan>`: `plan_id`, rewizje oraz hashe helper czyta z planu. Bazą jest ostatnia
+przejrzana rewizja zapisana przez `record-review` (`review_base_revision`,
+`review_base_sha256`), a nie rewizja poprzednia, więc naprawa zapisana w kilku
+rewizjach trafia do jednego delta-review w całości. `current_sha256` to hash bajtów
+pliku. Owner podaje w `--input` tylko pola semantyczne (`changed_sections`,
+`changed_work_packages`, `previous_finding_ids`, `allowed_direct_dependencies`),
+liczone względem przejrzanej bazy. Nie przepisuj hashy ani numerów rewizji ręcznie.
+Brak zapisanej bazy review kończy polecenie twardym błędem — zob. regułę
+zatrzymania poniżej.
+
+Po każdej decyzji z `ok=true` (także `apply-repair` i `blocked`) zapisz ją w planie:
+`store.mjs record-review --file <plan> --input <decision.json>`, gdzie
+`decision.json` to pełny, niezmieniony wynik `decide`. Polecenie odrzuca decyzję z
+`ok=false`, bez pola `plan` (`REVIEW_DECISION_UNBOUND`) albo dotyczącą innej
+rewizji lub treści niż bieżąca (`REVIEW_DECISION_STALE`). Każda zapisana decyzja
+staje się bazą następnego delta-review; tylko `finish-ready` dodatkowo potwierdza
+gotowość. Każda późniejsza zmiana treści planu (poza sekcją `## Execution`)
+wycofuje potwierdzenie i wymaga kolejnego review. Helper sprawdza spójność
+danych, nie to, czy review faktycznie się odbyło.
+
+Reguły dla agenta:
+
+- Nie filtruj wyników `store.mjs`, `edit.mjs` ani `review-cycle.mjs` przez
+  `grep`, `jq`, `head` ani `sed` bez wcześniejszego zapisania pełnego wyniku do
+  pliku (`> var/agent/cache/<nazwa>.json`). Skutek: przefiltrowany wynik gubi
+  `content_sha256`, `previous_sha256` i `blocked_reason`, a bez nich cykl review
+  nie jest możliwy.
+- Gdy helper wymaga danych, których brakuje (np. `DELTA_BASE_HASH_MISSING`,
+  `DELTA_BASE_UNAVAILABLE`, `REVIEW_DECISION_UNBOUND`), zatrzymaj się, zgłoś blokadę i zapytaj użytkownika.
+  Nie wykonuj zamiennika, np. delta-review „w głowie” albo z odtworzonym ręcznie
+  hashem. Skutek: plan bez przeprowadzonego review nie dostaje statusu `ready`.
+- Po każdej zmianie planu po review wykonaj w tej kolejności: `delta-input
+  --file`, `decide`, `record-review`. Pominięcie któregokolwiek kroku zostawia
+  plan jako `blocked` z `review_pending`.
+- Nie używaj decyzji z wcześniejszej rewizji do potwierdzenia bieżącej; po
+  `REVIEW_DECISION_STALE` przejrzyj bieżącą rewizję.
 
 Tabela werdyktów:
 
@@ -478,7 +529,9 @@ gdy:
   checków i nie utrwala osobnych scenariuszy uzasadnionych wyłącznie historią;
 - source i context artefakty istnieją i mają hashe zgodne z frontmatterem;
 - decyzja helpera z sekcji 5 zwraca `finish-ready`, a wszystkie powierzone jej
-  dane są kompletne i spójne.
+  dane są kompletne i spójne;
+- potwierdzenie tej decyzji jest zapisane w planie przez `record-review` dla
+  bieżącej rewizji, a `validate.mjs` zwraca `ready` (bez `review_pending`).
 
 Nie pokazuj użytkownikowi komunikatu `ready`, dopóki faza read-only review nie
 zakończy się bez findings wymagających zmiany, a helper nie zwróci
@@ -552,11 +605,15 @@ Publiczne role:
 - `source.mjs`: normalizacja GitHub/file/user input, bezpieczny odczyt i trwały
   source artifact;
 - `store.mjs`: stabilny plan ID, pełny atomowy zapis Markdowna z tokenem
-  rzeczywistej bazy, resume i oznaczanie ukończenia pojedynczego WP;
+  rzeczywistej bazy, resume, oznaczanie ukończenia pojedynczego WP oraz
+  `record-review` (zapis decyzji review powiązanej z rewizją: baza delta-review
+  i potwierdzenie `finish-ready` w front matter);
 - `edit.mjs`: deterministyczna edycja strukturalna, w tym jedna paczka operacji
   odpowiadająca jednej rewizji;
 - `review-cycle.mjs`: bezstanowa decyzja po review na jawnych danych ownera i
-  minimalny artefakt delta-review; nie ocenia semantyki i nie zapisuje stanu;
+  minimalny artefakt delta-review (z `--file` hashe i rewizje pochodzą z planu,
+  a bazą jest ostatnie zapisane review);
+  nie ocenia semantyki i nie zapisuje stanu;
 - `validate.mjs`: strukturalna bramka `ready`, bez udawania oceny semantycznej;
 - `atomic-file.mjs`: atomowy zapis pojedynczego artefaktu.
 
@@ -569,7 +626,8 @@ node <skill_dir>/scripts/store.mjs save --input ./plan-input.json
 node <skill_dir>/scripts/store.mjs load --source-identity 'owner/repository#123' --root "$PWD"
 node <skill_dir>/scripts/edit.mjs apply-operations --file ./docs/plans/<plan-id>.md --input ./plan-operations.json --root "$PWD"
 node <skill_dir>/scripts/review-cycle.mjs decide --input ./review-input.json
-node <skill_dir>/scripts/review-cycle.mjs delta-input --input ./delta-review.json
+node <skill_dir>/scripts/review-cycle.mjs delta-input --file ./docs/plans/<plan-id>.md --input ./delta-review.json --root "$PWD"
+node <skill_dir>/scripts/store.mjs record-review --file ./docs/plans/<plan-id>.md --input ./decision.json --root "$PWD"
 node <skill_dir>/scripts/store.mjs complete-wp --file ./docs/plans/<plan-id>.md --wp WP1 --evidence "focused test passed" --root "$PWD"
 node <skill_dir>/scripts/validate.mjs validate --file ./docs/plans/<plan-id>.md --root "$PWD"
 ```
