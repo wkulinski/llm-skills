@@ -24,4 +24,3 @@ default-reviewers.txt
 /var/
 /.owe/
 /.playwright-cli/
-/.claude/skills

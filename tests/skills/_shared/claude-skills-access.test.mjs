@@ -8,17 +8,18 @@ const SKILLS_ROOT = path.join(ROOT, ".agents/skills");
 const CLAUDE_SKILLS = path.join(ROOT, ".claude/skills");
 const EXPECTED_LINK_TARGET = "../.agents/skills";
 
-// `.claude/skills` is a local, git-ignored link; a fresh checkout may not have it yet.
+// `.claude/skills` is a tracked link to the single `.agents/skills` source.
 const claudeEntry = lstatOrNull(CLAUDE_SKILLS);
 
-describe("local Claude Code skills access", () => {
-    it.skipIf(claudeEntry === null)("is a relative symlink to the single .agents/skills source", () => {
+describe("Claude Code skills access", () => {
+    it("is a relative symlink to the single .agents/skills source", () => {
+        expect(claudeEntry, ".claude/skills is missing; run: ln -s ../.agents/skills .claude/skills").not.toBeNull();
         expect(claudeEntry.isSymbolicLink(), ".claude/skills must be a symlink, not a copy or a foreign entry").toBe(true);
         expect(fs.readlinkSync(CLAUDE_SKILLS)).toBe(EXPECTED_LINK_TARGET);
         expect(fs.realpathSync(CLAUDE_SKILLS)).toBe(fs.realpathSync(SKILLS_ROOT));
     });
 
-    it.skipIf(claudeEntry === null)("resolves every skill and _shared to the same physical files", () => {
+    it("resolves every skill and _shared to the same physical files", () => {
         const failures = [];
 
         for (const name of [...skillNames(), "_shared"]) {
