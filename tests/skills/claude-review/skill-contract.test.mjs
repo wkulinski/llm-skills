@@ -6,6 +6,8 @@ import {describe, expect, it} from "vitest";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../");
 const SKILL = ".agents/skills/claude-review/SKILL.md";
 const CONTRACT = ".agents/skills/claude-review/references/execution-contract.md";
+const CODE_REVIEW = ".agents/skills/code-review/SKILL.md";
+const JOB_SCRIPT = ".agents/skills/claude-review/scripts/review-job.mjs";
 
 function read(relativePath) {
     return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -47,5 +49,21 @@ describe("claude-review skill contract", () => {
             expect(contract, reason).toContain(reason);
         }
         expect(contract).toMatch(/Żaden\s+wynik nie dopuszcza automatycznej drugiej próby/);
+    });
+
+    it("refers to code-review sections by name, not by number", () => {
+        const skill = read(SKILL);
+        const contract = read(CONTRACT);
+        const codeReview = read(CODE_REVIEW);
+
+        expect(skill).toMatch(/bramką\s+publikacji z sekcji „Verify candidate findings”/);
+        expect(contract).toMatch(/strukturę sekcji\s+„Output format” `\$code-review`/);
+        expect(codeReview).toMatch(/^## (?:\d+\. )?Verify candidate findings$/m);
+        expect(codeReview).toMatch(/^## (?:\d+\. )?Output format$/m);
+        expect(read(JOB_SCRIPT)).toContain("<code-review Output format report>");
+        expect(read(JOB_SCRIPT)).not.toMatch(/code-review Section \d+/);
+        for (const content of [skill, contract]) {
+            expect(content).not.toMatch(/sekcj\w*\s+\d+\s+\S*code-review/);
+        }
     });
 });

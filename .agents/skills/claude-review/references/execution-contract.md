@@ -30,8 +30,8 @@ Wykonawca zwraca wyłącznie jeden obiekt JSON:
 ```
 
 `status` opisuje ukończenie pracy (`COMPLETE`, `INCOMPLETE`, `BLOCKED`,
-`STALE`), nie werdykt review. `report_markdown` zachowuje strukturę sekcji 11
-`$code-review`. Koordynator zapisuje kopertę we własnym cache.
+`STALE`), nie werdykt review. `report_markdown` zachowuje strukturę sekcji
+„Output format” `$code-review`. Koordynator zapisuje kopertę we własnym cache.
 
 ## Decyzje `accept`
 

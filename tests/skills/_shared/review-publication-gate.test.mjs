@@ -4,6 +4,7 @@ import {describe, expect, it} from "vitest";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../");
 const CODE_REVIEW = ".agents/skills/code-review/SKILL.md";
+const PLAN_REVIEW = ".agents/skills/code-review/references/plan-review.md";
 const REVIEW_QUICK = ".agents/skills/review-quick/SKILL.md";
 const TASK_PLAN = ".agents/skills/task-plan/SKILL.md";
 
@@ -108,7 +109,13 @@ describe("review publication gate", () => {
 
         expect(target).toMatch(/separate read-only phase performed by the current coordinating\s+agent, not a separate executor/);
         expect(target).toMatch(/phase separation is not a claim\s+of executor independence/);
-        expect(content).toMatch(/A plan verdict is decided by this review, not inherited/);
+        expect(read(PLAN_REVIEW)).toMatch(/A plan verdict is decided by this review, not inherited/);
+    });
+
+    it("routes plan-only review content to the conditional plan reference", () => {
+        expect(read(CODE_REVIEW)).toContain(
+            "| the target is `plan`: plan expected behavior, plan context, plan integrity, plan coverage and plan verdicts | `<skill_dir>/references/plan-review.md` |",
+        );
     });
 
     it("requires explicit prior-finding resolutions and delta provenance in re-review", () => {
@@ -124,13 +131,19 @@ describe("review publication gate", () => {
         expect(reReview).toMatch(/same failure mode and whether\s+new evidence exists/);
         expect(reReview).toMatch(/concrete provenance evidence from the fix or a direct dependency/);
         expect(reReview).toMatch(/identify document versions, not finding identity/);
+        expect(content).toMatch(/a kept or\s+recurring finding keeps its prior ID/);
+        expect(content).toMatch(/new finding gets the next number after\s+the highest prior ID/);
+        expect(content).toMatch(/Never reuse an ID for a different failure mode/);
+        expect(reReview).toMatch(/keep the prior ID/);
     });
 
     it("does not let a caveat verdict hide an actionable MINOR", () => {
-        const verdicts = section(read(CODE_REVIEW), "For a `plan` target, use plan-specific wording:", "## 11. Output format");
+        const planReview = read(PLAN_REVIEW);
+        const verdicts = planReview.slice(planReview.indexOf("For a `plan` target, use plan-specific wording:"));
 
         expect(verdicts).toMatch(/PLAN READY WITH CAVEAT[^;]*non-actionable or explicitly accepted/);
         expect(verdicts).toMatch(/an actionable MINOR forces `PLAN CHANGES REQUESTED` instead/);
         expect(verdicts).toMatch(/`SUGGESTION` never changes the verdict or opens another round/);
+        expect(verdicts).toMatch(/when its severity is `BLOCKER`, the verdict is `PLAN BLOCKED`/);
     });
 });
