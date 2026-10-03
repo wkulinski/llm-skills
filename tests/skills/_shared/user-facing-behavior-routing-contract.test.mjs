@@ -43,5 +43,12 @@ describe("shared user-facing behavior assessment routing", () => {
         expect(taskPlan).toContain("`N<number> [note]`");
         expect(codeReview).toContain("An authoritative source settles what behavior is expected, not whether that");
         expect(codeReview).toContain("report a\n`QUESTION` with the concrete trade-off instead of a defect");
+        expect(codeReview).toContain("a blocking question becomes an approval-affecting `QUESTION`");
+        expect(codeReview).toMatch(/a product note becomes a `SUGGESTION` labeled as a product note and does not\s+change the verdict/);
+        expect(codeReview).toContain("a concrete check becomes a `verification_gap` naming the check");
+        expect(codeReview).toContain("a preference with no cost to the user produces no entry");
+        const planReview = read(".agents/skills/code-review/references/plan-review.md");
+        expect(planReview).toContain("a conflict that changes acceptance criteria but is recorded only as a note is a plan finding");
+        expect(planReview).toContain("`N<number> [note]`");
     });
 });

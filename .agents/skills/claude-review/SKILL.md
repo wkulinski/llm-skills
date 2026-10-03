@@ -122,8 +122,9 @@ helper blokuje wtedy kolejne zlecenia do czasu wyjaśnienia przez operatora.
 
 - `ACCEPTED` oznacza tylko, że raport należy do tego joba, sesji i snapshotu.
   Nie jest werdyktem. Każdego kandydata z `report_markdown` zweryfikuj bramką
-  publikacji z sekcji 6 `<skills_root>/code-review/SKILL.md` punktowymi
-  odczytami, bez nowego pełnego discovery, i sam wydaj werdykt.
+  publikacji z sekcji „Verify candidate findings”
+  `<skills_root>/code-review/SKILL.md` punktowymi odczytami,
+  bez nowego pełnego discovery, i sam wydaj werdykt.
 - `REJECTED` — nie publikuj werdyktu; podaj powód helpera.
 - `STALE` — snapshot zmienił się w trakcie review; raport nie jest aktualny.
 - `BLOCKED` — oczekujące żądanie uprawnienia (np. niezaufany workspace) albo

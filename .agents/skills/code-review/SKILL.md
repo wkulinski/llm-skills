@@ -10,9 +10,9 @@ metadata:
   mode: read-only
 shared_files:
   - code-review/references/review-checklists.md
+  - code-review/references/plan-review.md
   - _shared/references/skill-routing-policy.md
   - _shared/references/runtime-collaboration-guidelines.md
-  - _shared/references/runtime-quality-procedures.md
   - _shared/references/rule-conformance-policy.md
   - _shared/references/repository-context-hybrid.md
   - _shared/references/context-subagent-contract.md
@@ -48,13 +48,13 @@ Prefer a small number of high-confidence findings over speculative noise, but do
 - **The reviewed artifact is the entry point, not the system boundary.** For code, trace callers, callees, contracts, state, tests, configuration, and integrations. For plans, trace source coverage, ownership, dependencies, execution order, acceptance criteria, and the evidence behind proposed work.
 - **Repository-local rules beat generic advice.** Discover the project's own conventions, commands, architecture, and constraints before applying generic assumptions.
 - **Evidence before severity.** Every accepted finding must have a concrete failure mode or violated contract and enough evidence for its severity.
-- **Adapt depth to risk.** Do not spend five reviewers on a trivial local change; do not use a shallow single-pass review for a cross-system or high-risk change.
+- **Adapt depth to risk.** Do not apply every lens to a trivial local change; do not use a shallow single pass for a cross-system or high-risk change.
 - **Separate intent from implementation.** Product disagreements are not bugs unless expected behavior is grounded in an authoritative source.
 - **Review the review.** Independently challenge candidate findings before publishing them.
 
 ## Hard rules
 
-- **Read-only review.** Do not edit source files, stage, commit, reset, checkout, rebase, push, or publish review comments unless the user explicitly asks for those actions.
+- **Read-only review.** Do not edit source files, change Git state, alter persistent application data, or perform externally visible actions, including publishing review comments, unless the user explicitly asks for those actions.
 - Never include secret values, credentials, private keys, tokens, passwords, or unnecessary personal data in findings, evidence, prompts, logs, or review comments. Redact sensitive values and report only the type and location needed to act.
 - Do not fix findings during review unless the user explicitly changes the task to implementation.
 - Do not assume tests prove behavior merely because they pass.
@@ -68,14 +68,17 @@ Read only the files required by the active step. Declared references are availab
 
 | Condition | File |
 |---|---|
-| deep review checklists for the active target and risk depth (correctness and propagation, contracts and integrations, state/persistence/data flow, security and privacy, reliability and concurrency, performance, architecture and maintainability, tests and verification) | `<skill_dir>/references/review-checklists.md` |
+| deep review checklists for the active target and risk depth (correctness and propagation, contracts and integrations, state/persistence/data flow, security and privacy, reliability and concurrency, reactivity, lifecycle and feedback loops, performance, architecture and maintainability, tests and verification) | `<skill_dir>/references/review-checklists.md` |
 | workflow routing and skill-selection guard before this skill starts | `<skills_root>/_shared/references/skill-routing-policy.md` |
 | repository reconnaissance, broad versus targeted reads, and scout lifecycle | `<skills_root>/_shared/references/repository-context-hybrid.md` |
 | applicable-rules register semantics (source, scope, force, evidence, result) | `<skills_root>/_shared/references/rule-conformance-policy.md` |
+| choosing, running and limiting verification commands | `<skills_root>/_shared/references/runtime-collaboration-guidelines.md` (section "QA Command Policy") |
+| `executor` role: interpreting the supplied handoff and context-manifest references | `<skills_root>/_shared/references/context-subagent-contract.md` |
 | working-tree change inventory | `<skills_root>/_shared/scripts/change-inventory.mjs` |
-| rendered UI change and Playwright checkpoint | `<skills_root>/_shared/references/playwright-cli-verification.md` |
+| rendered UI change, or a change to the interactions of code running in the browser, and Playwright checkpoint | `<skills_root>/_shared/references/playwright-cli-verification.md` |
 | the code or plan changes navigation, interaction, object selection, messages, or consequential actions for the user | `<skills_root>/_shared/references/user-facing-behavior-assessment.md` |
 | plan target contract owned by `$task-plan` | `<skills_root>/task-plan/SKILL.md` |
+| the target is `plan`: plan expected behavior, plan context, plan integrity, plan coverage and plan verdicts | `<skill_dir>/references/plan-review.md` |
 
 ## 1. Resolve review target and scope
 
@@ -163,6 +166,7 @@ Record internally:
 - changed file inventory
 - diff size
 - touched subsystems and boundaries
+- shared units with multiple consumers
 - whether the change affects public contracts, persistent state, authorization/trust boundaries, asynchronous execution, concurrency, deployment/configuration, or other high-impact surfaces
 
 Do not begin forming findings until scope and intended behavior are understood.
@@ -190,9 +194,8 @@ When the pointer exists:
 - determine whether the reviewed change maps to the current work package or to
   another explicitly identifiable work package, using the changed behavior,
   scope, and execution evidence rather than filename similarity alone;
-- review the mapped work package's goal, scope, out-of-scope boundary,
-  dependencies, acceptance criteria, and planned verification in addition to
-  the ordinary code-review lenses;
+- assess the mapped work package under "Active-plan alignment for code" in
+  Section 5;
 - if the mapping is ambiguous, do not infer plan compliance. Record the plan
   alignment as `NOT_COVERED` or raise a `QUESTION` when it materially affects
   confidence.
@@ -214,9 +217,9 @@ Before judging implementation, locate the strongest available sources of intent 
 
 A project may keep task plans or specifications outside version control. If a relevant plan is discoverable, verify that it actually corresponds to the reviewed change before treating it as authoritative.
 
-For a `code` target, apply the active-plan alignment from Section 1 whenever a
-valid plan pointer was found. Use the plan's acceptance criteria as expected
-behavior, but do not accept implementation merely because it appears to follow
+For a `code` target, the acceptance criteria of the work package mapped in
+Section 1 are a source of expected behavior; Section 5 assesses the change
+against them. Do not accept implementation merely because it appears to follow
 the plan.
 
 If expected behavior cannot be determined and the concern is a product choice, classify it as `QUESTION`, not a defect.
@@ -227,17 +230,15 @@ conflicts with the user's task under
 `<skills_root>/_shared/references/user-facing-behavior-assessment.md`, report a
 `QUESTION` with the concrete trade-off instead of a defect.
 
-For a `plan` target, the plan is the work product under review, not proof of its
-own claims. Compare it with the referenced source artifact, explicit user
-decisions, repository evidence, and the plan contract defined by `$task-plan`
-(`<skills_root>/task-plan/SKILL.md`).
-Do not treat `candidate paths`, `discovery debt`, or a plan's suggested diagnosis
-as confirmed facts without supporting evidence.
+Map the other results of that reference as follows:
 
-A plan verdict is decided by this review, not inherited from a plan as owner, from
-an auxiliary report, or from the plan's own structure. Report honest coverage; if
-relevant evidence is unavailable, say so instead of lowering the bar for the
-verdict.
+- a blocking question becomes an approval-affecting `QUESTION`;
+- a product note becomes a `SUGGESTION` labeled as a product note and does not
+  change the verdict;
+- a concrete check becomes a `verification_gap` naming the check;
+- a preference with no cost to the user produces no entry.
+
+For a `plan` target, also apply "Plan expected behavior" in `<skill_dir>/references/plan-review.md`.
 
 ## 3. Discover project context
 
@@ -278,11 +279,7 @@ semantics of sources, scope, force, evidence and result.
 - An inactive conditional profile contributes no rule and no violation. An
   unresolved activation is `NOT_VERIFIED`, never assumed conformance.
 
-For a `plan` target, also read the relevant `$task-plan` contract
-(`<skills_root>/task-plan/SKILL.md`) and only the
-repository documentation needed to verify ownership, boundaries, dependencies,
-paths, or acceptance checks claimed by the plan. Do not turn plan review into a
-second full implementation discovery pass.
+For a `plan` target, also apply "Plan context" in `<skill_dir>/references/plan-review.md`.
 
 ## 4. Assess risk and choose review depth
 
@@ -295,7 +292,8 @@ Increase review depth when the change spans subsystems or has material risk invo
 - public or inter-component contracts
 - asynchronous processing, retries, idempotency, ordering, or concurrency
 - external effects or integrations
-- framework/runtime lifecycle behavior
+- framework/runtime lifecycle behavior (see "Reactivity, lifecycle and feedback
+  loops" in the deep review checklists)
 - performance-sensitive or high-volume paths
 - broad refactors with many callers/consumers
 - deployment, configuration, scheduled execution, or operational behavior
@@ -352,25 +350,7 @@ Do not turn this into a full review of every work package or a replacement for
 the code review. A plan mismatch, omitted acceptance criterion, or unjustified
 scope expansion is a code-review concern when it affects the reviewed change.
 
-### Plan integrity and execution readiness
-
-Use this section only for a `plan` target. Check the plan against the `$task-plan`
-contract (`<skills_root>/task-plan/SKILL.md`) without editing it:
-
-- `Source and objective` describes the actual requested outcome, symptoms, constraints, and verified versus unverified claims;
-- every source point is mapped to a WP or has a justified `excluded` decision;
-- `Scope`, ownership, boundaries, dependencies, and WP order are consistent;
-- `confirmed paths`, `candidate paths`, and `discovery debt` are kept distinct;
-- `Direction, simplicity and consistency` names the existing mechanism, simpler alternatives, minimality, and ownership rather than asserting them generically;
-- each WP has an actionable goal, scope, out-of-scope boundary, discovery notes, acceptance criteria, and verification;
-- acceptance criteria have a concrete test or check, and the execution environment/command contract is internally consistent;
-- every planned permanent test passes the **Durable tests versus one-off change verification** gate from the deep review checklists, applied to each listed test rather than replaced by a general coverage statement; history-only scenarios are removed from permanent test scope, while a scenario verifying an actual migration contract or target invariant stays, and any necessary one-off checks are explicitly distinguished in `Verification`;
-- open questions, missing evidence, or discovery debt that could change public behavior, ownership, WP boundaries, data models, or acceptance criteria are treated as blockers or questions;
-- the plan does not copy global workflow rules, describe its own drafting history, or claim `ready` independently of `$task-plan` validation.
-
-When a plan is incomplete, report the missing evidence or contradiction in the
-plan rather than inventing implementation details or silently correcting it. A
-listed test or command is planned verification, not evidence that it was run.
+For a `plan` target, also apply "Plan integrity and execution readiness" in `<skill_dir>/references/plan-review.md`.
 
 ## 6. Verify candidate findings
 
@@ -435,12 +415,13 @@ be reported:
   missing evidence instead of downgrading the question to taste or promoting it to
   a violation.
 
+### Mechanical verification
+
 Passing lint/typecheck/build is hygiene evidence, not behavioral proof.
 
-This skill is **read-only**, which means it must not edit source, change Git
-state, alter persistent application data, or perform externally visible actions.
-It may run documented, safe, non-destructive commands when they directly answer
-a review question. Keep every command proportional to the changed behavior or a
+Commands stay within the read-only rule from "Hard rules". This skill may run
+documented, safe, non-destructive commands when they directly answer a review
+question. Keep every command proportional to the changed behavior or a
 candidate finding, and record its command, result, and limitation.
 
 Permitted mechanical evidence includes a focused test, a targeted lint or
@@ -452,16 +433,12 @@ Do not run a full test suite, repository-wide lint, or full QA matrix unless the
 user explicitly requests it. `$qa-run` remains the normal workflow for full QA.
 Do not expand a focused check into a broader run merely because it is available.
 
-For a change affecting rendered UI, run a proportional Playwright checkpoint
-when `playwright-cli` and a safe application target are available. Follow
-`<skills_root>/_shared/references/playwright-cli-verification.md` for the sole
-preparation entrypoint: `bash <skills_root>/_shared/scripts/playwright-access-prepare.sh`
-(add `--protected` for a protected URL). Do not run preflight or bootstrap
-separately, invent a login flow, or pass credentials through `fill` or CLI
-arguments. `Access: BLOCKED` is a verification gap; `Access: READY` still
-requires a separate safe application session and an actual checkpoint, with
-`state-load` before protected navigation. Follow that reference for URL
-selection, CLI resolution, session cleanup and artifacts.
+For a change affecting rendered UI, or a change to the interactions of code
+running in the browser when Section 4 selected the reactivity lens, run a
+proportional Playwright checkpoint following
+`<skills_root>/_shared/references/playwright-cli-verification.md` when
+`playwright-cli` and a safe application target are available.
+`Access: BLOCKED` is a `verification_gap`.
 The checkpoint should cover the changed state and relevant interaction, use a
 stable snapshot/role/selector, and check new console or request errors. Add a
 relevant viewport or accessibility/state check when the change's risk requires
@@ -472,7 +449,8 @@ If a relevant selected focused check is unavailable, report a
 `playwright-cli` or a safe application target is unavailable, report the same
 gap for that UI behavior. Do not treat missing mechanical verification as a
 blocker unless the claim cannot be evaluated without it, and do not present the
-unverified behavior as proven.
+unverified behavior as proven. A runtime gap described in Section 10 still
+limits the verdict.
 
 ## 7. Review the review
 
@@ -493,6 +471,15 @@ When an applicable-rules register was produced, also check that no relevant rule
 was dropped: revisit the active sources and the reviewed scope, confirm that every
 selected rule has a recorded result, and verify that a result invalidated by a
 change of scope, rule or evidence was re-established instead of carried over.
+
+For a non-trivial change, run a pre-mortem before the verdict: name the single
+most likely way the change could break user-visible or operational behavior
+after merge, and name the control (a test, a review observation, or runtime
+verification) that would detect it. When no such control exists, record a
+`verification_gap` or `NOT_COVERED`. The pre-mortem is not a finding by itself:
+every candidate it produces passes the publication gate from Section 6 with its
+five elements unchanged. Skip the pre-mortem without an entry for a trivial
+change.
 
 For every surviving candidate, record the strongest counterargument you actually
 considered and the resulting classification from the publication gate. A
@@ -523,10 +510,7 @@ Use one of the following outcomes for every inventory entry:
 
 If any high-risk area is `NOT_COVERED`, the verdict cannot be an unconditional `PASS`.
 
-For a `plan` target, also account for the source-to-WP mapping, required plan
-sections, open questions, discovery debt, evidence artifacts, and execution
-readiness. Do not treat a complete plan document as proof that its contents are
-correct.
+For a `plan` target, also apply "Plan coverage" in `<skill_dir>/references/plan-review.md`.
 
 When an applicable-rules register was produced, account separately for each
 selected rule's result
@@ -566,30 +550,27 @@ For a `code` target, choose one:
 A significant applicable rule left `NOT_VERIFIED` excludes an unconditional
 `PASS`; when that gap affects acceptance of the reviewed change, use `DISCUSS`.
 
-For a `plan` target, use plan-specific wording:
+A `verification_gap` for runtime behavior that Section 4 marked as high
+reactivity or lifecycle risk excludes an unconditional `PASS`; when that gap
+affects acceptance of the reviewed change, use `DISCUSS`.
 
-- **PLAN BLOCKED** — a BLOCKER, invalid plan structure, or execution-blocking coverage gap remains;
-- **PLAN CHANGES REQUESTED** — no blocker, but one or more MAJOR or actionable MINOR findings remain;
-- **PLAN DISCUSS** — an approval-affecting QUESTION or high-risk `NOT_COVERED` area remains;
-- **PLAN READY WITH CAVEAT** — only MINOR findings that are non-actionable or explicitly accepted by the user remain; an actionable MINOR forces `PLAN CHANGES REQUESTED` instead;
-- **PLAN READY** — no unresolved plan defects or material coverage gaps remain.
-
-For a `plan` target, a violated hard rule maps to `PLAN CHANGES REQUESTED`, and an
-unresolved application of a hard rule maps to `PLAN DISCUSS`. This reuses the
-existing plan verdicts; do not add new verdicts, edit the plan, or change the
-review-cycle helper.
-
-`PLAN READY` is a result of this read-only review phase, not the `$task-plan`
-`ready` status. The canonical plan validator and plan owner remain responsible for
-that status. `SUGGESTION` never changes the verdict or opens another round.
+For a `plan` target, also apply "Plan verdicts" in `<skill_dir>/references/plan-review.md`.
 
 ## 11. Output format
 
 Lead with findings. Do not bury defects under a long summary.
 
+If there are no findings, say `No findings.` explicitly before the review
+details and repeat that status in the Summary. Still include the strongest
+remaining blind spot.
+
 For every finding:
 
 `F<n> [SEVERITY] Short title — path/to/file.ext:line`
+
+In a re-review, or whenever prior findings were supplied in the input, a kept or
+recurring finding keeps its prior ID. A new finding gets the next number after
+the highest prior ID. Never reuse an ID for a different failure mode.
 
 Then include:
 
@@ -645,6 +626,13 @@ report a `verification_gap`; do not turn an otherwise reviewable source area
 into `NOT_COVERED`. Full verification is handled by `$qa-run` unless the user
 explicitly requests otherwise.
 
+### Verdict
+
+`VERDICT — one-sentence reason`
+
+For a `plan` target, describe changes to the plan as the next action and route
+them to `$task-plan`; do not edit the plan from this skill.
+
 ### Summary and next step
 
 State concisely:
@@ -657,33 +645,6 @@ State concisely:
 - the recommended next action, such as a focused check, `$qa-run`, plan
   correction through `$task-plan`, clarification, or no further action.
 
-### Example command
-
-For a default working-tree review, regenerate the change inventory (see Section 1):
-
-```bash
-node <skills_root>/_shared/scripts/change-inventory.mjs build --output <CACHE_PATH>/repository-context/change-inventory.json
-```
-
-Review the union of staged, unstaged, and untracked paths from the inventory's `files[]`;
-do not silently replace it with only the output of `git diff`.
-
-Prompt examples:
-
-- `$code-review` — perform a full review of the current working tree;
-- `$code-review` — review the existing plan `./docs/plans/example.md` as a read-only phase for execution readiness.
-
-### Verdict
-
-`VERDICT — one-sentence reason`
-
-For a `plan` target, describe changes to the plan as the next action and route
-them to `$task-plan`; do not edit the plan from this skill.
-
-If there are no findings, say `No findings.` explicitly before the review
-details and repeat that status in the Summary. Still include the strongest
-remaining blind spot.
-
 ## 12. Re-review after fixes
 
 When explicitly asked to re-review fixes:
@@ -693,7 +654,7 @@ When explicitly asked to re-review fixes:
 - resolve every prior finding ID explicitly as **resolved**, **current**, or
   **accepted**, with evidence and the current severity when it persists;
 - for a recurring finding, state whether it is the same failure mode and whether
-  new evidence exists; link it to the prior ID;
+  new evidence exists; keep the prior ID;
 - for a new finding, state whether it originates from the fix or a direct
   dependency, and name the changed section/work package or dependency that makes
   it reachable;
@@ -709,3 +670,19 @@ When explicitly asked to re-review fixes:
 - report regressions introduced by the fixes;
 - do not edit a plan; route plan corrections through `$task-plan`;
 - do not continue into an automatic fix/re-review loop unless explicitly requested.
+
+## Examples
+
+For a default working-tree review, regenerate the change inventory (see Section 1):
+
+```bash
+node <skills_root>/_shared/scripts/change-inventory.mjs build --output <CACHE_PATH>/repository-context/change-inventory.json
+```
+
+Review the union of staged, unstaged, and untracked paths from the inventory's `files[]`;
+do not silently replace it with only the output of `git diff`.
+
+Prompt examples:
+
+- `$code-review` — perform a full review of the current working tree;
+- `$code-review` — review the existing plan `./docs/plans/example.md` as a read-only phase for execution readiness.

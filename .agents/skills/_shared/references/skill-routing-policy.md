@@ -26,7 +26,7 @@ Stosuj następującą kolejność:
    z zachowaniem twardych zasad bezpieczeństwa i stop-conditions.
 2. Bez jawnego wskazania skilla rozpoznaj intencję:
     - utworzenie planu, krytyczna rewizja w ramach jego tworzenia albo walidacja planu → `$task-plan`;
-    - niezależny, read-only review istniejącego planu → `$code-review` w trybie `plan`;
+    - odrębna faza read-only review istniejącego planu → `$code-review` w trybie `plan`;
     - wykonanie, kontynuacja albo wznowienie istniejącego planu lub WP →
      `$plan-execute`;
     - implementacja konkretnej zmiany (w tym feature, bugfix lub refaktor) bez
@@ -133,7 +133,7 @@ jasnego pytania — nie cichego pominięcia orkiestratora ani zmiany zakresu.
 | Wykonaj istniejący plan/WP | `$plan-execute` | wybrany WP → `$code-implement` |
 | Kontynuuj istniejący plan | `$plan-execute` | pierwszy niezakończony WP |
 | Zaimplementuj zmianę bez planu | `$code-implement` | implementacja i lekka weryfikacja |
-| Niezależny review istniejącego planu | `$code-review` (`plan`) | findings-first + plan coverage + readiness verdict |
+| Odrębna faza read-only review istniejącego planu | `$code-review` (`plan`) | findings-first + plan coverage + readiness verdict |
 | Pełny albo głęboki przegląd implementacji | `$code-review` (`code`) | findings-first + coverage + merge verdict |
 | Przejrzyj bieżące zmiany | `$review-quick` | raport findings-first |
 | Zaudytuj skill, instrukcje, agenta albo cały katalog | `$skill-review` | findings-first + severity/evidence; bez edycji plików |

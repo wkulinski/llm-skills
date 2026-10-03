@@ -354,6 +354,26 @@ it("rejects a decision made for an older revision of the plan", () => {
     });
 });
 
+it("rejects a decision bound to the recorded base after the body was edited by hand", () => {
+    withFixture((fixture) => {
+        const reference = planReference(fixture);
+        record(fixture, {ok: true, action: "apply-repair", reason: "repair-all-actionable-findings", plan: reference});
+        fs.writeFileSync(
+            path.join(fixture.root, fixture.planPath),
+            read(fixture).replace("Gate readiness on a recorded review.", "Silently edited by hand."),
+            "utf8",
+        );
+        const before = read(fixture);
+
+        assert.throws(
+            () => record(fixture, {...FINISH_READY, plan: reference}),
+            (error) => error instanceof StoreError && error.code === "REVIEW_DECISION_STALE",
+        );
+        assert.equal(read(fixture), before);
+        assert.equal(loadPlanFile({repoRoot: fixture.root, planPath: fixture.planPath}).status, "blocked");
+    });
+});
+
 it("records a repair decision as the next delta base without confirming readiness", () => {
     withFixture((fixture) => {
         const reference = planReference(fixture);

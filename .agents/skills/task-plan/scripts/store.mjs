@@ -201,17 +201,19 @@ export function recordReview({repoRoot = process.cwd(), planPath, decision, fsOp
             throw new StoreError("PLAN_CHANGED_DURING_READ", "The plan changed while the review was being recorded.");
         }
         // Recording rewrites the front matter, so a repeated call matches the recorded base instead of the file hash.
+        const matchesFile = reference.content_sha256 === sha256(existing.markdown);
         const alreadyRecorded = existing.metadata.review_base_revision === reference.revision
             && existing.metadata.review_base_sha256 === reference.content_sha256;
+        const staleError = () => new StoreError("REVIEW_DECISION_STALE", "The decision covers a different plan revision or content; review the current revision.", {
+            decision_plan: reference,
+            plan_id: existing.metadata.plan_id,
+            revision: existing.metadata.revision,
+            content_sha256: sha256(existing.markdown),
+        });
         if (reference.plan_id !== existing.metadata.plan_id
             || reference.revision !== existing.metadata.revision
-            || (reference.content_sha256 !== sha256(existing.markdown) && !alreadyRecorded)) {
-            throw new StoreError("REVIEW_DECISION_STALE", "The decision covers a different plan revision or content; review the current revision.", {
-                decision_plan: reference,
-                plan_id: existing.metadata.plan_id,
-                revision: existing.metadata.revision,
-                content_sha256: sha256(existing.markdown),
-            });
+            || (!matchesFile && !alreadyRecorded)) {
+            throw staleError();
         }
         const validation = validatePlanDocument(existing.markdown, {repoRoot: root, fsOps});
         if (!validation.valid) {
@@ -229,6 +231,10 @@ export function recordReview({repoRoot = process.cwd(), planPath, decision, fsOp
         };
         const markdown = renderPlanDocument(existing.body, metadata);
         const changed = markdown !== existing.markdown;
+        // A base match without a file match is accepted only as a no-op repeat; any change would confirm unreviewed content.
+        if (!matchesFile && changed) {
+            throw staleError();
+        }
         if (changed) {
             writeFileAtomic(paths.draftPath, markdown, {rootDir: root, fsOps});
         }

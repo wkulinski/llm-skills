@@ -133,7 +133,7 @@ Do not edit files, run shell commands, start agents or Paseo sessions, or invoke
 If essential input is missing, return status INCOMPLETE and name it in the report.
 
 Return ONLY one JSON object, with no text around it:
-{"version":${JOB_VERSION},"job_id":"${job.job_id}","snapshot":{"head":"${job.snapshot.head}","combined_sha256":"${job.snapshot.combined_sha256}"},"status":"COMPLETE|INCOMPLETE|BLOCKED|STALE","report_markdown":"<code-review Section 11 report>"}
+{"version":${JOB_VERSION},"job_id":"${job.job_id}","snapshot":{"head":"${job.snapshot.head}","combined_sha256":"${job.snapshot.combined_sha256}"},"status":"COMPLETE|INCOMPLETE|BLOCKED|STALE","report_markdown":"<code-review Output format report>"}
 The status describes whether the review work finished; it is not a merge verdict.
 `;
 }

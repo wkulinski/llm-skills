@@ -3,8 +3,7 @@
 This file is the conditional reference of `$code-review`. It holds the domain
 checklists of the "Deep review contract"; load only the sections required by the
 active target and the review depth chosen in Section 4 of the skill root
-(`<skill_dir>/SKILL.md`). The wording and headings are preserved from the skill
-root before extraction.
+(`<skill_dir>/SKILL.md`).
 
 ### Correctness and propagation
 
@@ -14,8 +13,21 @@ Check where relevant:
 - branch, state-machine, and lifecycle logic
 - boundary, empty, invalid, and exceptional inputs
 - error propagation and recovery paths
-- callers, alternate entry points, and consumers
+- callers, alternate entry points, and consumers; when the changed unit is shared
+  (module, controller, component, base class, template), enumerate its consumers
+  by searching for the registration mechanism the project uses (import,
+  reference from a template, configuration, attribute), and record their count
+  and the consumers whose use differs from the change's scenario. Consumers of a
+  shared unit that were not enumerated are a `NOT_COVERED` entry
 - stale assumptions in tests, fixtures, configuration, or documentation that are behaviorally significant
+- twin components: when a component has a twin or predecessor performing a
+  related operation (create and edit, create and update), compare their handling
+  of domain errors and exceptions; for every exception the handler or a lower
+  layer can throw, point to the place that turns it into a response for the
+  user. An unjustified asymmetry is a candidate finding
+- dependent values: when the parent value of a field, form, or state changes,
+  check what happens to a stored value that depends on it (cleared, filtered,
+  rejected with a message, or left inconsistent)
 
 If a public name, signature, field, message, event, configuration key, output, or other contract changes, search for producers, consumers, and assertions of the old contract.
 
@@ -43,7 +55,8 @@ When stateful behavior changes, inspect where relevant:
 - migrations and existing-data implications
 - transactional/atomicity boundaries
 - partial failure and retry behavior
-- data loss, duplication, stale state, or inconsistent state transitions
+- data loss, duplication, stale state, or inconsistent state transitions,
+  including dependent values in the interface and in forms
 - serialization and compatibility of stored data
 
 ### Security and privacy
@@ -73,6 +86,26 @@ Where relevant, inspect:
 - cleanup on failure
 - restart/resume behavior
 - scheduled or bulk execution blast radius
+
+### Reactivity, lifecycle and feedback loops
+
+Check where relevant:
+
+- whether a new observer, listener, watcher, or subscription can react to changes
+  made by the mechanism itself or by its own dependencies, and where the stop
+  condition is
+- whether the code manually synchronizes two sources of truth instead of using a
+  lifecycle event of their owner
+- whether a listener on a global target (document, window, history) narrows the
+  target, phase, and event type, and what other consumers of the same event
+  (router, framework) do with it
+- whether the code writes to shared environment state that something else also
+  interprets
+- whether an event sequence has several steps while the code assumes one
+
+For each question, record the result as justified, not justified, or not
+verified. A not-verified question is a `NOT_VERIFIED` coverage entry, not a
+silent assumption.
 
 ### Performance
 
@@ -140,6 +173,14 @@ Check whether tests:
 - exercise the meaningful failure mode of a stateful, cross-boundary, or
   otherwise complex mechanism; a trivial unit assertion is not sufficient as
   the only evidence for the mechanism's higher-risk behavior
+- do not replace the source of risk with a test double: when the mechanism's
+  risk lies in the behavior of an external dependency (library, framework,
+  browser, service), a test that fully replaces that dependency with a double is
+  not evidence for that risk. Identify whether any test actually exercises the
+  risky behavior; if none does, record a `verification_gap` naming the missing
+  scenario instead of counting those tests as coverage. A double remains
+  legitimate for behavior that is not the source of risk, such as isolating
+  I/O, time, or randomness
 
 Do not request tests that merely vary values without exercising a distinct behavior.
 
