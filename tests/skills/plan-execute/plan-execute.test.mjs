@@ -42,13 +42,13 @@ function temporaryRepository() {
     return root;
 }
 
-function makePlan(root, packages, identity = `user-input:plan-execute-${packages.length}`) {
+function makePlan(root, packages, identity = `user-input:plan-execute-${packages.length}`, extras = {}) {
     const source = normalizeUserInput({identity, title: "Plan execute test", body: "Execute the requested plan."}, {fetched_at: NOW});
     persistSource(source, {repoRoot: root});
     const drafted = savePlan({
         repo_root: root,
         source_identity: source.identity,
-        markdown_body: planBody(packages),
+        markdown_body: planBody(packages, extras),
     }, {now: NOW, verbose: true});
     const planPath = path.join(root, drafted.paths.draft_path);
     const saved = recordReview({
@@ -64,7 +64,7 @@ function makePlan(root, packages, identity = `user-input:plan-execute-${packages
     return {saved, planPath};
 }
 
-function planBody(packages) {
+function planBody(packages, extras = {}) {
     const packageSections = packages.map((item) => `### ${item.id} — ${item.title}
 
 - Source: ${item.id} requirement
@@ -118,18 +118,18 @@ ${sourceCoverage}
 
 ## Work packages
 
-${packageSections}
+${packageSections}${extras.afterPackages ?? ""}
 ## Order
 
 Work packages run in document order.
 
 ## Decisions and open questions
 
-No open questions.
+${extras.decisions ?? "No open questions."}
 
 ## Risks and discovery debt
 
-No known discovery debt.
+${extras.risks ?? "No known discovery debt."}
 
 ## Acceptance and verification
 
@@ -303,6 +303,83 @@ it("selects exactly the first unchecked work package", () => {
     completeWorkPackage({repoRoot: root, planPath, wpId: "WP1", evidence: "focused test passed"}, {now: NOW, verbose: true});
     const second = selectNextWorkPackage(loadExecutionPlan({planPath, repoRoot: root}));
     assert.equal(second.selected.id, "WP2");
+});
+
+it("hands decisions, answered questions, notes and the risks of the selected WP to the executor", () => {
+    const root = temporaryRepository();
+    const packages = Array.from({length: 10}, (_unused, index) => ({id: `WP${index + 1}`, title: `Package ${index + 1}`}));
+    const {planPath} = makePlan(root, packages, "user-input:handoff", {
+        decisions: [
+            "- D1: Keep the existing contract.",
+            "- Q1 [answered]: Which owner stays?",
+            "  - Answer: Core stays the owner.",
+            "  - Source: current conversation",
+            "- N1 [note]: Row click target; koszt: unpredictable result; podstawa: hipoteza; kierunek: confirm with the product owner.",
+        ].join("\n"),
+        risks: [
+            "- R1 [medium]: WP1 may change the persisted format.",
+            "- R2 [low]: WP10 depends on the new format.",
+            "- R3 [low]: The whole rollout needs a final smoke run.",
+        ].join("\n"),
+    });
+
+    const first = selectNextWorkPackage(loadExecutionPlan({planPath, repoRoot: root}));
+    assert.deepEqual(first.selected.decisions, [
+        {id: "D1", type: "decision", text: "Keep the existing contract."},
+        {
+            id: "Q1",
+            type: "question",
+            status: "answered",
+            text: "Which owner stays?",
+            answer: "Core stays the owner.",
+            source: "current conversation",
+        },
+        {
+            id: "N1",
+            type: "note",
+            text: "Row click target; koszt: unpredictable result; podstawa: hipoteza; kierunek: confirm with the product owner.",
+        },
+    ]);
+    assert.deepEqual(first.selected.risks.map((risk) => [risk.id, risk.level, risk.scope]), [
+        ["R1", "medium", "work-package"],
+        ["R3", "low", "plan"],
+    ]);
+
+    for (const id of packages.slice(0, 9).map((item) => item.id)) {
+        completeWorkPackage({repoRoot: root, planPath, wpId: id, evidence: "focused test passed"}, {now: NOW});
+    }
+    const last = selectNextWorkPackage(loadExecutionPlan({planPath, repoRoot: root}));
+    assert.equal(last.selected.id, "WP10");
+    assert.deepEqual(last.selected.risks.map((risk) => risk.id), ["R2", "R3"]);
+});
+
+it("ignores example Execution and WP headings inside fenced code when selecting and completing", () => {
+    const root = temporaryRepository();
+    const afterPackages = [
+        "```md",
+        "## Execution",
+        "",
+        "- [ ] WP7",
+        "",
+        "### WP9 — Example only",
+        "```",
+        "",
+        "~~~md",
+        "## Execution",
+        "### WP8 — Tilde example",
+        "~~~",
+        "",
+    ].join("\n");
+    const {planPath} = makePlan(root, [{id: "WP1", title: "First"}, {id: "WP2", title: "Second"}], "user-input:fenced-headings", {afterPackages});
+
+    const plan = loadExecutionPlan({planPath, repoRoot: root});
+    assert.deepEqual(plan.packages.map((item) => item.id), ["WP1", "WP2"]);
+    assert.equal(selectNextWorkPackage(plan).selected.id, "WP1");
+
+    const completed = completeWorkPackage({repoRoot: root, planPath, wpId: "WP1", evidence: "focused test passed"}, {now: NOW, verbose: true});
+    assert.match(completed.markdown, /^- \[x\] WP1 — 2026-08-26 — focused test passed$/m);
+    assert.match(completed.markdown, /^- \[ \] WP7$/m);
+    assert.equal(selectNextWorkPackage(loadExecutionPlan({planPath, repoRoot: root})).selected.id, "WP2");
 });
 
 it("uses a justified model and reasoning override for the selected work package", () => {
@@ -634,6 +711,34 @@ it("does not execute a plan blocked by an open planning question", () => {
         () => loadExecutionPlan({planPath: created.planPath, repoRoot: root}),
         (error) => error instanceof PlanExecuteError && error.code === "PLAN_NOT_READY",
     );
+});
+
+it("refuses a plan without review keys until its review is recorded", () => {
+    const root = temporaryRepository();
+    const created = makePlan(root, [{id: "WP1", title: "Unreviewed"}], "user-input:no-review-keys");
+    const legacy = created.saved.markdown.replace(/^(previous_sha256|reviewed_revision|reviewed_body_sha256|review_base_revision|review_base_sha256): .*\n/gm, "");
+    fs.writeFileSync(created.planPath, legacy, "utf8");
+
+    assert.throws(
+        () => loadExecutionPlan({planPath: created.planPath, repoRoot: root}),
+        (error) => error instanceof PlanExecuteError
+            && error.code === "PLAN_NOT_READY"
+            && error.details.blocked_reason === "review_pending"
+            && /record-review/.test(error.message),
+    );
+
+    const reviewed = recordReview({
+        repoRoot: root,
+        planPath: created.planPath,
+        decision: {
+            ok: true,
+            action: "finish-ready",
+            reason: "plan-ready",
+            plan: {plan_id: created.saved.plan_id, revision: created.saved.revision, content_sha256: crypto.createHash("sha256").update(legacy).digest("hex")},
+        },
+    }, {verbose: true});
+    assert.equal(reviewed.status, "ready");
+    assert.equal(loadExecutionPlan({planPath: created.planPath, repoRoot: root}).status, "ready");
 });
 
 it("does not execute a ready plan withdrawn by an incomplete material revision", () => {

@@ -13,6 +13,7 @@ shared_files:
   - _shared/scripts/artifact-path.mjs
   - _shared/scripts/change-inventory.mjs
   - _shared/scripts/secret-detector.mjs
+  - _shared/scripts/is-main-module.mjs
   - code-review/SKILL.md
 ---
 

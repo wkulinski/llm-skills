@@ -303,6 +303,13 @@ If a required command cannot be resolved by `resolve_tool_cmd`, treat it as a bl
 `CACHE_PATH` is used by local cache scripts. It is auto-loaded from `.env` or `.env.local`, but you can still override it with `export` in the current shell session.
 `OWC_PATH` controls the persistent OWE report directory; without it OWE uses `$CACHE_PATH/owc` or `var/agent/cache/owc`.
 
+### MCP servers (Claude Code)
+Claude Code reads project MCP servers from `.mcp.json` in the repository root (OpenCode uses `opencode.jsonc`, Codex uses `.codex/config.toml`; the files are not interchangeable).
+
+`serena` is started by command name, so it must be on `PATH` when Claude Code starts. A `uv tool` install puts it in `~/.local/bin`, which `~/.profile` adds only for login shells; if Claude Code is launched from another kind of shell, add that directory to `PATH` or the server fails to start. Check with `command -v serena` in the shell that launches Claude Code.
+
+The `.mcp.json` entry uses `--context=claude-code`; see `serena context list` for the contexts your Serena version provides.
+
 ### Deterministic QA matrix (`$qa-run`)
 `$qa-run` uses repo-level matrix config in `.agents/qa-run.matrix.json`.
 

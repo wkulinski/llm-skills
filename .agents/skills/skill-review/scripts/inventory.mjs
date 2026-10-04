@@ -3,7 +3,8 @@
 import crypto from "node:crypto";
 import {existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync} from "node:fs";
 import path from "node:path";
-import {pathToFileURL} from "node:url";
+
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 
 const INVENTORY_VERSION = 1;
 const USAGE_TRIGGER = "Użyj, gdy";
@@ -2093,6 +2094,6 @@ function main(argv) {
     }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     process.exitCode = main(process.argv.slice(2));
 }

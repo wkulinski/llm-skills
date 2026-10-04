@@ -2,16 +2,18 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import {pathToFileURL} from "node:url";
 
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {compareModelProfiles, loadModelHierarchy} from "../../_shared/scripts/model-hierarchy.mjs";
-import {completeWorkPackage as completeTaskPlanWorkPackage, loadPlanFile} from "../../task-plan/scripts/store.mjs";
-import {writeFileAtomic} from "../../task-plan/scripts/atomic-file.mjs";
+import {completeWorkPackage as completeTaskPlanWorkPackage, loadPlanFile} from "../../_shared/scripts/task-plan/store.mjs";
+import {writeFileAtomic} from "../../_shared/scripts/task-plan/atomic-file.mjs";
 import {
     parseExecutionContract,
     parseExecutionEnvironment,
     parsePlanDocument,
-} from "../../task-plan/scripts/validate.mjs";
+    parseQuestions,
+    parseRisks,
+} from "../../_shared/scripts/task-plan/validate.mjs";
 
 const PLAN_PREFIX = "docs/plans/";
 
@@ -60,7 +62,10 @@ export function loadExecutionPlan({planPath, repoRoot = process.cwd(), fsOps = f
     }
     if (loaded.status !== "ready") {
         const reason = loaded.validation?.blocked_reason ?? null;
-        throw new PlanExecuteError("PLAN_NOT_READY", `Plan validation status is ${loaded.status}${reason ? ` (${reason})` : ""}.`, {
+        const hint = reason === "review_pending"
+            ? " Review the plan in $task-plan and record the decision with store.mjs record-review before executing it."
+            : "";
+        throw new PlanExecuteError("PLAN_NOT_READY", `Plan validation status is ${loaded.status}${reason ? ` (${reason})` : ""}.${hint}`, {
             errors: loaded.validation?.errors ?? [],
             blocked_reason: reason,
         });
@@ -73,6 +78,8 @@ export function loadExecutionPlan({planPath, repoRoot = process.cwd(), fsOps = f
         packages: loaded.validation.packages,
         environment: parseExecutionEnvironment(parsed.body),
         execution: parseExecutionContract(parsed.body),
+        decisions: parseQuestions(parsed.body).entries,
+        risks: parseRisks(parsed.body),
     };
 }
 
@@ -93,6 +100,10 @@ export function selectNextWorkPackage(plan) {
             title: packageRecord.title,
             body: packageRecord.body,
             estimatedSize: packageField(packageRecord.body, "Estimated size"),
+            decisions: plan.decisions ?? [],
+            risks: (plan.risks ?? [])
+                .filter((risk) => risk.work_packages.length === 0 || risk.work_packages.includes(packageRecord.id))
+                .map(({work_packages: scope, ...risk}) => ({...risk, scope: scope.length === 0 ? "plan" : "work-package"})),
             environment: override
                 ? {
                     model: override.model,
@@ -319,7 +330,7 @@ async function main(argv) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     main(process.argv.slice(2)).catch((error) => {
         process.stderr.write(`${JSON.stringify({
             error: error.code ?? "PLAN_EXECUTE_ERROR",

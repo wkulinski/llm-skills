@@ -3,16 +3,16 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import {pathToFileURL} from "node:url";
 
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {
     loadPlan,
     projectPlanOutcome,
     renderPlanDocument,
     resolvePlanPaths,
     savePlan,
-} from "./store.mjs";
-import {parsePlanDocument, validatePlanDocument} from "./validate.mjs";
+} from "../../_shared/scripts/task-plan/store.mjs";
+import {parsePlanDocument, validatePlanDocument} from "../../_shared/scripts/task-plan/validate.mjs";
 
 const DECISIONS_SECTION = "Decisions and open questions";
 const QUESTION_STATUSES = new Set(["open", "answered"]);
@@ -971,7 +971,7 @@ function readJsonInput(filePath) {
     }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     main(process.argv.slice(2)).catch((error) => {
         process.stderr.write(`${JSON.stringify({
             error: error.code ?? "PLAN_EDIT_ERROR",

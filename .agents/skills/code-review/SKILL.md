@@ -11,6 +11,7 @@ metadata:
 shared_files:
   - code-review/references/review-checklists.md
   - code-review/references/plan-review.md
+  - _shared/references/task-plan-contract.md
   - _shared/references/skill-routing-policy.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/rule-conformance-policy.md
@@ -24,6 +25,7 @@ shared_files:
   - _shared/scripts/playwright-auth-bootstrap.sh
   - _shared/scripts/playwright-auth-bootstrap.mjs
   - _shared/scripts/playwright-auth-finalize.mjs
+  - _shared/scripts/is-main-module.mjs
 ---
 
 # Code Review

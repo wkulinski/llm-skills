@@ -12,6 +12,7 @@ shared_files:
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/scripts/issue-branch.mjs
   - _shared/scripts/slugify-title.mjs
+  - _shared/scripts/is-main-module.mjs
 ---
 
 # $commit-message-write

@@ -2,6 +2,7 @@
 
 import {readFileSync} from "node:fs";
 
+import {isMainModule} from "./is-main-module.mjs";
 import {formatSecretValidationErrors} from "./secret-detector.mjs";
 
 const REQUIRED_KEYS = [
@@ -53,7 +54,7 @@ function main(argv) {
     return 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
     try {
         process.exitCode = main(process.argv.slice(2));
     } catch (error) {

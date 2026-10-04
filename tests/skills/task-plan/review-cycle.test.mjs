@@ -17,6 +17,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.
 const SCRIPT = path.join(ROOT, ".agents/skills/task-plan/scripts/review-cycle.mjs");
 const BASE_HASH = "a".repeat(64);
 const CURRENT_HASH = "b".repeat(64);
+const REVIEWED_PLAN = {plan_id: "example-plan", revision: 3, content_sha256: CURRENT_HASH};
 
 function reviewInput(overrides = {}) {
     return {
@@ -26,6 +27,7 @@ function reviewInput(overrides = {}) {
         findings: [],
         previous_findings: [],
         previous_resolutions: [],
+        plan: REVIEWED_PLAN,
         ...overrides,
     };
 }
@@ -301,10 +303,92 @@ describe("review-cycle completeness and delta provenance", () => {
         }));
 
         expect(result).toMatchObject({action: REVIEW_ACTIONS.BLOCK, reason: "invalid-review-input"});
-        expect(result.errors.map((entry) => entry.code)).toEqual(expect.arrayContaining([
-            "EMPTY_PREVIOUS_FINDINGS",
-            "DELTA_MISSING_PREVIOUS_ID",
-        ]));
+        expect(result.errors.map((entry) => entry.code)).toContain("DELTA_MISSING_PREVIOUS_ID");
+    });
+
+    it("allows an empty previous list only for the review that opens a cycle", () => {
+        const opening = laterReview({
+            verdict: "PLAN READY",
+            findings: [],
+            previous_findings: [],
+            previous_resolutions: [],
+            delta_review: deltaInput({previous_finding_ids: []}),
+        });
+        expect(decideReviewCycle(opening)).toMatchObject({ok: true, action: REVIEW_ACTIONS.FINISH_READY});
+
+        const later = decideReviewCycle({...opening, delta_review_count: 2});
+        expect(later).toMatchObject({ok: false, action: REVIEW_ACTIONS.BLOCK});
+        expect(later.errors.map((entry) => entry.code)).toContain("EMPTY_PREVIOUS_FINDINGS");
+    });
+
+    it("repairs the first delta review after an editorial change without fictional progress", () => {
+        expect(decideReviewCycle(laterReview({
+            findings: [finding({
+                id: "F1",
+                severity: "MINOR",
+                repair_attempts: 0,
+                provenance: {kind: "changed_section", target: "Work packages", evidence: "The reworded WP1 contradicts its criterion."},
+            })],
+            previous_findings: [],
+            previous_resolutions: [],
+            delta_review: deltaInput({previous_finding_ids: []}),
+        }))).toMatchObject({ok: true, action: REVIEW_ACTIONS.APPLY_REPAIR, actionable_finding_ids: ["F1"]});
+    });
+
+    it("accepts a previous question without severity and finishes ready after its answer", () => {
+        const result = decideReviewCycle(laterReview({
+            verdict: "PLAN READY",
+            findings: [],
+            previous_findings: [{id: "F1", classification: "QUESTION"}],
+            previous_resolutions: [{id: "F1", status: "accepted", decision_ref: "Q1"}],
+        }));
+
+        expect(result).toMatchObject({ok: true, action: REVIEW_ACTIONS.FINISH_READY, plan: REVIEWED_PLAN});
+    });
+
+    it("counts an answered previous question as progress for a later repair", () => {
+        expect(decideReviewCycle(laterReview({
+            findings: [finding({
+                id: "F2",
+                severity: "MINOR",
+                repair_attempts: 0,
+                provenance: {kind: "changed_section", target: "Work packages", evidence: "The answer to Q1 changed WP1."},
+            })],
+            previous_findings: [{id: "F1", classification: "QUESTION"}],
+            previous_resolutions: [{id: "F1", status: "accepted", decision_ref: "Q1"}],
+        }))).toMatchObject({ok: true, action: REVIEW_ACTIONS.APPLY_REPAIR});
+    });
+
+    it.each([
+        [{id: "F1", status: "resolved"}],
+        [{id: "F1", status: "current", current_severity: "MINOR"}],
+        [{id: "F1", status: "accepted", decision_ref: "current conversation"}],
+    ])("rejects resolving a previous question as %j", (resolution) => {
+        const errors = validateReviewCycleInput(laterReview({
+            verdict: "PLAN READY",
+            findings: [],
+            previous_findings: [{id: "F1", classification: "QUESTION"}],
+            previous_resolutions: [resolution],
+        }));
+
+        expect(errors.map((entry) => entry.code)).toContain("INVALID_QUESTION_RESOLUTION");
+    });
+
+    it("still requires severity for a previous finding", () => {
+        const errors = validateReviewCycleInput(laterReview({previous_findings: [{id: "F1"}]}));
+
+        expect(errors.map((entry) => entry.code)).toContain("INVALID_PREVIOUS_SEVERITY");
+    });
+
+    it.each([["omitted", true], ["null", false]])("rejects a full review decision with plan %s", (_label, omit) => {
+        const input = reviewInput({plan: null});
+        if (omit) {
+            delete input.plan;
+        }
+        const result = decideReviewCycle(input);
+
+        expect(result).toMatchObject({ok: false, action: REVIEW_ACTIONS.BLOCK, plan: null});
+        expect(result.errors.map((entry) => entry.code)).toContain("MISSING_PLAN_REFERENCE");
     });
 
     it("rejects duplicate and unknown finding references", () => {
@@ -342,6 +426,7 @@ describe("review-cycle completeness and delta provenance", () => {
 
         const spanning = validateReviewCycleInput(laterReview({
             delta_review: deltaInput({current_revision: 4}),
+            plan: {...REVIEWED_PLAN, revision: 4},
         }));
         expect(spanning).toEqual([]);
     });
@@ -349,7 +434,6 @@ describe("review-cycle completeness and delta provenance", () => {
     it("binds the decision to the reviewed plan revision", () => {
         const plan = {plan_id: "plan-1", revision: 1, content_sha256: BASE_HASH};
         expect(decideReviewCycle(reviewInput({plan}))).toMatchObject({action: REVIEW_ACTIONS.FINISH_READY, plan});
-        expect(decideReviewCycle(reviewInput())).toMatchObject({ok: true, plan: null});
 
         const delta = deltaInput();
         expect(decideReviewCycle(laterReview({delta_review: delta})).plan).toEqual({
@@ -411,6 +495,24 @@ describe("review-cycle completeness and delta provenance", () => {
             delta_review: input,
             errors: [],
         });
+    });
+});
+
+describe("review-cycle published contract", () => {
+    const contract = fs.readFileSync(path.join(ROOT, ".agents/skills/_shared/references/task-plan-contract.md"), "utf8");
+    const examplesSection = contract.slice(
+        contract.indexOf("#### Przykłady wejścia `decide`"),
+        contract.indexOf("### Front matter planu i potwierdzenie review"),
+    );
+    const examples = [...examplesSection.matchAll(/```json\n([\s\S]*?)\n```/g)].map((match) => JSON.parse(match[1]));
+
+    it("documents three decide inputs that the helper accepts", () => {
+        expect(examples).toHaveLength(3);
+        expect(examples.map((example) => decideReviewCycle(example))).toMatchObject([
+            {ok: true, action: REVIEW_ACTIONS.APPLY_REPAIR},
+            {ok: true, action: REVIEW_ACTIONS.APPLY_REPAIR},
+            {ok: true, action: REVIEW_ACTIONS.FINISH_READY},
+        ]);
     });
 });
 

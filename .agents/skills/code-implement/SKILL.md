@@ -36,6 +36,7 @@ shared_files:
     - _shared/scripts/playwright-auth-finalize.mjs
     - _shared/scripts/targeted-check-decision.mjs
     - _shared/scripts/targeted-check-decision.test.mjs
+    - _shared/scripts/is-main-module.mjs
 ---
 
 # $code-implement

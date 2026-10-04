@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {existsSync, readFileSync} from "node:fs";
 import {execFileSync} from "node:child_process";
+import {isMainModule} from "./is-main-module.mjs";
 import {readCriteriaFile} from "./context-criteria.mjs";
 import {normalizeReadObservation} from "./read-purpose.mjs";
 
@@ -441,7 +442,7 @@ function main(argv) {
     return 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
     try {
         process.exitCode = main(process.argv.slice(2));
     } catch (error) {

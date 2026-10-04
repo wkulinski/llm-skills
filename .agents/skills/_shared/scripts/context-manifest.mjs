@@ -4,6 +4,7 @@ import {lstatSync, readFileSync, readlinkSync, writeFileSync} from "node:fs";
 import path from "node:path";
 import {execFileSync} from "node:child_process";
 
+import {isMainModule} from "./is-main-module.mjs";
 import {formatSecretValidationErrors} from "./secret-detector.mjs";
 
 const REQUIRED_KEYS = [
@@ -279,6 +280,6 @@ function main(argv) {
     return 2;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
     process.exitCode = main(process.argv.slice(2));
 }

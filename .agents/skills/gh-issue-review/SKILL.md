@@ -9,6 +9,7 @@ shared_files:
   - _shared/scripts/env-load.sh
   - _shared/scripts/issue-branch.mjs
   - _shared/scripts/slugify-title.mjs
+  - _shared/scripts/is-main-module.mjs
 ---
 
 # $gh-issue-review

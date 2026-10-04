@@ -7,6 +7,7 @@ description: >-
 shared_files:
   - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/scripts/is-main-module.mjs
 ---
 
 # $qa-run

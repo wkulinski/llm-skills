@@ -35,7 +35,7 @@ Exercise the review gate.
 - Explicit constraints: Data stays in the plan front matter.
 - Suggested diagnosis or solution: Record the decision in the plan.
 - Claims verified in evidence: The store owns persistence.
-- Claims corrected or still unverified: none.
+- Claims corrected or still unverified: No claim was corrected; every claim is backed by the listed evidence.
 
 ## Scope
 
@@ -46,7 +46,7 @@ The review gate is in scope.
 - Existing mechanism reused: The canonical store.
 - Simpler alternative considered: A sidecar file.
 - Why the selected approach is minimal: Two front matter keys.
-- Duplicate or parallel responsibilities: None.
+- Duplicate or parallel responsibilities: The store stays the only owner of review persistence.
 - Cross-WP consistency and ownership: WP1 is the only package.
 
 ## Source coverage
@@ -277,23 +277,28 @@ it("keeps ready through complete-wp because only the Execution checklist changes
     });
 });
 
-it("keeps plans written before the review keys readable and ready through complete-wp", () => {
+it("keeps plans written before the review keys readable but review_pending until a review is recorded", () => {
     withFixture((fixture) => {
         const legacy = read(fixture).replace(/^(previous_sha256|reviewed_revision|reviewed_body_sha256|review_base_revision|review_base_sha256): .*\n/gm, "");
         fs.writeFileSync(path.join(fixture.root, fixture.planPath), legacy, "utf8");
         const loaded = loadPlanFile({repoRoot: fixture.root, planPath: fixture.planPath});
         assert.equal(loaded.validation.valid, true);
-        assert.equal(loaded.status, "ready");
+        assert.equal(loaded.status, "blocked");
+        assert.equal(loaded.validation.blocked_reason, "review_pending");
+        assert.deepEqual(loaded.validation.errors, []);
 
-        const completed = completeWorkPackage({
+        const complete = () => completeWorkPackage({
             repoRoot: fixture.root,
             planPath: fixture.planPath,
             wpId: "WP1",
             evidence: "focused test passed",
         }, {now: NOW, verbose: true});
-        assert.equal(completed.status, "ready");
-        assert.equal(Object.hasOwn(completed.metadata, "reviewed_revision"), false);
-        assert.equal(completed.metadata.previous_sha256, sha256(legacy));
+        assert.throws(complete, (error) => error instanceof StoreError && error.code === "PLAN_NOT_READY");
+        assert.equal(read(fixture), legacy);
+
+        record(fixture);
+        assert.equal(loadPlanFile({repoRoot: fixture.root, planPath: fixture.planPath}).status, "ready");
+        assert.equal(complete().status, "ready");
     });
 });
 

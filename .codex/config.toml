@@ -9,7 +9,7 @@ args = ["compose", "-f", ".docker/docker-compose.dev.yaml", "--project-name", "c
 [mcp_servers.context7]
 command = "npx"
 args = ["-y", "@upstash/context7-mcp"]
-startup_timeout_ms = 40_000
+startup_timeout_sec = 40
 
 [mcp_servers.serena]
 command = "serena"

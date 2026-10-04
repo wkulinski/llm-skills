@@ -4,7 +4,8 @@ import crypto from "node:crypto";
 import {lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync} from "node:fs";
 import path from "node:path";
 import {execFileSync} from "node:child_process";
-import {pathToFileURL} from "node:url";
+
+import {isMainModule} from "./is-main-module.mjs";
 
 function sha256(value) {
     return crypto.createHash("sha256").update(value).digest("hex");
@@ -335,6 +336,6 @@ function main(argv) {
     }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     process.exitCode = main(process.argv.slice(2));
 }

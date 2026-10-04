@@ -10,6 +10,7 @@ shared_files:
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
   - _shared/references/cqrs-monolith-standard-overrides.md
+  - _shared/scripts/is-main-module.mjs
 ---
 
 # $git-commit
