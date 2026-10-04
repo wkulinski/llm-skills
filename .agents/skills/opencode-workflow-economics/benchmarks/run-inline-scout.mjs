@@ -3,7 +3,9 @@ import {createWriteStream, existsSync} from "node:fs";
 import {mkdir, readFile, writeFile} from "node:fs/promises";
 import {spawn} from "node:child_process";
 import {join, resolve} from "node:path";
-import {fileURLToPath, pathToFileURL} from "node:url";
+import {fileURLToPath} from "node:url";
+
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 
 const REPO_ROOT = resolve(fileURLToPath(new URL("../../../..", import.meta.url)));
 const VALIDATOR = join(REPO_ROOT, ".agents/skills/_shared/scripts/context-scout-report.mjs");
@@ -136,6 +138,6 @@ function parseArgs(args) {
     return options;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     main().catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; });
 }

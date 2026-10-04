@@ -3,9 +3,9 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import {pathToFileURL} from "node:url";
 
-import {loadPlanFile} from "./store.mjs";
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
+import {loadPlanFile} from "../../_shared/scripts/task-plan/store.mjs";
 
 export const REVIEW_ACTIONS = Object.freeze({
     FINISH_READY: "finish-ready",
@@ -27,6 +27,7 @@ const SEVERITIES = new Set(["BLOCKER", "MAJOR", "MINOR"]);
 const RESOLUTION_STATUSES = new Set(["resolved", "current", "accepted"]);
 const PROVENANCE_KINDS = new Set(["changed_section", "changed_work_package", "direct_dependency"]);
 const FINDING_ID_PATTERN = /^F[1-9][0-9]*$/;
+const QUESTION_DECISION_REF_PATTERN = /^Q[1-9][0-9]*$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const SEVERITY_RANK = Object.freeze({BLOCKER: 3, MAJOR: 2, MINOR: 1});
 const MAX_FULL_REVIEWS = 1;
@@ -114,7 +115,8 @@ function deriveAction(input = {}) {
         if (actionable.some(isUnsupportedRecurrence)) {
             return decision(REVIEW_ACTIONS.BLOCK, "recurrence-without-new-evidence", actionable);
         }
-        if (!resolutions.some((resolution) => isProgressResolution(resolution, previousById.get(resolution.id)))) {
+        if (source.previous_findings.length > 0
+            && !resolutions.some((resolution) => isProgressResolution(resolution, previousById.get(resolution.id)))) {
             return decision(REVIEW_ACTIONS.BLOCK, "no-measurable-progress", actionable);
         }
     }
@@ -168,6 +170,7 @@ export function validateReviewCycleInput(input = {}) {
             continue;
         }
         validateResolutionConsistency(resolution, findings, errors);
+        validateQuestionResolution(resolution, previousById.get(resolution.id), errors);
     }
     for (const finding of findings) {
         if (!isRecord(finding) || typeof finding.previous_id === "undefined") {
@@ -181,6 +184,9 @@ export function validateReviewCycleInput(input = {}) {
     if (Number.isInteger(input.delta_review_count) && input.delta_review_count > 0) {
         const deltaErrors = validateDeltaReviewInput(input.delta_review);
         errors.push(...deltaErrors);
+        if (input.delta_review_count > 1 && previous.length === 0) {
+            errors.push(error("EMPTY_PREVIOUS_FINDINGS", "A delta review after the first requires at least one previous finding."));
+        }
         validateDeltaPreviousIds(input.delta_review, previousById, errors);
         validateDeltaFindingProvenance(findings, previousById, input.delta_review, errors);
     } else if (typeof input.delta_review !== "undefined" && input.delta_review !== null) {
@@ -210,6 +216,9 @@ function reviewedPlan(input) {
 
 function validatePlanReference(input, errors) {
     if (typeof input.plan === "undefined" || input.plan === null) {
+        if (input.delta_review_count === 0) {
+            errors.push(error("MISSING_PLAN_REFERENCE", "A full review decision requires plan with plan_id, revision and content_sha256 of the reviewed revision."));
+        }
         return;
     }
     if (!isRecord(input.plan)) {
@@ -254,13 +263,10 @@ export function validateDeltaReviewInput(input = {}) {
 
     const changedSections = validateStringArray(input.changed_sections, "changed_sections", errors);
     const changedPackages = validateStringArray(input.changed_work_packages, "changed_work_packages", errors);
-    const previousFindingIds = validateStringArray(input.previous_finding_ids, "previous_finding_ids", errors, {findingIds: true});
+    validateStringArray(input.previous_finding_ids, "previous_finding_ids", errors, {findingIds: true});
     validateStringArray(input.allowed_direct_dependencies, "allowed_direct_dependencies", errors);
     if (changedSections.length === 0 && changedPackages.length === 0) {
         errors.push(error("EMPTY_DELTA_SCOPE", "A delta review requires at least one changed section or work package."));
-    }
-    if (previousFindingIds.length === 0) {
-        errors.push(error("EMPTY_PREVIOUS_FINDINGS", "A delta review requires at least one previous finding id."));
     }
     return errors;
 }
@@ -403,7 +409,11 @@ function validatePreviousFinding(finding, errors) {
         return;
     }
     validateFindingId(finding.id, errors);
-    if (!SEVERITIES.has(finding.severity)) {
+    if (typeof finding.classification !== "undefined" && finding.classification !== "finding" && finding.classification !== "QUESTION") {
+        errors.push(error("INVALID_PREVIOUS_CLASSIFICATION", `Previous finding ${finding.id ?? "<unknown>"} must be a finding or a QUESTION.`, finding.id));
+        return;
+    }
+    if (!isPreviousQuestion(finding) && !SEVERITIES.has(finding.severity)) {
         errors.push(error("INVALID_PREVIOUS_SEVERITY", `Previous finding ${finding.id ?? "<unknown>"} requires a valid severity.`, finding.id));
     }
 }
@@ -440,6 +450,15 @@ function validateResolutionConsistency(resolution, findings, errors) {
         }
     } else if (linked.some((finding) => isActionableFinding(finding))) {
         errors.push(error("RESOLVED_FINDING_STILL_ACTIONABLE", `Resolution ${resolution.id} conflicts with an actionable current finding.`, resolution.id));
+    }
+}
+
+function validateQuestionResolution(resolution, previousFinding, errors) {
+    if (!isPreviousQuestion(previousFinding)) {
+        return;
+    }
+    if (resolution.status !== "accepted" || !QUESTION_DECISION_REF_PATTERN.test(String(resolution.decision_ref).trim())) {
+        errors.push(error("INVALID_QUESTION_RESOLUTION", `Previous question ${resolution.id} can only be resolved as accepted with decision_ref Q<number>.`, resolution.id));
     }
 }
 
@@ -618,8 +637,13 @@ function isApprovalAffectingQuestion(finding) {
         && finding.approval_affecting === true;
 }
 
+function isPreviousQuestion(finding) {
+    return isRecord(finding) && finding.classification === "QUESTION";
+}
+
 function isProgressResolution(resolution, previousFinding) {
     return resolution.status === "resolved"
+        || (isPreviousQuestion(previousFinding) && resolution.status === "accepted")
         || (resolution.status === "current"
             && SEVERITY_RANK[resolution.current_severity] < SEVERITY_RANK[previousFinding?.severity]);
 }
@@ -731,7 +755,7 @@ function main(argv) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     try {
         main(process.argv.slice(2));
     } catch (caught) {

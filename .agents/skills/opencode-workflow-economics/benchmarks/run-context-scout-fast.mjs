@@ -4,7 +4,9 @@ import {createWriteStream, existsSync} from "node:fs";
 import {chmod, copyFile, lstat, mkdir, readdir, readFile, readlink, rename, symlink, writeFile} from "node:fs/promises";
 import {spawn, spawnSync} from "node:child_process";
 import {join, resolve} from "node:path";
-import {fileURLToPath, pathToFileURL} from "node:url";
+import {fileURLToPath} from "node:url";
+
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 
 const REPO_ROOT = resolve(fileURLToPath(new URL("../../../..", import.meta.url)));
 const VALIDATOR = join(REPO_ROOT, ".agents/skills/_shared/scripts/context-scout-report.mjs");
@@ -679,7 +681,7 @@ async function main() {
     if (!summary.gates.passed) { process.exitCode = 1; }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     main().catch((error) => {
         process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
         process.exitCode = 1;

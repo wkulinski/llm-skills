@@ -4,8 +4,9 @@ import {execFile} from "node:child_process";
 import {readFile} from "node:fs/promises";
 import {promisify} from "node:util";
 import {relative, resolve} from "node:path";
-import {fileURLToPath, pathToFileURL} from "node:url";
+import {fileURLToPath} from "node:url";
 
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {analyzeCorpus, analyzeCorpusCase, CORPUS_CASES, CORPUS_VERSION} from "../corpus/cases.mjs";
 import {runStage3} from "./run-stage3.mjs";
 import {runStage11} from "./run-stage11.mjs";
@@ -345,7 +346,7 @@ function positionalArgs() {
     return args;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     main().catch((error) => {
         console.error(error instanceof Error ? error.message : String(error));
         process.exitCode = 1;

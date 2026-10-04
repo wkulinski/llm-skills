@@ -24,7 +24,7 @@ import {
     savePlan,
     StoreError,
 } from "../../../.agents/skills/task-plan/scripts/store.mjs";
-import {parsePlanDocument, validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
+import {extractPackages, parsePlanDocument, reviewBodyHash, validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
 import {AtomicWriteError, writeFileAtomic} from "../../../.agents/skills/task-plan/scripts/atomic-file.mjs";
 
 const NOW = "2026-08-24T12:00:00.000Z";
@@ -297,13 +297,16 @@ it("requires one execution checkbox per work package", () => {
             && error.details.errors.some((message) => message.includes("Invalid Execution entry")),
     );
 
-    const missingEvidence = completePlanBody().replace("- [ ] WP1", "- [x] WP1 — 2026-08-24 — none");
-    assert.throws(
-        () => savePlan(saveInput(root, {markdown_body: missingEvidence, ...token}), {now: NOW}),
-        (error) => error instanceof StoreError
-            && error.code === "INVALID_PLAN"
-            && error.details.errors.some((message) => message.includes("concrete verification evidence")),
-    );
+    for (const evidence of ["none", "none."]) {
+        const missingEvidence = completePlanBody().replace("- [ ] WP1", `- [x] WP1 — 2026-08-24 — ${evidence}`);
+        assert.throws(
+            () => savePlan(saveInput(root, {markdown_body: missingEvidence, ...token}), {now: NOW}),
+            (error) => error instanceof StoreError
+                && error.code === "INVALID_PLAN"
+                && error.details.errors.some((message) => message.includes("concrete verification evidence")),
+            evidence,
+        );
+    }
 });
 
 it("requires concrete size, model and reasoning recommendations", () => {
@@ -369,6 +372,22 @@ it("completes a work package through the task-plan store", () => {
     assert.equal(completed.metadata.revision, 2);
     assert.match(completed.markdown, /- \[x\] WP1 — 2026-08-24 — focused unit test passed/);
     assert.equal(loadPlanFile({repoRoot: root, planPath: saved.paths.draft_path}).status, "ready");
+});
+
+it("rejects completion evidence that is only a generic value with punctuation and leaves the plan unchanged", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const saved = recordReady(root, savePlan(saveInput(root), {now: NOW, verbose: true}));
+    const planFile = path.join(root, saved.paths.draft_path);
+    const before = fs.readFileSync(planFile, "utf8");
+    for (const evidence of ["none.", "None.", "n/a;"]) {
+        assert.throws(
+            () => completeWorkPackage({repoRoot: root, planPath: saved.paths.draft_path, wpId: "WP1", evidence}, {now: NOW}),
+            (error) => error instanceof StoreError && error.code === "INVALID_ARGUMENT",
+            evidence,
+        );
+    }
+    assert.equal(fs.readFileSync(planFile, "utf8"), before);
 });
 
 it("accepts pending and completed WP execution-checklist bullets without the named-bullet rule", () => {
@@ -485,14 +504,79 @@ it("requires critical source and direction reviews", () => {
 it("rejects none in essential package fields and requires evidence or discovery", () => {
     const root = temporaryRepository();
     prepareSource(root);
-    assert.throws(
-        () => savePlan(saveInput(root, {markdown_body: completePlanBody({goal: "none"})}), {now: NOW}),
-        (error) => error instanceof StoreError && error.details.errors.some((message) => message.includes("Goal cannot be none")),
+    for (const goal of ["none", "none.", "None.", "n/a;", "Not applicable! "]) {
+        assert.throws(
+            () => savePlan(saveInput(root, {markdown_body: completePlanBody({goal})}), {now: NOW}),
+            (error) => error instanceof StoreError && error.details.errors.some((message) => message.includes("Goal cannot be none")),
+            goal,
+        );
+    }
+    for (const [confirmed, discovery] of [["none", "none"], ["none.", "none."], ["None.", "n/a."]]) {
+        assert.throws(
+            () => savePlan(saveInput(root, {markdown_body: completePlanBody({confirmed, discovery})}), {now: NOW}),
+            (error) => error instanceof StoreError && error.details.errors.some((message) => message.includes("confirmed paths or concrete discovery")),
+            `${confirmed} / ${discovery}`,
+        );
+    }
+    const generalClaims = completePlanBody().replace(
+        "- Claims corrected or still unverified: The exact implementation detail remains subject to focused discovery.",
+        "- Claims corrected or still unverified: none.",
     );
     assert.throws(
-        () => savePlan(saveInput(root, {markdown_body: completePlanBody({confirmed: "none", discovery: "none"})}), {now: NOW}),
-        (error) => error instanceof StoreError && error.details.errors.some((message) => message.includes("confirmed paths or concrete discovery")),
+        () => savePlan(saveInput(root, {markdown_body: generalClaims}), {now: NOW}),
+        (error) => error instanceof StoreError && error.details.errors.some((message) => message.includes("cannot be none")),
     );
+});
+
+it("treats headings in fenced code as examples for validation, review hash and completion", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const example = ["```md", "## Execution", "", "- [ ] WP9", "```", "", "~~~md", "## Execution", "### WP8 — Tilde example", "~~~"].join("\n");
+    const body = completePlanBody().replace("\n## Order", `\n${example}\n\n## Order`);
+    const saved = recordReady(root, savePlan(saveInput(root, {markdown_body: body}), {now: NOW, verbose: true}));
+
+    const validation = validatePlanDocument(saved.markdown, {repoRoot: root});
+    assert.equal(validation.valid, true, validation.errors.join("\n"));
+    assert.deepEqual(validation.packages.map((item) => item.id), ["WP1"]);
+    assert.equal(validation.status, "ready");
+
+    const completed = completeWorkPackage({
+        repoRoot: root,
+        planPath: saved.paths.draft_path,
+        wpId: "WP1",
+        evidence: "focused unit test passed",
+    }, {now: NOW, verbose: true});
+    assert.equal(completed.status, "ready");
+    assert.match(completed.markdown, /^- \[x\] WP1 — 2026-08-24 — focused unit test passed$/m);
+    assert.match(completed.markdown, /^- \[ \] WP9$/m);
+    assert.equal(
+        reviewBodyHash(parsePlanDocument(completed.markdown).body),
+        reviewBodyHash(parsePlanDocument(saved.markdown).body),
+    );
+});
+
+it("still rejects a real second Execution section and ignores a WP heading outside Work packages", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const second = `${completePlanBody()}\n## Execution\n\n- [ ] WP1\n`;
+    assert.throws(
+        () => savePlan(saveInput(root, {markdown_body: second}), {now: NOW}),
+        (error) => error instanceof StoreError
+            && error.details.errors.some((message) => message.includes("exactly one ## Execution section")),
+    );
+
+    const stray = completePlanBody().replace("WP1 runs first.", "WP1 runs first.\n\n### WP2 — Heading outside Work packages");
+    assert.deepEqual(extractPackages(stray).map((item) => item.id), ["WP1"]);
+    assert.doesNotThrow(() => savePlan(saveInput(root, {markdown_body: stray}), {now: NOW}));
+});
+
+it("keeps the review hash of a body that ends with Execution or continues after it", () => {
+    const body = completePlanBody();
+    const withoutExecution = body.slice(0, body.indexOf("## Execution\n\n- [ ] WP1")).trim();
+    assert.equal(reviewBodyHash(body), contentHash(withoutExecution));
+
+    const withTail = `${body.trimEnd()}\n\n## Appendix\n\nTail section.\n`;
+    assert.equal(reviewBodyHash(withTail), contentHash(`${withoutExecution}\n\n## Appendix\n\nTail section.`));
 });
 
 it("rejects duplicate work-package and question identifiers", () => {

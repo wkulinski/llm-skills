@@ -32,7 +32,7 @@ Exercise the bounded review cycle against the real plan write path.
 - Explicit constraints: Do not duplicate the unit decision matrix.
 - Suggested diagnosis or solution: Combine the helper with the real write path.
 - Claims verified in evidence: The store owns persistence.
-- Claims corrected or still unverified: none.
+- Claims corrected or still unverified: No claim was corrected; every claim is backed by the listed evidence.
 
 ## Scope
 
@@ -177,7 +177,7 @@ it("stops on READY without writing the plan or opening a round", () => {
     const fixture = createFixture();
     try {
         const before = snapshot(fixture);
-        const decision = decideReviewCycle(reviewInput());
+        const decision = decideReviewCycle(reviewInput({plan: planReference(fixture, before)}));
 
         assert.equal(decision.action, REVIEW_ACTIONS.FINISH_READY);
         assert.equal(decision.reason, "plan-ready");
@@ -198,6 +198,7 @@ it("turns an actionable MINOR into one coherent revision and allows a delta roun
         const initial = decideReviewCycle(reviewInput({
             verdict: "PLAN CHANGES REQUESTED",
             findings: [finding()],
+            plan: planReference(fixture, before),
         }));
         assert.equal(initial.action, REVIEW_ACTIONS.APPLY_REPAIR);
         assert.deepEqual(initial.actionable_finding_ids, ["F1"]);
@@ -286,6 +287,7 @@ it("blocks a finding that survived two repair attempts", () => {
         const decision = decideReviewCycle(reviewInput({
             verdict: "PLAN CHANGES REQUESTED",
             findings: [finding({repair_attempts: 2})],
+            plan: planReference(fixture, before),
         }));
 
         assert.equal(decision.action, REVIEW_ACTIONS.BLOCK);
@@ -422,6 +424,51 @@ function semanticDeltaInput(overrides = {}) {
         ...overrides,
     };
 }
+
+it("opens a new cycle after a question, its answer and a plan change and reaches ready", () => {
+    const fixture = createFixture();
+    try {
+        const asked = decideReviewCycle(reviewInput({
+            verdict: "PLAN DISCUSS",
+            findings: [{
+                id: "F1",
+                classification: "QUESTION",
+                severity: null,
+                actionable: false,
+                approval_affecting: true,
+                repair_attempts: 0,
+            }],
+            plan: planReference(fixture, snapshot(fixture)),
+        }));
+        assert.equal(asked.action, REVIEW_ACTIONS.BLOCK);
+        assert.equal(asked.reason, "approval-decision-required");
+        recordReview({repoRoot: fixture.root, planPath: fixture.planPath, decision: asked});
+        assert.equal(loadPlanFile({repoRoot: fixture.root, planPath: fixture.planPath}).status, "blocked");
+
+        repairGoal(fixture, "Exercise the bounded review cycle as answered in Q1.");
+
+        const built = buildDeltaReviewInputFromPlan({
+            repoRoot: fixture.root,
+            planPath: fixture.planPath,
+            input: semanticDeltaInput(),
+        });
+        assert.equal(built.ok, true, JSON.stringify(built.errors));
+        const decision = decideReviewCycle(reviewInput({
+            verdict: "PLAN READY",
+            delta_review_count: 1,
+            previous_findings: [{id: "F1", classification: "QUESTION"}],
+            previous_resolutions: [{id: "F1", status: "accepted", decision_ref: "Q1"}],
+            delta_review: built.delta_review,
+        }));
+        assert.equal(decision.action, REVIEW_ACTIONS.FINISH_READY);
+        assert.equal(decision.ok, true, JSON.stringify(decision.errors));
+
+        recordReview({repoRoot: fixture.root, planPath: fixture.planPath, decision});
+        assert.equal(loadPlanFile({repoRoot: fixture.root, planPath: fixture.planPath}).status, "ready");
+    } finally {
+        cleanup(fixture);
+    }
+});
 
 it("derives delta input from the last recorded review so the base hash cannot be lost", () => {
     const fixture = createFixture();

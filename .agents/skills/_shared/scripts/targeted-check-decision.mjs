@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import {pathToFileURL} from "node:url";
+import {isMainModule} from "./is-main-module.mjs";
 
 export const TargetedCheckAction = Object.freeze({
     RUN_TARGETED_TEST: "RUN_TARGETED_TEST",
@@ -191,6 +191,6 @@ function main() {
     }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     main();
 }

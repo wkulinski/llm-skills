@@ -21,7 +21,7 @@ function buildPlan() {
 - Explicit constraints: preserve the document contract.
 - Suggested diagnosis or solution: use a structural selector.
 - Claims verified in evidence: the fixture is valid.
-- Claims corrected or still unverified: none.
+- Claims corrected or still unverified: No claim was corrected; every claim is backed by the listed evidence.
 
 ## Scope
 - In scope: the fixture.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {existsSync, readFileSync, writeFileSync} from "node:fs";
-import {pathToFileURL} from "node:url";
 
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {formatIsoSeconds, insertLogLine, resolveStatePath} from "./state-utils.mjs";
 
 export function runStateLog(argv, {cachePath, now = new Date()} = {}) {
@@ -28,7 +28,7 @@ async function main(argv) {
     process.exitCode = result.code;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     main(process.argv.slice(2)).catch((error) => {
         process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
         process.exitCode = 1;

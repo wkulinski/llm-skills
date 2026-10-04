@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {writeFile} from "node:fs/promises";
-import {pathToFileURL} from "node:url";
+
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 
 export function trim(value = "") {
     return String(value).trim();
@@ -178,7 +179,7 @@ async function main(argv) {
     return 0;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     main(process.argv.slice(2)).then((code) => {
         process.exitCode = code;
     }).catch((error) => {

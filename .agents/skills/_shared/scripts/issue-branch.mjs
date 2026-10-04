@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {execFileSync} from "node:child_process";
-import {pathToFileURL} from "node:url";
 
+import {isMainModule} from "./is-main-module.mjs";
 import {slugifyTitle} from "./slugify-title.mjs";
 
 export function slugifyIssueBranchTitle(input = "") {
@@ -126,7 +126,7 @@ async function main(argv) {
     }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     main(process.argv.slice(2)).then((code) => {
         process.exitCode = code;
     }).catch((error) => {

@@ -1,0 +1,32 @@
+{
+    "mcpServers": {
+        "github": {
+            "type": "http",
+            "url": "https://api.githubcopilot.com/mcp/",
+            "headers": {
+                "Authorization": "Bearer ${GH_TOKEN:-}"
+            }
+        },
+        "context7": {
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@upstash/context7-mcp"]
+        },
+        "serena": {
+            "type": "stdio",
+            "command": "serena",
+            "args": ["start-mcp-server", "--context=claude-code", "--project-from-cwd"]
+        },
+        "codebase-memory": {
+            "type": "stdio",
+            "command": "${CLAUDE_PROJECT_DIR}/bin/codebase-memory-mcp",
+            "args": [],
+            "env": {
+                "CBM_CACHE_DIR": "var/agent/persistent/codebase-memory-main",
+                "CBM_WORKERS": "1",
+                "CBM_MEM_BUDGET_MB": "1024",
+                "CBM_DIAGNOSTICS": "1"
+            }
+        }
+    }
+}

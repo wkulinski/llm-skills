@@ -34,9 +34,10 @@ ten plik czytaj tylko wtedy, gdy aktywna faza wymaga kontraktu dokumentu.
 
 ## Deterministyczna edycja istniejącego planu
 
-Do punktowej aktualizacji już zapisanego planu używaj
-`<skill_dir>/scripts/edit.mjs`, zamiast tworzyć doraźne skrypty oparte na
-zamianie tekstu. Każdy punkt w sekcji planu musi mieć nazwę przed `: `:
+Do punktowej aktualizacji już zapisanego planu używaj helpera `edit.mjs` skilla
+`$task-plan` (składnia komend: `<skills_root>/task-plan/SKILL.md`), zamiast
+tworzyć doraźne skrypty oparte na zamianie tekstu. Każdy punkt w sekcji planu musi
+mieć nazwę przed `: `:
 
 ```md
 - <nazwa-oraz-id>: <wartość>
@@ -44,56 +45,12 @@ zamianie tekstu. Każdy punkt w sekcji planu musi mieć nazwę przed `: `:
 ```
 
 Nazwa może być identyfikatorem (`R3`, `A2`, `Q5`) albo nazwą pola
-(`Dependencies`, `Evidence gate`). Helper operuje wyłącznie na tej strukturze:
+(`Dependencies`, `Evidence gate`). Helper operuje wyłącznie na tej strukturze.
+Operacje to `add-bullet`, `edit-bullet`, `remove-bullet`, `answer-question`,
+`add-question`, `edit-question`, `remove-question` i `apply-operations`; ta
+ostatnia przyjmuje paczkę w formacie:
 
-```text
-<skill_dir>/scripts/edit.mjs add-bullet
-  --file ./docs/plan/<plan>.md
-  (--section <dokładna sekcja> | --work-package <WP<number>>)
-  --id <nazwa>
-  --value <jednoliniowa wartość>
-  [--status <status>]
-
-<skill_dir>/scripts/edit.mjs edit-bullet
-  --file ./docs/plan/<plan>.md
-  (--section <dokładna sekcja> | --work-package <WP<number>>)
-  --id <nazwa>
-  [--value <jednoliniowa wartość>]
-  [--status <status>]
-
-<skill_dir>/scripts/edit.mjs remove-bullet
-  --file ./docs/plan/<plan>.md
-  (--section <dokładna sekcja> | --work-package <WP<number>>)
-  --id <nazwa>
-
-<skill_dir>/scripts/edit.mjs answer-question
-  --file ./docs/plan/<plan>.md
-  --id Q<number>
-  --answer <jednoliniowa odpowiedź>
-
-<skill_dir>/scripts/edit.mjs add-question
-  --file ./docs/plan/<plan>.md
-  --id Q<number>
-  --prompt <jednoliniowe pytanie>
-  --status <open|answered>
-  [--answer <jednoliniowa odpowiedź>]
-
-<skill_dir>/scripts/edit.mjs edit-question
-  --file ./docs/plan/<plan>.md
-  --id Q<number>
-  [--prompt <jednoliniowe pytanie>]
-  [--status <open|answered>]
-  [--answer <jednoliniowa odpowiedź>]
-
-<skill_dir>/scripts/edit.mjs remove-question
-  --file ./docs/plan/<plan>.md
-  --id Q<number>
-
-<skill_dir>/scripts/edit.mjs apply-operations
-  --file ./docs/plan/<plan>.md
-  --input ./plan-operations.json
-
-# plan-operations.json
+```json
 {
   "operations": [
     {"type": "edit-bullet", "work_package": "WP1", "id": "Goal", "value": "..."},
@@ -103,10 +60,9 @@ Nazwa może być identyfikatorem (`R3`, `A2`, `Q5`) albo nazwą pola
 ```
 
 `add-bullet` wymaga nowego identyfikatora, a `edit-bullet` i `remove-bullet`
-wymagają identyfikatora istniejącego dokładnie raz. `--section` i
-`--work-package` są wzajemnie wykluczające. Automatyczna flaga `--next` nie jest
-obsługiwana: identyfikator nadaje wywołujący, dzięki czemu punkty nazwane nie
-muszą być sztucznie numerowane. Pytania `Q<number>` są blokami z podpunktami
+wymagają identyfikatora istniejącego dokładnie raz. Selektor sekcji i selektor WP
+wzajemnie się wykluczają. Nie ma automatycznej numeracji: identyfikator nadaje
+wywołujący, dzięki czemu punkty nazwane nie muszą być sztucznie numerowane. Pytania `Q<number>` są blokami z podpunktami
 `Answer` i `Source`, więc obsługują je wyłącznie wrappery pytaniowe. `edit-question`
 zmienia prompt, status i/lub odpowiedź (przejście do `answered` wymaga
 odpowiedzi), a `remove-question` usuwa cały blok pytania.
@@ -118,8 +74,8 @@ odpowiada jednej rewizji. Wynik domyślnie nie zawiera pełnego Markdowna.
 `edit.mjs` wymaga kanonicznego pliku planu, jednoznacznego selektora i
 zwalidowanego dokumentu. Brak albo duplikat sekcji, WP, punktu lub pytania kończy
 operację bez zapisu. Po udanej transformacji zapis i frontmatter przechodzą
-przez `<skill_dir>/scripts/store.mjs`; `--dry-run` wykonuje tę samą walidację bez
-zapisu. Helper nie interpretuje dowolnego Markdowna i nie stosuje heurystycznego
+przez wspólny `store.mjs` (`<skills_root>/_shared/scripts/task-plan/store.mjs`);
+tryb `--dry-run` wykonuje tę samą walidację bez zapisu. Helper nie interpretuje dowolnego Markdowna i nie stosuje heurystycznego
 wyszukiwania fragmentów tekstu.
 
 ## Wymagane sekcje
@@ -368,6 +324,18 @@ task-plan przez zmianę `[ ]` na `[x]` wraz z datą i krótkim evidence:
 
 Niezakończony lub zablokowany WP pozostaje `[ ]`.
 
+Zmiana wymagań ukończonego WP: owner ocenia ją podczas obowiązkowego review, a
+magazyn nie porównuje treści WP i nie dodaje automatycznej bramki zapisu.
+
+- Jeśli nowe wymagania unieważniają evidence ukończenia albo dodają niewykonaną
+  pracę, owner otwiera ten WP i późniejsze ukończone WP przez zmianę `[x]` na
+  `[ ]` w sekcji `## Execution`.
+- Jeśli zmiana jest wyłącznie redakcyjna (np. literówka) i evidence pozostaje
+  ważne, checklista zachowuje `[x]`, ale zmieniona treść przechodzi review i
+  `record-review`.
+- W obu przypadkach owner zapisuje wynik oceny i jej uzasadnienie w sekcji
+  `Decisions and open questions` jako wpis `D<number>`.
+
 `WP overrides: none` można zastąpić uzasadnioną listą:
 
 ```md
@@ -420,18 +388,114 @@ rewizji:
 `context`, jeśli istnieje, zawiera finalny `status`, ścieżki raportu i kryteriów
 oraz ich SHA-256. `save --input -` przyjmuje ten JSON przez stdin.
 
-`review-cycle.mjs` przyjmuje przez JSON wyłącznie jawne dane ownera: werdykt,
-liczniki, findings ze stabilnym ID/klasyfikacją/severity i liczbą prób naprawy,
-rozstrzygnięcia wcześniejszych ID oraz artefakt delta. Wynik `delta-input` służy
-jako wejście delta-review do ponownego `decide`. Brak albo sprzeczność
-niezbędnych danych blokuje kolejną rundę; delta opisuje zmiany od ostatniej
-przejrzanej rewizji do bieżącej (może obejmować kilka rewizji) i musi mieć różne
-hashe dokumentu bazowego i bieżącego. Opcjonalne pole `plan` (`plan_id`,
-`revision`, `content_sha256`) wskazuje przeglądaną rewizję przy pełnym review; przy
-delta-review musi być zgodne ze stroną bieżącą artefaktu delta
-(`PLAN_REFERENCE_CONFLICT`). Poprawna decyzja zwraca je jako `plan`, a bez niego
-`record-review` jej nie przyjmie. Helper nie ocenia prawdziwości danych
-semantycznych.
+### Wejście `review-cycle.mjs decide`
+
+`review-cycle.mjs` przyjmuje przez JSON wyłącznie jawne dane ownera. Helper
+sprawdza ich kompletność i spójność, nie prawdziwość ocen semantycznych. Brak albo
+sprzeczność niezbędnych danych blokuje decyzję (`ok: false`, działanie `blocked`).
+Poprawna decyzja zwraca pole `plan`; bez niego `record-review` jej nie przyjmie.
+
+| Pole | Wymagane | Zasady |
+| --- | --- | --- |
+| `verdict` | zawsze | Jeden z: `PLAN READY`, `PLAN READY WITH CAVEAT`, `PLAN DISCUSS`, `PLAN CHANGES REQUESTED`, `PLAN BLOCKED`. |
+| `full_review_count` | zawsze | Liczba całkowita równa `1`: jedno pełne review poprzedza każdą decyzję cyklu. |
+| `delta_review_count` | zawsze | Liczba całkowita od `0` do `3`. `0` oznacza pełne review; `1`–`3` oznacza kolejne delta-review. Review otwierające nowy cykl po decyzji końcowej ma `1`. |
+| `plan` | pełne review (`delta_review_count: 0`) | Obiekt `plan_id`, `revision`, `content_sha256` przeglądanej rewizji; brak albo `null` przy pełnym review jest błędem `MISSING_PLAN_REFERENCE`. Przy delta-review opcjonalny, ale jeśli jest, musi zgadzać się z `plan_id`, `current_revision` i `current_sha256` z `delta_review` (`PLAN_REFERENCE_CONFLICT`); bez niego helper bierze te wartości z `delta_review`. |
+| `findings` | zawsze (może być pusta) | Findings bieżącego review. Każdy ma unikalne `id` w formacie `F<number>`, `classification` (`finding`, `QUESTION` albo `SUGGESTION`), jawne `actionable` (boolean) oraz `repair_attempts` (liczba całkowita ≥ 0). |
+| `findings[].severity` | `finding` | `BLOCKER`, `MAJOR` albo `MINOR` dla `classification: finding`; dla `QUESTION` i `SUGGESTION` brak albo `null`. `BLOCKER` i `MAJOR` nie mogą być nieactionable bez `accepted_decision_ref`. |
+| `findings[].approval_affecting` | `QUESTION` | Boolean. Pytanie nie jest `actionable`; approval-affecting `QUESTION` blokuje nawet przy `PLAN READY`. `SUGGESTION` nigdy nie jest actionable. |
+| `findings[].accepted_decision_ref`, `requires_user_decision`, `requires_external_evidence` | opcjonalne | Niepusty string z odwołaniem do decyzji użytkownika albo booleany. Odwołanie wyłącza finding z listy actionable; flagi blokują naprawę. |
+| `findings[].previous_id`, `recurrence` | gdy finding wiąże się z wcześniejszym ID | `previous_id` wskazuje ID z `previous_findings`. Towarzyszy mu `recurrence`: `same_failure_mode` i `new_evidence` (booleany); `new_evidence: true` wymaga niepustego `evidence`. Ten sam failure mode zachowuje poprzednie ID, inny failure mode dostaje nowe. |
+| `findings[].provenance` | nowy actionable finding w delta-review | `kind` (`changed_section`, `changed_work_package` albo `direct_dependency`), `target` z zadeklarowanego zakresu delta oraz niepusty `evidence`. Hashe dokumentów nie zastępują pochodzenia. |
+| `previous_findings` | zawsze (może być pusta) | Wcześniejsze findings: `{id, severity}` albo, dla pytania, `{id, classification: "QUESTION"}` bez severity. Przy pełnym review pusta. Review otwierające nowy cykl (`delta_review_count: 1`) przenosi nierozwiązane findings i pytania z poprzedniego review albo ma pustą listę po `finish-ready`; przy `delta_review_count` ≥ 2 lista musi być niepusta (`EMPTY_PREVIOUS_FINDINGS`). |
+| `previous_resolutions` | zawsze (może być pusta) | Dokładnie jedno rozstrzygnięcie na każde wcześniejsze ID; brak to `MISSING_PREVIOUS_RESOLUTION`. Statusy: `resolved`; `current` z `current_severity` zgodnym z bieżącym findingiem; `accepted` z `decision_ref`. Wcześniejsze pytanie można rozstrzygnąć wyłącznie jako `accepted` z `decision_ref: Q<number>`. |
+| `delta_review` | `delta_review_count` ≥ 1 | Obiekt z `delta-input --file`; przy `delta_review_count: 0` jest błędem. Zawiera `plan_id`, `base_revision`, `current_revision`, `base_sha256`, `current_sha256`, `changed_sections`, `changed_work_packages`, `previous_finding_ids` i `allowed_direct_dependencies`. Wymaga co najmniej jednej zmienionej sekcji lub WP, różnych hashy i `previous_finding_ids` zgodnych z `previous_findings`. |
+
+Pochodzenie hashy: `plan.content_sha256` pełnego review to `content_sha256` z
+ostatniego wyniku `validate`, `save` albo `edit` dla przeglądanej rewizji. Po
+`record-review` plik ma nowe bajty (zmieniony front matter), więc przy następnym
+review odczytaj aktualny `content_sha256` ponownie przez `validate`; nie używaj
+wartości sprzed zapisu decyzji. W delta-review hashe wylicza `delta-input --file`
+z planu.
+
+Wynik `delta-input` służy jako wejście delta-review do ponownego `decide`. Delta
+opisuje zmiany od ostatniej przejrzanej rewizji do bieżącej (może obejmować kilka
+rewizji).
+
+#### Przykłady wejścia `decide`
+
+Przykłady są ilustracyjne (hashe i identyfikatory są wymyślone) i sprawdza je
+trwały test helpera. Pełne review z findings (działanie `apply-repair`):
+
+```json
+{
+  "verdict": "PLAN CHANGES REQUESTED",
+  "full_review_count": 1,
+  "delta_review_count": 0,
+  "plan": {
+    "plan_id": "v2-example-1111aaaa-2222bbbb",
+    "revision": 1,
+    "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "findings": [
+    {"id": "F1", "classification": "finding", "severity": "MAJOR", "actionable": true, "repair_attempts": 0}
+  ],
+  "previous_findings": [],
+  "previous_resolutions": []
+}
+```
+
+Delta-review naprawy (działanie `apply-repair`, severity wcześniejszego findingu
+spadło):
+
+```json
+{
+  "verdict": "PLAN CHANGES REQUESTED",
+  "full_review_count": 1,
+  "delta_review_count": 1,
+  "findings": [
+    {"id": "F1", "classification": "finding", "severity": "MINOR", "actionable": true, "repair_attempts": 1}
+  ],
+  "previous_findings": [{"id": "F1", "severity": "MAJOR"}],
+  "previous_resolutions": [{"id": "F1", "status": "current", "current_severity": "MINOR"}],
+  "delta_review": {
+    "plan_id": "v2-example-1111aaaa-2222bbbb",
+    "base_revision": 1,
+    "current_revision": 2,
+    "base_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "current_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "changed_sections": ["Work packages"],
+    "changed_work_packages": ["WP1"],
+    "previous_finding_ids": ["F1"],
+    "allowed_direct_dependencies": ["Acceptance and verification"]
+  }
+}
+```
+
+Otwarcie nowego cyklu po pytaniu, odpowiedzi użytkownika i zmianie planu
+(działanie `finish-ready`):
+
+```json
+{
+  "verdict": "PLAN READY",
+  "full_review_count": 1,
+  "delta_review_count": 1,
+  "findings": [],
+  "previous_findings": [{"id": "F1", "classification": "QUESTION"}],
+  "previous_resolutions": [{"id": "F1", "status": "accepted", "decision_ref": "Q1"}],
+  "delta_review": {
+    "plan_id": "v2-example-1111aaaa-2222bbbb",
+    "base_revision": 2,
+    "current_revision": 3,
+    "base_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "current_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "changed_sections": ["Decisions and open questions"],
+    "changed_work_packages": [],
+    "previous_finding_ids": ["F1"],
+    "allowed_direct_dependencies": []
+  }
+}
+```
 
 ### Front matter planu i potwierdzenie review
 
@@ -459,11 +523,12 @@ Zasady:
 - `complete-wp` zmienia tylko `## Execution`, więc zachowuje potwierdzenie
   (`reviewed_revision` wskazuje nową rewizję, hash treści jest ten sam).
 - `validate.mjs` zwraca `blocked` z `blocked_reason: review_pending` i pustą listą
-  `errors`, gdy plan nie ma otwartych pytań ani błędów, a pola review są `null`
-  albo nie zgadzają się z bieżącą rewizją lub hashem treści.
-- Plan zapisany przed wprowadzeniem tych pól nie ma ich w ogóle i zachowuje
-  dotychczasowy status do pierwszego zapisu zmieniającego treść; `complete-wp`
-  zachowuje brak kluczy.
+  `errors`, gdy plan nie ma otwartych pytań ani błędów, a pola review są `null`,
+  nie zgadzają się z bieżącą rewizją lub hashem treści albo w ogóle ich brakuje.
+- Plan zapisany przed wprowadzeniem tych pól pozostaje czytelny i poprawny, ale
+  przed wykonaniem wymaga review: do czasu `record-review` jest `review_pending`,
+  a `plan-execute` odrzuca go z `PLAN_NOT_READY` i wskazówką naprawy. Nie ma
+  tolerancji wykonania planów bez potwierdzenia review.
 
 `delta-input --file <plan> [--root <repo>] --input <json>` wyprowadza z planu
 `plan_id`, `base_revision` (`review_base_revision`), `current_revision`,
@@ -476,12 +541,3 @@ zmian od ostatniego review (`DELTA_NOTHING_TO_REVIEW`) to twardy błąd bez wyni
 rewizje sprzeczne z planem to `DELTA_INPUT_CONFLICT`. `base_sha256` i
 `current_sha256` w `--input` pozostają jawnym nadpisaniem, oznaczonym w wyniku
 w `sources` jako `input-override`.
-
-### Lista kontrolna po zmianie planu po review
-
-1. Zapisz pełny wynik `save`/`edit` do pliku; nie filtruj go przez `grep` ani `jq`.
-2. `review-cycle.mjs delta-input --file <plan> --input <semantic.json>`.
-3. Wykonaj delta-review i `review-cycle.mjs decide --input <review-input.json>`.
-4. Przy każdej decyzji z `ok=true`: `store.mjs record-review --file <plan> --input <decision.json>`.
-5. `validate.mjs validate` musi zwrócić `ready`; `review_pending` oznacza pominięty
-   krok. Gdy helper zgłasza brak danych, zatrzymaj się i zapytaj użytkownika.

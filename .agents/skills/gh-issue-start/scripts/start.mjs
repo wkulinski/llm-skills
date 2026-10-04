@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import {spawnSync} from "node:child_process";
-import {fileURLToPath, pathToFileURL} from "node:url";
+import {fileURLToPath} from "node:url";
 
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {makeIssueBranch} from "../../_shared/scripts/issue-branch.mjs";
 import {
     applyDirtyTreeStrategy,
@@ -316,7 +317,7 @@ async function main(argv) {
     return result.code;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     main(process.argv.slice(2)).then((code) => {
         process.exitCode = code;
     }).catch((error) => {

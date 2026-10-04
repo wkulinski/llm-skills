@@ -4,8 +4,9 @@ import {createWriteStream, existsSync, readFileSync} from "node:fs";
 import {mkdir, readFile, writeFile, copyFile} from "node:fs/promises";
 import {spawn, spawnSync} from "node:child_process";
 import {join, resolve} from "node:path";
-import {fileURLToPath, pathToFileURL} from "node:url";
+import {fileURLToPath} from "node:url";
 
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {
     claimAttempt,
     HYBRID_PROTOCOL_VERSION,
@@ -313,7 +314,7 @@ export async function runSmoke(options) {
     return summary;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     const parsed = parseArgs(process.argv.slice(2));
     if (parsed.help) {
         process.stdout.write(usage());

@@ -5,8 +5,9 @@ import {promisify} from "node:util";
 import {performance} from "node:perf_hooks";
 import {tmpdir} from "node:os";
 import {resolve} from "node:path";
-import {fileURLToPath, pathToFileURL} from "node:url";
+import {fileURLToPath} from "node:url";
 
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {analyzeCorpus} from "../corpus/cases.mjs";
 import {DEFAULT_CONFIG} from "../scripts/lib/config.mjs";
 import {renderAnalysisBrief} from "../scripts/lib/report-brief.mjs";
@@ -166,7 +167,7 @@ function percentile(values, fraction) {
     return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1)];
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     main().catch((error) => {
         console.error(error instanceof Error ? error.message : String(error));
         process.exitCode = 1;

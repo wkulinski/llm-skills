@@ -6,7 +6,13 @@ description: >-
   chcesz zrealizować lub wznowić istniejący plan.
 shared_files:
   - _shared/references/skill-routing-policy.md
+  - _shared/references/task-plan-contract.md
   - _shared/scripts/model-hierarchy.mjs
+  - _shared/scripts/is-main-module.mjs
+  - _shared/scripts/task-plan/atomic-file.mjs
+  - _shared/scripts/task-plan/source.mjs
+  - _shared/scripts/task-plan/store.mjs
+  - _shared/scripts/task-plan/validate.mjs
 ---
 
 # `$plan-execute`
@@ -46,6 +52,10 @@ Plan przechowuje wyłącznie binarną informację o ukończeniu:
 - następny WP to pierwszy wpis `[ ]`;
 - plan jest ukończony, gdy nie ma wpisów `[ ]`.
 
+Pełny kontrakt planu (sekcje, format `Execution` i `Execution environment`) opisuje
+`<skills_root>/_shared/references/task-plan-contract.md`; właścicielem procedury
+planowania i zapisu pozostaje `<skills_root>/task-plan/SKILL.md`.
+
 Nie zapisuj rozpoczęcia pracy, blokady ani stanu sesji do planu. Przerwane lub
 zablokowane wykonanie pozostawia WP jako `[ ]`. Bieżący working tree i lokalny
 stan `$code-implement` służą do wznowienia implementacji, ale nie są drugim
@@ -60,7 +70,10 @@ stan `$code-implement` służą do wznowienia implementacji, ale nie są drugim
    `docs/plans/*.md`.
 4. Każde rozwiązanie planu — jawne (z podanej ścieżki) lub pośrednie (z
    pointera) — odświeża plik `last-plan.txt` bieżącą ścieżką, co pozwala na
-   wznowienie w następnej sesji.
+   wznowienie w następnej sesji. Komendy `resolve`, `next` i `check-environment`
+   zapisują pointer przed walidacją planu, więc po wskazaniu planu niepoprawnego
+   albo niegotowego pointer i tak wskazuje właśnie ten plan, mimo że komenda
+   kończy się błędem.
 
 Pointer jest wyłącznie lokalnym skrótem do ostatniego planu. Nie zawiera statusu
 ani kopii work packages.
@@ -75,31 +88,25 @@ zapisanej w pointerze.
 
 ## Workflow
 
-### 1. Walidacja
+### 1. Walidacja i wybór WP
 
-Załaduj plan przez API task-plan. Kontynuuj tylko wtedy, gdy walidator zwróci
-`valid=true` i wynik `ready`. `ready` jest wynikiem walidacji, nie polem ani
-trwałym statusem zapisanym w planie.
+`next` ładuje plan przez API task-plan i sam odrzuca plan, który nie ma wyniku
+`ready` (`valid=true`), kodem `PLAN_NOT_READY`; osobne wywołanie walidatora jest
+potrzebne tylko do diagnozy. `ready` jest wynikiem walidacji, nie polem ani
+trwałym statusem zapisanym w planie. Plan bez zapisanego review ma status
+`review_pending` i wymaga review w `$task-plan` oraz `record-review`.
 
-```bash
-node <skills_root>/task-plan/scripts/validate.mjs validate \
-  --file ./docs/plans/<plan-id>.md \
-  --root "$PWD"
-```
-
-### 2. Wybór WP
-
-Wybierz dokładnie pierwszy niezaznaczony WP w kolejności dokumentu.
-
-Pomocnicza komenda:
+Wybierz dokładnie pierwszy niezaznaczony WP w kolejności dokumentu:
 
 ```bash
 node <skill_dir>/scripts/execute.mjs next --path ./docs/plans/<plan-id>.md
 ```
 
-Wynik zawiera także `Estimated size` oraz rekomendowane `model` i `reasoning`.
-Override przypisany do WP ma pierwszeństwo przed wartościami domyślnymi planu.
-Rozmiar jest informacją dla wykonawcy.
+Wynik zawiera `Estimated size`, rekomendowane `model` i `reasoning` oraz
+ograniczenia dla wykonawcy: `decisions` (wszystkie wpisy decyzji planu: `D`, `Q`
+z odpowiedzią i źródłem, `N`) i `risks` (ryzyka dotyczące wybranego WP albo całego
+planu; ryzyko bez ID WP jest globalne). Override przypisany do WP ma pierwszeństwo
+przed wartościami domyślnymi planu. Rozmiar jest informacją dla wykonawcy.
 
 Przed implementacją uruchom deterministyczny preflight. Profil bieżącej sesji
 ustal w tej kolejności i użyj pierwszej dostępnej metody:
@@ -139,6 +146,9 @@ ustal w tej kolejności i użyj pierwszej dostępnej metody:
 
    Helper nadal waliduje wymaganie WP wobec `.agents/config/model-hierarchy.json`
    i zwraca `source: "user-attested"`, `attested: true` oraz `current: null`.
+   `sufficient: true` w tym wyniku pochodzi wyłącznie z jawnego potwierdzenia
+   użytkownika, a `current: null` oznacza, że helper nie porównał żadnego
+   bieżącego profilu: sprawdził tylko, że wymaganie WP jest na liście hierarchii.
    To jawna, audytowalna atestacja użytkownika, a nie zgadywanie modelu — nie
    używaj tej flagi bez potwierdzenia użytkownika.
    Gdy użytkownik jej odmówi albo nie potrafi potwierdzić, przerwij preflight
@@ -156,8 +166,10 @@ bez prefiksu dostawcy, więc `commandcode/deepseek/model` odpowiada profilowi
 użytkownika o zmianę na rekomendowany lub wyższy profil.
 
 Wymaganie wstępne: w projekcie musi istnieć `.agents/config/model-hierarchy.json`
-(kopiuj szablon poniżej); w przeciwnym razie `check-environment` zgłosi
-`MODEL_HIERARCHY_NOT_FOUND`. Szablon konfiguracji znajduje się w
+(kopiuj szablon poniżej). Bez tego pliku walidacja planu zgłasza „Model hierarchy
+does not exist”, plan jest `invalid`, a `next` i `check-environment` kończą się
+błędem `PLAN_NOT_READY` (szczegóły w `details.errors`), zanim dojdzie do
+porównania profili. Szablon konfiguracji znajduje się w
 `<skill_dir>/model-hierarchy.json.dist`. Skopiuj go do projektu i usuń przykładowe
 profile:
 
@@ -174,9 +186,11 @@ pozostają dostępne bez pluginu.
 
 Szablon pozostaje zwykłym JSON-em i zamiast komentarzy używa pól `_comment`.
 
-### 3. Implementacja
+### 2. Implementacja
 
-Przekaż wybrany WP do `$code-implement` jako jedno wymaganie. `$code-implement`
+Przekaż wybrany WP do `$code-implement` jako jedno wymaganie, razem z `decisions`
+i `risks` z wyniku `next` jako ograniczeniami; nie przekazuj całego planu ani
+planowej sekcji `Acceptance and verification`. `$code-implement`
 jest źródłem prawdy dla:
 
 - intake i read-before-write;
@@ -186,7 +200,7 @@ jest źródłem prawdy dla:
 - `$review-quick`;
 - raportowania blockera.
 
-### 4. Zapis ukończenia
+### 3. Zapis ukończenia
 
 Oznacz WP jako ukończony dopiero po uzyskaniu konkretnego evidence. Zapis zleć
 task-plan:
@@ -215,7 +229,7 @@ Operacja task-plan:
 Jeśli implementacja lub weryfikacja nie zakończyła się powodzeniem, nie wykonuj
 `complete-wp`. Pozostaw plan bez zmian i przekaż użytkownikowi konkretny powód.
 
-### 5. Kontynuacja
+### 4. Kontynuacja
 
 Po ukończeniu WP możesz ponownie wybrać pierwszy wpis `[ ]`, jeśli kontynuacja w
 tej samej sesji jest rozsądna. Jeśli nie ma kolejnego wpisu `[ ]`, zgłoś ukończenie planu.
@@ -242,8 +256,8 @@ tylko dwie pozycje z lokalnej, zwalidowanej hierarchii.
 - brak planu lub niepoprawny pointer;
 - walidator task-plan nie zwraca `ready`;
 - brak pliku `.agents/config/model-hierarchy.json` (skopiuj szablon
-  `model-hierarchy.json.dist` do projektu) — `check-environment` kończy się błędem
-  `MODEL_HIERARCHY_NOT_FOUND`;
+  `model-hierarchy.json.dist` do projektu) — plan jest `invalid`, a `next` i
+  `check-environment` kończą się błędem `PLAN_NOT_READY`;
 - brak profilu sesji (`SESSION_PROFILE_UNKNOWN`) i brak potwierdzenia
   użytkownika dla `--user-attested` — w OpenCode sprawdź plugin
   `./.opencode/plugins/session-model-env.js` i restart; w innym harnessie użyj

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import {resolve} from "node:path";
-import {fileURLToPath, pathToFileURL} from "node:url";
+import {fileURLToPath} from "node:url";
 
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {CORPUS_CASES, CORPUS_VERSION, PRICING} from "../corpus/cases.mjs";
 import {analyzeRoots} from "../scripts/lib/analysis.mjs";
 import {DEFAULT_CONFIG} from "../scripts/lib/config.mjs";
@@ -152,7 +153,7 @@ function ratio(numerator, denominator) {
     return denominator === 0 ? 1 : numerator / denominator;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     main().catch((error) => {
         console.error(error instanceof Error ? error.message : String(error));
         process.exitCode = 1;

@@ -9,8 +9,9 @@ same topic.
 
 For a `plan` target, the plan is the work product under review, not proof of its
 own claims. Compare it with the referenced source artifact, explicit user
-decisions, repository evidence, and the plan contract defined by `$task-plan`
-(`<skills_root>/task-plan/SKILL.md`).
+decisions, repository evidence, and the plan contract owned by `$task-plan`
+(`<skills_root>/task-plan/SKILL.md`; document schemas in
+`<skills_root>/_shared/references/task-plan-contract.md`).
 Do not treat `candidate paths`, `discovery debt`, or a plan's suggested diagnosis
 as confirmed facts without supporting evidence.
 
@@ -22,7 +23,8 @@ verdict.
 ## Plan context
 
 For a `plan` target, also read the relevant `$task-plan` contract
-(`<skills_root>/task-plan/SKILL.md`) and only the
+(`<skills_root>/task-plan/SKILL.md` and
+`<skills_root>/_shared/references/task-plan-contract.md`) and only the
 repository documentation needed to verify ownership, boundaries, dependencies,
 paths, or acceptance checks claimed by the plan. Do not turn plan review into a
 second full implementation discovery pass.
@@ -30,9 +32,10 @@ second full implementation discovery pass.
 ## Plan integrity and execution readiness
 
 Use this section only for a `plan` target. Check the plan against the `$task-plan`
-contract (`<skills_root>/task-plan/SKILL.md`) without editing it:
+contract (`<skills_root>/_shared/references/task-plan-contract.md`, procedure owner
+`<skills_root>/task-plan/SKILL.md`) without editing it:
 
-- `Source and objective` describes the actual requested outcome, symptoms, constraints, and verified versus unverified claims;
+- `Source and objective` states the requested outcome, and `Source assessment` separates the actual requested outcome, symptoms, constraints, and verified versus unverified claims;
 - every source point is mapped to a WP or has a justified `excluded` decision;
 - `Scope`, ownership, boundaries, dependencies, and WP order are consistent;
 - `confirmed paths`, `candidate paths`, and `discovery debt` are kept distinct;
@@ -47,6 +50,21 @@ contract (`<skills_root>/task-plan/SKILL.md`) without editing it:
 When a plan is incomplete, report the missing evidence or contradiction in the
 plan rather than inventing implementation details or silently correcting it. A
 listed test or command is planned verification, not evidence that it was run.
+
+## Findings handed to the plan owner
+
+The document contract (required sections and field schemas, including the
+review-cycle input) is
+`<skills_root>/_shared/references/task-plan-contract.md`; the owner procedure
+belongs to `$task-plan` (`<skills_root>/task-plan/SKILL.md`). This review reports
+against them and does not restate them. Return each finding in the
+form the owner feeds to its review-cycle helper:
+
+- a stable ID `F<number>`; in a re-review a kept or recurring finding keeps its prior ID;
+- `classification`: `finding`, `QUESTION`, or `SUGGESTION`;
+- `severity` (`BLOCKER`, `MAJOR`, `MINOR`) for a `finding` only, and `actionable` stated explicitly (a `QUESTION` states `approval_affecting` instead);
+- the affected section or WP and the evidence for it;
+- in a re-review: the resolution of every prior ID (`resolved`, `current` with its current severity, or `accepted`), and for each new or recurring finding the same-failure-mode and new-evidence assessment or the provenance in the changed scope.
 
 ## Plan coverage
 

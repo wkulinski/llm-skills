@@ -3,6 +3,8 @@
 import {readFileSync, readdirSync, statSync} from "node:fs";
 import path from "node:path";
 
+import {isMainModule} from "./is-main-module.mjs";
+
 const MAX_REQUIRED_EVIDENCE = 4;
 const MAX_REQUIRED_ANCHORS = 4;
 const DECLARED_SURFACE_FIELDS = Object.freeze(["required_tests", "required_symbols"]);
@@ -394,7 +396,7 @@ function main(argv) {
     return 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
     try {
         process.exitCode = main(process.argv.slice(2));
     } catch (error) {

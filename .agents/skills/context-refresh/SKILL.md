@@ -15,6 +15,7 @@ shared_files:
   - _shared/scripts/context-manifest.mjs
   - _shared/scripts/secret-detector.mjs
   - _shared/scripts/change-inventory.mjs
+  - _shared/scripts/is-main-module.mjs
 ---
 
 # $context-refresh

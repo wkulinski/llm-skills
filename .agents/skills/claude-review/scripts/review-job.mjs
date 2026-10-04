@@ -4,8 +4,8 @@ import crypto from "node:crypto";
 import {execFileSync} from "node:child_process";
 import {existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync} from "node:fs";
 import path from "node:path";
-import {pathToFileURL} from "node:url";
 
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {resolveArtifactCacheRoot} from "../../_shared/scripts/artifact-path.mjs";
 import {buildChangeInventory, getWorktreeFingerprint} from "../../_shared/scripts/change-inventory.mjs";
 import {detectSecrets} from "../../_shared/scripts/secret-detector.mjs";
@@ -414,7 +414,7 @@ function run(argv) {
     return 0;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     try {
         process.exitCode = run(process.argv.slice(2));
     } catch (error) {

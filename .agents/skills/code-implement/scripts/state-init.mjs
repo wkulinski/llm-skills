@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import {pathToFileURL} from "node:url";
 
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {buildStateTemplate, formatLocalDate, formatLocalTime, resolveStatePath, stateExists, writeText} from "./state-utils.mjs";
 
 export function runStateInit({cachePath, now = new Date()} = {}) {
@@ -22,7 +22,7 @@ async function main() {
     process.exitCode = result.code;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     main().catch((error) => {
         process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
         process.exitCode = 1;

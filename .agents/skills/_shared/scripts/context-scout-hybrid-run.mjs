@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
+import {isMainModule} from "./is-main-module.mjs";
 import {assertArtifactPath, resolveArtifactCacheRoot} from "./artifact-path.mjs";
 import {preflightCriteriaFile} from "./context-criteria.mjs";
 import {
@@ -1017,7 +1018,7 @@ export function abortHybrid(args) {
     return {protocolVersion: HYBRID_PROTOCOL_VERSION, runId, statePath, phase: state.phase};
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
     const args = parseArgs(process.argv.slice(2));
     const command = args._?.[0];
     if (!command || args.help || !["prepare", "claim", "evaluate", "settle", "finalize", "abort"].includes(command)) {

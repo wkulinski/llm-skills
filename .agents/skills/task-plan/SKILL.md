@@ -5,7 +5,7 @@ description: >-
   zweryfikowany plan wykonawczy: rozdziela fakty, hipotezy i decyzje. Użyj, gdy
   potrzebujesz planu wykonawczego przed implementacją.
 shared_files:
-  - task-plan/references/plan-contract.md
+  - _shared/references/task-plan-contract.md
   - _shared/references/skill-routing-policy.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
@@ -23,6 +23,11 @@ shared_files:
   - _shared/scripts/secret-detector.mjs
   - _shared/scripts/slugify-title.mjs
   - _shared/scripts/model-hierarchy.mjs
+  - _shared/scripts/is-main-module.mjs
+  - _shared/scripts/task-plan/atomic-file.mjs
+  - _shared/scripts/task-plan/source.mjs
+  - _shared/scripts/task-plan/store.mjs
+  - _shared/scripts/task-plan/validate.mjs
 ---
 
 # `$task-plan`
@@ -143,9 +148,9 @@ Odczytaj tylko pliki wymagane przez aktywny krok:
 
 | Warunek | Plik |
 |---|---|
-| język planu, wymagane sekcje, inwarianty treści oraz schematy `Source assessment` i `Direction, simplicity and consistency` | `<skill_dir>/references/plan-contract.md` |
-| schemat i zasady pól WP, `Estimated size`, bramka „Trwałe testy a jednorazowa weryfikacja zmiany”, zasady czytelności pakietu i dobór profilu wykonania | `<skill_dir>/references/plan-contract.md` |
-| format `Execution environment` i `Execution`, `WP overrides`, kolejność WP, pokrycie źródła oraz deterministyczna edycja i kontrakt narzędzi planu | `<skill_dir>/references/plan-contract.md` |
+| język planu, wymagane sekcje, inwarianty treści oraz schematy `Source assessment` i `Direction, simplicity and consistency` | `<skills_root>/_shared/references/task-plan-contract.md` |
+| schemat i zasady pól WP, `Estimated size`, bramka „Trwałe testy a jednorazowa weryfikacja zmiany”, zasady czytelności pakietu i dobór profilu wykonania | `<skills_root>/_shared/references/task-plan-contract.md` |
+| format `Execution environment` i `Execution`, `WP overrides`, kolejność WP, pokrycie źródła oraz deterministyczna edycja i kontrakt narzędzi planu | `<skills_root>/_shared/references/task-plan-contract.md` |
 | routing nadrzędnego workflow i guard wyboru skilla | `<skills_root>/_shared/references/skill-routing-policy.md` |
 | canonical lifecycle repository-context i macierz broad vs targeted | `<skills_root>/_shared/references/repository-context-hybrid.md` |
 | kontrakt kontekstu między agentami | `<skills_root>/_shared/references/context-subagent-contract.md` |
@@ -347,37 +352,30 @@ discovery; brak lub nieaktualność artefaktu zgłasza jako lukę pokrycia.
 #### Decyzja ownera
 
 Działanie po review wyprowadza bezstanowy helper `<skill_dir>/scripts/review-cycle.mjs`.
-Owner przekazuje mu wyłącznie jawne dane: werdykt, liczniki pełnych i delta-review,
-findings ze stabilnym ID, klasyfikacją, severity i liczbą prób naprawy, jawne
-rozstrzygnięcie każdego wcześniejszego ID oraz — po pierwszym delta-review —
-artefakt delta z plan ID, rewizjami, hashami, zmienionymi sekcjami/WP,
-wcześniejszymi ID i dozwolonymi bezpośrednimi zależnościami. Przy pełnym review
-owner podaje też `plan` (`plan_id`, `revision`, `content_sha256` z wyniku
-`save`/`edit`/`validate` dla przeglądanej rewizji); przy delta-review helper bierze
-go z artefaktu delta. Helper sprawdza kompletność i spójność tych danych oraz
-zwraca dokładnie jedno działanie powiązane przez pole `plan` z przeglądaną
-rewizją. Nie ocenia prawdziwości ocen semantycznych ani nie utrwala stanu cyklu.
+Owner przekazuje mu wyłącznie jawne dane ocen i liczników w formacie opisanym
+schematem oraz przykładami w `<skills_root>/_shared/references/task-plan-contract.md` (sekcja
+„Wejście `review-cycle.mjs decide`”): ten kontrakt jest jedynym miejscem opisu pól,
+warunków ich użycia i pochodzenia hashy. Helper sprawdza kompletność i spójność
+tych danych oraz zwraca dokładnie jedno działanie powiązane przez pole `plan` z
+przeglądaną rewizją. Nie ocenia prawdziwości ocen semantycznych ani nie utrwala
+stanu cyklu.
 
 Artefakt delta buduj wyłącznie poleceniem `review-cycle.mjs delta-input --file
-<plan>`: `plan_id`, rewizje oraz hashe helper czyta z planu. Bazą jest ostatnia
-przejrzana rewizja zapisana przez `record-review` (`review_base_revision`,
-`review_base_sha256`), a nie rewizja poprzednia, więc naprawa zapisana w kilku
-rewizjach trafia do jednego delta-review w całości. `current_sha256` to hash bajtów
-pliku. Owner podaje w `--input` tylko pola semantyczne (`changed_sections`,
-`changed_work_packages`, `previous_finding_ids`, `allowed_direct_dependencies`),
-liczone względem przejrzanej bazy. Nie przepisuj hashy ani numerów rewizji ręcznie.
-Brak zapisanej bazy review kończy polecenie twardym błędem — zob. regułę
-zatrzymania poniżej.
+<plan>`: plan ID, rewizje i hashe helper czyta z planu, a bazą jest ostatnia
+przejrzana rewizja zapisana przez `record-review`, więc naprawa zapisana w kilku
+rewizjach trafia do jednego delta-review w całości. Owner podaje w `--input` tylko
+pola semantyczne liczone względem przejrzanej bazy. Nie przepisuj hashy ani
+numerów rewizji ręcznie. Brak zapisanej bazy review kończy polecenie twardym
+błędem — zob. regułę zatrzymania poniżej.
 
 Po każdej decyzji z `ok=true` (także `apply-repair` i `blocked`) zapisz ją w planie:
 `store.mjs record-review --file <plan> --input <decision.json>`, gdzie
-`decision.json` to pełny, niezmieniony wynik `decide`. Polecenie odrzuca decyzję z
-`ok=false`, bez pola `plan` (`REVIEW_DECISION_UNBOUND`) albo dotyczącą innej
-rewizji lub treści niż bieżąca (`REVIEW_DECISION_STALE`). Każda zapisana decyzja
-staje się bazą następnego delta-review; tylko `finish-ready` dodatkowo potwierdza
-gotowość. Każda późniejsza zmiana treści planu (poza sekcją `## Execution`)
-wycofuje potwierdzenie i wymaga kolejnego review. Helper sprawdza spójność
-danych, nie to, czy review faktycznie się odbyło.
+`decision.json` to pełny, niezmieniony wynik `decide`; polecenie odrzuca decyzję
+nieważną, niepowiązaną z planem albo dotyczącą innej rewizji lub treści niż
+bieżąca. Każda zapisana decyzja staje się bazą następnego delta-review; tylko
+`finish-ready` dodatkowo potwierdza gotowość. Każda późniejsza zmiana treści planu
+(poza sekcją `## Execution`) wycofuje potwierdzenie i wymaga kolejnego review.
+Helper sprawdza spójność danych, nie to, czy review faktycznie się odbyło.
 
 Reguły dla agenta:
 
@@ -395,6 +393,17 @@ Reguły dla agenta:
   plan jako `blocked` z `review_pending`.
 - Nie używaj decyzji z wcześniejszej rewizji do potwierdzenia bieżącej; po
   `REVIEW_DECISION_STALE` przejrzyj bieżącą rewizję.
+
+Nowy cykl po decyzji końcowej: gdy po `finish-ready` albo `blocked` treść planu
+się zmienia (odpowiedź na pytanie, poprawka użytkownika, korekta redakcyjna),
+review otwierające nowy cykl jest delta-review względem bazy zapisanej przez
+`record-review`, z licznikami `full_review_count: 1` i `delta_review_count: 1`.
+Przekaż w `previous_findings` wszystkie nierozwiązane actionable findings i
+pytania wpływające na zatwierdzenie z poprzedniego review; wcześniejsze pytanie
+nie ma severity i rozstrzyga się wyłącznie jako `accepted` z `decision_ref:
+Q<number>`. Pusta lista jest dozwolona tylko po `finish-ready`. Po `blocked`
+otwarcie cyklu wymaga odpowiedzi użytkownika. Limit trzech delta-review liczy się
+od review otwierającego.
 
 Tabela werdyktów:
 
@@ -467,10 +476,12 @@ zapytaj, czy punkt utrzymać, przeformułować czy wykluczyć.
 #### Obowiązkowy kanał interakcji
 
 Jeżeli zapisany plan zawiera co najmniej jedno pytanie `[open]`, agent MUSI
-bezpośrednio po zapisie wywołać interaktywne narzędzie `functions.question`.
-Samo wypisanie pytań w odpowiedzi tekstowej albo pozostawienie ich wyłącznie
-w Markdownie nie spełnia tego kontraktu. Odpowiedź tekstowa nie może
-poprzedzać tego wywołania.
+bezpośrednio po zapisie zadać je przez interaktywne narzędzie pytań dostępne w
+harnessie (niezależnie od jego nazwy). Gdy harness takiego narzędzia nie ma,
+agent zadaje pytania w rozmowie i zatrzymuje się do odpowiedzi użytkownika; nie
+kontynuuje workflow ani nie zakłada odpowiedzi. Samo pozostawienie pytań
+wyłącznie w Markdownie nie spełnia tego kontraktu. Gdy dostępne jest narzędzie
+interaktywne, odpowiedź tekstowa nie może poprzedzać jego wywołania.
 
 1. Przekaż wszystkie pytania `[open]` w jednym batchu, zachowując kolejność
    identyfikatorów `Q<number>`. Każde pytanie ma krótki `header`, pełną treść i
@@ -552,11 +563,11 @@ Jeżeli plan zawiera uwagi produktowe `N<number> [note]`, wypisz je przed tym
 pytaniem.
 
 Wybór `a` jest jedynie jawnym żądaniem użytkownika. Task-plan nadal nie uruchamia
-automatycznie żadnego workflow implementacyjnego. Wybór `b` wycofuje gotowość
-bieżącej rewizji, jeśli poprawki mogą zmienić zakres, zachowanie, ownership,
-granice WP, model danych albo kryteria akceptacji. Poprawka wyłącznie redakcyjna
-nie wymaga nowego repository-context i może od razu utworzyć kolejną rewizję
-`ready`.
+automatycznie żadnego workflow implementacyjnego. Wybór `b` oznacza zmianę treści:
+każda zmiana poza sekcją `## Execution` wycofuje gotowość bieżącej rewizji.
+Poprawka wyłącznie redakcyjna nie wymaga nowego repository-context, ale wymaga
+review (delta-review nowego cyklu z sekcji 5) i `record-review`, zanim plan wróci
+do `ready`.
 
 ## Resume i błędy
 
@@ -567,6 +578,19 @@ po zmianie źródła biznesowego.
 Po utworzeniu planu hash source artifact jest niezmienny dla tej tożsamości.
 Rozbieżność blokuje kolejny zapis; nie wolno jej automatycznie zaakceptować przez
 przepisanie hasha w frontmatterze. Zmienione źródło wymaga jawnego restartu.
+
+Plan bez zapisanych kluczy review (np. sprzed ich wprowadzenia) pozostaje
+czytelny, ale jest `blocked` z `review_pending`, a `plan-execute` odrzuca go z
+`PLAN_NOT_READY`. Naprawa: review planu w tym skillu i `record-review` dla
+bieżącej rewizji.
+
+Zmiana wymagań ukończonego WP: oceń podczas obowiązkowego review, czy nowe
+wymagania unieważniają evidence ukończenia albo dodają niewykonaną pracę. Wtedy
+otwórz ten WP i późniejsze ukończone WP przez `[ ]` w `## Execution`. Gdy zmiana
+jest wyłącznie redakcyjna, a evidence pozostaje ważne, zachowaj `[x]`, ale
+przeprowadź review zmienionej treści. Zapisz wynik oceny i uzasadnienie jako
+`D<number>` w decyzjach planu. Magazyn nie porównuje treści WP i nie blokuje
+takiego zapisu.
 
 Do resume wystarczają:
 
@@ -589,7 +613,7 @@ rekonstrukcji z danych v1.
 
 ## Narzędzia
 
-Źródła implementacji v2:
+Publiczne entrypointy skilla (`<skill_dir>/scripts/`):
 
 ```text
 <skill_dir>/scripts/atomic-file.mjs
@@ -599,6 +623,12 @@ rekonstrukcji z danych v1.
 <skill_dir>/scripts/review-cycle.mjs
 <skill_dir>/scripts/validate.mjs
 ```
+
+`atomic-file.mjs`, `source.mjs`, `store.mjs` i `validate.mjs` są cienkimi
+fasadami: reexportują API oraz delegują CLI do jedynej implementacji w
+`<skills_root>/_shared/scripts/task-plan/`, wspólnej z `$plan-execute`. `edit.mjs`
+i `review-cycle.mjs` są prywatne dla tego skilla i korzystają z tej samej
+wspólnej implementacji.
 
 Publiczne role:
 
@@ -634,7 +664,64 @@ node <skill_dir>/scripts/validate.mjs validate --file ./docs/plans/<plan-id>.md 
 
 Kontrakt danych wejściowych `store.mjs`, tokenu aktualizacji, paczki operacji
 `edit.mjs` oraz danych `review-cycle.mjs` zawiera
-`<skill_dir>/references/plan-contract.md`.
+`<skills_root>/_shared/references/task-plan-contract.md`.
+
+#### Komendy `edit.mjs`
+
+Do punktowej aktualizacji zapisanego planu używaj `edit.mjs` zamiast doraźnych
+skryptów opartych na zamianie tekstu; schemat punktów nazwanych i paczki operacji
+opisuje wspólny kontrakt. Składnia komend:
+
+```text
+<skill_dir>/scripts/edit.mjs add-bullet
+  --file ./docs/plans/<plan>.md
+  (--section <dokładna sekcja> | --work-package <WP<number>>)
+  --id <nazwa>
+  --value <jednoliniowa wartość>
+  [--status <status>]
+
+<skill_dir>/scripts/edit.mjs edit-bullet
+  --file ./docs/plans/<plan>.md
+  (--section <dokładna sekcja> | --work-package <WP<number>>)
+  --id <nazwa>
+  [--value <jednoliniowa wartość>]
+  [--status <status>]
+
+<skill_dir>/scripts/edit.mjs remove-bullet
+  --file ./docs/plans/<plan>.md
+  (--section <dokładna sekcja> | --work-package <WP<number>>)
+  --id <nazwa>
+
+<skill_dir>/scripts/edit.mjs answer-question
+  --file ./docs/plans/<plan>.md
+  --id Q<number>
+  --answer <jednoliniowa odpowiedź>
+
+<skill_dir>/scripts/edit.mjs add-question
+  --file ./docs/plans/<plan>.md
+  --id Q<number>
+  --prompt <jednoliniowe pytanie>
+  --status <open|answered>
+  [--answer <jednoliniowa odpowiedź>]
+
+<skill_dir>/scripts/edit.mjs edit-question
+  --file ./docs/plans/<plan>.md
+  --id Q<number>
+  [--prompt <jednoliniowe pytanie>]
+  [--status <open|answered>]
+  [--answer <jednoliniowa odpowiedź>]
+
+<skill_dir>/scripts/edit.mjs remove-question
+  --file ./docs/plans/<plan>.md
+  --id Q<number>
+
+<skill_dir>/scripts/edit.mjs apply-operations
+  --file ./docs/plans/<plan>.md
+  --input ./plan-operations.json
+```
+
+Selektory `--section` i `--work-package` wzajemnie się wykluczają. Przy
+`--dry-run` helper wykonuje tę samą walidację bez zapisu.
 
 Testy skilla znajdują się w `tests/skills/task-plan/` i działają bez live GitHub,
 live repository-context i implementacji aplikacji.

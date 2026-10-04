@@ -15,6 +15,7 @@ shared_files:
   - _shared/references/skill-authoring-standard.md
   - _shared/references/skill-structure-contract.md
   - _shared/references/skill-routing-policy.md
+  - _shared/scripts/is-main-module.mjs
 ---
 
 # $skill-review

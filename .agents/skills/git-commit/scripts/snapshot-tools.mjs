@@ -3,7 +3,8 @@ import {copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, wri
 import {spawnSync} from "node:child_process";
 import crypto from "node:crypto";
 import {dirname, join, resolve} from "node:path";
-import {pathToFileURL} from "node:url";
+
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 
 export const DEFAULT_POINTER_FILE = "/tmp/agent-git-commit-snapshot-pointer.txt";
 
@@ -456,7 +457,7 @@ export async function runSnapshotTools(argv, {execCommand = runCommand, pointerF
     }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
     runSnapshotTools(process.argv.slice(2)).then((code) => {
         process.exitCode = code;
     }).catch((error) => {
