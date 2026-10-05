@@ -62,6 +62,14 @@ function completePlanBody({
 } = {}) {
     return `# Example implementation plan
 
+## Execution
+
+- [ ] WP1
+
+## Work package summaries
+
+- WP1 — Implement point one: Adds the requested point-one behavior to the existing Example flow without a parallel mechanism.
+
 ## Source and objective
 
 Implement point one without adding a parallel mechanism.
@@ -127,10 +135,6 @@ Run the focused unit test for WP1.
 - Default model: openai/gpt-5.6-sol
 - Default reasoning: medium
 - WP overrides: none
-
-## Execution
-
-- [ ] WP1
 `;
 }
 
@@ -570,13 +574,55 @@ it("still rejects a real second Execution section and ignores a WP heading outsi
     assert.doesNotThrow(() => savePlan(saveInput(root, {markdown_body: stray}), {now: NOW}));
 });
 
-it("keeps the review hash of a body that ends with Execution or continues after it", () => {
+it("excludes Execution from the review hash at the top or at the end of the body", () => {
     const body = completePlanBody();
-    const withoutExecution = body.slice(0, body.indexOf("## Execution\n\n- [ ] WP1")).trim();
+    const execution = "## Execution\n\n- [ ] WP1\n\n";
+    const withoutExecution = body.replace(execution, "").trim();
     assert.equal(reviewBodyHash(body), contentHash(withoutExecution));
 
-    const withTail = `${body.trimEnd()}\n\n## Appendix\n\nTail section.\n`;
-    assert.equal(reviewBodyHash(withTail), contentHash(`${withoutExecution}\n\n## Appendix\n\nTail section.`));
+    const atEnd = `${withoutExecution}\n\n${execution.trim()}\n`;
+    assert.equal(reviewBodyHash(atEnd), contentHash(withoutExecution));
+});
+
+it("requires one titled summary per work package in document order", () => {
+    const valid = validatePlanDocument(completePlanBody(), {verifyEvidence: false});
+    assert.deepEqual(valid.errors.filter((message) => message.includes("summar")), []);
+
+    const summary = "- WP1 — Implement point one: Adds the requested point-one behavior to the existing Example flow without a parallel mechanism.";
+    const cases = [
+        ["", "Missing section: ## Work package summaries."],
+        ["- WP1 — Implement point one: none", "Work package summary for WP1 must be concrete."],
+        ["- WP1 — Other title: Adds the behavior.", "must use the work package title: Implement point one."],
+        [`${summary}\n${summary}`, "exactly once and in document order"],
+        ["Free text without an entry.", "Invalid Work package summaries entry"],
+    ];
+    for (const [replacement, expected] of cases) {
+        const section = replacement === "" ? "" : `## Work package summaries\n\n${replacement}\n\n`;
+        const body = completePlanBody().replace(`## Work package summaries\n\n${summary}\n\n`, section);
+        const validation = validatePlanDocument(body, {verifyEvidence: false});
+        assert.equal(validation.errors.some((message) => message.includes(expected)), true, validation.errors.join("\n"));
+    }
+
+    const continued = completePlanBody().replace(summary, "- WP1 — Implement point one: Adds the requested behavior.\n  It keeps the existing owner.");
+    assert.deepEqual(validatePlanDocument(continued, {verifyEvidence: false}).errors.filter((message) => message.includes("summar")), []);
+
+    const colonTitle = completePlanBody()
+        .replace("### WP1 — Implement point one", "### WP1 — Implement point one: preserve source")
+        .replace(summary, "- WP1 — Implement point one: preserve source: Adds the requested behavior without a parallel mechanism.");
+    assert.deepEqual(validatePlanDocument(colonTitle, {verifyEvidence: false}).errors.filter((message) => message.includes("summar")), []);
+
+    const duplicateSection = `## Work package summaries\n\n${summary}\n`;
+    const unknownPackageSection = "## Work package summaries\n\n- WP99 — Unknown package: Changes unrelated behavior.\n";
+    for (const section of [duplicateSection, unknownPackageSection]) {
+        const body = `${completePlanBody()}\n${section}`;
+        const validation = validatePlanDocument(body, {verifyEvidence: false});
+        assert.equal(validation.errors.includes("Plan must contain exactly one ## Work package summaries section."), true);
+    }
+
+    for (const fence of ["```", "~~~"]) {
+        const body = `${completePlanBody()}\n## Appendix\n\n${fence}md\n${duplicateSection}${fence}\n`;
+        assert.deepEqual(validatePlanDocument(body, {verifyEvidence: false}).errors.filter((message) => message.includes("summar")), []);
+    }
 });
 
 it("rejects duplicate work-package and question identifiers", () => {

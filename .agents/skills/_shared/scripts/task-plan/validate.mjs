@@ -10,6 +10,8 @@ import {hasModelProfile, loadModelHierarchy} from "../model-hierarchy.mjs";
 export const PLAN_RESULTS = Object.freeze(["invalid", "blocked", "ready"]);
 
 export const REQUIRED_SECTIONS = Object.freeze([
+    "Execution",
+    "Work package summaries",
     "Source and objective",
     "Source assessment",
     "Scope",
@@ -21,7 +23,6 @@ export const REQUIRED_SECTIONS = Object.freeze([
     "Risks and discovery debt",
     "Acceptance and verification",
     "Execution environment",
-    "Execution",
 ]);
 
 export const REQUIRED_PACKAGE_FIELDS = Object.freeze([
@@ -121,6 +122,7 @@ export function validatePlanDocument(markdown, options = {}) {
     errors.push(...validateSourceCoverage(parsed.body, packageIds));
     errors.push(...validateExecutionEnvironment(parsed.body, packages, options));
     errors.push(...validateExecutionContract(parsed.body, packages));
+    errors.push(...validateWorkPackageSummaries(parsed.body, packages));
 
     const questionResult = parseQuestions(parsed.body);
     errors.push(...questionResult.errors);
@@ -311,6 +313,53 @@ export function parseExecutionContract(body) {
     return {items, errors};
 }
 
+/**
+ * Parse `## Work package summaries`: one `- WP<number> — <title>: <summary>`
+ * entry per work package; indented continuation lines extend the previous entry.
+ */
+export function parseWorkPackageSummaries(body, packages = extractPackages(body)) {
+    const section = extractSection(body, "Work package summaries");
+    const items = [];
+    const errors = [];
+    const titles = new Map(packages.map((packageRecord) => [packageRecord.id, packageRecord.title]));
+
+    for (const line of section.split(/\r?\n/)) {
+        if (line.trim() === "") {
+            continue;
+        }
+        const entry = line.match(/^-\s+(WP[1-9][0-9]*)\s+[—-]\s+(.+?)\s*$/);
+        if (entry) {
+            const [, id, titleAndSummary] = entry;
+            const expectedTitle = titles.get(id);
+            const expectedPrefix = expectedTitle === undefined ? null : `${expectedTitle}: `;
+            if (expectedPrefix !== null && titleAndSummary.startsWith(expectedPrefix)) {
+                items.push({id, title: expectedTitle, summary: titleAndSummary.slice(expectedPrefix.length).trim()});
+                continue;
+            }
+
+            const summarySeparator = titleAndSummary.indexOf(": ");
+            if (summarySeparator >= 0) {
+                items.push({
+                    id,
+                    title: titleAndSummary.slice(0, summarySeparator),
+                    summary: titleAndSummary.slice(summarySeparator + 2).trim(),
+                });
+                continue;
+            }
+
+            errors.push(`Invalid Work package summaries entry: ${line.trim()}.`);
+            continue;
+        }
+        if (/^\s+\S/.test(line) && items.length > 0) {
+            items[items.length - 1].summary += ` ${line.trim()}`;
+            continue;
+        }
+        errors.push(`Invalid Work package summaries entry: ${line.trim()}.`);
+    }
+
+    return {items, errors};
+}
+
 export function parseExecutionEnvironment(body) {
     const section = extractSection(body, "Execution environment");
     const overrides = labeledBlock(section, "WP overrides");
@@ -400,6 +449,34 @@ export function validateExecutionEnvironment(body, packages = extractPackages(bo
     return errors;
 }
 
+export function validateWorkPackageSummaries(body, packages = extractPackages(body)) {
+    const sectionCount = realMatches(body, /^## Work package summaries\s*$/gm).length;
+    if (sectionCount === 0) {
+        // validateRequiredSections already reports the missing section.
+        return [];
+    }
+    const summaries = parseWorkPackageSummaries(body, packages);
+    const errors = [...summaries.errors];
+    if (sectionCount > 1) {
+        errors.push("Plan must contain exactly one ## Work package summaries section.");
+    }
+    const packageIds = packages.map((packageRecord) => packageRecord.id);
+    const itemIds = summaries.items.map((item) => item.id);
+    if (itemIds.join("\u0000") !== packageIds.join("\u0000")) {
+        errors.push("Work package summaries must reference every work package exactly once and in document order.");
+    }
+    const titles = new Map(packages.map((packageRecord) => [packageRecord.id, packageRecord.title]));
+    for (const item of summaries.items) {
+        if (titles.has(item.id) && titles.get(item.id) !== item.title) {
+            errors.push(`Work package summary for ${item.id} must use the work package title: ${titles.get(item.id)}.`);
+        }
+        if (isNone(item.summary)) {
+            errors.push(`Work package summary for ${item.id} must be concrete.`);
+        }
+    }
+    return errors;
+}
+
 export function validateExecutionContract(body, packages = extractPackages(body)) {
     const contract = parseExecutionContract(body);
     const errors = [...contract.errors];
@@ -460,7 +537,7 @@ export function validateExecutionContract(body, packages = extractPackages(body)
 
 
 
-const DECISION_ENTRY_START = /^\s*-\s+[DQN][1-9][0-9]*\b/;
+const QUESTION_FIELD = /^ {2}-\s+(Answer|Source):(.*)$/;
 
 /**
  * Parse the `Decisions and open questions` section.
@@ -477,23 +554,16 @@ export function parseQuestions(body) {
     const entries = [];
     const errors = [];
     const ids = new Set();
-    const continuation = (index) => {
-        const block = [];
-        for (let nested = index + 1; nested < lines.length && !DECISION_ENTRY_START.test(lines[nested]); nested += 1) {
-            block.push(lines[nested]);
-        }
-        return block;
-    };
     for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index];
         const decision = line.match(/^\s*-\s+(D[1-9][0-9]*)\s*:\s*(.+)$/);
         if (decision) {
-            entries.push({id: decision[1], type: "decision", text: decision[2].trim()});
+            entries.push({id: decision[1], type: "decision", text: entryText(decision[2], entryContinuation(lines, index), "  ")});
             continue;
         }
         const note = line.match(/^\s*-\s+(N[1-9][0-9]*)\s+\[note]\s*:\s*(.+)$/);
         if (note) {
-            entries.push({id: note[1], type: "note", text: note[2].trim()});
+            entries.push({id: note[1], type: "note", text: entryText(note[2], entryContinuation(lines, index), "  ")});
             continue;
         }
         if (!/^\s*-\s+Q[1-9][0-9]*/.test(line)) {
@@ -510,11 +580,13 @@ export function parseQuestions(body) {
             continue;
         }
         ids.add(id);
-        const question = {id, status, prompt: prompt.trim()};
+        const block = entryContinuation(lines, index);
+        const firstField = block.findIndex((nested) => QUESTION_FIELD.test(nested));
+        const question = {id, status, prompt: entryText(prompt, firstField < 0 ? block : block.slice(0, firstField), "  ")};
         if (status === "answered") {
-            const block = continuation(index);
-            question.answer = labeledValue(block, "Answer");
-            question.source = labeledValue(block, "Source");
+            const fields = questionFields(block);
+            question.answer = fields.Answer ? entryText(fields.Answer.first, fields.Answer.continuation, "    ") : "";
+            question.source = fields.Source?.first.trim() ?? "";
             if (!question.answer) {
                 errors.push(`${id} answered question requires Answer.`);
             }
@@ -535,6 +607,43 @@ export function parseQuestions(body) {
 }
 
 /**
+ * Indented continuation of the entry at `index`: the following lines up to the
+ * first non-indented, non-blank line.
+ */
+function entryContinuation(lines, index) {
+    const block = [];
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+        if (lines[cursor].trim() !== "" && !/^\s/.test(lines[cursor])) {
+            break;
+        }
+        block.push(lines[cursor]);
+    }
+    return block;
+}
+
+/** First `Answer` and `Source` fields of a question block with their continuation lines. */
+function questionFields(block) {
+    const fields = {};
+    let current = null;
+    for (const line of block) {
+        const field = line.match(QUESTION_FIELD);
+        if (field) {
+            current = {first: field[2], continuation: []};
+            fields[field[1]] ??= current;
+            continue;
+        }
+        current?.continuation.push(line);
+    }
+    return fields;
+}
+
+/** Entry text with continuation lines, keeping their indentation relative to `indentation`. */
+function entryText(first, continuation, indentation) {
+    const rest = continuation.map((line) => (line.startsWith(indentation) ? line.slice(indentation.length) : line.trim()).trimEnd());
+    return [first.trim(), ...rest].join("\n").trim();
+}
+
+/**
  * Parse `R<number> [level]: text` entries of `Risks and discovery debt`.
  * A risk is scoped to the work packages named in its text; a risk naming none
  * is plan-wide.
@@ -544,11 +653,12 @@ export function parseQuestions(body) {
  */
 export function parseRisks(body) {
     const section = extractSection(body, "Risks and discovery debt");
+    const lines = section.split("\n");
     const risks = [];
-    for (const line of section.split("\n")) {
-        const match = line.match(/^\s*-\s+(R[1-9][0-9]*)\s+\[([^\]]+)]\s*:\s*(.+)$/);
+    for (let index = 0; index < lines.length; index += 1) {
+        const match = lines[index].match(/^\s*-\s+(R[1-9][0-9]*)\s+\[([^\]]+)]\s*:\s*(.+)$/);
         if (match) {
-            const text = match[3].trim();
+            const text = entryText(match[3], entryContinuation(lines, index), "  ");
             risks.push({
                 id: match[1],
                 level: match[2].trim(),

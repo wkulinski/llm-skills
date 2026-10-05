@@ -80,12 +80,21 @@ function planBody(packages, extras = {}) {
 `).join("\n");
     const sourceCoverage = packages.map((item) => `- ${item.id} requirement: ${item.id}`).join("\n");
     const execution = packages.map((item) => `- [ ] ${item.id}`).join("\n");
+    const summaries = packages.map((item) => `- ${item.id} — ${item.title}: Delivers this package in the existing plan flow and leaves unrelated changes out.`).join("\n");
     const overrideEntries = packages
         .filter((item) => item.model)
         .map((item) => `  - ${item.id}: model=${item.model}; reasoning=${item.reasoning}; justification=${item.justification}`);
     const overrides = overrideEntries.length > 0 ? `- WP overrides: configured\n${overrideEntries.join("\n")}` : "- WP overrides: none";
 
     return `# Plan execute test
+
+## Execution
+
+${execution}
+
+## Work package summaries
+
+${summaries}
 
 ## Source and objective
 
@@ -140,10 +149,6 @@ Run the focused plan-execute tests.
 - Default model: openai/gpt-5.6-sol
 - Default reasoning: medium
 ${overrides}
-
-## Execution
-
-${execution}
 `;
 }
 
@@ -294,6 +299,14 @@ it("selects exactly the first unchecked work package", () => {
     assert.equal(first.action, "execute");
     assert.equal(first.selected.id, "WP1");
     assert.equal(first.selected.estimatedSize, "medium");
+    assert.match(first.selected.body, /^### WP1 — Foundation$/m);
+    assert.match(first.selected.body, /^- Goal: Execute Foundation\.$/m);
+    assert.match(first.selected.body, /^- Scope: Update the planned behavior\.$/m);
+    assert.match(first.selected.body, /^- Out of scope: Unrelated changes\.$/m);
+    assert.match(first.selected.body, /^- Acceptance criteria: Foundation is complete and verified\.$/m);
+    assert.match(first.selected.body, /^- Verification: Run the focused check for WP1\.$/m);
+    assert.equal(first.selected.body.includes("Delivers this package in the existing plan flow"), false);
+    assert.equal(first.selected.body.includes("### WP2"), false);
     assert.deepEqual(first.selected.environment, {
         model: "openai/gpt-5.6-sol",
         reasoning: "medium",
@@ -303,6 +316,11 @@ it("selects exactly the first unchecked work package", () => {
     completeWorkPackage({repoRoot: root, planPath, wpId: "WP1", evidence: "focused test passed"}, {now: NOW, verbose: true});
     const second = selectNextWorkPackage(loadExecutionPlan({planPath, repoRoot: root}));
     assert.equal(second.selected.id, "WP2");
+    assert.match(second.selected.body, /^### WP2 — Follow-up$/m);
+    assert.match(second.selected.body, /^- Goal: Execute Follow-up\.$/m);
+    assert.match(second.selected.body, /^- Verification: Run the focused check for WP2\.$/m);
+    assert.equal(second.selected.body.includes("Delivers this package in the existing plan flow"), false);
+    assert.equal(second.selected.body.includes("### WP1"), false);
 });
 
 it("hands decisions, answered questions, notes and the risks of the selected WP to the executor", () => {
@@ -311,8 +329,11 @@ it("hands decisions, answered questions, notes and the risks of the selected WP 
     const {planPath} = makePlan(root, packages, "user-input:handoff", {
         decisions: [
             "- D1: Keep the existing contract.",
+            "  Its callers stay unchanged.",
             "- Q1 [answered]: Which owner stays?",
+            "  It decides the module boundary.",
             "  - Answer: Core stays the owner.",
+            "    - Reason: Core already owns the contract.",
             "  - Source: current conversation",
             "- N1 [note]: Row click target; koszt: unpredictable result; podstawa: hipoteza; kierunek: confirm with the product owner.",
         ].join("\n"),
@@ -320,18 +341,19 @@ it("hands decisions, answered questions, notes and the risks of the selected WP 
             "- R1 [medium]: WP1 may change the persisted format.",
             "- R2 [low]: WP10 depends on the new format.",
             "- R3 [low]: The whole rollout needs a final smoke run.",
+            "  It runs after the last package.",
         ].join("\n"),
     });
 
     const first = selectNextWorkPackage(loadExecutionPlan({planPath, repoRoot: root}));
     assert.deepEqual(first.selected.decisions, [
-        {id: "D1", type: "decision", text: "Keep the existing contract."},
+        {id: "D1", type: "decision", text: "Keep the existing contract.\nIts callers stay unchanged."},
         {
             id: "Q1",
             type: "question",
             status: "answered",
-            text: "Which owner stays?",
-            answer: "Core stays the owner.",
+            text: "Which owner stays?\nIt decides the module boundary.",
+            answer: "Core stays the owner.\n- Reason: Core already owns the contract.",
             source: "current conversation",
         },
         {
@@ -344,6 +366,7 @@ it("hands decisions, answered questions, notes and the risks of the selected WP 
         ["R1", "medium", "work-package"],
         ["R3", "low", "plan"],
     ]);
+    assert.equal(first.selected.risks[1].text, "The whole rollout needs a final smoke run.\nIt runs after the last package.");
 
     for (const id of packages.slice(0, 9).map((item) => item.id)) {
         completeWorkPackage({repoRoot: root, planPath, wpId: id, evidence: "focused test passed"}, {now: NOW});

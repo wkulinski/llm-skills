@@ -24,6 +24,14 @@ const STORE_SCRIPT = path.resolve(path.dirname(new URL(import.meta.url).pathname
 function planBody() {
     return `# Review gate plan
 
+## Execution
+
+- [ ] WP1
+
+## Work package summaries
+
+- WP1 — Gate: Binds plan readiness to a recorded review decision, verifies the gate, and leaves unrelated cleanup untouched.
+
 ## Source and objective
 
 Exercise the review gate.
@@ -89,10 +97,6 @@ Run the focused test.
 - Default model: openai/gpt-5.6-sol
 - Default reasoning: medium
 - WP overrides: none
-
-## Execution
-
-- [ ] WP1
 `;
 }
 

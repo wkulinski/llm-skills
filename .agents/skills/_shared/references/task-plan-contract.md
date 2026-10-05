@@ -60,12 +60,19 @@ ostatnia przyjmuje paczkę w formacie:
 ```
 
 `add-bullet` wymaga nowego identyfikatora, a `edit-bullet` i `remove-bullet`
-wymagają identyfikatora istniejącego dokładnie raz. Selektor sekcji i selektor WP
+wymagają identyfikatora istniejącego dokładnie raz. Punkt obejmuje wiersz z
+nazwą i wszystkie kolejne wiersze wcięte, więc `edit-bullet` i `remove-bullet`
+zmieniają albo usuwają go w całości, także gdy ma kilka wierszy lub podpunkty.
+Wartość może być wielowierszowa: pierwszy wiersz trafia po `: `, a kolejne
+helper wcina o dwie spacje, zachowując ich względne wcięcie. Selektor sekcji i selektor WP
 wzajemnie się wykluczają. Nie ma automatycznej numeracji: identyfikator nadaje
 wywołujący, dzięki czemu punkty nazwane nie muszą być sztucznie numerowane. Pytania `Q<number>` są blokami z podpunktami
 `Answer` i `Source`, więc obsługują je wyłącznie wrappery pytaniowe. `edit-question`
 zmienia prompt, status i/lub odpowiedź (przejście do `answered` wymaga
-odpowiedzi), a `remove-question` usuwa cały blok pytania.
+odpowiedzi), a `remove-question` usuwa cały blok pytania. Prompt i odpowiedź
+mogą być wielowierszowe: kontynuację promptu helper wcina o dwie spacje, a
+kontynuację odpowiedzi o cztery, pod podpunktem `Answer`. Kontynuacja promptu
+nie może zaczynać się od `- Answer:` ani `- Source:`.
 
 `apply-operations` stosuje całą paczkę w pamięci na jednym odczycie, przerywa
 całość przy pierwszym błędzie i zapisuje dokument raz — jedna logiczna poprawka
@@ -81,6 +88,8 @@ wyszukiwania fragmentów tekstu.
 ## Wymagane sekcje
 
 ```text
+## Execution
+## Work package summaries
 ## Source and objective
 ## Source assessment
 ## Scope
@@ -92,8 +101,10 @@ wyszukiwania fragmentów tekstu.
 ## Risks and discovery debt
 ## Acceptance and verification
 ## Execution environment
-## Execution
 ```
+
+Sekcje zapisuj w tej kolejności. `Execution` i `Work package summaries` są na
+początku, aby czytelnik od razu widział postęp i zakres każdego WP.
 
 ## Inwarianty treści
 
@@ -294,25 +305,82 @@ osobnego grafu ani mechanizmu batchowania.
 punkt może zamiast tego otrzymać krótkie, uzasadnione `excluded`. Nie twórz WP
 dla samej ceremonii procesu.
 
+## Streszczenia WP
+
+`Work package summaries` zawiera dokładnie jeden wpis na WP, w kolejności
+dokumentu, z tytułem identycznym z nagłówkiem WP:
+
+```md
+## Work package summaries
+
+- WP1 — <tytuł WP>: <streszczenie prostym językiem>
+```
+
+Ta sekcja jest przeglądem dla człowieka, nie instrukcją wykonania. Wykonawca
+realizuje pełny WP z `Work packages`, z jego granicami, kryteriami akceptacji
+i weryfikacją; streszczenie nie zastępuje tego WP.
+
+Streszczenie mówi, co WP zmienia, jaki daje rezultat i czego świadomie nie
+robi. Jest wierne `Goal`, `Scope` i `Out of scope` i nie dodaje wymagań,
+których WP nie zawiera. Wiersz może być kontynuowany wcięciem. Streszczenie
+należy do treści objętej review: jego zmiana, jak każda zmiana poza
+`## Execution`, wycofuje potwierdzenie `ready`. Po zmianie WP zaktualizuj jego
+streszczenie w tej samej rewizji.
+
+Odbiorcą streszczenia jest człowiek, który zna cel projektu, ale nie zna kodu
+ani rozmowy, z której powstał plan. Ma on z samego streszczenia zrozumieć, co
+się zmieni i czego WP nie dotyka. Zasady pisania:
+
+- Pisz prostym, naturalnym językiem, tak jak opowiadasz o pracy osobie spoza
+  zespołu. Opisuj rezultat widoczny dla użytkownika lub zespołu, a nie kroki
+  implementacji.
+- Długość dopasuj do treści WP. Nie skracaj opisu do haseł i nie upychaj kilku
+  myśli w jednym zdaniu tylko po to, aby był krótszy. Prosty WP może mieć jedno
+  zdanie, złożony — akapit. Nie powtarzaj natomiast szczegółów z `Scope`, które
+  nie pomagają zrozumieć zakresu.
+- Nie używaj ścieżek, nazw klas, metod, komend ani zapisu kodowego. Nie odsyłaj
+  do identyfikatorów planu, np. `S1`, `Q3`, `AC2`, `C1`. Ten zakaz jest
+  wyjątkiem od zasady zapisu kodowego z sekcji „Język planu”.
+- Pojęcie techniczne stosuj tylko wtedy, gdy bez niego nie da się opisać
+  rezultatu, i objaśnij je kilkoma słowami przy pierwszym użyciu.
+- Pisz pełnymi zdaniami, jedna myśl na zdanie. Nie używaj ukośników zamiast
+  spójników ani nawiasów z dopowiedzeniami.
+
+Przykład dla tego samego WP. Antywzorzec służy wyłącznie do pokazania formy
+odrzucanej; nie kopiuj go do planu.
+
+**Antywzorzec — forma odrzucana (nie kopiować):**
+
+> WP2 — Uprawnienia sesji: mapowanie `permission` → `tools`/`disallowedTools`
+> w `.claude/settings.json` + sandbox (Q4), bez zmian w `opencode.jsonc`.
+
+**Wzorzec docelowy:**
+
+> WP2 — Uprawnienia sesji: Claude Code dostaje własne, proste reguły tego, co
+> agent może robić bez pytania użytkownika, na przykład czytać pliki i
+> uruchamiać testy. Ryzykowne operacje nadal wymagają potwierdzenia. Ustawienia
+> drugiego narzędzia, OpenCode, pozostają bez zmian.
+
 ## Kontrakt środowiska i wykonania
 
 Każdy plan gotowy do implementacji zawiera rekomendowane środowisko oraz prosty,
 binarny kontrakt wykonania. Nie zapisuje stanów sesji, batchy ani przejść
 pośrednich.
 
-Minimalny format:
+Minimalny format (`## Execution` otwiera dokument, `## Execution environment`
+go zamyka):
 
 ```md
+## Execution
+
+- [ ] WP1
+- [ ] WP2
+
 ## Execution environment
 
 - Default model: provider/model
 - Default reasoning: concrete-level
 - WP overrides: none
-
-## Execution
-
-- [ ] WP1
-- [ ] WP2
 ```
 
 Kolejność wpisów jest kolejnością wykonania. Ukończenie zapisuje wyłącznie
