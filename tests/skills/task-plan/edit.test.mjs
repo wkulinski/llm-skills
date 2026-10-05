@@ -7,10 +7,18 @@ import {it} from "vitest";
 import {applyOperation, editPlan} from "../../../.agents/skills/task-plan/scripts/edit.mjs";
 import {buildPlanId, normalizeUserInput, persistSource} from "../../../.agents/skills/task-plan/scripts/source.mjs";
 import {savePlan} from "../../../.agents/skills/task-plan/scripts/store.mjs";
-import {validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
+import {parseQuestions, validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
 
 function buildPlan() {
     return `# Fixture plan
+
+## Execution
+
+- [ ] WP1
+
+## Work package summaries
+
+- WP1 — Fixture package: Updates only the current package through the structural editor and leaves all other packages unchanged.
 
 ## Source and objective
 - Objective: exercise the structural editor.
@@ -68,10 +76,6 @@ function buildPlan() {
 - Default model: openai/gpt-5.6-sol
 - Default reasoning: medium
 - WP overrides: none
-
-## Execution
-
-- [ ] WP1
 
 ## Next action
 - Action: Run the targeted test.
@@ -154,6 +158,18 @@ it("CLI exposes structural selectors and rejects legacy options", () => {
         ], {encoding: "utf8"});
         assert.equal(edited.status, 0, edited.stderr);
         assert.match(fs.readFileSync(fixture.file, "utf8"), /- Goal: Use the CLI structural editor\./);
+
+        const multiLine = spawnSync(process.execPath, [
+            EDIT_SCRIPT,
+            "edit-bullet",
+            "--file", fixture.relativeFile,
+            "--root", fixture.root,
+            "--work-package", "WP1",
+            "--id", "Scope",
+            "--value", "One package field.\nThe CLI keeps the second line.",
+        ], {encoding: "utf8"});
+        assert.equal(multiLine.status, 0, multiLine.stderr);
+        assert.match(fs.readFileSync(fixture.file, "utf8"), /^- Scope: One package field\.\n {2}The CLI keeps the second line\.\n- Out of scope:/m);
 
         const next = spawnSync(process.execPath, [
             EDIT_SCRIPT,
@@ -249,6 +265,84 @@ it("remove-bullet removes one named bullet", () => {
 
     assert.equal(result.changed, true);
     assert.equal(result.body.includes("- R1 [low]:"), false);
+});
+
+it("bullet operations treat a multi-line bullet as one block in every container", () => {
+    const multiLine = buildPlan()
+        .replace(
+            "- WP1 — Fixture package: Updates only the current package through the structural editor and leaves all other packages unchanged.",
+            "- WP1 — Fixture package: Updates only the current package.\n  It leaves all other packages unchanged.",
+        )
+        .replace("- Scope: One package field.", "- Scope: One package field.\n  - Detail: The field keeps its owner.")
+        .replace("- WP overrides: none", "- WP overrides: configured\n  - WP1: model=openai/gpt-5.6-sol; reasoning=high; justification=fixture");
+
+    const summary = applyOperation(multiLine, {
+        type: "edit-bullet",
+        section: "Work package summaries",
+        id: "WP1 — Fixture package",
+        value: "Updates the selected package.\nOther packages stay unchanged.",
+    });
+    assert.match(summary.body, /^- WP1 — Fixture package: Updates the selected package\.\n {2}Other packages stay unchanged\.\n\n## Source and objective$/m);
+
+    const scope = applyOperation(multiLine, {
+        type: "edit-bullet",
+        work_package: "WP1",
+        id: "Scope",
+        value: "Two package fields.\n- Detail: Both fields keep their owner.\n  - Note: Nested indentation is preserved.",
+    });
+    assert.match(scope.body, /^- Scope: Two package fields\.\n {2}- Detail: Both fields keep their owner\.\n {4}- Note: Nested indentation is preserved\.\n- Out of scope:/m);
+    assert.equal(scope.body.includes("The field keeps its owner."), false);
+
+    const statusOnly = applyOperation(multiLine, {
+        type: "edit-bullet",
+        work_package: "WP1",
+        id: "Scope",
+        status: "kept",
+    });
+    assert.match(statusOnly.body, /^- Scope \[kept\]: One package field\.\n {2}- Detail: The field keeps its owner\.$/m);
+
+    const removed = applyOperation(multiLine, {
+        type: "remove-bullet",
+        section: "Execution environment",
+        id: "WP overrides",
+    });
+    assert.equal(removed.body.includes("WP overrides"), false);
+    assert.equal(removed.body.includes("justification=fixture"), false);
+    assert.match(removed.body, /^- Default reasoning: medium\n\n## Next action$/m);
+
+    const added = applyOperation(multiLine, {
+        type: "add-bullet",
+        section: "Risks and discovery debt",
+        id: "R2",
+        status: "medium",
+        value: "The risk has two lines.\nThe second line explains it.",
+    });
+    assert.match(added.body, /^- R2 \[medium\]: The risk has two lines\.\n {2}The second line explains it\.\n\n## Acceptance and verification$/m);
+});
+
+it("bullet blocks include an indented fenced block and end before an unindented one", () => {
+    const indented = buildPlan().replace(
+        "- Scope: One package field.",
+        "- Scope: One package field.\n  ```text\n  Own example.\n  ```",
+    );
+    const scope = applyOperation(indented, {
+        type: "remove-bullet",
+        work_package: "WP1",
+        id: "Scope",
+    });
+    assert.equal(scope.body.includes("Own example."), false);
+
+    const topLevel = buildPlan().replace(
+        "- R1 [low]: The fixture is intentionally small.\n",
+        "- R1 [low]: The fixture is intentionally small.\n\n```text\nNot part of the bullet.\n```\n",
+    );
+    const removed = applyOperation(topLevel, {
+        type: "remove-bullet",
+        section: "Risks and discovery debt",
+        id: "R1",
+    });
+    assert.equal(removed.body.includes("- R1 [low]:"), false);
+    assert.equal(removed.body.includes("Not part of the bullet."), true);
 });
 
 it("bullet operations require one container and keep question blocks semantic", () => {
@@ -355,6 +449,63 @@ it("remove-question removes the complete semantic block", () => {
     assert.equal(result.body.includes("- Q1 [answered]:"), false);
     assert.equal(result.body.includes("  - Answer: Yes."), false);
     assert.match(result.body, /## Decisions and open questions/);
+});
+
+it("question operations keep multi-line prompts and answers as one block", () => {
+    const multiLine = buildPlan().replace(
+        "- Q1 [open]: Should the field be changed?",
+        "- Q1 [open]: Should the field be changed?\n  The change affects every reader.\n- D1: The field keeps its owner.",
+    );
+
+    const answered = applyOperation(multiLine, {
+        type: "answer-question",
+        id: "Q1",
+        answer: "Yes.\n- Reason: The readers need the new value.",
+    });
+    assert.match(answered.body, /^- Q1 \[answered\]: Should the field be changed\?\n {2}The change affects every reader\.\n {2}- Answer: Yes\.\n {4}- Reason: The readers need the new value\.\n {2}- Source: current conversation\n- D1: The field keeps its owner\.$/m);
+    assert.deepEqual(parseQuestions(answered.body).questions, [{
+        id: "Q1",
+        status: "answered",
+        prompt: "Should the field be changed?\nThe change affects every reader.",
+        answer: "Yes.\n- Reason: The readers need the new value.",
+        source: "current conversation",
+    }]);
+
+    const reworded = applyOperation(answered.body, {
+        type: "edit-question",
+        id: "Q1",
+        prompt: "Should the field change?\nOnly the owner decides.",
+    });
+    assert.match(reworded.body, /^- Q1 \[answered\]: Should the field change\?\n {2}Only the owner decides\.\n {2}- Answer: Yes\.\n {4}- Reason: The readers need the new value\.\n {2}- Source: current conversation$/m);
+
+    const reopened = applyOperation(answered.body, {type: "edit-question", id: "Q1", status: "open"});
+    assert.match(reopened.body, /^- Q1 \[open\]: Should the field be changed\?\n {2}The change affects every reader\.\n- D1: The field keeps its owner\.$/m);
+    assert.equal(reopened.body.includes("The readers need the new value"), false);
+
+    const removed = applyOperation(answered.body, {type: "remove-question", id: "Q1"});
+    assert.match(removed.body, /^## Decisions and open questions\n- D1: The field keeps its owner\.$/m);
+
+    const added = applyOperation(multiLine, {
+        type: "add-question",
+        id: "Q2",
+        status: "answered",
+        prompt: "Who reviews the change?\nThe reviewer must know the module.",
+        answer: "The module owner.\nA second reviewer is optional.",
+    });
+    assert.match(added.body, /^- Q2 \[answered\]: Who reviews the change\?\n {2}The reviewer must know the module\.\n {2}- Answer: The module owner\.\n {4}A second reviewer is optional\.\n {2}- Source: current conversation$/m);
+
+    assert.throws(
+        () => applyOperation(multiLine, {type: "edit-question", id: "Q1", prompt: "Should it change?\n- Answer: Yes."}),
+        (error) => error.code === "INVALID_ARGUMENT",
+    );
+    assert.throws(
+        () => applyOperation(answered.body.replace("  - Source: current conversation", "  - Source: current conversation\n  - Extra: Not a question field."), {
+            type: "edit-question",
+            id: "Q1",
+            prompt: "Should the field change?",
+        }),
+        (error) => error.code === "MALFORMED_QUESTION",
+    );
 });
 
 it("duplicate and missing structural targets fail closed", () => {

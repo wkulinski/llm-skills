@@ -30,7 +30,6 @@ If you add a script, ensure it is executable: `chmod +x .agents/skills/<skill>/s
 Match the language and tone of the existing skill when extending it.
 
 ## Testing Guidelines
-- For script changes, run at least `bash -n` before opening a PR.
 - Smoke-test behavior with a minimal invocation (for example, `--help` or a no-op mode).
 - For docs-only updates, verify referenced paths/commands exist.
 

@@ -21,6 +21,14 @@ const NOW = "2026-09-16T12:00:00.000Z";
 function planBody() {
     return `# Review cycle integration plan
 
+## Execution
+
+- [ ] WP1
+
+## Work package summaries
+
+- WP1 — Integrate the review cycle: Exercises the bounded review cycle through the existing plan-writing path and leaves unrelated cleanup untouched.
+
 ## Source and objective
 
 Exercise the bounded review cycle against the real plan write path.
@@ -86,10 +94,6 @@ Run the focused integration test.
 - Default model: openai/gpt-5.6-sol
 - Default reasoning: medium
 - WP overrides: none
-
-## Execution
-
-- [ ] WP1
 `;
 }
 

@@ -37,7 +37,8 @@ Odpowiedzialności są rozdzielone jednoznacznie:
 
 ## Kontrakt wykonania
 
-Plan przechowuje wyłącznie binarną informację o ukończeniu:
+Plan przechowuje wyłącznie binarną informację o ukończeniu w sekcji
+`## Execution` na początku dokumentu:
 
 ```md
 ## Execution
@@ -102,7 +103,9 @@ Wybierz dokładnie pierwszy niezaznaczony WP w kolejności dokumentu:
 node <skill_dir>/scripts/execute.mjs next --path ./docs/plans/<plan-id>.md
 ```
 
-Wynik zawiera `Estimated size`, rekomendowane `model` i `reasoning` oraz
+Wynik zawiera `selected.body` — pełną treść wybranego WP z sekcji
+`Work packages`, nie jego wpis z `Work package summaries` — oraz
+`Estimated size`, rekomendowane `model` i `reasoning` oraz
 ograniczenia dla wykonawcy: `decisions` (wszystkie wpisy decyzji planu: `D`, `Q`
 z odpowiedzią i źródłem, `N`) i `risks` (ryzyka dotyczące wybranego WP albo całego
 planu; ryzyko bez ID WP jest globalne). Override przypisany do WP ma pierwszeństwo
@@ -188,9 +191,12 @@ Szablon pozostaje zwykłym JSON-em i zamiast komentarzy używa pól `_comment`.
 
 ### 2. Implementacja
 
-Przekaż wybrany WP do `$code-implement` jako jedno wymaganie, razem z `decisions`
-i `risks` z wyniku `next` jako ograniczeniami; nie przekazuj całego planu ani
-planowej sekcji `Acceptance and verification`. `$code-implement`
+Przekaż pełne `selected.body` z wyniku `next` do `$code-implement` jako jedno
+wymaganie, razem z `decisions` i `risks` jako ograniczeniami. Zachowaj wszystkie
+pola WP, w tym `Goal`, `Scope`, `Out of scope`, `Acceptance criteria` i
+`Verification`; nie zastępuj ich tytułem ani streszczeniem z
+`Work package summaries`. Nie przekazuj całego planu ani planowej sekcji
+`Acceptance and verification`. `$code-implement`
 jest źródłem prawdy dla:
 
 - intake i read-before-write;

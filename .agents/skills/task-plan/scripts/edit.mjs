@@ -16,7 +16,8 @@ import {parsePlanDocument, validatePlanDocument} from "../../_shared/scripts/tas
 
 const DECISIONS_SECTION = "Decisions and open questions";
 const QUESTION_STATUSES = new Set(["open", "answered"]);
-const QUESTION_ENTRY_RE = /^-\s+Q[1-9][0-9]*(?:\s|$)/;
+const QUESTION_FIELD_RE = /^ {2}-\s+(Answer|Source):(.*)$/;
+const SOURCE_LINE = "  - Source: current conversation";
 
 export class PlanEditError extends Error {
     constructor(code, message, details = {}) {
@@ -199,7 +200,7 @@ function sha256(value) {
 function addBullet(lines, structure, operation) {
     const range = selectContainer(structure, operation);
     const id = requiredBulletId(operation.id);
-    const value = requiredSingleLine(operation.value, "value");
+    const value = requiredMultilineValue(operation.value, "value");
     const status = optionalStatus(operation.status);
     if (isQuestionId(id)) {
         throw new PlanEditError("STRUCTURED_BULLET", "Questions must be changed with question operations.", {id});
@@ -208,7 +209,7 @@ function addBullet(lines, structure, operation) {
         throw new PlanEditError("DUPLICATE_TARGET", `Duplicate bullet id: ${id}.`, {id});
     }
     const insertAt = trailingBlankStart(lines, range.start, range.end);
-    lines.splice(insertAt, 0, formatBullet(id, status, value));
+    lines.splice(insertAt, 0, ...formatBullet(id, status, value));
     return {body: lines.join("\n"), changed: true};
 }
 
@@ -244,14 +245,14 @@ function editBullet(lines, structure, operation) {
         throw new PlanEditError("INVALID_ARGUMENT", "edit-bullet requires value or status.");
     }
     const bullet = uniqueBullet(findBullets(lines, range.start, range.end, structure.fenced), id);
-    if (hasNestedContent(lines, bullet.index, range.end, structure.fenced)) {
-        throw new PlanEditError("STRUCTURED_BULLET", "A bullet with nested content requires a semantic operation.", {id});
-    }
-    const value = hasValue ? requiredSingleLine(operation.value, "value") : bullet.value;
+    const end = bulletBlockEnd(lines, bullet.index, range.end, structure.fenced);
+    const current = lines.slice(bullet.index, end);
     const status = hasStatus ? optionalStatus(operation.status) : bullet.status;
-    const replacement = formatBullet(bullet.id, status, value);
-    const changed = lines[bullet.index] !== replacement;
-    lines[bullet.index] = replacement;
+    const replacement = hasValue
+        ? formatBullet(bullet.id, status, requiredMultilineValue(operation.value, "value"))
+        : [formatBullet(bullet.id, status, bullet.value)[0], ...current.slice(1)];
+    const changed = replacement.join("\n") !== current.join("\n");
+    lines.splice(bullet.index, end - bullet.index, ...replacement);
     return {body: lines.join("\n"), changed};
 }
 
@@ -265,59 +266,31 @@ function removeBullet(lines, structure, operation) {
         throw new PlanEditError("STRUCTURED_BULLET", "Questions must be removed with question operations.", {id});
     }
     const bullet = uniqueBullet(findBullets(lines, range.start, range.end, structure.fenced), id);
-    if (hasNestedContent(lines, bullet.index, range.end, structure.fenced)) {
-        throw new PlanEditError("STRUCTURED_BULLET", "A bullet with nested content requires a semantic operation.", {id});
-    }
-    lines.splice(bullet.index, 1);
+    lines.splice(bullet.index, bulletBlockEnd(lines, bullet.index, range.end, structure.fenced) - bullet.index);
     return {body: lines.join("\n"), changed: true};
 }
 
 function answerQuestion(lines, structure, operation) {
     const id = validQuestionId(operation.id);
-    const answer = requiredSingleLine(operation.answer, "answer");
+    const answer = requiredMultilineValue(operation.answer, "answer");
     const source = operation.source ?? "current conversation";
     if (source !== "current conversation") {
         throw new PlanEditError("INVALID_SOURCE", "Answered task-plan questions must use Source: current conversation.", {source});
     }
     const question = uniqueTarget(structure.questions.filter((record) => record.id === id), "question", id);
-    assertQuestionBlock(lines, question, structure.fenced);
-    const answerFields = nestedFields(lines, question.index + 1, question.end, structure.fenced);
-    const answerLine = uniqueOptionalField(answerFields, "Answer", id);
-    const sourceLine = uniqueOptionalField(answerFields, "Source", id);
-    const updatedLines = lines;
-
-    if (question.status === "open") {
-        updatedLines[question.index] = updatedLines[question.index].replace("[open]", "[answered]");
-        updatedLines.splice(question.index + 1, 0, `  - Answer: ${answer}`, "  - Source: current conversation");
-        return {body: updatedLines.join("\n"), changed: true};
-    }
-
-    if (!answerLine || !sourceLine) {
-        throw new PlanEditError("MALFORMED_QUESTION", "An answered question must contain Answer and Source fields.", {id});
-    }
-    const answerReplacement = `${answerLine.prefix} ${answer}`;
-    const sourceReplacement = `${sourceLine.prefix} current conversation`;
-    const changed = updatedLines[answerLine.index] !== answerReplacement
-        || updatedLines[sourceLine.index] !== sourceReplacement;
-    updatedLines[answerLine.index] = answerReplacement;
-    updatedLines[sourceLine.index] = sourceReplacement;
-    return {body: updatedLines.join("\n"), changed};
+    const block = questionBlock(lines, question, structure.fenced);
+    const prompt = [withQuestionStatus(block.prompt[0], "answered"), ...block.prompt.slice(1)];
+    return replaceQuestion(lines, question, [...prompt, ...formatAnswer(answer), SOURCE_LINE]);
 }
 
 function editQuestion(lines, structure, operation) {
     const id = validQuestionId(operation.id);
     const question = uniqueTarget(structure.questions.filter((record) => record.id === id), "question", id);
-    assertQuestionBlock(lines, question, structure.fenced);
-
-    const prompt = typeof operation.prompt === "undefined"
-        ? questionPrompt(lines[question.index], id)
-        : requiredSingleLine(operation.prompt, "prompt");
-    const answerFields = nestedFields(lines, question.index + 1, question.end, structure.fenced);
-    const answerLine = uniqueOptionalField(answerFields, "Answer", id);
-    const sourceLine = uniqueOptionalField(answerFields, "Source", id);
+    const block = questionBlock(lines, question, structure.fenced);
+    const hasPrompt = typeof operation.prompt !== "undefined";
     const hasStatus = typeof operation.status !== "undefined";
     const hasAnswer = typeof operation.answer !== "undefined";
-    if (!hasStatus && !hasAnswer && typeof operation.prompt === "undefined") {
+    if (!hasStatus && !hasAnswer && !hasPrompt) {
         throw new PlanEditError("INVALID_ARGUMENT", "edit-question requires prompt, status, or answer.", {id});
     }
 
@@ -329,64 +302,32 @@ function editQuestion(lines, structure, operation) {
         throw new PlanEditError("INVALID_ARGUMENT", "An open question must not include answer.", {id});
     }
 
-    let answer = null;
-    if (status === "answered") {
-        if (hasAnswer) {
-            answer = requiredSingleLine(operation.answer, "answer");
-        } else if (answerLine) {
-            answer = answerLine.value;
-        } else {
-            throw new PlanEditError("INVALID_ARGUMENT", "Answered questions require answer.", {id});
-        }
-        if (!answer) {
-            throw new PlanEditError("MALFORMED_QUESTION", "An answered question requires Answer and Source: current conversation.", {id});
-        }
-    }
-
-    const questionReplacement = formatQuestion(id, status, prompt);
-    const changedBeforeFields = lines[question.index] !== questionReplacement;
-    lines[question.index] = questionReplacement;
-
+    const prompt = hasPrompt
+        ? formatQuestion(id, status, requiredPromptValue(operation.prompt))
+        : [withQuestionStatus(block.prompt[0], status), ...block.prompt.slice(1)];
     if (status === "open") {
-        const fieldIndexes = [answerLine?.index, sourceLine?.index]
-            .filter((index) => typeof index === "number")
-            .sort((left, right) => right - left);
-        for (const index of fieldIndexes) {
-            lines.splice(index, 1);
-        }
-        return {body: lines.join("\n"), changed: changedBeforeFields || fieldIndexes.length > 0};
+        return replaceQuestion(lines, question, prompt);
     }
-
-    if (answerLine && sourceLine) {
-        const answerReplacement = `${answerLine.prefix} ${answer}`;
-        const sourceReplacement = `${sourceLine.prefix} current conversation`;
-        const changed = changedBeforeFields
-            || lines[answerLine.index] !== answerReplacement
-            || lines[sourceLine.index] !== sourceReplacement;
-        lines[answerLine.index] = answerReplacement;
-        lines[sourceLine.index] = sourceReplacement;
-        return {body: lines.join("\n"), changed};
+    let answer = block.answer;
+    if (hasAnswer) {
+        answer = formatAnswer(requiredMultilineValue(operation.answer, "answer"));
+    } else if (answer === null) {
+        throw new PlanEditError("INVALID_ARGUMENT", "Answered questions require answer.", {id});
     }
-
-    lines.splice(question.index + 1, 0, `  - Answer: ${answer}`, "  - Source: current conversation");
-    return {body: lines.join("\n"), changed: true};
+    return replaceQuestion(lines, question, [...prompt, ...answer, SOURCE_LINE]);
 }
 
 function removeQuestion(lines, structure, operation) {
     const id = validQuestionId(operation.id);
     const question = uniqueTarget(structure.questions.filter((record) => record.id === id), "question", id);
-    assertQuestionBlock(lines, question, structure.fenced);
-    let end = question.end;
-    while (end > question.index + 1 && lines[end - 1] === "") {
-        end -= 1;
-    }
-    lines.splice(question.index, end - question.index);
+    questionBlock(lines, question, structure.fenced);
+    lines.splice(question.index, question.end - question.index);
     return {body: lines.join("\n"), changed: true};
 }
 
 function addQuestion(lines, structure, operation) {
     const id = validQuestionId(operation.id);
-    const prompt = requiredSingleLine(operation.prompt, "prompt");
+    const prompt = requiredPromptValue(operation.prompt);
     const status = questionStatus(operation.status);
     if (structure.questions.some((question) => question.id === id)) {
         throw new PlanEditError("DUPLICATE_TARGET", `Duplicate question id: ${id}.`, {id});
@@ -399,53 +340,81 @@ function addQuestion(lines, structure, operation) {
     if (status === "open" && typeof answer !== "undefined") {
         throw new PlanEditError("INVALID_ARGUMENT", "Open questions must not include answer.", {id});
     }
-    const normalizedAnswer = typeof answer === "undefined" ? null : requiredSingleLine(answer, "answer");
     const decisionSection = uniqueTarget(
         structure.sections.filter((section) => section.name === DECISIONS_SECTION),
         "section",
         DECISIONS_SECTION,
     );
     const insertAt = trailingBlankStart(lines, decisionSection.start, decisionSection.end);
-    const block = [formatQuestion(id, status, prompt)];
+    const block = formatQuestion(id, status, prompt);
     if (status === "answered") {
-        block.push(`  - Answer: ${normalizedAnswer}`, "  - Source: current conversation");
+        block.push(...formatAnswer(requiredMultilineValue(answer, "answer")), SOURCE_LINE);
     }
     lines.splice(insertAt, 0, ...block);
     return {body: lines.join("\n"), changed: true};
 }
 
-function assertQuestionBlock(lines, question, fenced) {
-    const fields = nestedFields(lines, question.index + 1, question.end, fenced);
-    const answerLine = uniqueOptionalField(fields, "Answer", question.id);
-    const sourceLine = uniqueOptionalField(fields, "Source", question.id);
+/**
+ * Split a question block into raw line segments: the prompt (the question line
+ * and its continuation), the `Answer` field with its continuation, and the
+ * `Source` field. Fields are bullets indented by two spaces; continuation lines
+ * of `Answer` are indented by at least four spaces.
+ */
+function questionBlock(lines, question, fenced) {
+    const segments = {prompt: [lines[question.index]], answer: null, source: null};
+    let current = segments.prompt;
+    let currentField = null;
     for (let index = question.index + 1; index < question.end; index += 1) {
-        if (fenced[index] || /^\s*$/.test(lines[index])) {
+        const line = lines[index];
+        const field = fenced[index] ? null : line.match(QUESTION_FIELD_RE);
+        if (field) {
+            currentField = field[1] === "Answer" ? "answer" : "source";
+            if (segments[currentField] !== null) {
+                throw new PlanEditError("DUPLICATE_TARGET", `Duplicate ${question.id}: ${field[1]}.`, {label: field[1], target: question.id});
+            }
+            segments[currentField] = [line];
+            current = segments[currentField];
             continue;
         }
-        if (index === answerLine?.index || index === sourceLine?.index) {
-            continue;
+        const continuesField = currentField === "answer" && (fenced[index] || /^ {4,}\S/.test(line));
+        if (currentField !== null && line.trim() !== "" && !continuesField) {
+            throw new PlanEditError("MALFORMED_QUESTION", "Question blocks may contain only the prompt, Answer and Source fields.", {id: question.id});
         }
-        throw new PlanEditError("MALFORMED_QUESTION", "Question blocks may contain only Answer and Source fields.", {id: question.id});
+        current.push(line);
     }
-    if (question.status === "open" && (answerLine || sourceLine)) {
+
+    const answer = segments.answer?.[0].match(QUESTION_FIELD_RE)[2].trim() ?? null;
+    const source = segments.source?.[0].match(QUESTION_FIELD_RE)[2].trim() ?? null;
+    if (question.status === "open" && (segments.answer || segments.source)) {
         throw new PlanEditError("MALFORMED_QUESTION", "An open question must not contain an answer block.", {id: question.id});
     }
-    if (question.status === "answered" && (
-        !answerLine
-        || !answerLine.value
-        || !sourceLine
-        || sourceLine.value !== "current conversation"
-    )) {
+    if (question.status === "answered" && (!answer || source !== "current conversation")) {
         throw new PlanEditError("MALFORMED_QUESTION", "An answered question requires Answer and Source: current conversation.", {id: question.id});
     }
+    return segments;
 }
 
-function questionPrompt(line, id) {
-    const match = line.match(new RegExp(`^-\\s+${id}\\s+\\[(open|answered)]\\s*:\\s*(.+)$`));
-    if (!match) {
-        throw new PlanEditError("MALFORMED_QUESTION", `Question entry is malformed: ${id}.`, {id});
+function replaceQuestion(lines, question, block) {
+    const changed = block.join("\n") !== lines.slice(question.index, question.end).join("\n");
+    lines.splice(question.index, question.end - question.index, ...block);
+    return {body: lines.join("\n"), changed};
+}
+
+function withQuestionStatus(line, status) {
+    return line.replace(/^(-\s+Q[1-9][0-9]*\s+)\[(?:open|answered)]/, `$1[${status}]`);
+}
+
+function formatAnswer(answer) {
+    const [first, ...continuation] = answer.split("\n");
+    return [`  - Answer: ${first}`, ...continuation.map((line) => (line.trim() === "" ? "" : `    ${line}`))];
+}
+
+function requiredPromptValue(value) {
+    const prompt = requiredMultilineValue(value, "prompt");
+    if (prompt.split("\n").slice(1).some((line) => /^-\s+(?:Answer|Source):/.test(line))) {
+        throw new PlanEditError("INVALID_ARGUMENT", "A prompt continuation line must not start an Answer or Source field.", {name: "prompt"});
     }
-    return match[2].trim();
+    return prompt;
 }
 
 function questionStatus(value) {
@@ -457,7 +426,7 @@ function questionStatus(value) {
 }
 
 function formatQuestion(id, status, prompt) {
-    return `- ${id} [${status}]: ${prompt}`;
+    return formatBullet(id, status, prompt);
 }
 
 function parseEditableBody(body) {
@@ -528,24 +497,14 @@ function parseQuestions(lines, section, fenced) {
         if (!match) {
             continue;
         }
-        const nextQuestion = findNextQuestion(lines, index + 1, section.end, fenced);
         questions.push({
             id: match[1],
             status: match[2],
             index,
-            end: nextQuestion,
+            end: bulletBlockEnd(lines, index, section.end, fenced),
         });
     }
     return questions;
-}
-
-function findNextQuestion(lines, start, end, fenced) {
-    for (let index = start; index < end; index += 1) {
-        if (!fenced[index] && QUESTION_ENTRY_RE.test(lines[index])) {
-            return index;
-        }
-    }
-    return end;
 }
 
 function selectContainer(structure, operation) {
@@ -598,9 +557,17 @@ function uniqueBullet(bullets, id) {
     return matches[0];
 }
 
+/**
+ * Lines of a bullet block. Continuation lines of a multi-line value keep their
+ * relative indentation and are indented by two spaces under the bullet.
+ */
 function formatBullet(id, status, value) {
     const statusSuffix = status === null ? "" : ` [${status}]`;
-    return `- ${id}${statusSuffix}: ${value}`;
+    const [first, ...continuation] = value.split("\n");
+    return [
+        `- ${id}${statusSuffix}: ${first}`,
+        ...continuation.map((line) => (line.trim() === "" ? "" : `  ${line}`)),
+    ];
 }
 
 function isQuestionId(id) {
@@ -626,47 +593,33 @@ function optionalStatus(value) {
     return status;
 }
 
-function hasNestedContent(lines, index, end, fenced) {
+/**
+ * End (exclusive) of the bullet block that starts at `index`: the bullet line
+ * plus every following indented line, without trailing blank lines. Lines of a
+ * fenced code block belong to the block only when the fence starts indented,
+ * so an unindented example after the bullet ends it. A non-indented line, such
+ * as the next bullet or a heading, ends the block.
+ */
+function bulletBlockEnd(lines, index, end, fenced) {
+    let blockEnd = index + 1;
     for (let cursor = index + 1; cursor < end; cursor += 1) {
         if (fenced[cursor]) {
+            const opener = !fenced[cursor - 1];
+            if (opener && !/^\s+\S/.test(lines[cursor])) {
+                break;
+            }
+            blockEnd = cursor + 1;
             continue;
         }
-        if (parseBulletLine(lines[cursor], "")) {
-            return false;
-        }
-        if (/^\s*$/.test(lines[cursor])) {
+        if (/^\s+\S/.test(lines[cursor])) {
+            blockEnd = cursor + 1;
             continue;
         }
-        if (/^\s+/.test(lines[cursor])) {
-            return true;
-        }
-        if (parseHeading(lines[cursor])) {
-            return false;
+        if (lines[cursor].trim() !== "") {
+            break;
         }
     }
-    return false;
-}
-
-function nestedFields(lines, start, end, fenced, indentation = "  ") {
-    const fields = [];
-    for (let index = start; index < end; index += 1) {
-        if (fenced[index]) {
-            continue;
-        }
-        const field = parseLabeledLine(lines[index]);
-        if (field && field.indentation === indentation) {
-            fields.push({...field, index});
-        }
-    }
-    return fields;
-}
-
-function uniqueOptionalField(fields, label, target) {
-    const matches = fields.filter((field) => field.label === label);
-    if (matches.length > 1) {
-        throw new PlanEditError("DUPLICATE_TARGET", `Duplicate ${target}: ${label}.`, {label, target});
-    }
-    return matches[0] ?? null;
+    return blockEnd;
 }
 
 function uniqueTarget(records, kind, id) {
@@ -789,6 +742,14 @@ function validQuestionId(value) {
         throw new PlanEditError("INVALID_QUESTION_ID", "Question id must match Q<number>.", {id});
     }
     return id;
+}
+
+function requiredMultilineValue(value, name) {
+    const result = requiredString(value, name);
+    if (result.includes("\r")) {
+        throw new PlanEditError("UNSUPPORTED_LINE_ENDINGS", `${name} must use LF line endings.`, {name});
+    }
+    return result.trim().split("\n").map((line) => line.trimEnd()).join("\n");
 }
 
 function requiredSingleLine(value, name) {

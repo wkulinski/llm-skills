@@ -150,7 +150,7 @@ Odczytaj tylko pliki wymagane przez aktywny krok:
 |---|---|
 | język planu, wymagane sekcje, inwarianty treści oraz schematy `Source assessment` i `Direction, simplicity and consistency` | `<skills_root>/_shared/references/task-plan-contract.md` |
 | schemat i zasady pól WP, `Estimated size`, bramka „Trwałe testy a jednorazowa weryfikacja zmiany”, zasady czytelności pakietu i dobór profilu wykonania | `<skills_root>/_shared/references/task-plan-contract.md` |
-| format `Execution environment` i `Execution`, `WP overrides`, kolejność WP, pokrycie źródła oraz deterministyczna edycja i kontrakt narzędzi planu | `<skills_root>/_shared/references/task-plan-contract.md` |
+| format `Execution environment`, `Execution` i `Work package summaries`, `WP overrides`, kolejność WP, pokrycie źródła oraz deterministyczna edycja i kontrakt narzędzi planu | `<skills_root>/_shared/references/task-plan-contract.md` |
 | routing nadrzędnego workflow i guard wyboru skilla | `<skills_root>/_shared/references/skill-routing-policy.md` |
 | canonical lifecycle repository-context i macierz broad vs targeted | `<skills_root>/_shared/references/repository-context-hybrid.md` |
 | kontrakt kontekstu między agentami | `<skills_root>/_shared/references/context-subagent-contract.md` |
@@ -314,7 +314,7 @@ review: popraw plan, zbierz evidence albo oznacz go jako `blocked`.
 | **Minimalność:** Czy mniejsza zmiana osiągnęłaby ten sam rezultat? | Zastąp kierunek mniejszą zmianą i sprawdź ponownie pokrycie źródła oraz kryteria akceptacji. Jeżeli mniejsza zmiana zmienia lub usuwa punkt źródła, zastosuj wiersz `Pokrycie źródła`. | Kontynuuj review. |
 | **Weryfikacja:** Czy każde kryterium akceptacji ma konkretny test albo check? | Kontynuuj review. | Dopisz konkretny test albo check dla właściciela zmienianego zachowania. Jeśli właściciel lub właściwy poziom testu nie jest potwierdzony, wykonaj najpierw punktowy odczyt testów. |
 | **Trwałość testów:** Czy każdy proponowany trwały test przeszedł bramkę „Trwałe testy a jednorazowa weryfikacja zmiany” — czy osobny scenariusz byłby potrzebny bez znajomości historii zmiany? | Kontynuuj review. | Usuń scenariusz uzasadniony wyłącznie historią z zakresu trwałych testów; potrzebny dowód wykonania zmiany przenieś do jednorazowych checków w `Verification`. Jeśli test ma chronić regułę już pokrytą, zaplanuj aktualizację jej istniejącego testu zamiast duplikatu. |
-| **Język i samodzielna wykonalność:** Czy cały opisowy tekst stosuje język wybrany zgodnie z `Język planu`, jest zapisany pełnymi zdaniami i nie miesza języków ani nie urywa myśli? Czy każdy WP pozwala człowiekowi i agentowi o niskim poziomie rozumowania ustalić warunek rozpoczęcia, kolejność działań, oczekiwany wynik, granice, sposób weryfikacji i dalsze kroki dla każdej opisanej gałęzi — bez odgadywania niewypowiedzianych decyzji? | Kontynuuj review. | Przeredaguj tekst i doprecyzuj kroki lub warunki. Jeśli niejasność wymaga decyzji biznesowej albo dowodów mogących zmienić plan, rozstrzygnij ją przed `ready`; w przeciwnym razie pozostaw plan `blocked`. Nie przenoś brakującej decyzji do wykonawcy. |
+| **Język i samodzielna wykonalność:** Czy cały opisowy tekst stosuje język wybrany zgodnie z `Język planu`, jest zapisany pełnymi zdaniami i nie miesza języków ani nie urywa myśli? Czy każdy WP pozwala człowiekowi i agentowi o niskim poziomie rozumowania ustalić warunek rozpoczęcia, kolejność działań, oczekiwany wynik, granice, sposób weryfikacji i dalsze kroki dla każdej opisanej gałęzi — bez odgadywania niewypowiedzianych decyzji? Czy streszczenie każdego WP w `Work package summaries` jest wierne jego `Goal`, `Scope` i `Out of scope`, a osoba bez znajomości kodu i rozmowy zrozumie z niego, co WP zmieni i czego nie zmieni? | Kontynuuj review. | Przeredaguj tekst i doprecyzuj kroki lub warunki; streszczenie przepisz zgodnie z zasadami pisania z sekcji „Streszczenia WP” kontraktu. Jeśli niejasność wymaga decyzji biznesowej albo dowodów mogących zmienić plan, rozstrzygnij ją przed `ready`; w przeciwnym razie pozostaw plan `blocked`. Nie przenoś brakującej decyzji do wykonawcy. |
 | **Inwarianty planu:** Czy plan spełnia inwarianty treści i nie przepisuje reguł globalnych? | Kontynuuj review. | Popraw naruszony inwariant albo usuń przepisane reguły globalne, a przed `ready` uruchom walidację strukturalną planu. |
 | **Discovery required:** Czy wynik któregokolwiek wpisu `Discovery required` może unieważnić wybraną naprawę albo zmienić ownership, granice WP, model danych, zachowanie publiczne lub kryteria akceptacji? | Plan nie może być `ready`, dopóki niewiadoma nie zostanie rozstrzygnięta. Jeśli odpowiedź może dostarczyć repository-context, utwórz criterion i wykonaj canonical context lifecycle. Jeśli potrzebna jest decyzja biznesowa, utwórz pytanie `[open]`. Jeśli potrzebna jest reprodukcja, log albo inne evidence runtime, zapisz konkretny evidence gate fazy planowania. Uzyskaj evidence przed wyborem naprawy; gdy jest niedostępne, pozostaw plan `blocked`. | Wpis może pozostać w `Discovery required` jako szczegół wykonawczy niezmieniający planu. |
 
@@ -524,7 +524,8 @@ gdy:
 - sekcja kierunku uzasadnia reuse, minimalność i spójność ownership;
 - nie ma placeholderów;
 - każdy punkt źródła jest zmapowany do WP albo ma uzasadnione `excluded`;
-- każdy WP ma wymagane pola;
+- każdy WP ma wymagane pola oraz wierne i zrozumiałe dla człowieka streszczenie
+  w `Work package summaries`;
 - sekcja decyzji nie zawiera pytań `[open]`, a każde `[answered]` ma odpowiedź i źródło;
 - confirmed, candidate i discovery debt są rozdzielone;
 - discovery debt nie może zmieniać ownership, granic WP, modelu danych,
@@ -677,14 +678,14 @@ opisuje wspólny kontrakt. Składnia komend:
   --file ./docs/plans/<plan>.md
   (--section <dokładna sekcja> | --work-package <WP<number>>)
   --id <nazwa>
-  --value <jednoliniowa wartość>
+  --value <wartość, także wielowierszowa>
   [--status <status>]
 
 <skill_dir>/scripts/edit.mjs edit-bullet
   --file ./docs/plans/<plan>.md
   (--section <dokładna sekcja> | --work-package <WP<number>>)
   --id <nazwa>
-  [--value <jednoliniowa wartość>]
+  [--value <wartość, także wielowierszowa>]
   [--status <status>]
 
 <skill_dir>/scripts/edit.mjs remove-bullet
@@ -695,21 +696,21 @@ opisuje wspólny kontrakt. Składnia komend:
 <skill_dir>/scripts/edit.mjs answer-question
   --file ./docs/plans/<plan>.md
   --id Q<number>
-  --answer <jednoliniowa odpowiedź>
+  --answer <odpowiedź, także wielowierszowa>
 
 <skill_dir>/scripts/edit.mjs add-question
   --file ./docs/plans/<plan>.md
   --id Q<number>
-  --prompt <jednoliniowe pytanie>
+  --prompt <pytanie, także wielowierszowe>
   --status <open|answered>
-  [--answer <jednoliniowa odpowiedź>]
+  [--answer <odpowiedź, także wielowierszowa>]
 
 <skill_dir>/scripts/edit.mjs edit-question
   --file ./docs/plans/<plan>.md
   --id Q<number>
-  [--prompt <jednoliniowe pytanie>]
+  [--prompt <pytanie, także wielowierszowe>]
   [--status <open|answered>]
-  [--answer <jednoliniowa odpowiedź>]
+  [--answer <odpowiedź, także wielowierszowa>]
 
 <skill_dir>/scripts/edit.mjs remove-question
   --file ./docs/plans/<plan>.md
@@ -720,7 +721,9 @@ opisuje wspólny kontrakt. Składnia komend:
   --input ./plan-operations.json
 ```
 
-Selektory `--section` i `--work-package` wzajemnie się wykluczają. Przy
+Selektory `--section` i `--work-package` wzajemnie się wykluczają.
+`edit-bullet` i `remove-bullet` obejmują cały punkt wraz z jego wciętymi
+wierszami. Przy
 `--dry-run` helper wykonuje tę samą walidację bez zapisu.
 
 Testy skilla znajdują się w `tests/skills/task-plan/` i działają bez live GitHub,
