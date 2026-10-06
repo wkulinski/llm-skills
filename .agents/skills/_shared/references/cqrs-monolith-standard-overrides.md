@@ -268,8 +268,10 @@ Przy dodawaniu nowej klasy przejdź przez poniższe pytania w kolejności:
 
 ## 9. Doctrine i model relacji (override)
 - Preferuj model relacji przez VO ID + jawne kolumny/indeksy.
-- Nie używaj bezpośrednich relacji encji jako domyślnego mechanizmu komunikacji między modułami/agregatami.
-- W tym profilu preferowane jest podejście bez twardych FK między modułami; wyjątki wymagają jawnej decyzji.
+- Nie używaj bezpośrednich relacji encji Doctrine (np. `ManyToOne`, `OneToMany`, `ManyToMany`) jako domyślnego mechanizmu powiązań między modułami/agregatami; przechowuj identyfikatory zamiast referencji do obcych encji.
+- Rozdzielaj relacje obiektowe ORM od kluczy obcych w bazie: FK na jawnej kolumnie z identyfikatorem nie wymaga mapowania relacji encji Doctrine ani zależności do klasy obcej encji.
+- Integralność referencji w tej samej bazie danych zabezpieczaj przez `DatabaseForeignKey`. Dotyczy to również referencji między modułami i nie wymaga wyjątku architektonicznego tylko z powodu granicy modułów.
+- Zachowanie FK przy usuwaniu określaj jawnie zgodnie z wymaganiami domenowymi i ochroną danych historycznych; FK nie zastępuje komunikacji przez publiczne kontrakty modułów ani reguł z pkt 5 i 8.1.
 - Typy Doctrine deklaruj przez `Types::*` lub stałe custom type.
 - Daty/timestampy trzymaj jako immutable i UTC.
 
