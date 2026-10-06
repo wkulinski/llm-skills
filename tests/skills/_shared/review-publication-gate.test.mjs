@@ -7,6 +7,7 @@ const CODE_REVIEW = ".agents/skills/code-review/SKILL.md";
 const PLAN_REVIEW = ".agents/skills/code-review/references/plan-review.md";
 const REVIEW_QUICK = ".agents/skills/review-quick/SKILL.md";
 const TASK_PLAN = ".agents/skills/task-plan/SKILL.md";
+const RE_REVIEW = ".agents/skills/code-review/references/re-review.md";
 
 function read(relativePath) {
     return fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -121,7 +122,7 @@ describe("review publication gate", () => {
     it("requires explicit prior-finding resolutions and delta provenance in re-review", () => {
         const content = read(CODE_REVIEW);
         const resolutions = section(content, "### Finding resolutions", "### Verification");
-        const reReview = content.slice(content.indexOf("## 12. Re-review after fixes"));
+        const reReview = read(RE_REVIEW);
 
         expect(resolutions).toMatch(/\*\*resolved\*\*/);
         expect(resolutions).toMatch(/\*\*current\*\*/);
@@ -135,6 +136,16 @@ describe("review publication gate", () => {
         expect(content).toMatch(/new finding gets the next number after\s+the highest prior ID/);
         expect(content).toMatch(/Never reuse an ID for a different failure mode/);
         expect(reReview).toMatch(/keep the prior ID/);
+    });
+
+    it("lets the root decide active-plan loading without opening the reference", () => {
+        const context = section(read(CODE_REVIEW), "### Active-plan context for code", "## 2. Establish expected behavior");
+
+        expect(context).toContain("`$" + "{CACHE_PATH:-var/agent/cache}/plan-execute/last-plan.txt`");
+        expect(context).toMatch(/unless the caller's constraints forbid it, check whether/);
+        expect(context).toMatch(/When the pointer exists, load the reference/);
+        expect(context).toMatch(/pointer is missing or lookup is forbidden,\s+skip the reference/);
+        expect(context).toMatch(/caller supplied a plan, load the reference; a caller's ban on\s+automatic lookup does not exclude a supplied plan/);
     });
 
     it("does not let a caveat verdict hide an actionable MINOR", () => {

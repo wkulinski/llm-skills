@@ -12,6 +12,7 @@ znajduje się na końcu dokumentu.
 | Intencja | Skill | Następny krok |
 | --- | --- | --- |
 | Przygotuj plan wykonawczy z issue, pliku albo opisu | `$task-plan` | krytyczna weryfikacja, potem walidacja planu |
+| Nowe wymaganie, korekta zakresu albo prośba o zapis w trakcie aktywnej pracy nad planem | `$task-plan` | zmiana planu i jego review, bez zmian w repozytorium |
 | Wykonaj albo wznow istniejący plan lub WP | `$plan-execute` | wybrany WP trafia do `$code-implement` |
 
 ### Implementacja
@@ -28,7 +29,7 @@ znajduje się na końcu dokumentu.
 | --- | --- | --- |
 | Przeprowadź głęboki review zmian albo odrębną fazę read-only review planu | `$code-review` | werdykt przed merge lub wdrożeniem planu |
 | Szybko sprawdź bieżące zmiany przed commitem | `$review-quick` | raport findings-first bez pełnej procedury |
-| Zleć z OpenCode odczytowy review kodu Claude Code (Opus) przez Paseo | `$claude-review` | raport wykonawcy oceniany bramką `$code-review` |
+| Zleć z OpenCode odczytowy review kodu Claude Code (Opus) przez Paseo | `$claude-review` | raport recenzenta oceniany bramką `$code-review` |
 
 ### Review instrukcji
 

@@ -40,6 +40,23 @@ i planu, nie do audytu.
   jest zbędny albo korzeń go nie potrzebuje.
 - Przeniesienie treści nie może osłabić bramki bezpieczeństwa ani pinu testu.
 
+Reguły wydzielania do referencji:
+
+- Najpierw treść spełnia wymiar 9; dopiero korzeń, który mimo to wykracza poza
+  rolę routera, oddaje treść do referencji.
+- O wydzieleniu decyduje rola treści, nie liczba słów ani linii. Wydziela się
+  blok stosowany tylko w warunku obserwowalnym w wejściu albo aktywnym kroku.
+- W korzeniu zostają cel, twarde reguły, workflow, bramki obowiązujące w każdym
+  przebiegu i tabela routingu. Z bloku mieszanego wydziela się tylko część
+  warunkową.
+- Wiersz routingu nazywa warunek rozpoznawalny bez otwierania pliku.
+- Referencja zaczyna się od zdania, kiedy jest ładowana, i nie wymaga kolejnej
+  referencji do zrozumienia.
+- W miejscu bloku korzeń zostawia jedno zdanie odsyłające; odwołania,
+  `shared_files` i piny testów wskazują nowy plik.
+- Treść przenosi się bez zmian merytorycznych i po przeniesieniu ma jedno
+  miejsce.
+
 ### 3. Przenośność modeli
 
 - Artefakt opisuje role i wymagania, a nie konkretne modele, warianty ani
@@ -82,10 +99,30 @@ i planu, nie do audytu.
 
 - Rozmiar korzenia jest proporcjonalny do roli routera; monolit wypiera
   progressive disclosure.
-- Powtarzalne bloki, tabele i checklisty przenosi się do referencji albo
-  `_shared`.
+- Nadmiar w korzeniu rozwiązuje się według reguł wydzielania z wymiaru 2;
+  bloki używane przez kilka skilli żyją w `_shared`.
 - Koszt utrzymania mierzy się liczbą miejsc wymagających edycji przy jednej
   zmianie reguły.
+
+### 9. Jakość treści
+
+Wymiar obowiązuje każdy artefakt objęty standardem.
+
+- Bez powtórzeń: ta sama reguła, definicja albo lista nie występuje w dwóch
+  miejscach artefaktu, także wyrażona innymi słowami. Jedno kanoniczne miejsce
+  między dokumentami opisuje wymiar 5.
+- Bez błędów: ścieżki, komendy, nazwy sekcji, symbole i odwołania są poprawne.
+  Pokrycie twierdzeń o zachowaniu opisuje wymiar 6.
+- Bez szumu: każde zdanie zmienia decyzję albo działanie agenta. Szumem są
+  ogólniki, uzasadnienia bez skutku, historia zmian, powtórzone podsumowania
+  i wiedza, którą model ma bez instrukcji.
+- Bez niejasności: zdanie ma jedną interpretację, warunek jest obserwowalny,
+  wynik albo status jest nazwany, termin ma jedno znaczenie w całym artefakcie,
+  a sformułowania typu „gdzie zasadne” albo „w razie potrzeby” mają kryterium.
+
+Długość nie jest osobnym kryterium jakości: treść spełniająca ten wymiar nie
+jest skracana do limitu, a nadmiar w korzeniu rozwiązuje wydzielenie do
+referencji.
 
 ## Agent instructions (`.opencode/agents/*.md`)
 

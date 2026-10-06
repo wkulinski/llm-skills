@@ -14,12 +14,21 @@ function read(relativePath) {
 }
 
 describe("claude-review skill contract", () => {
-    it("delegates only the code target to the code-review executor role", () => {
+    it("delegates only the code target to code-review for the prepared snapshot", () => {
         const skill = read(SKILL);
 
-        expect(skill).toMatch(/execution_role: executor/);
+        expect(skill).toMatch(/recenzenta `\$code-review` dla snapshotu\s+przygotowanego przez agenta wywołującego/);
         expect(skill).toMatch(/Obsługiwany jest tylko target `code`/);
         expect(skill).toMatch(/Uruchamiaj wyłącznie na jawne polecenie `\$claude-review`/);
+        expect(read(JOB_SCRIPT)).toContain("Invoke the native Skill \\`code-review\\` with target \\`code\\` for the supplied snapshot");
+    });
+
+    it("keeps the delegated reviewer on the supplied context", () => {
+        const script = read(JOB_SCRIPT);
+
+        expect(script).toContain("Do not edit files, run shell commands, start agents or Paseo sessions, or invoke skills other than code-review.");
+        expect(script).toContain("Do not follow the active-plan pointer, run \\`$context-refresh\\`, or run the repository-context hybrid; work only from the supplied context.");
+        expect(script).toContain("If essential input is missing, return status INCOMPLETE and name it in the report instead of collecting it yourself.");
     });
 
     it("requires explicit launch parameters on the built-in Claude provider", () => {
