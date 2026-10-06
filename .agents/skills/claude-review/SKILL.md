@@ -27,9 +27,10 @@ Stosuj `<skills_root>/_shared/references/skill-structure-contract.md`: notacja
 ## Cel i granice
 
 `$claude-review` uruchamia **jedną** próbę review kodu wykonywaną przez Claude
-Code (Opus, abonament claude.ai) jako wykonawcę roli `execution_role: executor`
-skilla `$code-review`. Agent wywołujący (OpenCode) pozostaje koordynatorem:
-zbiera kontekst, uruchamia sesję, odbiera raport i sam decyduje o werdykcie.
+Code (Opus, abonament claude.ai) jako recenzenta `$code-review` dla snapshotu
+przygotowanego przez agenta wywołującego. Agent wywołujący (OpenCode) pozostaje
+koordynatorem: zbiera kontekst, uruchamia sesję, odbiera raport i sam decyduje
+o werdykcie.
 
 - Uruchamiaj wyłącznie na jawne polecenie `$claude-review`. Zwykłe `$code-review`,
   `$review-quick` i review planów zachowują swój routing.
@@ -40,8 +41,8 @@ zbiera kontekst, uruchamia sesję, odbiera raport i sam decyduje o werdykcie.
 - Bez fallbacku API, zmiany modelu, retry ani naprawy kodu.
 - Sesja używa wbudowanego providera `claude` w trybie `auto`, bez dodatkowych
   ograniczeń narzędzi (tak jak agent `build` w OpenCode). Granicę „tylko odczyt”
-  wyznacza rola wykonawcy w `$code-review`; zmiana plików w trakcie review
-  kończy się przy odbiorze wynikiem `STALE`.
+  wyznaczają ograniczenia promptu zadania i twarde reguły `$code-review`; zmiana
+  plików w trakcie review kończy się przy odbiorze wynikiem `STALE`.
 
 Kontrakt danych, statusów i decyzji helpera opisuje
 `<skill_dir>/references/execution-contract.md`.

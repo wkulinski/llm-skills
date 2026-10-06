@@ -46,6 +46,12 @@ Examples include:
 
 Do not assume a local change is safe merely because the edited file is internally consistent.
 
+For a change that is deployed rather than switched atomically, check rollout
+safety: old and new versions running side by side, old messages in queues and
+old cache entries, the order of schema, application, and backfill, an
+interrupted migration, rollback after data was written in the new format, and a
+safe default for a feature flag.
+
 ### State, persistence, and data flow
 
 When stateful behavior changes, inspect where relevant:
@@ -73,6 +79,10 @@ Inspect only relevant trust boundaries, including where applicable:
 
 A pre-existing datum exposed to a new observer is still a security/privacy change.
 
+For authorization, name the actor, resource, operation, trust boundary, and the
+place where permission is enforced, and check it for a concrete object as well
+as for list, bulk, export, and background-job paths.
+
 ### Reliability and concurrency
 
 Where relevant, inspect:
@@ -86,6 +96,12 @@ Where relevant, inspect:
 - cleanup on failure
 - restart/resume behavior
 - scheduled or bulk execution blast radius
+
+For a stateful or asynchronous change, describe a concrete run instead of naming
+the risk: initial state, triggering event, order of operations, failure point,
+state after the failure, behavior on retry or restart, and the invariant at
+stake. For concurrency, describe a concrete interleaving of two operations
+instead of a general claim of a race.
 
 ### Reactivity, lifecycle and feedback loops
 
@@ -133,7 +149,8 @@ Check:
 - misplaced or duplicated business policy
 - inappropriate coupling across boundaries
 - abstractions that hide important behavior or multiply failure modes
-- dependency additions that duplicate established capabilities
+- dependency changes: additions that duplicate established capabilities, lockfile
+  changes, new packages, major-version jumps, and licenses
 - changes that make future correctness materially harder to reason about
 
 When a change modifies or removes a mechanism, check whether the artifacts that

@@ -115,9 +115,9 @@ function renderPrompt(job, relativeDirectory) {
     const context = job.context_refs.length === 0
         ? "- none supplied"
         : job.context_refs.map((ref) => `- ${ref.path}`).join("\n");
-    return `You are a read-only code-review executor for one job from a coordinating OpenCode agent.
+    return `You are a read-only code reviewer for one job from a coordinating OpenCode agent.
 
-Invoke the native Skill \`code-review\` with \`execution_role: executor\` and target \`code\`, then follow it.
+Invoke the native Skill \`code-review\` with target \`code\` for the supplied snapshot, then follow it.
 Review the working-tree snapshot HEAD=${job.snapshot.head}, combined_sha256=${job.snapshot.combined_sha256}.
 
 Supplied inputs (repository-relative):
@@ -130,7 +130,8 @@ Supplied inputs (repository-relative):
 ${context}
 ${job.omitted_sensitive.length > 0 ? `- omitted as sensitive (coverage limit): ${job.omitted_sensitive.map((item) => `${item.surface}:${item.path}`).join(", ")}\n` : ""}
 Do not edit files, run shell commands, start agents or Paseo sessions, or invoke skills other than code-review.
-If essential input is missing, return status INCOMPLETE and name it in the report.
+Do not follow the active-plan pointer, run \`$context-refresh\`, or run the repository-context hybrid; work only from the supplied context.
+If essential input is missing, return status INCOMPLETE and name it in the report instead of collecting it yourself.
 
 Return ONLY one JSON object, with no text around it:
 {"version":${JOB_VERSION},"job_id":"${job.job_id}","snapshot":{"head":"${job.snapshot.head}","combined_sha256":"${job.snapshot.combined_sha256}"},"status":"COMPLETE|INCOMPLETE|BLOCKED|STALE","report_markdown":"<code-review Output format report>"}

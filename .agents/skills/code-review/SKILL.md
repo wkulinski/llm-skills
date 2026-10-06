@@ -11,12 +11,13 @@ metadata:
 shared_files:
   - code-review/references/review-checklists.md
   - code-review/references/plan-review.md
+  - code-review/references/active-plan.md
+  - code-review/references/re-review.md
   - _shared/references/task-plan-contract.md
   - _shared/references/skill-routing-policy.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/rule-conformance-policy.md
   - _shared/references/repository-context-hybrid.md
-  - _shared/references/context-subagent-contract.md
   - _shared/references/playwright-cli-verification.md
   - _shared/references/user-facing-behavior-assessment.md
   - _shared/scripts/change-inventory.mjs
@@ -75,12 +76,13 @@ Read only the files required by the active step. Declared references are availab
 | repository reconnaissance, broad versus targeted reads, and scout lifecycle | `<skills_root>/_shared/references/repository-context-hybrid.md` |
 | applicable-rules register semantics (source, scope, force, evidence, result) | `<skills_root>/_shared/references/rule-conformance-policy.md` |
 | choosing, running and limiting verification commands | `<skills_root>/_shared/references/runtime-collaboration-guidelines.md` (section "QA Command Policy") |
-| `executor` role: interpreting the supplied handoff and context-manifest references | `<skills_root>/_shared/references/context-subagent-contract.md` |
 | working-tree change inventory | `<skills_root>/_shared/scripts/change-inventory.mjs` |
 | rendered UI change, or a change to the interactions of code running in the browser, and Playwright checkpoint | `<skills_root>/_shared/references/playwright-cli-verification.md` |
 | the code or plan changes navigation, interaction, object selection, messages, or consequential actions for the user | `<skills_root>/_shared/references/user-facing-behavior-assessment.md` |
 | plan target contract owned by `$task-plan` | `<skills_root>/task-plan/SKILL.md` |
 | the target is `plan`: plan expected behavior, plan context, plan integrity, plan coverage and plan verdicts | `<skill_dir>/references/plan-review.md` |
+| the target is `code` and the caller supplied a plan, or automatic lookup is allowed and `${CACHE_PATH:-var/agent/cache}/plan-execute/last-plan.txt` exists (see "Active-plan context for code") | `<skill_dir>/references/active-plan.md` |
+| explicitly asked to re-review fixes | `<skill_dir>/references/re-review.md` |
 
 ## 1. Resolve review target and scope
 
@@ -98,46 +100,10 @@ status, questions, or validation lifecycle, and the phase separation is not a cl
 of executor independence. `$task-plan` evaluates this skill's result after the
 phase ends.
 
-### Execution role
-
-The input `execution_role` selects who runs this methodology:
-
-- `coordinator` (default) — the current agent owns scope, context, commands, and
-  the verdict. Every section of this skill applies as written.
-- `executor` — a delegated reviewer applies the same methodology to context
-  prepared by a coordinating agent and returns a report to it. It is valid only
-  for the `code` target. For `plan`, or when the target is unclear, do not
-  review: return `INCOMPLETE` and state that the executor role does not accept
-  this target.
-
-The executor works from the supplied inputs: change inventory with its
-fingerprint, a separate staged diff, a separate unstaged diff, untracked paths,
-requirements, applicable rules, the mapped plan or work package when supplied,
-and references to validated context. It reads the actual files and the relations
-it needs one at a time. It judges staged changes from the supplied staged diff,
-not only from the current file content.
-
-The executor does not regenerate the inventory, follow the active-plan pointer,
-run `$context-refresh` or the repository-context hybrid, invoke other skills or
-agents, start Paseo sessions, or run commands. When a check needs a command
-(test, lint, build, reproduction, or Playwright checkpoint), it names the check
-for the coordinator, records a `verification_gap`, and limits the verdict
-instead of claiming the check ran. When essential input is missing, it returns
-`INCOMPLETE` with a concrete request for the missing input instead of
-collecting it itself.
-
-Sections 2–11 stay shared: expected behavior, applicable rules, checklists,
-the publication gate, the false-positive pass, coverage, severity, verdict, and
-the Section 11 report structure. A transport envelope added by the delegating
-workflow does not replace that structure. Where those sections mention commands,
-inventory regeneration, or the active-plan pointer, the executor applies the
-limits above.
-
 ### Read change inventory
 
-For a working-tree `code` review in the coordinator role, always regenerate the
-change inventory at the beginning of the review (the executor uses the supplied
-inventory instead):
+For a working-tree `code` review, always regenerate the change inventory at the
+beginning of the review:
 
 ```bash
 node <skills_root>/_shared/scripts/change-inventory.mjs build --output <CACHE_PATH>/repository-context/change-inventory.json
@@ -148,6 +114,14 @@ for this review instead of running ad-hoc git commands. The inventory fingerprin
 identifies the exact snapshot that was reviewed. A file entry can contain both
 `staged` and `unstaged` surfaces for the same path; review both, and treat the
 surface counters as non-exclusive.
+
+When the caller supplies a prepared snapshot (an inventory with its fingerprint,
+separate staged and unstaged diffs, and untracked paths), review that snapshot
+without rebuilding the inventory, and judge staged changes from the supplied
+staged diff. The caller's constraints override conflicting steps of this
+methodology: a check the caller forbids running becomes a `verification_gap`
+that limits the verdict. When essential input is missing, end the review as
+`INCOMPLETE` with a concrete request for that input.
 
 Supported inputs:
 
@@ -182,28 +156,16 @@ reconstruct or mutate the plan's identity.
 
 ### Active-plan context for code
 
-For a `code` target in the coordinator role with no explicitly supplied plan,
-check whether
-`${CACHE_PATH:-var/agent/cache}/plan-execute/last-plan.txt` exists. This is the
-only automatic plan lookup: do not search every plan in the repository.
+For a `code` target, decide whether to load `<skill_dir>/references/active-plan.md`:
 
-When the pointer exists:
-
-- resolve its single repository-relative canonical plan path; never treat the
-  pointer as a copy of the plan or as a source of work-package status;
-- validate the resolved plan through the `$task-plan` contract before relying on
-  it, and record an invalid, stale, or non-canonical plan as a coverage gap;
-- determine whether the reviewed change maps to the current work package or to
-  another explicitly identifiable work package, using the changed behavior,
-  scope, and execution evidence rather than filename similarity alone;
-- assess the mapped work package under "Active-plan alignment for code" in
-  Section 5;
-- if the mapping is ambiguous, do not infer plan compliance. Record the plan
-  alignment as `NOT_COVERED` or raise a `QUESTION` when it materially affects
-  confidence.
-
-An active plan is an additional source of expected behavior, never a substitute
-for reviewing correctness, propagation, contracts, or operational risk in code.
+- when the caller supplied a plan, load the reference; a caller's ban on
+  automatic lookup does not exclude a supplied plan;
+- otherwise, unless the caller's constraints forbid it, check whether
+  `${CACHE_PATH:-var/agent/cache}/plan-execute/last-plan.txt` exists.
+  This is the only automatic plan lookup: do not search every plan in the
+  repository. When the pointer exists, load the reference;
+- when no plan was supplied and the pointer is missing or lookup is forbidden,
+  skip the reference.
 
 ## 2. Establish expected behavior
 
@@ -219,9 +181,9 @@ Before judging implementation, locate the strongest available sources of intent 
 
 A project may keep task plans or specifications outside version control. If a relevant plan is discoverable, verify that it actually corresponds to the reviewed change before treating it as authoritative.
 
-For a `code` target, the acceptance criteria of the work package mapped in
-Section 1 are a source of expected behavior; Section 5 assesses the change
-against them. Do not accept implementation merely because it appears to follow
+For a `code` target, the acceptance criteria of the work package mapped under
+`<skill_dir>/references/active-plan.md` are a source of expected behavior; that
+reference assesses the change against them. Do not accept implementation merely because it appears to follow
 the plan.
 
 If expected behavior cannot be determined and the concern is a product choice, classify it as `QUESTION`, not a defect.
@@ -303,9 +265,14 @@ Increase review depth when the change spans subsystems or has material risk invo
 
 Review depth means relevant lenses and verification. Do not add a pass that repeats an already covered question. The publication gate in Section 6 applies at every depth: more depth adds lenses and evidence, it does not remove the obligation to weigh the strongest counterargument and classify the candidate.
 
+For a large change, order the review by risk, contracts and state before the
+rest. An area that cannot be reviewed reliably gets `NOT_COVERED` instead of a
+superficial `REVIEWED`, and recommending a split of the change is a valid next
+step.
+
 ### Complexity/value gate
 
-For every non-trivial change, challenge whether the added complexity buys durable value before issuing the final verdict. For a trivial change with no meaningful added complexity, record this gate as `NOT_RELEVANT`.
+For every non-trivial change, challenge whether the added complexity buys durable value before the verdict.
 
 Ask:
 
@@ -316,16 +283,16 @@ Ask:
 - What concrete failure remains if the new mechanism is removed? Is that failure supported by a requirement, code path, test, or operational evidence?
 - Does every new state, transition, heuristic, or special case map to an observable requirement or a meaningful invariant?
 
-Treat local hole-patches, one-off tweaks, heuristics compensating for other heuristics, and state machines without a measurable behavioral gain as warning signals, not automatic findings. Report a finding only when the complexity creates a concrete correctness, reliability, security, performance, or maintenance risk. Do not use arbitrary line-count or state-count thresholds.
+Treat local hole-patches, one-off tweaks, heuristics compensating for other heuristics, and state machines without a measurable behavioral gain as warning signals, not automatic findings. Do not use arbitrary line-count or state-count thresholds.
 
 Record one gate outcome in the coverage/summary:
 
 - `JUSTIFIED` — the added complexity protects a durable requirement and simpler alternatives are insufficient;
 - `SIMPLIFY` — the same outcome is achievable with a materially simpler or smaller solution;
 - `QUESTION` — the expected value or recurring need cannot be established;
-- `NOT_RELEVANT` — the change adds no meaningful complexity.
+- `NOT_RELEVANT` — the change is trivial or adds no meaningful complexity.
 
-`SIMPLIFY` becomes a severity-rated finding only when the current complexity has concrete impact; otherwise report it as a `SUGGESTION` or keep it as a review note.
+`SIMPLIFY` becomes a severity-rated finding only when the current complexity creates a concrete correctness, reliability, security, performance, or maintenance impact; otherwise report it as a `SUGGESTION` or keep it as a review note.
 
 ## 5. Deep review contract
 
@@ -334,23 +301,8 @@ the checklists required by the active target and the depth chosen in Section 4;
 they live in `<skill_dir>/references/review-checklists.md` (see "Reference
 routing").
 
-### Active-plan alignment for code
-
-When Section 1 identified a valid active plan for a `code` review, assess the
-change against the mapped work package as well as the normal code-review
-contract:
-
-- does the implemented behavior satisfy the work package's objective and
-  acceptance criteria?
-- has the change stayed inside its stated scope and out-of-scope boundary?
-- are prerequisite work packages, ownership boundaries, and dependencies
-  respected?
-- does the chosen verification provide the evidence promised by the work
-  package, or is a deviation justified and visible?
-
-Do not turn this into a full review of every work package or a replacement for
-the code review. A plan mismatch, omitted acceptance criterion, or unjustified
-scope expansion is a code-review concern when it affects the reviewed change.
+When Section 1 loaded `<skill_dir>/references/active-plan.md`, also assess the
+change against the mapped work package as that reference describes.
 
 For a `plan` target, also apply "Plan integrity and execution readiness" in `<skill_dir>/references/plan-review.md`.
 
@@ -363,6 +315,9 @@ A candidate becomes a finding only if it has:
 - a plausible execution path from input/event/state to failure, or from a plan assumption/WP to an execution risk
 - an explanation of impact
 - evidence strong enough for its severity
+- provenance: what the reviewed change introduced, extended, or made reachable; a
+  scenario already present in the baseline and independent of the change is a
+  `SUGGESTION` or a rejected candidate
 
 Before publication, every candidate must pass this ordered publication gate:
 
@@ -380,10 +335,7 @@ the report's structural validation do not, by themselves, establish that the
 interpretation is correct. Candidates supplied by auxiliary channels (another
 agent, a subagent report, a tool, or a reviewer hand-off) never carry a verdict
 with them; they enter this skill as unverified candidates and must pass the same
-gate as any other candidate. This includes a report from a reviewer in the
-`executor` role: the coordinator checks each received candidate through this
-gate with targeted reads of the cited locations and their direct relations,
-without a new full discovery pass, and decides the verdict itself.
+gate as any other candidate.
 A plan or work package is a source of expected behavior only for the scope it actually maps to; it does not authorize
 expectations for behavior outside that mapped scope.
 
@@ -404,10 +356,7 @@ be reported:
 - name the rule's source (file and section) and its force from the applicable-rules
   register, and state how it applies to the reviewed scope rather than to the
   repository in general;
-- keep the provenance requirement: the violation must be introduced or extended by
-  the reviewed change, or reachable from it. Pre-existing, independent debt stays
-  outside the change and is reported as `SUGGESTION` or discounted, not used to
-  block;
+- apply the provenance requirement from the candidate requirements above;
 - if an authoritative, scoped exception exists, record `EXEMPTED` and do not raise
   a finding for that rule;
 - if an unresolved conflict between active rules affects the decision, record
@@ -477,18 +426,33 @@ change of scope, rule or evidence was re-established instead of carried over.
 For a non-trivial change, run a pre-mortem before the verdict: name the single
 most likely way the change could break user-visible or operational behavior
 after merge, and name the control (a test, a review observation, or runtime
-verification) that would detect it. When no such control exists, record a
-`verification_gap` or `NOT_COVERED`. The pre-mortem is not a finding by itself:
-every candidate it produces passes the publication gate from Section 6 with its
-five elements unchanged. Skip the pre-mortem without an entry for a trivial
-change.
+verification) that would detect it. For a high-risk change, also name the most
+severe plausible failure when it differs from the most likely one.
+When no such control exists, record a `verification_gap` or `NOT_COVERED`. The
+pre-mortem is not a finding by itself: every candidate it produces
+passes the publication gate from Section 6 with its five elements unchanged.
+Skip the pre-mortem without an entry for a trivial change.
+
+For a non-trivial change, also ask what the change omits:
+
+- Did removed code remove a guard, validation, or authorization check?
+- Was a test skipped or removed, or an assertion weakened?
+- Was a lint or static-analysis suppression added, a threshold lowered, or a CI
+  step disabled?
+- Does an analogous path (bulk operation, import, admin panel, background job)
+  keep the old semantics?
+- Does any requirement lack a counterpart in the implementation?
+- Does the change description promise more than the diff delivers?
+- Does each API, method, or option used exist in the installed dependency
+  version?
+
+Every candidate from these questions passes the Section 6 publication gate
+unchanged.
 
 For every surviving candidate, record the strongest counterargument you actually
-considered and the resulting classification from the publication gate. A
-candidate does not enter the findings list merely because it survived the
-questions above; it must be classified as `finding`, `QUESTION`, or
-`SUGGESTION`, or explicitly discarded as a rejected candidate. Unclassified
-candidates are not published.
+considered and classify it through the Section 6 publication gate, or have it
+explicitly discarded as a rejected candidate; unclassified candidates are not
+published.
 
 Deduplicate overlapping findings by failure mode, not by file.
 
@@ -509,8 +473,6 @@ Use one of the following outcomes for every inventory entry:
 - `REVIEWED` — reviewed, no issue found
 - `NOT_RELEVANT` — no behavioral review needed
 - `NOT_COVERED` — insufficient context, tools, or evidence
-
-If any high-risk area is `NOT_COVERED`, the verdict cannot be an unconditional `PASS`.
 
 For a `plan` target, also apply "Plan coverage" in `<skill_dir>/references/plan-review.md`.
 
@@ -541,6 +503,18 @@ Do not inflate severity to make a review look useful.
 
 ## 10. Verdict
 
+For a working-tree `code` review, rebuild the inventory before choosing the
+verdict:
+
+```bash
+node <skills_root>/_shared/scripts/change-inventory.mjs build --output <CACHE_PATH>/repository-context/change-inventory-final.json
+```
+
+Compare its `worktree_fingerprint` with the inventory from the start of the
+review. When they differ, state which snapshot the report covers, then review the
+delta or limit the verdict's validity; do not carry evidence across versions.
+Skip this check for a snapshot supplied by the caller, who checks its stability.
+
 For a `code` target, choose one:
 
 - **BLOCK** — one or more BLOCKER findings
@@ -552,9 +526,11 @@ For a `code` target, choose one:
 A significant applicable rule left `NOT_VERIFIED` excludes an unconditional
 `PASS`; when that gap affects acceptance of the reviewed change, use `DISCUSS`.
 
-A `verification_gap` for runtime behavior that Section 4 marked as high
-reactivity or lifecycle risk excludes an unconditional `PASS`; when that gap
-affects acceptance of the reviewed change, use `DISCUSS`.
+A `verification_gap` or `NOT_COVERED` entry in any area that Section 4 marked as
+high risk excludes an unconditional `PASS`. When it cannot be established
+whether a material invariant holds and that affects acceptance of the reviewed
+change, use `DISCUSS`. An unrun test alone does not force `DISCUSS` when source
+analysis is sufficient.
 
 For a `plan` target, also apply "Plan verdicts" in `<skill_dir>/references/plan-review.md`.
 
@@ -580,7 +556,9 @@ Then include:
 - **Impact:** why it matters
 - **Evidence:** concrete path/contract/test/trace supporting the claim
 - **Fix direction:** concise direction, not a full implementation unless requested
-- **Confidence:** high / medium / low
+- **Confidence:** `high` — reproduced or traced deterministically; `medium` —
+  execution path confirmed without running it; `low` — depends on an unverified
+  assumption
 
 For `QUESTION`, replace **Fix direction** with **Needs decision**.
 
@@ -588,13 +566,15 @@ Then provide:
 
 ### Target
 
-`code` or `plan`, with the reviewed artifact and scope. In the `executor` role,
-also state the role, the snapshot fingerprint received, and whether the review
-is complete or `INCOMPLETE` with the requested inputs.
+`code` or `plan`, with the reviewed artifact and scope. For a supplied snapshot,
+also state its fingerprint and whether the review is complete or `INCOMPLETE`
+with the requested inputs.
 
 ### Coverage
 
-A compact table/list of reviewed areas and any `NOT_COVERED` surfaces.
+A compact table/list of reviewed areas and any `NOT_COVERED` surfaces. For every
+high-risk area, the entry names the risks and paths checked and the remaining
+gap.
 Include the applicable-rules results for the reviewed scope when a register was
 produced, and the `Complexity/value gate` outcome when the gate was relevant.
 
@@ -614,10 +594,10 @@ owner passes these resolutions to the `$task-plan` decision helper.
 
 ### Plan alignment
 
-For a `code` review with an active-plan pointer, state the resolved plan path,
-mapped work package, plan-alignment outcome, and any unmapped acceptance
-criterion or scope/dependency concern. Otherwise say that no active-plan
-pointer was available or applicable.
+For a `code` review with an active plan, supplied by the caller or resolved from
+the pointer, state the plan path, mapped work package, plan-alignment outcome,
+and any unmapped acceptance criterion or scope/dependency concern. Otherwise say
+that no active plan was available or applicable.
 
 ### Verification
 
@@ -649,29 +629,7 @@ State concisely:
 
 ## 12. Re-review after fixes
 
-When explicitly asked to re-review fixes:
-
-- review the fix delta first, starting from the changed sections/work packages and
-  their direct dependencies supplied in the delta input;
-- resolve every prior finding ID explicitly as **resolved**, **current**, or
-  **accepted**, with evidence and the current severity when it persists;
-- for a recurring finding, state whether it is the same failure mode and whether
-  new evidence exists; keep the prior ID;
-- for a new finding, state whether it originates from the fix or a direct
-  dependency, and name the changed section/work package or dependency that makes
-  it reachable;
-- verify that prior findings are actually resolved;
-- for `code`, trace newly affected execution paths;
-- for `plan`, trace newly affected source mappings, ownership, dependencies, and acceptance criteria;
-- do not automatically reopen unrelated areas from the original review, and treat
-  observations from unchanged, independent scope as `SUGGESTION` or rejected
-  candidates;
-- a new `BLOCKER`, `MAJOR`, or actionable `MINOR` outside the changed lines needs
-  concrete provenance evidence from the fix or a direct dependency; document hashes
-  identify document versions, not finding identity;
-- report regressions introduced by the fixes;
-- do not edit a plan; route plan corrections through `$task-plan`;
-- do not continue into an automatic fix/re-review loop unless explicitly requested.
+When explicitly asked to re-review fixes, follow `<skill_dir>/references/re-review.md`.
 
 ## Examples
 
@@ -680,9 +638,6 @@ For a default working-tree review, regenerate the change inventory (see Section 
 ```bash
 node <skills_root>/_shared/scripts/change-inventory.mjs build --output <CACHE_PATH>/repository-context/change-inventory.json
 ```
-
-Review the union of staged, unstaged, and untracked paths from the inventory's `files[]`;
-do not silently replace it with only the output of `git diff`.
 
 Prompt examples:
 

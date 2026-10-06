@@ -17,6 +17,12 @@ procedur wykonawczych opisanych w poszczególnych skillach.
   `$skill-review` lub `$git-commit`.
 - **Handoff wykonawczy** — `$plan-execute` przekazuje jeden wybrany WP do
   `$code-implement`; nie jest to nowe, niezależne wywołanie orkiestratora.
+- **Aktywna praca nad planem** — plan powstał albo jest zmieniany w bieżącej
+  rozmowie, a użytkownik nie wydał jeszcze jawnego polecenia implementacji.
+  Jawnym poleceniem implementacji jest wybór „rozpocznij implementację”,
+  wywołanie `$plan-execute`, jawne wskazanie `$code-implement` albo prośba o
+  wykonanie, kontynuację lub wznowienie planu albo jego WP zawierająca sygnał z
+  sekcji „Sygnały istniejącego planu”.
 
 ## Zasada pierwszeństwa
 
@@ -24,7 +30,15 @@ Stosuj następującą kolejność:
 
 1. Jawne polecenie użytkownika dotyczące konkretnego skilla ma pierwszeństwo,
    z zachowaniem twardych zasad bezpieczeństwa i stop-conditions.
-2. Bez jawnego wskazania skilla rozpoznaj intencję:
+2. W trakcie aktywnej pracy nad planem nowe wymaganie, korekta zakresu albo
+   prośba o zapisanie czegoś w konkretnym pliku jest zmianą planu i trafia do
+   `$task-plan`, który aktualizuje plan i przeprowadza jego review. Agent nie
+   zmienia wtedy plików repozytorium poza artefaktami planu, a przy wątpliwości,
+   czy prośba jest zmianą planu czy poleceniem implementacji, traktuje ją jako
+   zmianę planu. Prośba zawierająca jawne polecenie implementacji z definicji
+   pojęcia nie budzi wątpliwości: kończy aktywną pracę nad planem i jest
+   kierowana według pozostałych punktów, w tym punktu 4.
+3. Bez jawnego wskazania skilla rozpoznaj intencję:
     - utworzenie planu, krytyczna rewizja w ramach jego tworzenia albo walidacja planu → `$task-plan`;
     - odrębna faza read-only review istniejącego planu → `$code-review` w trybie `plan`;
     - wykonanie, kontynuacja albo wznowienie istniejącego planu lub WP →
@@ -32,14 +46,12 @@ Stosuj następującą kolejność:
     - implementacja konkretnej zmiany (w tym feature, bugfix lub refaktor) bez
       istniejącego planu → `$code-implement`;
     - pełny albo głęboki przegląd implementacji → `$code-review` w trybie `code`;
-      rola `execution_role: executor` nie jest wybierana z intencji użytkownika —
-      ustawia ją wyłącznie agent koordynujący, który jawnie deleguje review kodu;
     - jawne zlecenie review kodu Claude Code z OpenCode → `$claude-review`;
     - szybki przegląd bieżących zmian → `$review-quick`;
     - audyt zgodności skilla, agenta albo reguł instrukcji („zaudytuj
       skill/instrukcje”) → `$skill-review` w trybie `conformance` albo `standard-gap`;
     - przygotowanie lub wykonanie commita → `$git-commit`.
-3. Jeśli prośba łączy słowa „WP”, „work package”, „plan”, „kontynuuj plan” albo
+4. Jeśli prośba łączy słowa „WP”, „work package”, „plan”, „kontynuuj plan” albo
    „zrealizuj kolejny pakiet” z implementacją, a użytkownik nie wskazał
    bezpośrednio `$code-implement`, pierwszym skillem zawsze jest
    `$plan-execute`.
@@ -133,6 +145,7 @@ jasnego pytania — nie cichego pominięcia orkiestratora ani zmiany zakresu.
 | Wykonaj istniejący plan/WP | `$plan-execute` | wybrany WP → `$code-implement` |
 | Kontynuuj istniejący plan | `$plan-execute` | pierwszy niezakończony WP |
 | Zaimplementuj zmianę bez planu | `$code-implement` | implementacja i lekka weryfikacja |
+| Nowe wymaganie w trakcie aktywnej pracy nad planem | `$task-plan` | zmiana planu i jego review, bez zmian w repozytorium |
 | Odrębna faza read-only review istniejącego planu | `$code-review` (`plan`) | findings-first + plan coverage + readiness verdict |
 | Pełny albo głęboki przegląd implementacji | `$code-review` (`code`) | findings-first + coverage + merge verdict |
 | Przejrzyj bieżące zmiany | `$review-quick` | raport findings-first |
