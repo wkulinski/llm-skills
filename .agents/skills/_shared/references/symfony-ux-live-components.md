@@ -35,6 +35,8 @@ Sprawdź odpowiednio do zakresu:
 
 ## Markup i selektory
 
+Live Component zwraca dokładnie jeden element root; markup poza nim powoduje błąd renderowania.
+
 Nie opieraj JavaScript na przypadkowej strukturze DOM wymienianej przez Live Component. Preferuj stabilne targety, atrybuty, klucze i jasno wyznaczone granice komponentu.
 
 ## Właściciel stanu

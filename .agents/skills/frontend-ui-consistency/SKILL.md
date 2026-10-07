@@ -8,6 +8,8 @@ description: >-
 compatibility: opencode
 shared_files:
   - _shared/references/playwright-cli-verification.md
+  - _shared/references/symfony-ux-twig-components.md
+  - _shared/references/symfony-ux-live-components.md
   - _shared/scripts/playwright-preflight.sh
   - _shared/scripts/playwright-access-prepare.sh
   - _shared/scripts/playwright-auth-bootstrap.sh
@@ -390,8 +392,8 @@ Odczytaj tylko pliki wymagane przez zadanie:
 | Warunek | Plik |
 |---|---|
 | transfer wzorca, nowy element lub konsultacja dotycząca transferu | `<skill_dir>/references/pattern-transfer.md` |
-| Twig Component, macro lub partial | `<skill_dir>/references/twig-components.md` |
-| Symfony UX Live Component | `<skill_dir>/references/symfony-live-components.md` |
+| Twig Component, macro lub partial | `<skills_root>/_shared/references/symfony-ux-twig-components.md` |
+| Symfony UX Live Component | `<skills_root>/_shared/references/symfony-ux-live-components.md` |
 | Stimulus lub zmiana interakcji/DOM | `<skill_dir>/references/stimulus-controllers.md` |
 | każde zadanie dotyczące renderowanego UI, niezależnie od `execution_mode` | `<skills_root>/_shared/references/playwright-cli-verification.md` |
 | większy audyt, konsultacja całego widoku lub porównanie wizualne | `<skill_dir>/references/visual-consistency-checklist.md` |

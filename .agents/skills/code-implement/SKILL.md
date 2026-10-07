@@ -17,6 +17,8 @@ shared_files:
     - _shared/references/context-subagent-contract.md
     - _shared/references/repository-context-hybrid.md
     - _shared/references/playwright-cli-verification.md
+    - _shared/references/symfony-ux-twig-components.md
+    - _shared/references/symfony-ux-live-components.md
     - _shared/references/repository-context-scout-playbook.md
     - _shared/references/context-scout-report-protocol.md
     - _shared/scripts/context-criteria.mjs
