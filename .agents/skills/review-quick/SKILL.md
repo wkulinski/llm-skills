@@ -12,6 +12,8 @@ shared_files:
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/references/symbolic-navigation-and-editing-policy.md
   - _shared/references/playwright-cli-verification.md
+  - _shared/references/symfony-ux-twig-components.md
+  - _shared/references/symfony-ux-live-components.md
   - _shared/scripts/env-load.sh
   - _shared/scripts/playwright-access-prepare.sh
   - _shared/scripts/playwright-preflight.sh

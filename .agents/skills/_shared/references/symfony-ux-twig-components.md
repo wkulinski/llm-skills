@@ -44,6 +44,10 @@ Nie opisuje pojedynczych deklaracji CSS:
 
 Użyj prop dla prostej, ograniczonej wartości. Użyj block lub slot dla zawartości z własną strukturą, np. header, actions, footer i empty state.
 
+Props mają minimalny zakres danych, jawne typy i nazwy opisujące znaczenie.
+
+Składnię bloków i slotów dobieraj do wersji narzędzi używanej w repo. Domyślny pojedynczy slot treści bez jawnych bloków stosuj tylko wtedy, gdy repo i wersja Symfony UX go wspierają; w przeciwnym razie trzymaj się jawnej składni przyjętej w projekcie.
+
 ## Klasy i warianty
 
 Komponent powinien mieć stabilny root. Warianty powinny być semantyczne, np. `density="compact"`, `emphasis="secondary"`, `variant="danger"`.
@@ -68,4 +72,6 @@ Wydziel wspólną warstwę, gdy shell, nagłówek, stany albo zestaw reguł są 
 
 ## Weryfikacja
 
-Dobierz zakres do profilu. Sprawdź co najmniej reprezentatywne użycie i każdy zmieniony wariant. Przy współdzielonym komponencie sprawdź również jedno graniczne zastosowanie, długą treść oraz zależny kontrakt Live/Stimulus.
+Dobierz zakres do ryzyka zmiany. Sprawdź co najmniej reprezentatywne użycie i każdy zmieniony wariant. Przy współdzielonym komponencie sprawdź również jedno graniczne zastosowanie, długą treść oraz zależny kontrakt Live/Stimulus.
+
+Po zmianie uruchom lint Twig przyjęty w repo, a przy zmianie stylów lub skryptów także lint SCSS, TS albo JS. Po refaktorze usuń klasy i selektory, które nie mają już użyć.

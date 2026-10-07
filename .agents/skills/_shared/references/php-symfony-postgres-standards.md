@@ -10,7 +10,8 @@ Ten dokument opisuje **domyślny baseline** dla skilli używanych w projektach P
 
 ## 2. PHP i styl kodu
 - Każdy plik PHP zaczynaj od `declare(strict_types=1);`.
-- Każda metoda/funkcja/stała ma jawne typy i widoczność.
+- Parametry, wartości zwracane i właściwości mają jawne typy; metody, właściwości i stałe klasowe mają jawną widoczność.
+- Stałe klasowe typuj, gdy wersja PHP projektu na to pozwala (od PHP 8.3).
 - Preferuj klasy `final` i właściwości `readonly`, gdy nie ma uzasadnienia dla dziedziczenia/mutowalności.
 - Nie używaj `mixed`/`object` jako skrótu na obejście problemu projektowego.
 - Stałe klasowe (`const`) umieszczaj na początku klasy (przed właściwościami i metodami).
@@ -26,6 +27,9 @@ Ten dokument opisuje **domyślny baseline** dla skilli używanych w projektach P
 ## 4. Doctrine i PostgreSQL
 - Typy kolumn deklaruj przez `Types::*` lub stałe customowych typów, nie przez surowe stringi.
 - Daty i timestampy trzymaj jako immutable oraz w UTC.
+- Typ `datetime_immutable` zapisuje czas bez strefy (`timestamp without time zone`), więc każda zapisywana wartość musi być w UTC; wartości z inną strefą lub offsetem przed zapisem sprowadzaj do UTC (np. przez `setTimezone(new DateTimeZone('UTC'))`). Domyślna strefa UTC aplikacji nie zastępuje tej normalizacji: nie zmienia strefy wartości utworzonych z jawną strefą lub offsetem.
+- PostgreSQL nie tworzy automatycznie indeksu dla kolumny z kluczem obcym. Sprawdź w migracji, że taki indeks istnieje, gdy kolumna służy do złączeń, filtrowania albo usuwania rekordu nadrzędnego; nie zakładaj, że doda go narzędzie.
+- Przy migracji tabeli, która może być duża, oceń blokady: indeks twórz przez `CREATE INDEX CONCURRENTLY` w migracji oznaczonej jako nietransakcyjna, a operacje przepisujące całą tabelę planuj świadomie.
 - Unikaj operacji, które ładują duże zbiory danych bez potrzeby; filtruj jak najbliżej bazy i oceniaj koszt całego przepływu, a nie pojedynczego wywołania.
 - Nie powtarzaj odczytu tego samego zbioru ani nie indeksuj wielokrotnie tych samych danych w ramach jednego przepływu. Nieuzasadnione N+1 oceniaj względem realistycznego obciążenia, a nie liczby pętli w kodzie.
 - Rekordy i relacje identyfikuj stabilnym kluczem, nie etykietą, nazwą ani wartością prezentacyjną, które mogą się powtarzać. Dwa rekordy o tej samej nazwie muszą pozostać rozróżnialne w kodzie, kluczach i mapowaniach.
@@ -44,6 +48,10 @@ Ten dokument opisuje **domyślny baseline** dla skilli używanych w projektach P
 - Jeżeli brak I/O, izolacja od stanu zewnętrznego albo koszt odczytu są częścią kontraktu, pokryj je testem wykrywającym naruszenie (np. brak odczytu w warstwie bez I/O, powtórzenie tego samego odczytu albo odczyt zbiorczy zamiast N+1), a nie testem potwierdzającym samo istnienie wywołania.
 - Nie wyłączaj lokalnie lintów/testów/supresji jako „naprawy” problemu jakości.
 
-## 7. Współdziałanie ze skillami
+## 7. Komponenty Twig i Live Components (gdy repo ich używa)
+- Przed zmianą lub review komponentu Twig, makra albo partiala doczytaj `./symfony-ux-twig-components.md`.
+- Przed zmianą lub review Symfony UX Live Component doczytaj `./symfony-ux-live-components.md`.
+
+## 8. Współdziałanie ze skillami
 - Procedury operacyjne (QA/commit/commit-message/review) są opisane w skillach, nie tutaj.
 - Ten dokument opisuje standardy techniczne i sposób implementacji, a nie sekwencję kroków procesu.
