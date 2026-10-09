@@ -234,12 +234,18 @@ opencode run "Run exactly: echo \"MODEL=\$OPENCODE_SESSION_MODEL VARIANT=\$OPENC
 `$plan-execute` uses this contract with harness-portable fallbacks. `execute.mjs check-environment` resolves the current profile from the first available source:
 
 1. `OPENCODE_SESSION_MODEL`/`OPENCODE_SESSION_VARIANT` (`source: "session-env"`, the plugin path);
-2. explicit `--current-model`/`--current-reasoning` (`source: "flags"`, e.g. a harness that exposes its own model flags);
-3. an explicit user attestation via `--user-attested` (`source: "user-attested"`), used in harnesses without model introspection after the user confirms the current model and reasoning are not weaker than the WP requirement.
+2. explicit `--current-model`/`--current-reasoning` (`source: "flags"`, e.g. a harness that exposes its own model flags).
 
-Profile matching compares the model path without the provider prefix: `commandcode/deepseek/deepseek-v4.1-flash` and `deepseek/deepseek-v4.1-flash` are the same profile, while the reasoning level must match exactly. Distinct model names that only share a segment prefix (for example `gpt-6-sol` and `gpt-6-sol-lite`) never match.
+The gate then has two disjoint branches:
 
-In the attestation path the helper still validates the required profile against the project hierarchy (`UNRANKED_REQUIRED_PROFILE` when unknown), records `attested: true` and `current: null`, and never fabricates a measured profile. Missing or unranked profiles fail closed with `SESSION_PROFILE_UNKNOWN` or `UNRANKED_CURRENT_PROFILE`.
+- **Local pair.** When the current profile is in `.agents/config/model-hierarchy.json`, the local order decides: the profile is sufficient only when it ranks at or above the WP requirement. No ranking is fetched, and benchmark points cannot override the local order.
+- **Pair outside the hierarchy.** Without ranking labels the helper returns `action: "pairing-required"` and fetches nothing. The agent prints the fresh ranking rows with `node .agents/skills/_shared/scripts/model-leaderboard.mjs entries` (into its context only, never to a file), picks the exact row labels for the required and the current profile, and reruns the check with `--required-label "<label>" --current-label "<label>"`. The helper fetches the ranking again, reads both points from that single read and admits `currentPoints >= requiredPoints - 2` (`source: "leaderboard"`).
+
+Profile matching in the local hierarchy compares the model path without the provider prefix: `commandcode/deepseek/deepseek-v4.1-flash` and `deepseek/deepseek-v4.1-flash` are the same profile, while the reasoning level must match exactly. Distinct model names that only share a segment prefix (for example `gpt-6-sol` and `gpt-6-sol-lite`) never match.
+
+An unknown current profile, a label missing from the fresh ranking, the same label for both sides, or a network failure returns `action: "decision-required"` instead of a guessed score; a profile that is automatically too weak returns `action: "change-environment"`. Both results offer `options: ["change-profile", "user-attested", "stop"]`. Only `action: "execute"` with `sufficient: true` admits the work package; the exit code alone does not.
+
+A user attestation is an explicit exception for one work package, used only after the user confirms it: `--user-attested --attested-wp <WPn>`, plus `--attested-model`/`--attested-reasoning` matching the observed profile when one is observable. A changed work package or profile yields `ATTESTATION_SCOPE_MISMATCH`. The result has `source: "user-attested"` and `attestation: {wpId, profile, reusable: false}`; nothing is persisted for reuse. The helper still requires a `ready` plan and validates the required profile against the hierarchy (`UNRANKED_REQUIRED_PROFILE` when unknown).
 
 Operational notes:
 - The plugin loads once at startup, like `opencode.jsonc`; restart OpenCode after adding or changing it.

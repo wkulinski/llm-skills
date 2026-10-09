@@ -8,8 +8,10 @@ shared_files:
   - _shared/references/skill-routing-policy.md
   - _shared/references/task-plan-contract.md
   - _shared/scripts/model-hierarchy.mjs
+  - _shared/scripts/model-leaderboard.mjs
   - _shared/scripts/is-main-module.mjs
   - _shared/scripts/task-plan/atomic-file.mjs
+  - _shared/scripts/task-plan/difficulty.mjs
   - _shared/scripts/task-plan/source.mjs
   - _shared/scripts/task-plan/store.mjs
   - _shared/scripts/task-plan/validate.mjs
@@ -111,7 +113,7 @@ z odpowiedzią i źródłem, `N`) i `risks` (ryzyka dotyczące wybranego WP albo
 planu; ryzyko bez ID WP jest globalne). Override przypisany do WP ma pierwszeństwo
 przed wartościami domyślnymi planu. Rozmiar jest informacją dla wykonawcy.
 
-Przed implementacją uruchom deterministyczny preflight. Profil bieżącej sesji
+Przed implementacją uruchom preflight. Profil bieżącej sesji
 ustal w tej kolejności i użyj pierwszej dostępnej metody:
 
 1. **Środowisko sesji (preferowane, OpenCode).** Wywołaj helper bez flag:
@@ -124,7 +126,7 @@ ustal w tej kolejności i użyj pierwszej dostępnej metody:
    Helper sam odczytuje `OPENCODE_SESSION_MODEL` i `OPENCODE_SESSION_VARIANT`,
    które w każdym wywołaniu bash agenta ustawia projektowy plugin
    `./.opencode/plugins/session-model-env.js`. Wynik ma
-   `source: "session-env"`.
+   `source: "session-env"` dla lokalnego porównania.
 
 2. **Jawny override.** Gdy harness nie eksportuje tych zmiennych, ale znasz
    dokładny profil (np. znasz flagi CLI harnessa albo prowadzisz diagnostykę),
@@ -136,37 +138,87 @@ ustal w tej kolejności i użyj pierwszej dostępnej metody:
      --current-model provider/model-b --current-reasoning medium
    ```
 
-   Wynik ma `source: "flags"`.
+   Wynik lokalnego porównania ma `source: "flags"`.
 
-3. **Atestacja użytkownika (przenośny fallback).** Gdy harness nie udostępnia
-   profilu, zapytaj użytkownika wprost, czy aktualny model i poziom rozumowania
-   są nie gorsze niż wymaganie WP, i dopiero po potwierdzeniu użyj:
+Nie szukaj tożsamości bieżącego modelu w logach, bazie sesji ani w sieci.
+Nie zgaduj reasoning ani pozycji profilu.
 
-   ```bash
-   node <skill_dir>/scripts/execute.mjs check-environment \
-     --path ./docs/plans/<plan-id>.md --user-attested
-   ```
+Automatyczna bramka ma dwie rozłączne gałęzie:
 
-   Helper nadal waliduje wymaganie WP wobec `.agents/config/model-hierarchy.json`
-   i zwraca `source: "user-attested"`, `attested: true` oraz `current: null`.
-   `sufficient: true` w tym wyniku pochodzi wyłącznie z jawnego potwierdzenia
-   użytkownika, a `current: null` oznacza, że helper nie porównał żadnego
-   bieżącego profilu: sprawdził tylko, że wymaganie WP jest na liście hierarchii.
-   To jawna, audytowalna atestacja użytkownika, a nie zgadywanie modelu — nie
-   używaj tej flagi bez potwierdzenia użytkownika.
-   Gdy użytkownik jej odmówi albo nie potrafi potwierdzić, przerwij preflight
-   z `SESSION_PROFILE_UNKNOWN` i wskaż metodę 1 lub 2.
+- **Lokalna dokładna para:** `.agents/config/model-hierarchy.json` jest
+  nadrzędna; `sufficient` wynika wyłącznie z `currentIndex <= requiredIndex`.
+  Lokalnie niższy profil nie ma obejścia przez punkty. Helper nie pobiera wtedy
+  rankingu. Lokalne porównanie zachowuje dopasowanie prefiksów dostawcy, np.
+  `commandcode/deepseek/model` do `deepseek/model`; reasoning jest dokładne.
+- **Para spoza lokalnej hierarchii:** helper korzysta ze wspólnego
+  `<skills_root>/_shared/scripts/model-leaderboard.mjs`. Bez etykiet rankingu
+  zwraca `action: "pairing-required"` i niczego nie pobiera. Wtedy wypisz
+  świeże wiersze rankingu do kontekstu (nie zapisuj ich do pliku):
 
-Nie szukaj modelu w logach, bazie sesji ani w sieci. Profil spoza konfiguracji
-jest jawnym błędem; nie zgaduj pozycji. Nie pobieraj leaderboardu ani innych
-danych z sieci.
+  ```bash
+  node <skills_root>/_shared/scripts/model-leaderboard.mjs entries
+  ```
 
-Wynik preflightu zawiera porównanie par `model + reasoning` według
-project-relative `.agents/config/model-hierarchy.json`; helper zwraca
-`sufficient: true` albo `sufficient: false`. Tożsamość modelu jest porównywana
-bez prefiksu dostawcy, więc `commandcode/deepseek/model` odpowiada profilowi
-`deepseek/model`; reasoning musi zgadzać się dokładnie. Przy `false` poproś
-użytkownika o zmianę na rekomendowany lub wyższy profil.
+  Wskaż dokładne etykiety wierszy odpowiadających wymaganemu i bieżącemu
+  profilowi, z tym samym modelem i reasoning, i powtórz preflight:
+
+  ```bash
+  node <skill_dir>/scripts/execute.mjs check-environment \
+    --path ./docs/plans/<plan-id>.md \
+    --required-label "Model A (Medium)" --current-label "Model B (Max)"
+  ```
+
+  Helper pobiera ranking ponownie, sprawdza obie etykiety w jednym odczycie,
+  bierze z niego punkty i przepuszcza `currentPoints >= requiredPoints - 2`.
+  Wynik ma `source: "leaderboard"` oraz `profileSource: "session-env"` albo
+  `"flags"`. Gdy nie potrafisz jednoznacznie sparować któregoś profilu, nie
+  zgaduj: potraktuj to jak `decision-required` i zapytaj użytkownika.
+  Helper nie zapisuje rankingu ani cache.
+
+Brak profilu/reasoning, etykieta nieobecna w odczycie, ta sama etykieta dla obu
+stron albo awaria sieci zwraca `action: "decision-required"`, nie wymyśloną
+ocenę zero.
+Automatycznie zbyt słaby profil zwraca `action: "change-environment"`.
+Oba wyniki zawierają `options: ["change-profile", "user-attested", "stop"]`;
+przed implementacją zapytaj użytkownika, którą opcję wybiera. Sam kod wyjścia
+komendy nie oznacza dopuszczenia — wymagaj `action: "execute"` i
+`sufficient: true`. Usunięcie wymaganej pary z hierarchii wymaga rewizji
+rekomendacji planu, nie atestacji.
+
+**Atestacja użytkownika (jawny wyjątek dla jednego WP).** Atestacja nie jest
+źródłem profilu, tylko wyjątkiem od wyniku bramki. Gdy bramka modelowa
+zatrzymuje wykonanie, przedstaw trzy opcje: zmiana profilu,
+ręczna atestacja obecnego profilu dla wskazanego WP albo stop. Zapytaj wprost:
+„WP4 wymaga modelu X z reasoning Y; bieżący profil to Z (albo jest
+nieobserwowalny). Czy zmieniasz profil, potwierdzasz wystarczalność obecnego
+profilu wyłącznie dla WP4, czy zatrzymujemy wykonanie?”. Nie traktuj ogólnego
+„kontynuuj” jako atestacji. Dopiero po jawnym potwierdzeniu, przy
+nieobserwowalnym profilu, użyj:
+
+```bash
+node <skill_dir>/scripts/execute.mjs check-environment \
+  --path ./docs/plans/<plan-id>.md --user-attested --attested-wp WP4
+```
+
+Przy obserwowalnym profilu dodaj dokładnie potwierdzoną parę:
+
+```bash
+node <skill_dir>/scripts/execute.mjs check-environment \
+  --path ./docs/plans/<plan-id>.md --user-attested --attested-wp WP4 \
+  --attested-model provider/model-b --attested-reasoning medium
+```
+
+Jeśli profil pochodzi z jawnego override zamiast env sesji, dodaj też
+`--current-model provider/model-b --current-reasoning medium`. Potwierdzona
+para musi odpowiadać obserwowanej dokładnie; zmiana profilu lub wybranego WP
+daje `ATTESTATION_SCOPE_MISMATCH` i wymaga ponownego pytania.
+Helper nadal wymaga planu `ready` i poprawnej hierarchii oraz obecności
+wymaganej pary. Wynik ma `source: "user-attested"`, `attested: true` oraz
+`attestation: {wpId, profile, reusable: false}`. `current` i `profile` są
+`null` wyłącznie przy profilu nieobserwowalnym. Dopuszczenie pochodzi z
+potwierdzenia użytkownika, nie z automatycznego porównania. Niczego nie
+utrwalaj ani nie używaj ponownie automatycznie; każda nowa atestacja wymaga
+jawnego potwierdzenia dla jednego WP i bieżącego profilu.
 
 Wymaganie wstępne: w projekcie musi istnieć `.agents/config/model-hierarchy.json`
 (kopiuj szablon poniżej). Bez tego pliku walidacja planu zgłasza „Model hierarchy
@@ -184,8 +236,8 @@ cp <skill_dir>/model-hierarchy.json.dist .agents/config/model-hierarchy.json
 W OpenCode projekt powinien mieć także plugin
 `./.opencode/plugins/session-model-env.js` (część tego katalogu skills), żeby
 metoda 1 działała bez pytań do użytkownika; plugin wymaga restartu OpenCode po
-dodaniu. Kontrakt zmiennych opisuje `./README.md`. W innym harnessie metody 2–3
-pozostają dostępne bez pluginu.
+dodaniu. Kontrakt zmiennych opisuje `./README.md`. W innym harnessie metoda 2 i
+atestacja użytkownika pozostają dostępne bez pluginu.
 
 Szablon pozostaje zwykłym JSON-em i zamiast komentarzy używa pól `_comment`.
 
@@ -253,9 +305,12 @@ complete — ustaw pointer na jawnie wskazany plan i przekaż ukończenie WP do 
 
 `check-environment` przyjmuje profil z pierwszej dostępnej metody:
 `OPENCODE_SESSION_MODEL`/`OPENCODE_SESSION_VARIANT` (`source: "session-env"`),
-flag `--current-model`/`--current-reasoning` (`source: "flags"`) albo jawnej
-atestacji użytkownika `--user-attested` (`source: "user-attested"`). Porównuje
-tylko dwie pozycje z lokalnej, zwalidowanej hierarchii.
+flag `--current-model`/`--current-reasoning` (`source: "flags"`). Lokalna
+hierarchia jest nadrzędna; wyłącznie profil zewnętrzny korzysta ze świeżego
+rankingu (`source: "leaderboard"`) z etykietami `--required-label` i
+`--current-label` wskazanymi przez agenta. Jawna atestacja `--user-attested` wymaga
+`--attested-wp` i, przy obserwowalnym profilu, obu `--attested-model` oraz
+`--attested-reasoning`; daje odrębne `source: "user-attested"`.
 
 ## Warunki przerwania
 
@@ -264,7 +319,7 @@ tylko dwie pozycje z lokalnej, zwalidowanej hierarchii.
 - brak pliku `.agents/config/model-hierarchy.json` (skopiuj szablon
   `model-hierarchy.json.dist` do projektu) — plan jest `invalid`, a `next` i
   `check-environment` kończą się błędem `PLAN_NOT_READY`;
-- brak profilu sesji (`SESSION_PROFILE_UNKNOWN`) i brak potwierdzenia
+- brak profilu sesji (`decision-required`, `SESSION_PROFILE_UNKNOWN`) i brak potwierdzenia
   użytkownika dla `--user-attested` — w OpenCode sprawdź plugin
   `./.opencode/plugins/session-model-env.js` i restart; w innym harnessie użyj
   `--current-model`/`--current-reasoning` albo zapytaj użytkownika;

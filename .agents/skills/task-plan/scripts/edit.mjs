@@ -12,7 +12,7 @@ import {
     resolvePlanPaths,
     savePlan,
 } from "../../_shared/scripts/task-plan/store.mjs";
-import {parsePlanDocument, validatePlanDocument} from "../../_shared/scripts/task-plan/validate.mjs";
+import {parsePlanDocument, sectionContentRange, validatePlanDocument} from "../../_shared/scripts/task-plan/validate.mjs";
 
 const DECISIONS_SECTION = "Decisions and open questions";
 const QUESTION_STATUSES = new Set(["open", "answered"]);
@@ -266,8 +266,7 @@ function removeBullet(lines, structure, operation) {
         throw new PlanEditError("STRUCTURED_BULLET", "Questions must be removed with question operations.", {id});
     }
     const bullet = uniqueBullet(findBullets(lines, range.start, range.end, structure.fenced), id);
-    lines.splice(bullet.index, bulletBlockEnd(lines, bullet.index, range.end, structure.fenced) - bullet.index);
-    return {body: lines.join("\n"), changed: true};
+    return removeBlock(lines, bullet.index, bulletBlockEnd(lines, bullet.index, range.end, structure.fenced), range);
 }
 
 function answerQuestion(lines, structure, operation) {
@@ -321,7 +320,20 @@ function removeQuestion(lines, structure, operation) {
     const id = validQuestionId(operation.id);
     const question = uniqueTarget(structure.questions.filter((record) => record.id === id), "question", id);
     questionBlock(lines, question, structure.fenced);
-    lines.splice(question.index, question.end - question.index);
+    const section = structure.sections.find((record) => record.name === DECISIONS_SECTION);
+    return removeBlock(lines, question.index, question.end, section);
+}
+
+/** Empty folded sections keep only the required blank line after summary.
+ * Trim whitespace from the edited content range, never from neighboring sections.
+ */
+function removeBlock(lines, start, end, container) {
+    const removed = end - start;
+    lines.splice(start, removed);
+    const remainingEnd = container.end - removed;
+    if (container.wrapped && lines.slice(container.start, remainingEnd).every((line) => line.trim() === "")) {
+        lines.splice(container.start, remainingEnd - container.start);
+    }
     return {body: lines.join("\n"), changed: true};
 }
 
@@ -452,12 +464,21 @@ function parseEditableBody(body) {
     }
 
     const sectionHeadings = headings.filter((heading) => heading.level === 2);
-    const sections = sectionHeadings.map((heading, index) => ({
-        name: heading.name,
-        heading: heading.index,
-        start: heading.index + 1,
-        end: sectionHeadings[index + 1]?.index ?? lines.length,
-    }));
+    const sections = sectionHeadings.map((heading, index) => {
+        const startLine = heading.index + 1;
+        const endLine = sectionHeadings[index + 1]?.index ?? lines.length;
+        const raw = lines.slice(startLine, endLine).join("\n");
+        const content = sectionContentRange(raw, 0, raw.length);
+        const start = startLine + raw.slice(0, content.start).split("\n").length - 1;
+        const end = content.start === content.end ? start : startLine + raw.slice(0, content.end).split("\n").length;
+        return {
+            name: heading.name,
+            heading: heading.index,
+            start: content.start === 0 ? startLine : start,
+            end: content.end === raw.length ? endLine : end,
+            wrapped: content.start !== 0,
+        };
+    });
     assertUniqueIds(sections, "section", (record) => record.name);
 
     const packages = [];

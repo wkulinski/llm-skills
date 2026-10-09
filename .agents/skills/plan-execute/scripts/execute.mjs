@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
+import {compareFreshProfiles} from "../../_shared/scripts/model-leaderboard.mjs";
 import {compareModelProfiles, loadModelHierarchy} from "../../_shared/scripts/model-hierarchy.mjs";
 import {completeWorkPackage as completeTaskPlanWorkPackage, loadPlanFile} from "../../_shared/scripts/task-plan/store.mjs";
 import {writeFileAtomic} from "../../_shared/scripts/task-plan/atomic-file.mjs";
@@ -123,73 +124,227 @@ export function selectNextWorkPackage(plan) {
 export const SESSION_MODEL_ENV = "OPENCODE_SESSION_MODEL";
 export const SESSION_REASONING_ENV = "OPENCODE_SESSION_VARIANT";
 
-export function checkExecutionEnvironment(plan, {currentModel, currentReasoning, userAttested = false, env = process.env, fsOps = fs} = {}) {
+const DECISION_OPTIONS = Object.freeze(["change-profile", "user-attested", "stop"]);
+
+function decisionOptions() {
+    return [...DECISION_OPTIONS];
+}
+
+export async function checkExecutionEnvironment(plan, {
+    currentModel,
+    currentReasoning,
+    userAttested = false,
+    attestedWp,
+    attestedModel,
+    attestedReasoning,
+    requiredLabel,
+    currentLabel,
+    env = process.env,
+    fsOps = fs,
+    fetchImpl,
+} = {}) {
     const selection = selectNextWorkPackage(plan);
     if (selection.action === "complete") {
         return {action: "complete", sufficient: true, selected: null};
     }
-    const hasModelFlag = typeof currentModel === "string" && currentModel !== "";
-    const hasReasoningFlag = typeof currentReasoning === "string" && currentReasoning !== "";
+
+    // The ready plan's required profile must be proven in the validated
+    // hierarchy before any attestation or unknown-current handling can admit
+    // the work package; neither can bypass a missing or invalid hierarchy.
+    let hierarchy;
+    let probe;
+    try {
+        hierarchy = loadModelHierarchy({repoRoot: plan.repoRoot, fsOps});
+        probe = compareModelProfiles(hierarchy, {
+            required: selection.selected.environment,
+            current: selection.selected.environment,
+        });
+    } catch (error) {
+        throw translateExecutionError(error);
+    }
+
+    const hasModelFlag = typeof currentModel === "string" && currentModel.trim() !== "";
+    const hasReasoningFlag = typeof currentReasoning === "string" && currentReasoning.trim() !== "";
     if (hasModelFlag !== hasReasoningFlag) {
         throw new PlanExecuteError(
             "INVALID_ARGUMENT",
             "Pass both --current-model and --current-reasoning, or neither to use the session environment.",
         );
     }
-    if (userAttested && hasModelFlag) {
+    const hasAttestedModel = typeof attestedModel === "string" && attestedModel.trim() !== "";
+    const hasAttestedReasoning = typeof attestedReasoning === "string" && attestedReasoning.trim() !== "";
+    if (hasAttestedModel !== hasAttestedReasoning) {
         throw new PlanExecuteError(
             "INVALID_ARGUMENT",
-            "--user-attested cannot be combined with --current-model/--current-reasoning.",
+            "Pass both --attested-model and --attested-reasoning, or neither.",
         );
     }
-    if (userAttested) {
-        return attestExecutionEnvironment(selection, fsOps, plan.repoRoot);
-    }
-    const source = hasModelFlag ? "flags" : "session-env";
-    const model = hasModelFlag ? currentModel : env?.[SESSION_MODEL_ENV];
-    const reasoning = hasReasoningFlag ? currentReasoning : env?.[SESSION_REASONING_ENV];
-    if (!model || !reasoning) {
+    const hasRequiredLabel = typeof requiredLabel === "string" && requiredLabel.trim() !== "";
+    const hasCurrentLabel = typeof currentLabel === "string" && currentLabel.trim() !== "";
+    if (hasRequiredLabel !== hasCurrentLabel) {
         throw new PlanExecuteError(
-            "SESSION_PROFILE_UNKNOWN",
-            `Cannot determine the current session model/reasoning. In OpenCode install .opencode/plugins/session-model-env.js (provides ${SESSION_MODEL_ENV} and ${SESSION_REASONING_ENV}) and restart. In any harness pass --current-model/--current-reasoning, or ask the user and pass --user-attested.`,
+            "INVALID_ARGUMENT",
+            "Pass both --required-label and --current-label, or neither.",
         );
     }
-    try {
-        const hierarchy = loadModelHierarchy({repoRoot: plan.repoRoot, fsOps});
-        const comparison = compareModelProfiles(hierarchy, {
-            required: selection.selected.environment,
-            current: {model, reasoning},
+    const labels = hasRequiredLabel ? {required: requiredLabel.trim(), current: currentLabel.trim()} : null;
+
+    const envModel = typeof env?.[SESSION_MODEL_ENV] === "string" ? env[SESSION_MODEL_ENV].trim() : "";
+    const envReasoning = typeof env?.[SESSION_REASONING_ENV] === "string" ? env[SESSION_REASONING_ENV].trim() : "";
+    const model = hasModelFlag ? currentModel.trim() : envModel;
+    const reasoning = hasReasoningFlag ? currentReasoning.trim() : envReasoning;
+    const observed = model && reasoning ? {model, reasoning} : null;
+    const profileSource = hasModelFlag ? "flags" : "session-env";
+
+    if (userAttested) {
+        return attestExecutionEnvironment(selection, probe, {
+            attestedWp,
+            attestedModel: hasAttestedModel ? attestedModel.trim() : null,
+            attestedReasoning: hasAttestedReasoning ? attestedReasoning.trim() : null,
+            observed,
         });
-        return {
-            action: comparison.sufficient ? "execute" : "change-environment",
-            ...comparison,
-            source,
-            selected: selection.selected,
-        };
-    } catch (error) {
-        throw translateExecutionError(error);
     }
+
+    if (!observed) {
+        return {
+            action: "decision-required",
+            sufficient: false,
+            reason: "current-profile-unknown",
+            code: "SESSION_PROFILE_UNKNOWN",
+            required: probe.required,
+            current: model || reasoning ? {model: model || null, reasoning: reasoning || null} : null,
+            selected: selection.selected,
+            options: decisionOptions(),
+        };
+    }
+
+    let comparison = null;
+    try {
+        comparison = compareModelProfiles(hierarchy, {required: probe.required, current: observed});
+    } catch (error) {
+        if (error?.code !== "UNRANKED_CURRENT_PROFILE") {
+            throw translateExecutionError(error);
+        }
+    }
+    if (!comparison) {
+        return checkExternalEnvironment({required: probe.required, current: observed, labels, profileSource, selection, fetchImpl});
+    }
+    return {
+        action: comparison.sufficient ? "execute" : "change-environment",
+        ...comparison,
+        source: profileSource,
+        selected: selection.selected,
+        ...(comparison.sufficient ? {} : {options: decisionOptions()}),
+    };
 }
 
-function attestExecutionEnvironment(selection, fsOps, repoRoot) {
-    const required = selection.selected.environment;
-    try {
-        const hierarchy = loadModelHierarchy({repoRoot, fsOps});
-        // Reuse the deterministic comparator to prove the required profile is ranked,
-        // without measuring a current profile that this harness cannot report.
-        const probe = compareModelProfiles(hierarchy, {required, current: required});
+/** A ranked local comparison never fetches; only an unranked current profile
+ * reaches the shared fresh boundary, which reads both sides in one fetch.
+ * Without agent-supplied ranking labels nothing is fetched: the agent first
+ * pairs both profiles with rows printed by `model-leaderboard.mjs entries`.
+ */
+async function checkExternalEnvironment({required, current, labels, profileSource, selection, fetchImpl}) {
+    if (!labels) {
         return {
-            action: "execute",
-            sufficient: true,
-            attested: true,
-            source: "user-attested",
-            required: probe.required,
-            current: null,
+            action: "pairing-required",
+            sufficient: false,
+            reason: "ranking-labels-missing",
+            required: {model: required.model, reasoning: required.reasoning},
+            current,
             selected: selection.selected,
+            source: "leaderboard",
+            profileSource,
         };
-    } catch (error) {
-        throw translateExecutionError(error);
     }
+    const comparison = await compareFreshProfiles(
+        {model: required.model, reasoning: required.reasoning, label: labels.required},
+        {...current, label: labels.current},
+        {fetchImpl},
+    );
+    if (comparison.status === "decision-required") {
+        return {
+            action: "decision-required",
+            sufficient: false,
+            reason: comparison.reason,
+            code: comparison.code,
+            required: comparison.required,
+            current: comparison.current,
+            selected: selection.selected,
+            source: "leaderboard",
+            profileSource,
+            options: decisionOptions(),
+        };
+    }
+    return {
+        action: comparison.sufficient ? "execute" : "change-environment",
+        sufficient: comparison.sufficient,
+        required: comparison.required,
+        current: comparison.current,
+        tolerance: comparison.tolerance,
+        source: "leaderboard",
+        leaderboardSource: comparison.source,
+        fetchedAt: comparison.fetchedAt,
+        profileSource,
+        selected: selection.selected,
+        ...(comparison.sufficient ? {} : {options: decisionOptions()}),
+    };
+}
+
+/** One explicit, WP-scoped admission after the user confirms. Nothing is
+ * persisted: a changed work package or observed profile invalidates the scope,
+ * and an unobservable profile is never bound for reuse.
+ */
+function attestExecutionEnvironment(selection, probe, {attestedWp, attestedModel, attestedReasoning, observed}) {
+    const selectedId = selection.selected.id;
+    if (typeof attestedWp !== "string" || attestedWp.trim() === "") {
+        throw new PlanExecuteError(
+            "INVALID_ARGUMENT",
+            "--user-attested requires --attested-wp with the confirmed work package.",
+        );
+    }
+    if (attestedWp.trim() !== selectedId) {
+        throw new PlanExecuteError(
+            "ATTESTATION_SCOPE_MISMATCH",
+            `User attestation was confirmed for ${attestedWp.trim()}, but the selected work package is ${selectedId}; ask the user again.`,
+            {attested_wp: attestedWp.trim(), selected: selectedId, options: decisionOptions()},
+        );
+    }
+    if (observed) {
+        if (attestedModel !== observed.model || attestedReasoning !== observed.reasoning) {
+            throw new PlanExecuteError(
+                "ATTESTATION_SCOPE_MISMATCH",
+                "The observed current profile changed since the user confirmed the attestation; ask the user again.",
+                {
+                    observed,
+                    attested_model: attestedModel,
+                    attested_reasoning: attestedReasoning,
+                    options: decisionOptions(),
+                },
+            );
+        }
+        return attestationResult(selection, probe, observed);
+    }
+    if (attestedModel !== null || attestedReasoning !== null) {
+        throw new PlanExecuteError(
+            "ATTESTATION_SCOPE_MISMATCH",
+            "The current profile is not observable, so attested model/reasoning cannot be scoped to it; ask the user again.",
+            {options: decisionOptions()},
+        );
+    }
+    return attestationResult(selection, probe, null);
+}
+
+function attestationResult(selection, probe, observed) {
+    return {
+        action: "execute",
+        sufficient: true,
+        attested: true,
+        source: "user-attested",
+        required: probe.required,
+        current: observed,
+        attestation: {wpId: selection.selected.id, profile: observed, reusable: false},
+        selected: selection.selected,
+    };
 }
 
 function packageField(packageBody, label) {
@@ -279,9 +434,31 @@ function usage() {
         "Usage:",
         "  execute.mjs resolve [--path <plan>] [--root <repo>] [--cache-path <dir>]",
         "  execute.mjs next [--path <plan>] [--root <repo>] [--cache-path <dir>]",
-        "  execute.mjs check-environment [--current-model <model> --current-reasoning <level> | --user-attested] [--path <plan>] [--root <repo>] [--cache-path <dir>]",
+        "  execute.mjs check-environment [--current-model <model> --current-reasoning <level>] [--required-label <ranking label> --current-label <ranking label>] [--user-attested --attested-wp <WPn> [--attested-model <model> --attested-reasoning <level>]] [--path <plan>] [--root <repo>] [--cache-path <dir>]",
         "  execute.mjs complete --path <plan> --wp <WPn> --evidence <text> [--root <repo>] [--cache-path <dir>]",
     ].join("\n");
+}
+
+function optionalStringArg(args, key) {
+    const value = args[key];
+    if (typeof value === "undefined") {
+        return null;
+    }
+    if (typeof value !== "string" || !value.trim()) {
+        throw new PlanExecuteError("INVALID_ARGUMENT", `--${key.replaceAll("_", "-")} requires a value.`);
+    }
+    return value;
+}
+
+function booleanFlag(args, key) {
+    const value = args[key];
+    if (typeof value === "undefined") {
+        return false;
+    }
+    if (value !== true) {
+        throw new PlanExecuteError("INVALID_ARGUMENT", `--${key.replaceAll("_", "-")} does not take a value.`);
+    }
+    return true;
 }
 
 async function main(argv) {
@@ -318,10 +495,22 @@ async function main(argv) {
         } else if (command === "next") {
             result = selectNextWorkPackage(loadExecutionPlan({planPath: resolved.absolute, repoRoot}));
         } else if (command === "check-environment") {
-            result = checkExecutionEnvironment(loadExecutionPlan({planPath: resolved.absolute, repoRoot}), {
-                currentModel: typeof args.current_model === "string" ? args.current_model : null,
-                currentReasoning: typeof args.current_reasoning === "string" ? args.current_reasoning : null,
-                userAttested: args.user_attested === true,
+            const userAttested = booleanFlag(args, "user_attested");
+            const scope = {
+                attestedWp: optionalStringArg(args, "attested_wp"),
+                attestedModel: optionalStringArg(args, "attested_model"),
+                attestedReasoning: optionalStringArg(args, "attested_reasoning"),
+            };
+            if (!userAttested && (scope.attestedWp !== null || scope.attestedModel !== null || scope.attestedReasoning !== null)) {
+                throw new PlanExecuteError("INVALID_ARGUMENT", "--attested-* flags require --user-attested.");
+            }
+            result = await checkExecutionEnvironment(loadExecutionPlan({planPath: resolved.absolute, repoRoot}), {
+                currentModel: optionalStringArg(args, "current_model"),
+                currentReasoning: optionalStringArg(args, "current_reasoning"),
+                requiredLabel: optionalStringArg(args, "required_label"),
+                currentLabel: optionalStringArg(args, "current_label"),
+                userAttested,
+                ...scope,
             });
         } else {
             throw new PlanExecuteError("INVALID_ARGUMENT", usage());

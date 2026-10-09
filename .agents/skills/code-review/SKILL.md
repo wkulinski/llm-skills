@@ -3,8 +3,8 @@ name: code-review
 description: >-
   Dogłębny, tylko odczytowy przegląd zmian w kodzie i planów zadań: ocenia je
   względem wymagań i konwencji repo, śledzi wpływ poza artefaktem i filtruje
-  fałszywe trafienia. Użyj, gdy potrzebujesz werdyktu przed merge lub wdrożeniem
-  planu.
+  fałszywe trafienia. Użyj, gdy użytkownik zleca review kodu lub aktualnych zmian
+  albo ocenę istniejącego planu przed wdrożeniem.
 compatibility: Git-based projects.
 metadata:
   mode: read-only
