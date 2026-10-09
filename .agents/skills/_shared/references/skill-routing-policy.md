@@ -45,9 +45,11 @@ Stosuj następującą kolejność:
      `$plan-execute`;
     - implementacja konkretnej zmiany (w tym feature, bugfix lub refaktor) bez
       istniejącego planu → `$code-implement`;
-    - pełny albo głęboki przegląd implementacji → `$code-review` w trybie `code`;
+    - samodzielne zlecenie review kodu lub zmian, także „review aktualnych
+      zmian”, bez wymogu słów „pełny” albo „głęboki” → `$code-review` w trybie `code`;
     - jawne zlecenie review kodu Claude Code z OpenCode → `$claude-review`;
-    - szybki przegląd bieżących zmian → `$review-quick`;
+    - szybka auto-weryfikacja przyrostu jako etap workflow implementacji/QA
+      albo jawna prośba o szybkie sprawdzenie → `$review-quick`;
     - audyt zgodności skilla, agenta albo reguł instrukcji („zaudytuj
       skill/instrukcje”) → `$skill-review` w trybie `conformance` albo `standard-gap`;
     - przygotowanie lub wykonanie commita → `$git-commit`.
@@ -55,6 +57,15 @@ Stosuj następującą kolejność:
    „zrealizuj kolejny pakiet” z implementacją, a użytkownik nie wskazał
    bezpośrednio `$code-implement`, pierwszym skillem zawsze jest
    `$plan-execute`.
+
+### Review zlecone a quick-check
+
+Samodzielne polecenie użytkownika wykonania review wybiera `$code-review`,
+również gdy pojawia się w trakcie implementacji. `$review-quick` jest
+checkpointem realizacji zadania albo trybem wybranym jawnie przez użytkownika,
+np. „szybko sprawdź ostatni przyrost” lub `$review-quick`.
+Słowa „aktualne” i „bieżące” określają zakres zmian, nie głębokość review;
+mały diff ani brak słowa „głęboki” nie uzasadniają przełączenia na quick-check.
 
 ## Sygnały istniejącego planu
 
@@ -147,8 +158,8 @@ jasnego pytania — nie cichego pominięcia orkiestratora ani zmiany zakresu.
 | Zaimplementuj zmianę bez planu | `$code-implement` | implementacja i lekka weryfikacja |
 | Nowe wymaganie w trakcie aktywnej pracy nad planem | `$task-plan` | zmiana planu i jego review, bez zmian w repozytorium |
 | Odrębna faza read-only review istniejącego planu | `$code-review` (`plan`) | findings-first + plan coverage + readiness verdict |
-| Pełny albo głęboki przegląd implementacji | `$code-review` (`code`) | findings-first + coverage + merge verdict |
-| Przejrzyj bieżące zmiany | `$review-quick` | raport findings-first |
+| Wykonaj review kodu albo przejrzyj aktualne/bieżące zmiany | `$code-review` (`code`) | findings-first + coverage + merge verdict |
+| Szybko sprawdź przyrost w trakcie realizacji zadania albo jawnie wybierz quick-check | `$review-quick` | raport findings-first bez formalnego werdyktu |
 | Zaudytuj skill, instrukcje, agenta albo cały katalog | `$skill-review` | findings-first + severity/evidence; bez edycji plików |
 | Zrób commit | `$git-commit` | procedura QA i commit |
 

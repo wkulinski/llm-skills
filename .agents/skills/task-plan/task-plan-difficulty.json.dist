@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "thresholds": {
+    "simple": 30,
+    "moderate": 40,
+    "hard": 50,
+    "very-hard": 60
+  }
+}

@@ -27,8 +27,8 @@ znajduje się na końcu dokumentu.
 
 | Intencja | Skill | Następny krok |
 | --- | --- | --- |
-| Przeprowadź głęboki review zmian albo odrębną fazę read-only review planu | `$code-review` | werdykt przed merge lub wdrożeniem planu |
-| Szybko sprawdź bieżące zmiany przed commitem | `$review-quick` | raport findings-first bez pełnej procedury |
+| Wykonaj review kodu lub aktualnych zmian albo odrębną fazę read-only review planu | `$code-review` | findings-first, coverage i werdykt przed merge lub wdrożeniem planu |
+| Szybko sprawdź przyrost w trakcie realizacji zadania albo jawnie wybierz quick-check | `$review-quick` | raport findings-first bez formalnego werdyktu |
 | Zleć z OpenCode odczytowy review kodu Claude Code (Opus) przez Paseo | `$claude-review` | raport recenzenta oceniany bramką `$code-review` |
 
 ### Review instrukcji

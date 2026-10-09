@@ -1,9 +1,10 @@
 ---
 name: review-quick
 description: >-
-  Wykonuje szybką auto-weryfikację bieżących zmian: sprawdza zakres, zgodność
-  z regułami i ryzyka przed commitem. Użyj, gdy potrzebujesz szybkiego review
-  albo wstępnej oceny zmian.
+  Wykonuje szybką auto-weryfikację przyrostu w trakcie realizacji zadania:
+  sprawdza zakres, zgodność z regułami i ryzyka. Użyj, gdy potrzebujesz
+  checkpointu workflow albo jawnie prosisz o szybkie sprawdzenie. Samodzielne
+  zlecenie review kodu lub aktualnych zmian należy do code-review.
 shared_files:
   - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
@@ -33,6 +34,7 @@ shared_files:
 Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem i zasadami projektu, bez uruchamiania pełnego QA. Ma to wychwycić oczywiste braki, ryzyka i potrzeby testów.
 
 ## Tryb domyślny i granice
+- Ten skill jest checkpointem aktywnego workflow albo jawnym quick-checkiem; nie przejmuje samodzielnego zlecenia review zmian, którego właścicielem jest `$code-review`.
 - Domyślnie `$review-quick` działa w trybie `review-only`.
 - `review-only` oznacza: identyfikacja ryzyk/błędów/luk testowych bez implementowania poprawek.
 - Jeśli użytkownik chce poprawki, należy przejść do `$code-implement` (a nie rozszerzać `$review-quick`).

@@ -7,7 +7,7 @@ import {it} from "vitest";
 import {applyOperation, editPlan} from "../../../.agents/skills/task-plan/scripts/edit.mjs";
 import {buildPlanId, normalizeUserInput, persistSource} from "../../../.agents/skills/task-plan/scripts/source.mjs";
 import {savePlan} from "../../../.agents/skills/task-plan/scripts/store.mjs";
-import {parseQuestions, validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
+import {parsePlanDocument, parseQuestions, realSection, sectionContentRange, validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
 
 function buildPlan() {
     return `# Fixture plan
@@ -83,7 +83,7 @@ function buildPlan() {
 }
 const EDIT_SCRIPT = path.join(process.cwd(), ".agents/skills/task-plan/scripts/edit.mjs");
 
-function createFixture() {
+function createFixture(body = buildPlan()) {
     const root = fs.mkdtempSync(path.join(process.cwd(), "var/agent/cache/task-plan-edit-test-"));
     const configDir = path.join(root, ".agents", "config");
     fs.mkdirSync(configDir, {recursive: true});
@@ -106,7 +106,7 @@ function createFixture() {
         repo_root: root,
         source_identity: identity,
         plan_id: planId,
-        markdown_body: buildPlan(),
+        markdown_body: body,
         context: null,
         updated_at: "2026-01-01T00:00:01.000Z",
     }, {verbose: true});
@@ -121,6 +121,145 @@ function createFixture() {
 function cleanup(fixture) {
     fs.rmSync(fixture.root, {recursive: true, force: true});
 }
+
+function foldedPlan(body = buildPlan(), closingGap = "\n\n") {
+    return body.split(/(?=^## )/m).map((section) => {
+        const heading = section.match(/^## (.+)\n/);
+        if (!heading || heading[1] === "Work package summaries") {
+            return section;
+        }
+        const content = section.slice(heading[0].length).trim();
+        return `${heading[0]}\n<details>\n<summary>${heading[1]}</summary>\n\n${content}${content ? closingGap : ""}</details>\n\n`;
+    }).join("");
+}
+
+function sectionContent(body, heading) {
+    const section = realSection(body, new RegExp(`^## ${heading}[ \\t]*$`, "gm"));
+    assert.ok(section, `Missing section: ${heading}`);
+    const range = sectionContentRange(body, section.start, section.end);
+    assert.notEqual(range.start, section.start, `Unrecognized wrapper: ${heading}`);
+    assert.match(body.slice(section.start, range.start), new RegExp(`<summary>${heading}</summary>\n\n$`));
+    assert.match(body.slice(range.end, section.end), /^\n?<\/details>\s*$/);
+    return body.slice(range.start, range.end).trim();
+}
+
+function outsideSections(body, headings) {
+    const ranges = headings.map((heading) => realSection(body, new RegExp(`^## ${heading}[ \\t]*$`, "gm")))
+        .sort((left, right) => right.headingStart - left.headingStart);
+    let remaining = body;
+    for (const range of ranges) {
+        remaining = remaining.slice(0, range.headingStart) + remaining.slice(range.end);
+    }
+    return remaining;
+}
+
+function assertEditedContent(content, operation) {
+    if (operation.type.startsWith("remove-")) {
+        assert.equal(content, "");
+    } else if (operation.type === "answer-question") {
+        assert.match(content, /Q2 \[answered\]/);
+        assert.match(content, /- Answer: Yes\.\n {4}The owner remains unchanged\./);
+        assert.match(content, /- Source: current conversation/);
+    } else {
+        assert.ok(content.includes(operation.id));
+        for (const line of (operation.prompt ?? operation.value).split("\n")) {
+            assert.ok(content.includes(line));
+        }
+    }
+}
+
+it("exposes an empty folded section as a zero-length content range", () => {
+    const body = foldedPlan(buildPlan().replace("- Q1 [open]: Should the field be changed?", "")
+        .replace("- R1 [low]: The fixture is intentionally small.", ""));
+    for (const heading of ["Decisions and open questions", "Risks and discovery debt"]) {
+        const section = realSection(body, new RegExp(`^## ${heading}[ \\t]*$`, "gm"));
+        const range = sectionContentRange(body, section.start, section.end);
+        assert.notEqual(range.start, section.start);
+        assert.equal(range.start, range.end);
+        assert.equal(body.slice(range.end, section.end).trim(), "</details>");
+        assert.equal(sectionContent(body, heading), "");
+    }
+});
+
+for (const closingGap of ["\n", "\n\n"]) {
+    it(`keeps folded sections editable through empty content with ${closingGap.length} closing newline(s)`, () => {
+        const fixture = createFixture(foldedPlan(buildPlan(), closingGap));
+        try {
+            const operations = [
+                {type: "remove-question", id: "Q1"},
+                {type: "add-question", id: "Q2", prompt: "Keep this scope?", status: "open"},
+                {type: "edit-question", id: "Q2", prompt: "Keep the existing owner?\nConfirm the boundary."},
+                {type: "answer-question", id: "Q2", answer: "Yes.\nThe owner remains unchanged."},
+                {type: "remove-question", id: "Q2"},
+                {type: "remove-bullet", section: "Risks and discovery debt", id: "R1"},
+                {type: "add-bullet", section: "Risks and discovery debt", id: "R2", status: "low", value: "Check the result."},
+                {type: "edit-bullet", section: "Risks and discovery debt", id: "R2", value: "Check the selected result.\nKeep the other sections unchanged."},
+                {type: "remove-bullet", section: "Risks and discovery debt", id: "R2"},
+            ];
+            let before = parsePlanDocument(fs.readFileSync(fixture.file, "utf8")).body;
+            for (const [index, operation] of operations.entries()) {
+                const heading = operation.section ?? "Decisions and open questions";
+                const result = editPlan({file: fixture.relativeFile, operation}, {repoRoot: fixture.root, verbose: true});
+                assert.equal(result.validation.valid, true, result.validation.errors.join("\n"));
+                assert.equal(result.revision, index + 2);
+                const after = parsePlanDocument(result.markdown).body;
+                assert.equal(outsideSections(after, [heading]), outsideSections(before, [heading]));
+                assertEditedContent(sectionContent(after, heading), operation);
+                before = after;
+            }
+        } finally {
+            cleanup(fixture);
+        }
+    });
+}
+
+it("replaces the last entries of folded sections in one atomic batch", () => {
+    const fixture = createFixture(foldedPlan());
+    try {
+        const before = parsePlanDocument(fs.readFileSync(fixture.file, "utf8")).body;
+        const result = editPlan({file: fixture.relativeFile, operations: [
+            {type: "remove-question", id: "Q1"},
+            {type: "remove-bullet", section: "Risks and discovery debt", id: "R1"},
+            {type: "add-question", id: "Q2", prompt: "Keep the existing owner?", status: "open"},
+            {type: "answer-question", id: "Q2", answer: "Yes."},
+            {type: "add-bullet", section: "Risks and discovery debt", id: "R2", status: "low", value: "Verify the boundary."},
+            {type: "add-bullet", work_package: "WP1", id: "Implementation note", value: "Keep the existing owner.\n- Detail: Preserve its contract."},
+            {type: "edit-bullet", work_package: "WP1", id: "Implementation note", value: "Use the existing owner."},
+            {type: "remove-bullet", work_package: "WP1", id: "Implementation note"},
+        ]}, {repoRoot: fixture.root, verbose: true});
+        assert.equal(result.revision, 2);
+        assert.equal(result.validation.valid, true, result.validation.errors.join("\n"));
+        const after = parsePlanDocument(result.markdown).body;
+        assert.equal(outsideSections(after, ["Decisions and open questions", "Risks and discovery debt"]),
+            outsideSections(before, ["Decisions and open questions", "Risks and discovery debt"]));
+        assert.match(sectionContent(after, "Decisions and open questions"), /Q2 \[answered\]/);
+        assert.equal(sectionContent(after, "Risks and discovery debt"), "- R2 [low]: Verify the boundary.");
+        assert.equal(sectionContent(after, "Work packages"), sectionContent(before, "Work packages"));
+    } finally {
+        cleanup(fixture);
+    }
+});
+
+it("supports dry-run and failed-batch rollback when a folded section becomes empty", () => {
+    const fixture = createFixture(foldedPlan());
+    try {
+        const original = fs.readFileSync(fixture.file, "utf8");
+        const result = editPlan({file: fixture.relativeFile, dry_run: true,
+            operation: {type: "remove-question", id: "Q1"}}, {repoRoot: fixture.root});
+        assert.equal(result.dry_run, true);
+        assert.deepEqual(result.errors, []);
+        assert.deepEqual(result.changed_sections, ["Decisions and open questions"]);
+        assert.equal(result.next_revision, 2);
+        assert.equal(fs.readFileSync(fixture.file, "utf8"), original);
+        assert.throws(() => editPlan({file: fixture.relativeFile, operations: [
+            {type: "remove-question", id: "Q1"},
+            {type: "edit-question", id: "Q9", prompt: "A missing target must stop the batch."},
+        ]}, {repoRoot: fixture.root}), (error) => error.code === "TARGET_NOT_FOUND");
+        assert.equal(fs.readFileSync(fixture.file, "utf8"), original);
+    } finally {
+        cleanup(fixture);
+    }
+});
 
 it("edit-bullet selects a WP bullet and persists through store", () => {
     const fixture = createFixture();

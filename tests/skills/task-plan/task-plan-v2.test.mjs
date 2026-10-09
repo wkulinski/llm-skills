@@ -24,11 +24,29 @@ import {
     savePlan,
     StoreError,
 } from "../../../.agents/skills/task-plan/scripts/store.mjs";
-import {extractPackages, parsePlanDocument, reviewBodyHash, validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
+import {extractPackages, parseExecutionContract, parsePlanDocument, reviewBodyHash, validatePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
 import {AtomicWriteError, writeFileAtomic} from "../../../.agents/skills/task-plan/scripts/atomic-file.mjs";
 
 const NOW = "2026-08-24T12:00:00.000Z";
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
+
+it("parses legacy and folded section content without leaking wrappers into the final WP", () => {
+    const packages = `### WP1 — First\n\n- Goal: First result.\n\n### WP2 — Last\n\n- Goal: Last result.\n- Verification: Check the last result.`;
+    for (const wrap of [
+        (content) => `\n\n${content}\n\n`,
+        (content) => `\n\n<details>\n<summary>Details</summary>\n\n${content}\n\n</details>\n\n`,
+    ]) {
+        const body = `# Plan\n\n## Execution${wrap("- [ ] WP1\n- [ ] WP2")}## Work packages${wrap(packages)}## Order${wrap("- Order: WP1 then WP2.")}`;
+        const parsed = extractPackages(body);
+        assert.deepEqual(parsed.map((wp) => wp.id), ["WP1", "WP2"]);
+        assert.equal(parsed[1].body.trim(), packages.slice(packages.indexOf("### WP2")));
+        assert.doesNotMatch(parsed[1].body, /details|summary|## Order/);
+        assert.deepEqual(parseExecutionContract(body).errors, []);
+        assert.deepEqual(parseExecutionContract(body).items.map((wp) => wp.id), ["WP1", "WP2"]);
+        assert.equal(reviewBodyHash(body), reviewBodyHash(body.replace("- [ ] WP1", "- [x] WP1 — 2026-10-02 — focused test passed")));
+        assert.notEqual(reviewBodyHash(body), reviewBodyHash(body.replace("# Plan", "# Plan\n\nA changed objective.")));
+    }
+});
 
 function temporaryRepository() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-plan-v2-"));

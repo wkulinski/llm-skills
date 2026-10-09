@@ -6,6 +6,7 @@ import path from "node:path";
 
 import {isMainModule} from "../is-main-module.mjs";
 import {hasModelProfile, loadModelHierarchy} from "../model-hierarchy.mjs";
+import {loadDifficultyPolicy, parsePackageDifficulty} from "./difficulty.mjs";
 
 export const PLAN_RESULTS = Object.freeze(["invalid", "blocked", "ready"]);
 
@@ -90,6 +91,7 @@ export function validatePlanDocument(markdown, options = {}) {
     errors.push(...parsed.errors);
     errors.push(...validateMetadata(parsed.metadata));
     errors.push(...validateRequiredSections(parsed.body));
+    errors.push(...validateSectionDetails(parsed.body));
     errors.push(...validatePlaceholders(parsed.body));
     errors.push(...validateNamedBullets(parsed.body));
     errors.push(...validateLabeledSection(
@@ -112,13 +114,15 @@ export function validatePlanDocument(markdown, options = {}) {
         errors.push("Plan must contain at least one work package.");
     }
     const packageIds = new Set();
+    const difficultyFormat = packages.some((packageRecord) => parsePackageDifficulty(packageRecord.body).present);
     for (const packageRecord of packages) {
         if (packageIds.has(packageRecord.id)) {
             errors.push(`Duplicate work package id: ${packageRecord.id}.`);
         }
         packageIds.add(packageRecord.id);
-        errors.push(...validatePackage(packageRecord));
+        errors.push(...validatePackage(packageRecord, difficultyFormat));
     }
+    errors.push(...validateDifficulty(packages, options, difficultyFormat));
     errors.push(...validateSourceCoverage(parsed.body, packageIds));
     errors.push(...validateExecutionEnvironment(parsed.body, packages, options));
     errors.push(...validateExecutionContract(parsed.body, packages));
@@ -216,6 +220,49 @@ export function realSection(text, headingPattern) {
     return {headingStart: match.index, start, end: nextRealSectionBreak(text, start)};
 }
 
+/** Content offsets inside a canonical section wrapper (including empty content), or the legacy range.
+ * Raw section offsets remain unchanged for hashing and lossless writes.
+ */
+export function sectionContentRange(text, start, end) {
+    const raw = text.slice(start, end);
+    const wrapper = raw.match(/^\s*<details>\n<summary>[^\n<>]+<\/summary>\n\n(?!\n)(?:([\s\S]*?)\n)?<\/details>\s*$/);
+    if (!wrapper) {
+        return {start, end};
+    }
+    const contentStart = start + raw.indexOf("</summary>\n\n") + "</summary>\n\n".length;
+    return {start: contentStart, end: contentStart + (wrapper[1]?.length ?? 0)};
+}
+
+function validateSectionDetails(body) {
+    const tags = realMatches(body, /^\s*<\/?(?:details|summary)\b[^\n]*$/gm);
+    if (tags.length === 0) {
+        return []; // Existing unwrapped plans remain readable.
+    }
+    const errors = [];
+    const headings = realMatches(body, /^## (.+?)[ \t]*$/gm);
+    headings.forEach((heading, index) => {
+        const start = heading.index + heading[0].length;
+        const end = headings[index + 1]?.index ?? body.length;
+        const raw = body.slice(start, end);
+        const sectionTags = realMatches(raw, /^[ \t]*<\/?(?:details|summary)\b[^\n]*$/gm);
+        const name = heading[1].trim();
+        if (name === "Work package summaries") {
+            if (sectionTags.length > 0) {
+                errors.push("Work package summaries must remain visible without details.");
+            }
+            return;
+        }
+        const range = sectionContentRange(body, start, end);
+        if (range.start === start || sectionTags.length !== 3) {
+            errors.push(`${name} must contain one closed, non-nested details block with exactly one blank line after summary.`);
+        }
+    });
+    if (headings.length > 0 && tags.some((tag) => tag.index < headings[0].index)) {
+        errors.push("Plan preamble must remain outside details.");
+    }
+    return errors;
+}
+
 /**
  * Index of the newline that precedes the next real `## ` heading at or after
  * `from`, or the text length when there is none.
@@ -279,11 +326,12 @@ export function extractPackages(body) {
     if (!section) {
         return [];
     }
+    const content = sectionContentRange(body, section.start, section.end);
     const matches = realMatches(body, /^###\s+(WP[1-9][0-9]*)\s+[—-]\s+(.+)$/gm)
-        .filter((match) => match.index >= section.start && match.index < section.end);
+        .filter((match) => match.index >= content.start && match.index < content.end);
     return matches.map((match, index) => {
         const start = match.index;
-        const end = matches[index + 1]?.index ?? section.end;
+        const end = matches[index + 1]?.index ?? content.end;
         return {id: match[1], title: match[2].trim(), body: body.slice(start, end)};
     });
 }
@@ -872,11 +920,43 @@ function validateNamedBullets(body) {
     return errors;
 }
 
-function validatePackage(packageRecord) {
+/**
+ * Validate the difficulty assessment of new-format plans.
+ *
+ * A plan whose work packages declare no real `Difficulty:` marker keeps the
+ * legacy contract unchanged. As soon as one work package declares difficulty,
+ * every package needs a complete, consistent `Difficulty: v1` block and the
+ * project policy must load; a malformed policy is a validation error, never a
+ * silent fallback to defaults.
+ */
+function validateDifficulty(packages, options, difficultyFormat) {
+    if (!difficultyFormat) {
+        return [];
+    }
+    let policy;
+    try {
+        policy = loadDifficultyPolicy({repoRoot: options.repoRoot ?? process.cwd(), fsOps: options.fsOps ?? fs});
+    } catch (error) {
+        return [error instanceof Error ? error.message : String(error)];
+    }
+    return packages.flatMap((packageRecord) => {
+        const parsed = parsePackageDifficulty(packageRecord.body, policy);
+        if (!parsed.present) {
+            return [`${packageRecord.id} must contain a complete Difficulty: v1 block.`];
+        }
+        return parsed.errors.map((message) => `${packageRecord.id}: ${message}`);
+    });
+}
+
+function validatePackage(packageRecord, difficultyFormat) {
     const errors = [];
     const values = new Map();
     for (const field of REQUIRED_PACKAGE_FIELDS) {
-        const match = packageRecord.body.match(new RegExp(`^\\s*-\\s+${escapeRegex(field)}:\\s*(.*)$`, "m"));
+        // Difficulty has a nested Verification score, not the WP's check.
+        // Keep legacy matching unchanged; new-format fields must be top-level.
+        const match = difficultyFormat
+            ? realMatches(packageRecord.body, new RegExp(`^-\\s+${escapeRegex(field)}:[ \\t]*(.*)$`, "gm"))[0]
+            : packageRecord.body.match(new RegExp(`^\\s*-\\s+${escapeRegex(field)}:\\s*(.*)$`, "m"));
         if (!match || match[1].trim() === "") {
             errors.push(`${packageRecord.id} is missing non-empty field: ${field}.`);
             continue;
@@ -938,7 +1018,11 @@ function validateSourceCoverage(body, packageIds) {
 
 function extractSection(body, heading) {
     const section = realSection(body, new RegExp(`^## ${escapeRegex(heading)}\\s*$`, "gm"));
-    return section ? body.slice(section.start, section.end) : "";
+    if (!section) {
+        return "";
+    }
+    const content = sectionContentRange(body, section.start, section.end);
+    return body.slice(content.start, content.end);
 }
 
 

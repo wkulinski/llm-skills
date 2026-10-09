@@ -6,7 +6,8 @@ import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {it} from "vitest";
 
-import {editPlan} from "../../../.agents/skills/task-plan/scripts/edit.mjs";
+import {applyOperation, editPlan} from "../../../.agents/skills/task-plan/scripts/edit.mjs";
+import {loadExecutionPlan, selectNextWorkPackage} from "../../../.agents/skills/plan-execute/scripts/execute.mjs";
 import {normalizeUserInput, persistSource} from "../../../.agents/skills/task-plan/scripts/source.mjs";
 import {
     completeWorkPackage,
@@ -100,7 +101,15 @@ Run the focused test.
 `;
 }
 
-function createFixture() {
+function foldedPlanBody() {
+    const body = planBody().replace("# Review gate plan\n", "# Review gate plan\n\nThis plan binds execution to review. Each package has a visible result. Details explain the implementation.\n")
+        .replace("Binds plan readiness to a recorded review decision, verifies the gate, and leaves unrelated cleanup untouched.", "Binds plan readiness to a recorded review decision and verifies the gate.");
+    return body.replace(/(^## (.+)\n)([\s\S]*?)(?=^## |$(?![\s\S]))/gm, (section, heading, name, content) => (
+        name === "Work package summaries" ? section : `${heading}\n<details>\n<summary>${name}</summary>\n\n${content.trim()}\n\n</details>\n\n`
+    ));
+}
+
+function createFixture(body = planBody()) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "review-gate-"));
     const configDir = path.join(root, ".agents", "config");
     fs.mkdirSync(configDir, {recursive: true});
@@ -114,14 +123,14 @@ function createFixture() {
     const saved = savePlan({
         repo_root: root,
         source_identity: identity,
-        markdown_body: planBody(),
+        markdown_body: body,
         context: null,
     }, {now: NOW, verbose: true});
     return {root, identity, saved, planPath: saved.paths.draft_path};
 }
 
-function withFixture(callback) {
-    const fixture = createFixture();
+function withFixture(callback, body) {
+    const fixture = createFixture(body);
     try {
         callback(fixture);
     } finally {
@@ -279,6 +288,79 @@ it("keeps ready through complete-wp because only the Execution checklist changes
         assert.equal(completed.metadata.reviewed_revision, 2);
         assert.equal(loadPlanFile({repoRoot: fixture.root, planPath: fixture.planPath}).status, "ready");
     });
+});
+
+it("executes a folded plan losslessly and preserves its recorded review", () => {
+    withFixture((fixture) => {
+        record(fixture);
+        const before = parsePlanDocument(read(fixture));
+        const {selected} = selectNextWorkPackage(loadExecutionPlan({repoRoot: fixture.root, planPath: fixture.planPath}));
+        assert.match(selected.body, /^### WP1 — Gate/);
+        assert.match(selected.body, /- Out of scope: Unrelated cleanup\./);
+        assert.match(selected.body, /- Verification: Run the focused test\./);
+        assert.doesNotMatch(selected.body, /<\/?(?:details|summary)/);
+        const completed = completeWorkPackage({repoRoot: fixture.root, planPath: fixture.planPath, wpId: "WP1", evidence: "focused test passed"}, {now: NOW, verbose: true});
+        assert.equal(completed.status, "ready");
+        assert.equal(completed.metadata.reviewed_body_sha256, before.metadata.reviewed_body_sha256);
+        assert.equal(parsePlanDocument(completed.markdown).body, before.body.replace("- [ ] WP1", "- [x] WP1 — 2026-10-02 — focused test passed"));
+    }, foldedPlanBody());
+});
+
+it("withdraws folded-plan review after preamble, scope or summary changes", () => {
+    withFixture((fixture) => {
+        for (const [oldText, newText] of [
+            ["This plan binds execution to review.", "This plan requires a broader review."],
+            ["- Scope: One package field.", "- Scope: Another package field."],
+            ["Binds plan readiness to a recorded review decision and verifies the gate.", "Binds plan readiness to the updated review requirement."],
+        ]) {
+            record(fixture);
+            const body = parsePlanDocument(read(fixture)).body;
+            assert.ok(body.includes(oldText));
+            const saved = saveBody(fixture, body.replace(oldText, newText));
+            assert.equal(saved.status, "blocked");
+            assert.equal(saved.blocked_reason, "review_pending");
+            assert.equal(saved.metadata.reviewed_body_sha256, null);
+        }
+    }, foldedPlanBody());
+});
+
+it("keeps structural edits inside folded sections and outside wrapper tags", () => {
+    withFixture((fixture) => {
+        const edited = editPlan({file: fixture.planPath, operations: [
+            {type: "add-bullet", work_package: "WP1", id: "Implementation note", value: "Keep the existing owner."},
+            {type: "add-bullet", section: "Risks and discovery debt", id: "R1", status: "low", value: "Verify the selected result."},
+            {type: "add-question", id: "Q1", prompt: "Keep the existing owner?", status: "open"},
+            {type: "answer-question", id: "Q1", answer: "Yes."},
+        ]}, {repoRoot: fixture.root, verbose: true});
+        assert.match(edited.markdown, /Implementation note: Keep the existing owner\.\n\n<\/details>/);
+        assert.match(edited.markdown, /R1 \[low]: Verify the selected result\.\n\n<\/details>/);
+        assert.match(edited.markdown, /- Source: current conversation\n\n<\/details>/);
+        assert.equal(edited.validation.valid, true);
+        const body = parsePlanDocument(edited.markdown).body;
+        const removed = applyOperation(body, {type: "remove-question", id: "Q1"}).body;
+        assert.equal((removed.match(/<details>/g) ?? []).length, 12);
+        assert.equal((removed.match(/<\/details>/g) ?? []).length, 12);
+        // A closing tag immediately after the last field is still outside the editable range.
+        const compact = body.replace(/\n\n<\/details>/g, "\n</details>");
+        const added = applyOperation(compact, {type: "add-bullet", work_package: "WP1", id: "Last note", value: "Inside the section."}).body;
+        assert.match(added, /Last note: Inside the section\.\n<\/details>/);
+    }, foldedPlanBody());
+});
+
+it("rejects malformed folded sections instead of silently accepting wrapper drift", () => {
+    withFixture((fixture) => {
+        const markdown = read(fixture);
+        for (const malformed of [
+            markdown.replace("<details>", "<details open>"),
+            markdown.replace("</details>", ""),
+            markdown.replace("<details>", "<details>\n<details>"),
+            markdown.replace("</summary>\n\n", "</summary>\n"),
+            markdown.replace("</summary>\n\n", "</summary>\n\n\n"),
+            markdown.replace("## Work package summaries\n\n", "## Work package summaries\n\n<details>\n<summary>Summaries</summary>\n\n"),
+        ]) {
+            assert.equal(validatePlanDocument(malformed, {repoRoot: fixture.root}).valid, false);
+        }
+    }, foldedPlanBody());
 });
 
 it("keeps plans written before the review keys readable but review_pending until a review is recorded", () => {

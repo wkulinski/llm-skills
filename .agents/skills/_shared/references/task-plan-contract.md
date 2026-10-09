@@ -106,6 +106,39 @@ wyszukiwania fragmentów tekstu.
 Sekcje zapisuj w tej kolejności. `Execution` i `Work package summaries` są na
 początku, aby czytelnik od razu widział postęp i zakres każdego WP.
 
+### Preambuła i zwijane szczegóły
+
+Bezpośrednio pod tytułem planu zapisz preambułę liczącą 3–5 pełnych zdań:
+wspólny cel, docelowy rezultat i związek między pakietami. Nie zastępuj jej
+listą kroków ani historią powstawania planu.
+
+W nowym planie każda sekcja poza `Work package summaries` ma dokładnie jeden
+zamknięty blok `<details>` (bez atrybutu `open`). Nagłówek `##` pozostaje
+na zewnątrz. `Work packages` ma jeden wspólny blok dla wszystkich WP, bez
+zagnieżdżonych bloków. Po wierszu zamykającym `summary` występuje dokładnie
+jedna pusta linia, aby Markdown renderował listy i nagłówki:
+
+```md
+## Execution
+
+<details>
+<summary>Postęp wykonania</summary>
+
+- [ ] WP1
+
+</details>
+```
+
+`Work package summaries` pozostaje widoczną listą, bez bloku `details`.
+Sekcja bez wpisów, np. po usunięciu ostatniego pytania albo ryzyka, zachowuje
+wrapper: po `</summary>` zostaje jedna pusta linia, a następny wiersz zawiera
+`</details>`. Edycja pustej sekcji nadal umieszcza nowe wpisy przed znacznikiem
+zamykającym, również w paczce operacji usunięcia i dodania wpisu.
+Parser i edytor nadal odczytują dotychczasowy format bez bloków; nie migruj
+masowo istniejących planów. Znaczniki sekcji nie należą do pełnej treści WP
+przekazywanej wykonawcy. Cała preambuła i szczegóły poza `Execution` należą
+do treści objętej review.
+
 ## Inwarianty treści
 
 - Plan opisuje stan obecny i docelowy, nie przebieg własnego powstawania.
@@ -174,6 +207,96 @@ Każdy pakiet używa nagłówka `### WP<number> — <tytuł>` i zawiera:
 - Acceptance criteria:
 - Verification:
 ```
+
+### Ocena trudności work package
+
+W nowym planie uzupełnij każdy WP o jawną ocenę trudności według stałej rubryki.
+Ocena jest planistycznym oszacowaniem zakresu poznania i koordynacji, a nie
+miarą „inteligencji” wykonawcy ani rankingiem modeli. `Estimated size` nadal
+opisuje ilość pracy i pozostaje parametrem odrębnym od poziomu trudności.
+
+Rubryka ocenia cztery kategorie, każda w skali 0–2:
+
+| Kategoria | 0 | 1 | 2 |
+| --- | --- | --- | --- |
+| `Dependencies` | jeden właściciel zmiany | kilka znanych elementów kontraktu | koordynacja wielu kontraktów |
+| `Logic` | zmiana mechaniczna | kilka rozstrzygniętych gałęzi | współbieżność, retry, idempotencja |
+| `Discovery` | brak rozpoznania | lokalny szczegół do potwierdzenia | śledzenie kilku znanych mechanizmów |
+| `Verification` | bezpośredni check | test integracyjny | zachowanie czasowe lub rozproszone |
+
+Suma punktów 0–2 oznacza proste (`simple`), 3–4 umiarkowane (`moderate`),
+5–6 trudne (`hard`), 7–8 bardzo trudne (`very-hard`). Autor zapisuje oceny,
+poziom i uzasadnienie; minimalne Total points wynikają z polityki projektu.
+
+Ryzyko (`Risk floor`) podnosi minimalny poziom, ale nigdy nie obniża poziomu
+wynikającego z sumy:
+
+- `none` — bez podwyższenia;
+- `authorization` albo `irreversible-migration` — co najmniej `hard`;
+- `concurrent-financial` — `very-hard`.
+
+Autor i reviewer wybierają najwyższe właściwe minimum ryzyka na podstawie
+zakresu WP. Walidator odczytuje jawny `Risk floor`, nie interpretuje prozy.
+Nierozstrzygnięta decyzja albo nieznana przyczyna błędu nadal blokuje
+`ready` i nie dodaje punktów trudności.
+
+Progi punktowe pochodzą z opcjonalnej tabeli projektu
+`.agents/config/task-plan-difficulty.json`. Brak pliku używa domyślnych progów
+30/40/50/60. Tabela projektu zastępuje domyślne w całości i musi zawierać
+politykę progów, nie wyniki modeli. To heurystyka startowa, nie wynik kalibracji;
+zmiana skali punktowej wymaga rewizji polityki. Tabela ma zawierać
+dokładnie cztery skończone, niemalejące progi liczbowe (`simple`, `moderate`, `hard`,
+`very-hard`) w zakresie 0–70; równy próg i wartość ułamkowa są dozwolone.
+Błędna tabela blokuje walidację nowego planu i nie jest po cichu zastępowana
+domyślną. Szablon skopiujesz poleceniem:
+
+```bash
+mkdir -p .agents/config
+cp <skills_root>/task-plan/task-plan-difficulty.json.dist .agents/config/task-plan-difficulty.json
+```
+
+Dokładny blok w WP (dzieci zapisuj wcięciem dwóch spacji; `Level` musi
+odpowiadać wyliczonemu poziomowi, a każda kategoria i `Rationale` wymagają
+konkretnego uzasadnienia):
+
+```md
+- Difficulty: v1
+  - Dependencies: 0 — Jeden właściciel zmiany.
+  - Logic: 1 — Kilka rozstrzygniętych gałęzi.
+  - Discovery: 2 — Śledzenie kilku znanych mechanizmów.
+  - Verification: 1 — Test integracyjny kontraktu.
+  - Risk floor: none
+  - Level: moderate
+  - Rationale: Suma 4 wynika z integracji znanych mechanizmów i gałęzi.
+```
+
+Przykłady minimalnego poziomu wymuszonego przez ryzyko:
+
+```md
+- Difficulty: v1
+  - Dependencies: 1 — Zmiana uprawnień dotyka znanego kontraktu.
+  - Logic: 0 — Zmiana mechaniczna.
+  - Discovery: 0 — Brak rozpoznania.
+  - Verification: 1 — Test integracyjny uprawnień.
+  - Risk floor: authorization
+  - Level: hard
+  - Rationale: Suma 2 wymaga podniesienia do hard przez ryzyko uprawnień.
+```
+
+```md
+- Difficulty: v1
+  - Dependencies: 1 — Przepływ płatności ma znane elementy kontraktu.
+  - Logic: 2 — Współbieżne obciążenia konta wymagają idempotencji.
+  - Discovery: 0 — Brak rozpoznania.
+  - Verification: 2 — Test przeplotu równoczesnych obciążeń konta.
+  - Risk floor: concurrent-financial
+  - Level: very-hard
+  - Rationale: Suma 5 wymaga podniesienia do very-hard przez współbieżne operacje finansowe.
+```
+
+Gdy choć jeden WP deklaruje `Difficulty:`, walidacja wymaga poprawnego bloku `v1`
+we wszystkich WP. Plan bez żadnego bloku pozostaje ważny w starym formacie;
+nie migruj istniejących planów masowo, ale każde nowe WP zapisuj już z oceną.
 
 ### Trwałe testy a jednorazowa weryfikacja zmiany
 
@@ -286,14 +409,107 @@ rozstrzygnąć, zastosuj test wpływu discovery debt opisany w critical review.
 `Estimated size` jest szacunkiem planistycznym przekazywanym wykonawcy. Nie
 steruje batchingiem ani trwałym stanem wykonania.
 
-Po oszacowaniu WP wybierz z `.agents/config/model-hierarchy.json` najsłabszy
-profil, który wystarczy do realizacji planu. Profile są uporządkowane od
-najsilniejszego do najsłabszego. Użyj override tylko dla WP wymagającego
-silniejszego profilu. Model porównuj bez prefiksu dostawcy: profil
-`commandcode/deepseek/model` i `deepseek/model` to ten sam model, a reasoning
-musi zgadzać się dokładnie. Brak konfiguracji, duplikat albo rekomendacja spoza
-hierarchii blokuje walidację; nie zgaduj ani nie dopisuj profilu. Szablon znajduje
-się w `<skills_root>/plan-execute/model-hierarchy.json.dist`.
+Po ocenie trudności nowego WP pobierz ranking na żywo przez wspólną granicę
+`<skills_root>/_shared/scripts/model-leaderboard.mjs`. Próg `minimumPoints`
+odczytaj poleceniem `assess`, które ocenia blok `Difficulty: v1` treści WP
+według polityki projektu (z kodu: `parsePackageDifficulty(body,
+loadDifficultyPolicy({repoRoot}))`). Nie powielaj rubryki, nie przepisuj progów
+z pamięci ani nie wyprowadzaj progu z `Estimated size`:
+
+```bash
+node <skills_root>/_shared/scripts/task-plan/difficulty.mjs assess --body - <<'WP'
+<pełna treść WP z blokiem Difficulty: v1>
+WP
+```
+
+Wynik zawiera `score`, `level` i `minimumPoints`; brak albo błąd bloku kończy
+polecenie błędem zamiast progu.
+
+Ranking `https://aicodingdaily.com/leaderboard` pobieraj na nowo dla każdej
+decyzji. Granica odczytu działa wyłącznie w pamięci, bez cache, sidecara, pliku
+tymczasowego albo fixture prawdziwej strony. Nie pobieraj strony narzędziem, które
+automatycznie zapisuje odpowiedzi, i nie drukuj surowego HTML. Testy używają
+wyłącznie syntetycznej odpowiedzi przekazanej w pamięci.
+
+Parowanie wierszy rankingu z lokalnymi profilami wykonuje agent:
+
+1. Wypisz sparsowane wiersze do kontekstu agenta. Każdy wiersz ma pełną etykietę
+   wyświetlaną przez stronę (nazwa modelu z wariantem w nawiasie) i
+   `totalPoints`. Wiersze wolno czytać w kontekście, ale nie zapisuj ich do
+   pliku, cache ani planu:
+
+   ```bash
+   node <skills_root>/_shared/scripts/model-leaderboard.mjs entries
+   ```
+
+2. Dla każdego profilu z `.agents/config/model-hierarchy.json` wskaż dokładną
+   etykietę jednego wiersza, który odpowiada temu samemu modelowi i temu samemu
+   reasoning, np. `openai/gpt-6-luna` z `max` → `GPT-6-Luna (Max)`. Nie
+   utożsamiaj różnych wariantów (`Max` i `High`, `Flash` i `Pro`). Profil,
+   którego nie potrafisz jednoznacznie sparować, pomiń: zostanie nieoceniony.
+3. Przekaż parowania `[{model, reasoning, label}]` (model i reasoning dokładnie
+   jak w hierarchii) do rekomendacji. Skrypt pobiera ranking ponownie, sprawdza,
+   że każda etykieta istnieje w tym odczycie, i bierze punkty wyłącznie z niego:
+
+   ```bash
+   node <skills_root>/_shared/scripts/model-leaderboard.mjs recommend \
+     --minimum-points 40 --pairings - <<'PAIRINGS'
+   [{"model": "provider/model-a", "reasoning": "high", "label": "Model A (High)"}]
+   PAIRINGS
+   ```
+
+   Z kodu użyj `recommendFreshProfile(hierarchy, {minimumPoints, pairings})`,
+   gdzie `hierarchy` pochodzi z `loadModelHierarchy({repoRoot})`.
+
+Rekomendacja filtruje sparowane profile z Total points **co najmniej** równymi
+progowi, bez tolerancji dwóch punktów. Spośród nich wybiera najniższy w lokalnej
+kolejności `strongest-to-weakest`, nawet gdy punktacja nie jest monotoniczna.
+Wynik `recommended` zawiera `selected` (z etykietą i punktami) oraz listę
+`unscored`; nieocenione profile nie blokują ocenionego kandydata, ale zapisz to
+ograniczenie. Nie poprawiaj kolejności lokalnej na podstawie rankingu. Zmiana
+struktury tabeli, skali 0–70 albo wadliwy wiersz kończą się brakiem porównania
+całego odczytu, nie częściowo odgadniętymi punktami.
+
+Przy `decision-required` (`no-candidate`, `ranking-unavailable`,
+`label-not-found` albo `ambiguous-pairing`) popraw parowanie, jeśli to Twoja
+pomyłka, a w pozostałych przypadkach zapytaj użytkownika o świadome przyjęcie
+wskazanego lokalnego profilu bez potwierdzenia punktowego, zmianę konfiguracji
+albo przeprojektowanie WP. Do odpowiedzi nie przypisuj automatycznie pierwszego
+profilu jako wystarczającego. Zapisz odpowiedź i jej źródło jako decyzję planu.
+Błędna konfiguracja hierarchii, progu albo parowanie profilu spoza hierarchii nie
+jest błędem sieci i wymaga poprawienia wejścia.
+
+Zapisz w każdym nowym WP `Profile rationale`: wybrany profil, trudność i próg,
+użytą etykietę rankingu, historyczny wynik Total points, datę odczytu
+(`fetchedAt`), URL źródła i ograniczenie
+nieocenionych profili. Dla świadomego wyboru zapisz zamiast punktów odpowiedź
+użytkownika. To uzasadnienie historyczne, nie cache do kolejnego porównania.
+Umieść je bezpośrednio po bloku `Difficulty: v1`, z dziećmi wciętymi dwiema
+spacjami:
+
+```md
+- Profile rationale: openai/gpt-6-luna z reasoning max.
+  - Threshold: moderate, minimum 40 Total points.
+  - Ranking label: GPT-6-Luna (Max)
+  - Total points: 44
+  - Fetched at: 2026-10-08T19:00:00.000Z
+  - URL: https://aicodingdaily.com/leaderboard
+  - Unscored profiles: Wszystkie profile hierarchii mają parowanie.
+```
+
+Przy świadomym wyborze bez potwierdzenia punktowego zastąp `Ranking label`,
+`Total points`, `Fetched at` i `URL` jednym wpisem
+`- User decision: <odpowiedź użytkownika> (<ID decyzji planu>).`, a powód braku
+porównania podaj w wartości `Profile rationale`. Walidator nie sprawdza tego
+pola; jego obecność i zgodność z `Execution environment` ocenia review planu.
+W `Execution environment` ustaw jako default najniższy z wybranych profili,
+a dla wszystkich WP z innym wyborem zapisz override z dokładnym modelem
+i reasoning. Każdy WP musi dostać swój wybrany profil, nie przypadkowo default.
+
+Brak konfiguracji, duplikat albo rekomendacja spoza hierarchii blokuje walidację;
+nie zgaduj ani nie dopisuj profilu. Szablon znajduje się
+w `<skills_root>/plan-execute/model-hierarchy.json.dist`. Dotychczasowe plany
+bez `Difficulty` pozostają czytelne bez ponownego pobierania lub migracji.
 
 ## Kolejność i pokrycie źródła
 
@@ -320,8 +536,8 @@ Ta sekcja jest przeglądem dla człowieka, nie instrukcją wykonania. Wykonawca
 realizuje pełny WP z `Work packages`, z jego granicami, kryteriami akceptacji
 i weryfikacją; streszczenie nie zastępuje tego WP.
 
-Streszczenie mówi, co WP zmienia, jaki daje rezultat i czego świadomie nie
-robi. Jest wierne `Goal`, `Scope` i `Out of scope` i nie dodaje wymagań,
+Streszczenie mówi wyłącznie, co WP zmienia i jaki daje rezultat. Jest wierne
+`Goal` i `Scope`, nie przeczy `Out of scope` i nie opisuje wyłączeń ani nie dodaje wymagań,
 których WP nie zawiera. Wiersz może być kontynuowany wcięciem. Streszczenie
 należy do treści objętej review: jego zmiana, jak każda zmiana poza
 `## Execution`, wycofuje potwierdzenie `ready`. Po zmianie WP zaktualizuj jego
@@ -329,7 +545,7 @@ streszczenie w tej samej rewizji.
 
 Odbiorcą streszczenia jest człowiek, który zna cel projektu, ale nie zna kodu
 ani rozmowy, z której powstał plan. Ma on z samego streszczenia zrozumieć, co
-się zmieni i czego WP nie dotyka. Zasady pisania:
+się zmieni i jaki będzie rezultat. Granice pozostają w pełnym WP. Zasady pisania:
 
 - Pisz prostym, naturalnym językiem, tak jak opowiadasz o pracy osobie spoza
   zespołu. Opisuj rezultat widoczny dla użytkownika lub zespołu, a nie kroki
@@ -358,8 +574,7 @@ odrzucanej; nie kopiuj go do planu.
 
 > WP2 — Uprawnienia sesji: Claude Code dostaje własne, proste reguły tego, co
 > agent może robić bez pytania użytkownika, na przykład czytać pliki i
-> uruchamiać testy. Ryzykowne operacje nadal wymagają potwierdzenia. Ustawienia
-> drugiego narzędzia, OpenCode, pozostają bez zmian.
+> uruchamiać testy. Ryzykowne operacje wymagają potwierdzenia.
 
 ## Kontrakt środowiska i wykonania
 
@@ -373,14 +588,24 @@ go zamyka):
 ```md
 ## Execution
 
+<details>
+<summary>Postęp wykonania</summary>
+
 - [ ] WP1
 - [ ] WP2
 
+</details>
+
 ## Execution environment
+
+<details>
+<summary>Środowisko wykonania</summary>
 
 - Default model: provider/model
 - Default reasoning: concrete-level
 - WP overrides: none
+
+</details>
 ```
 
 Kolejność wpisów jest kolejnością wykonania. Ukończenie zapisuje wyłącznie

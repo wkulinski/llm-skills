@@ -23,6 +23,8 @@ shared_files:
   - _shared/scripts/secret-detector.mjs
   - _shared/scripts/slugify-title.mjs
   - _shared/scripts/model-hierarchy.mjs
+  - _shared/scripts/model-leaderboard.mjs
+  - _shared/scripts/task-plan/difficulty.mjs
   - _shared/scripts/is-main-module.mjs
   - _shared/scripts/task-plan/atomic-file.mjs
   - _shared/scripts/task-plan/source.mjs
@@ -149,7 +151,7 @@ Odczytaj tylko pliki wymagane przez aktywny krok:
 | Warunek | Plik |
 |---|---|
 | język planu, wymagane sekcje, inwarianty treści oraz schematy `Source assessment` i `Direction, simplicity and consistency` | `<skills_root>/_shared/references/task-plan-contract.md` |
-| schemat i zasady pól WP, `Estimated size`, bramka „Trwałe testy a jednorazowa weryfikacja zmiany”, zasady czytelności pakietu i dobór profilu wykonania | `<skills_root>/_shared/references/task-plan-contract.md` |
+| schemat i zasady pól WP, ocena trudności `Difficulty: v1`, `Estimated size`, bramka „Trwałe testy a jednorazowa weryfikacja zmiany”, zasady czytelności pakietu i dobór profilu wykonania | `<skills_root>/_shared/references/task-plan-contract.md` |
 | format `Execution environment`, `Execution` i `Work package summaries`, `WP overrides`, kolejność WP, pokrycie źródła oraz deterministyczna edycja i kontrakt narzędzi planu | `<skills_root>/_shared/references/task-plan-contract.md` |
 | routing nadrzędnego workflow i guard wyboru skilla | `<skills_root>/_shared/references/skill-routing-policy.md` |
 | canonical lifecycle repository-context i macierz broad vs targeted | `<skills_root>/_shared/references/repository-context-hybrid.md` |
@@ -297,6 +299,44 @@ dokumentu: reguły języka, wymagane sekcje, inwarianty treści, schemat i zasad
 pól WP, bramkę „Trwałe testy a jednorazowa weryfikacja zmiany” oraz zasady
 czytelności pakietu.
 
+Nowy plan przygotuj z preambułą 3–5 zdań pod tytułem i zwijanymi szczegółami
+według sekcji „Preambuła i zwijane szczegóły” kontraktu. Streszczenia pozostają
+widoczne i opisują wyłącznie zmianę oraz rezultat; wyłączenia zachowaj w pełnych
+WP. Dotychczasowy format pozostaje czytelny bez masowej migracji.
+
+Każdy nowy WP uzupełnij oceną trudności `Difficulty: v1` według sekcji „Ocena
+trudności work package” kontraktu: rubryka 0–2 z konkretnymi uzasadnieniami,
+`Risk floor` oraz `Level` zgodny z wyliczonym poziomem. Ocenę oprzyj na zakresie
+wykonania WP, nie na wrażeniu o modelu. Dotychczasowe plany bez bloku pozostają
+czytelne; nie migruj ich masowo.
+
+Dla każdego nowego WP wykonaj dobór ze świeżego rankingu i zapisz
+`Profile rationale` według sekcji „Dobór profilu wykonania” kontraktu. Wypisz
+wiersze rankingu poleceniem `entries`, sparuj sam profile lokalnej hierarchii
+z dokładnymi etykietami wierszy, a rekomendację uzyskaj poleceniem `recommend`
+z progiem `minimumPoints` zwróconym przez `difficulty.mjs assess` dla treści
+WP (polityka projektu, nie progi z pamięci); punkty pochodzą z nowego odczytu,
+nie od Ciebie.
+Wynik `decision-required` wymaga poprawienia parowania albo odpowiedzi
+użytkownika przed rekomendacją; nie zastępuj go domysłem o pierwszym modelu
+w hierarchii. Zapisuj wyłącznie uzasadnienie wyboru z użytą etykietą, nigdy kopię
+rankingu. Następnie ustaw default i override tak, aby każdy WP otrzymał swój
+wybrany profil.
+
+Przykład nowej decyzji (wiersze tylko w kontekście; do planu zapisz
+uzasadnienie według kontraktu, nie dane źródłowe):
+
+```bash
+node <skills_root>/_shared/scripts/task-plan/difficulty.mjs assess --body - <<'WP'
+<pełna treść WP z blokiem Difficulty: v1>
+WP
+node <skills_root>/_shared/scripts/model-leaderboard.mjs entries
+node <skills_root>/_shared/scripts/model-leaderboard.mjs recommend \
+  --minimum-points 40 --pairings - <<'PAIRINGS'
+[{"model": "provider/model-a", "reasoning": "high", "label": "Model A (High)"}]
+PAIRINGS
+```
+
 ### 4. Critical review
 
 Wykonaj jeden review, odpowiadając `tak` albo `nie` na każde pytanie w tabeli.
@@ -314,12 +354,20 @@ review: popraw plan, zbierz evidence albo oznacz go jako `blocked`.
 | **Minimalność:** Czy mniejsza zmiana osiągnęłaby ten sam rezultat? | Zastąp kierunek mniejszą zmianą i sprawdź ponownie pokrycie źródła oraz kryteria akceptacji. Jeżeli mniejsza zmiana zmienia lub usuwa punkt źródła, zastosuj wiersz `Pokrycie źródła`. | Kontynuuj review. |
 | **Weryfikacja:** Czy każde kryterium akceptacji ma konkretny test albo check? | Kontynuuj review. | Dopisz konkretny test albo check dla właściciela zmienianego zachowania. Jeśli właściciel lub właściwy poziom testu nie jest potwierdzony, wykonaj najpierw punktowy odczyt testów. |
 | **Trwałość testów:** Czy każdy proponowany trwały test przeszedł bramkę „Trwałe testy a jednorazowa weryfikacja zmiany” — czy osobny scenariusz byłby potrzebny bez znajomości historii zmiany? | Kontynuuj review. | Usuń scenariusz uzasadniony wyłącznie historią z zakresu trwałych testów; potrzebny dowód wykonania zmiany przenieś do jednorazowych checków w `Verification`. Jeśli test ma chronić regułę już pokrytą, zaplanuj aktualizację jej istniejącego testu zamiast duplikatu. |
-| **Język i samodzielna wykonalność:** Czy cały opisowy tekst stosuje język wybrany zgodnie z `Język planu`, jest zapisany pełnymi zdaniami i nie miesza języków ani nie urywa myśli? Czy każdy WP pozwala człowiekowi i agentowi o niskim poziomie rozumowania ustalić warunek rozpoczęcia, kolejność działań, oczekiwany wynik, granice, sposób weryfikacji i dalsze kroki dla każdej opisanej gałęzi — bez odgadywania niewypowiedzianych decyzji? Czy streszczenie każdego WP w `Work package summaries` jest wierne jego `Goal`, `Scope` i `Out of scope`, a osoba bez znajomości kodu i rozmowy zrozumie z niego, co WP zmieni i czego nie zmieni? | Kontynuuj review. | Przeredaguj tekst i doprecyzuj kroki lub warunki; streszczenie przepisz zgodnie z zasadami pisania z sekcji „Streszczenia WP” kontraktu. Jeśli niejasność wymaga decyzji biznesowej albo dowodów mogących zmienić plan, rozstrzygnij ją przed `ready`; w przeciwnym razie pozostaw plan `blocked`. Nie przenoś brakującej decyzji do wykonawcy. |
+| **Język i samodzielna wykonalność:** Czy cały opisowy tekst stosuje język wybrany zgodnie z `Język planu`, jest zapisany pełnymi zdaniami i nie miesza języków ani nie urywa myśli? Czy każdy WP pozwala człowiekowi i agentowi o niskim poziomie rozumowania ustalić warunek rozpoczęcia, kolejność działań, oczekiwany wynik, granice, sposób weryfikacji i dalsze kroki dla każdej opisanej gałęzi — bez odgadywania niewypowiedzianych decyzji? Czy streszczenie każdego WP w `Work package summaries` opisuje wyłącznie zmianę i rezultat zgodne z `Goal` i `Scope`, nie przecząc `Out of scope`, a nowy plan ma preambułę i zwijane sekcje według kontraktu? | Kontynuuj review. | Przeredaguj tekst i doprecyzuj kroki lub warunki; streszczenie przepisz zgodnie z zasadami pisania z sekcji „Streszczenia WP” kontraktu. Jeśli niejasność wymaga decyzji biznesowej albo dowodów mogących zmienić plan, rozstrzygnij ją przed `ready`; w przeciwnym razie pozostaw plan `blocked`. Nie przenoś brakującej decyzji do wykonawcy. |
 | **Inwarianty planu:** Czy plan spełnia inwarianty treści i nie przepisuje reguł globalnych? | Kontynuuj review. | Popraw naruszony inwariant albo usuń przepisane reguły globalne, a przed `ready` uruchom walidację strukturalną planu. |
 | **Discovery required:** Czy wynik któregokolwiek wpisu `Discovery required` może unieważnić wybraną naprawę albo zmienić ownership, granice WP, model danych, zachowanie publiczne lub kryteria akceptacji? | Plan nie może być `ready`, dopóki niewiadoma nie zostanie rozstrzygnięta. Jeśli odpowiedź może dostarczyć repository-context, utwórz criterion i wykonaj canonical context lifecycle. Jeśli potrzebna jest decyzja biznesowa, utwórz pytanie `[open]`. Jeśli potrzebna jest reprodukcja, log albo inne evidence runtime, zapisz konkretny evidence gate fazy planowania. Uzyskaj evidence przed wyborem naprawy; gdy jest niedostępne, pozostaw plan `blocked`. | Wpis może pozostać w `Discovery required` jako szczegół wykonawczy niezmieniający planu. |
 
 Każdy wpis `Discovery required` oceń osobno. Nie uznawaj całej sekcji za
 bezpieczną na podstawie jednego ogólnego stwierdzenia.
+
+Dla każdego nowego WP sprawdź też, czy blok `Difficulty: v1` jest zgodny z
+sekcją „Ocena trudności work package” kontraktu: rubryka, wybrany `Risk floor`
+i `Level` muszą odpowiadać wykonaniu WP, a nie ogólnemu wrażeniu. Sprawdź
+również, czy `Profile rationale` ma format z sekcji „Dobór profilu wykonania”
+kontraktu, podaje próg wynikający z tej oceny i wskazuje ten sam model oraz
+reasoning, które WP otrzymuje w `Execution environment`. Walidator tego pola nie
+sprawdza, więc brak albo sprzeczność popraw przed `ready`.
 
 Zapisz wynik w `Direction, simplicity and consistency`, a następnie wprowadź
 jedną rewizję wynikającą z review zgodnie z inwariantami treści. Nie uruchamiaj

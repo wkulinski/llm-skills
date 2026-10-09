@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
+import {spawnSync} from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {it} from "vitest";
+import {fileURLToPath} from "node:url";
+import {it, vi} from "vitest";
 
 import {persistSource, normalizeUserInput} from "../../../.agents/skills/task-plan/scripts/source.mjs";
 import {completeWorkPackage, recordReview, savePlan, StoreError} from "../../../.agents/skills/task-plan/scripts/store.mjs";
 import {parsePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
+import {LEADERBOARD_URL} from "../../../.agents/skills/_shared/scripts/model-leaderboard.mjs";
 import {
     completeExecutionWorkPackage,
     loadExecutionPlan,
@@ -19,6 +22,24 @@ import {
 } from "../../../.agents/skills/plan-execute/scripts/execute.mjs";
 
 const NOW = "2026-08-26T12:00:00.000Z";
+const EXECUTE_SCRIPT = fileURLToPath(new URL("../../../.agents/skills/plan-execute/scripts/execute.mjs", import.meta.url));
+const DECISION_OPTIONS = ["change-profile", "user-attested", "stop"];
+const DEFAULT_PROFILES = [
+    {model: "deepseek/deepseek-v4", reasoning: "high"},
+    {model: "openai/gpt-5.6-sol", reasoning: "medium"},
+];
+
+function leaderboardResponse(rows) {
+    const body = `<table><thead><tr><th>#</th><th>Model</th><th>Total points (max 70)</th></tr>
+<tr><th>Other project scores</th></tr></thead><tbody>${rows.map((row, index) =>
+    `<tr><td>${index + 1}</td><td><a href="https://aicodingdaily.com/model/synthetic-${index}">${row.label}</a></td><td>${row.totalPoints}</td>${"<td>other</td>".repeat(8)}</tr>`).join("")}</tbody></table>`;
+    return {
+        ok: true,
+        status: 200,
+        headers: new Headers({"content-type": "text/html; charset=utf-8"}),
+        text: async () => body,
+    };
+}
 
 function updateToken(saved) {
     return {
@@ -27,17 +48,14 @@ function updateToken(saved) {
     };
 }
 
-function temporaryRepository() {
+function temporaryRepository(profiles = DEFAULT_PROFILES) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "plan-execute-"));
     const configDir = path.join(root, ".agents", "config");
     fs.mkdirSync(configDir, {recursive: true});
     fs.writeFileSync(path.join(configDir, "model-hierarchy.json"), `${JSON.stringify({
         version: 1,
         order: "strongest-to-weakest",
-        profiles: [
-            {model: "deepseek/deepseek-v4", reasoning: "high"},
-            {model: "openai/gpt-5.6-sol", reasoning: "medium"},
-        ],
+        profiles,
     }, null, 2)}\n`, "utf8");
     return root;
 }
@@ -146,7 +164,7 @@ Run the focused plan-execute tests.
 
 ## Execution environment
 
-- Default model: openai/gpt-5.6-sol
+- Default model: ${extras.defaultModel ?? "openai/gpt-5.6-sol"}
 - Default reasoning: medium
 ${overrides}
 `;
@@ -426,19 +444,19 @@ it("uses a justified model and reasoning override for the selected work package"
     });
 });
 
-it("compares the current profile with the selected work-package requirement", () => {
+it("compares the current profile with the selected work-package requirement", async () => {
     const root = temporaryRepository();
     const {planPath} = makePlan(root, [{id: "WP1", title: "Default profile"}], "user-input:preflight");
     const plan = loadExecutionPlan({planPath, repoRoot: root});
 
-    const equal = checkExecutionEnvironment(plan, {
+    const equal = await checkExecutionEnvironment(plan, {
         currentModel: "openai/gpt-5.6-sol",
         currentReasoning: "medium",
     });
     assert.equal(equal.sufficient, true);
     assert.equal(equal.action, "execute");
 
-    const stronger = checkExecutionEnvironment(plan, {
+    const stronger = await checkExecutionEnvironment(plan, {
         currentModel: "deepseek/deepseek-v4",
         currentReasoning: "high",
     });
@@ -447,11 +465,11 @@ it("compares the current profile with the selected work-package requirement", ()
     assert.equal(equal.source, "flags");
 });
 
-it("resolves the current profile from the session environment without flags", () => {
+it("resolves the current profile from the session environment without flags", async () => {
     const root = temporaryRepository();
     const {planPath} = makePlan(root, [{id: "WP1", title: "Session profile"}], "user-input:session-env");
 
-    const result = checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+    const result = await checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
         env: {
             OPENCODE_SESSION_MODEL: "openai/gpt-5.6-sol",
             OPENCODE_SESSION_VARIANT: "medium",
@@ -465,11 +483,11 @@ it("resolves the current profile from the session environment without flags", ()
     assert.equal(result.current.reasoning, "medium");
 });
 
-it("matches the session profile across provider prefixes", () => {
+it("matches the session profile across provider prefixes", async () => {
     const root = temporaryRepository();
     const {planPath} = makePlan(root, [{id: "WP1", title: "Provider agnostic"}], "user-input:provider-agnostic");
 
-    const result = checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+    const result = await checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
         env: {
             OPENCODE_SESSION_MODEL: "commandcode/openai/gpt-5.6-sol",
             OPENCODE_SESSION_VARIANT: "medium",
@@ -482,11 +500,11 @@ it("matches the session profile across provider prefixes", () => {
     assert.equal(result.current.rank, 1);
 });
 
-it("lets explicit flags override the session environment", () => {
+it("lets explicit flags override the session environment", async () => {
     const root = temporaryRepository();
     const {planPath} = makePlan(root, [{id: "WP1", title: "Flag precedence"}], "user-input:flag-precedence");
 
-    const result = checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+    const result = await checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
         currentModel: "deepseek/deepseek-v4",
         currentReasoning: "high",
         env: {
@@ -500,21 +518,22 @@ it("lets explicit flags override the session environment", () => {
     assert.equal(result.sufficient, true);
 });
 
-it("fails closed when neither flags nor the session environment provide a profile", () => {
+it("fails closed when neither flags nor the session environment provide a profile", async () => {
     const root = temporaryRepository();
     const {planPath} = makePlan(root, [{id: "WP1", title: "Unknown profile"}], "user-input:unknown-profile");
 
-    assert.throws(
-        () => checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {env: {}}),
-        (error) => error instanceof PlanExecuteError && error.code === "SESSION_PROFILE_UNKNOWN",
-    );
+    const result = await checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {env: {}});
+    assert.equal(result.action, "decision-required");
+    assert.equal(result.code, "SESSION_PROFILE_UNKNOWN");
+    assert.equal(result.sufficient, false);
+    assert.deepEqual(result.options, DECISION_OPTIONS);
 });
 
-it("rejects a partial explicit override instead of mixing flag and environment sources", () => {
+it("rejects a partial explicit override instead of mixing flag and environment sources", async () => {
     const root = temporaryRepository();
     const {planPath} = makePlan(root, [{id: "WP1", title: "Partial override"}], "user-input:partial-override");
 
-    assert.throws(
+    await assert.rejects(
         () => checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
             currentModel: "openai/gpt-5.6-sol",
             env: {OPENCODE_SESSION_VARIANT: "medium"},
@@ -523,22 +542,29 @@ it("rejects a partial explicit override instead of mixing flag and environment s
     );
 });
 
-it("reports an unranked session profile instead of guessing its position", () => {
+it("asks the agent to pair an unranked session profile instead of guessing its position", async () => {
     const root = temporaryRepository();
     const {planPath} = makePlan(root, [{id: "WP1", title: "Unranked"}], "user-input:unranked-profile");
 
-    assert.throws(
-        () => checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
-            env: {
-                OPENCODE_SESSION_MODEL: "openai/gpt-5.6-unknown",
-                OPENCODE_SESSION_VARIANT: "max",
-            },
-        }),
-        (error) => error instanceof PlanExecuteError && error.code === "UNRANKED_CURRENT_PROFILE",
-    );
+    const fetchImpl = vi.fn();
+    const result = await checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+        env: {
+            OPENCODE_SESSION_MODEL: "openai/gpt-5.6-unknown",
+            OPENCODE_SESSION_VARIANT: "max",
+        },
+        fetchImpl,
+    });
+    assert.equal(result.action, "pairing-required");
+    assert.equal(result.reason, "ranking-labels-missing");
+    assert.equal(result.sufficient, false);
+    assert.deepEqual(result.current, {model: "openai/gpt-5.6-unknown", reasoning: "max"});
+    assert.equal(fetchImpl.mock.calls.length, 0);
+    await assert.rejects(() => checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+        currentModel: "Z", currentReasoning: "max", requiredLabel: "Sol (Medium)", fetchImpl,
+    }), {code: "INVALID_ARGUMENT"});
 });
 
-it("accepts an explicit user attestation as the portable fallback for harnesses without a session profile", () => {
+it("accepts an explicit user attestation as the portable fallback for harnesses without a session profile", async () => {
     const root = temporaryRepository();
     const {planPath} = makePlan(root, [{
         id: "WP1",
@@ -548,8 +574,9 @@ it("accepts an explicit user attestation as the portable fallback for harnesses 
         justification: "higher capability required",
     }], "user-input:user-attested");
 
-    const result = checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+    const result = await checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
         userAttested: true,
+        attestedWp: "WP1",
         env: {},
     });
 
@@ -564,9 +591,10 @@ it("accepts an explicit user attestation as the portable fallback for harnesses 
         rank: 0,
     });
     assert.equal(result.selected.id, "WP1");
+    assert.deepEqual(result.attestation, {wpId: "WP1", profile: null, reusable: false});
 });
 
-it("still validates the hierarchy for a user attestation instead of trusting blindly", () => {
+it("still validates the hierarchy for a user attestation instead of trusting blindly", async () => {
     const root = temporaryRepository();
     const {planPath} = makePlan(root, [{id: "WP1", title: "Attested unranked"}], "user-input:attested-unranked");
     const hierarchyPath = path.join(root, ".agents", "config", "model-hierarchy.json");
@@ -582,17 +610,17 @@ it("still validates the hierarchy for a user attestation instead of trusting bli
         },
     };
 
-    assert.throws(
+    await assert.rejects(
         () => checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {userAttested: true, fsOps}),
         (error) => error instanceof PlanExecuteError && error.code === "UNRANKED_REQUIRED_PROFILE",
     );
 });
 
-it("keeps the environment path authoritative when a session profile is available", () => {
+it("keeps the environment path authoritative when a session profile is available", async () => {
     const root = temporaryRepository();
     const {planPath} = makePlan(root, [{id: "WP1", title: "Env wins"}], "user-input:env-wins");
 
-    const result = checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+    const result = await checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
         env: {
             OPENCODE_SESSION_MODEL: "openai/gpt-5.6-sol",
             OPENCODE_SESSION_VARIANT: "medium",
@@ -604,21 +632,22 @@ it("keeps the environment path authoritative when a session profile is available
     assert.notEqual(result.current, null);
 });
 
-it("rejects a user attestation combined with explicit flags", () => {
+it("requires exact profile scope for a user attestation combined with explicit flags", async () => {
     const root = temporaryRepository();
     const {planPath} = makePlan(root, [{id: "WP1", title: "Attested plus flags"}], "user-input:attested-flags");
 
-    assert.throws(
+    await assert.rejects(
         () => checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
             userAttested: true,
+            attestedWp: "WP1",
             currentModel: "deepseek/deepseek-v4",
             currentReasoning: "high",
         }),
-        (error) => error instanceof PlanExecuteError && error.code === "INVALID_ARGUMENT",
+        (error) => error instanceof PlanExecuteError && error.code === "ATTESTATION_SCOPE_MISMATCH",
     );
 });
 
-it("requests an environment change when the current profile ranks below the WP requirement", () => {
+it("requests an environment change when the current profile ranks below the WP requirement", async () => {
     const root = temporaryRepository();
     const {planPath} = makePlan(root, [{
         id: "WP1",
@@ -628,12 +657,153 @@ it("requests an environment change when the current profile ranks below the WP r
         justification: "higher capability required",
     }], "user-input:insufficient");
 
-    const result = checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
+    const result = await checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), {
         currentModel: "openai/gpt-5.6-sol",
         currentReasoning: "medium",
     });
     assert.equal(result.sufficient, false);
     assert.equal(result.action, "change-environment");
+});
+
+it("keeps nonmonotonic local rank authoritative without fetching points", async () => {
+    const root = temporaryRepository([{model: "X", reasoning: "low"}, {model: "Y", reasoning: "max"},
+        {model: "G", reasoning: "medium"}, {model: "Y", reasoning: "medium"}]);
+    const {planPath} = makePlan(root, [{id: "WP1", title: "Local order"}], "user-input:local-order", {defaultModel: "G"});
+    const plan = loadExecutionPlan({planPath, repoRoot: root});
+    const fetchImpl = vi.fn().mockResolvedValue(leaderboardResponse([
+        {label: "Y (Max)", totalPoints: 25},
+        {label: "G (Medium)", totalPoints: 35},
+        {label: "Y (Medium)", totalPoints: 70},
+    ]));
+    const labels = {requiredLabel: "G (Medium)", currentLabel: "Y (Medium)"};
+    const stronger = await checkExecutionEnvironment(plan, {currentModel: "Y", currentReasoning: "max", ...labels, fetchImpl});
+    assert.equal(stronger.sufficient, true);
+    assert.equal(stronger.source, "flags");
+    const weaker = await checkExecutionEnvironment(plan, {currentModel: "Y", currentReasoning: "medium", ...labels, fetchImpl});
+    assert.equal(weaker.sufficient, false);
+    assert.deepEqual(weaker.options, DECISION_OPTIONS);
+    assert.equal(fetchImpl.mock.calls.length, 0);
+});
+
+it("compares external pairs in one fresh read with the two-point boundary", async () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "External"}]);
+    const plan = loadExecutionPlan({planPath, repoRoot: root});
+    const rows = (score) => [{label: "GPT 5.6 Sol (Medium)", totalPoints: 35}, {label: "Z (Max)", totalPoints: score}];
+    const labels = {requiredLabel: "GPT 5.6 Sol (Medium)", currentLabel: "Z (Max)"};
+    const fetchImpl = vi.fn().mockResolvedValueOnce(leaderboardResponse(rows(33)))
+        .mockResolvedValueOnce(leaderboardResponse(rows(32.99)));
+    const first = await checkExecutionEnvironment(plan, {currentModel: "Z", currentReasoning: "max", ...labels, fetchImpl});
+    assert.equal(first.sufficient, true);
+    assert.equal(first.source, "leaderboard");
+    assert.equal(first.profileSource, "flags");
+    assert.equal(first.tolerance, 2);
+    assert.equal(first.required.totalPoints, 35);
+    assert.equal(first.current.label, "Z (Max)");
+    const second = await checkExecutionEnvironment(plan, {env: {OPENCODE_SESSION_MODEL: "Z", OPENCODE_SESSION_VARIANT: "max"}, ...labels, fetchImpl});
+    assert.equal(second.sufficient, false);
+    assert.equal(second.profileSource, "session-env");
+    assert.deepEqual(second.options, DECISION_OPTIONS);
+    assert.equal(fetchImpl.mock.calls.length, 2);
+    for (const [url, options] of fetchImpl.mock.calls) {
+        assert.equal(url, LEADERBOARD_URL);
+        assert.equal(options.cache, "no-store");
+    }
+});
+
+it("asks rather than guessing on reasoning, unknown or shared labels and network failure", async () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "Gaps"}]);
+    const plan = loadExecutionPlan({planPath, repoRoot: root});
+    const required = {label: "GPT 5.6 Sol (Medium)", totalPoints: 35};
+    const external = {label: "Z (Max)", totalPoints: 40};
+    const labels = {requiredLabel: required.label, currentLabel: external.label};
+    for (const [rows, options] of [[[external], labels], [[required], labels], [[required, {...external, label: "Z"}], labels],
+        [[required, {...external, label: "Z (High)"}], labels], [[required, external], {...labels, currentLabel: required.label}]]) {
+        const result = await checkExecutionEnvironment(plan, {currentModel: "Z", currentReasoning: "max", ...options,
+            fetchImpl: async () => leaderboardResponse(rows)});
+        assert.equal(result.action, "decision-required");
+        assert.equal(result.sufficient, false);
+        assert.deepEqual(result.options, DECISION_OPTIONS);
+        assert.equal("totalPoints" in result.current, false);
+    }
+    const failed = await checkExecutionEnvironment(plan, {currentModel: "Z", currentReasoning: "max", ...labels,
+        fetchImpl: async () => { throw new Error("private remote body"); }});
+    assert.equal(failed.action, "decision-required");
+    assert.equal(failed.code, "LEADERBOARD_FETCH_FAILED");
+    assert.equal(JSON.stringify(failed).includes("private remote body"), false);
+    const fetchImpl = vi.fn();
+    const missingReasoning = await checkExecutionEnvironment(plan, {env: {OPENCODE_SESSION_MODEL: "Z"}, ...labels, fetchImpl});
+    assert.equal(missingReasoning.code, "SESSION_PROFILE_UNKNOWN");
+    assert.equal(fetchImpl.mock.calls.length, 0);
+});
+
+it("scopes attestation to one WP and observed profile with no automatic reuse", async () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "First", model: "deepseek/deepseek-v4", reasoning: "high", justification: "strong requirement"},
+        {id: "WP2", title: "Second"}]);
+    const plan = loadExecutionPlan({planPath, repoRoot: root});
+    const fetchImpl = vi.fn();
+    const options = {userAttested: true, attestedWp: "WP1", attestedModel: "openai/gpt-5.6-sol", attestedReasoning: "medium",
+        currentModel: "openai/gpt-5.6-sol", currentReasoning: "medium", fetchImpl};
+    const admitted = await checkExecutionEnvironment(plan, options);
+    assert.equal(admitted.sufficient, true);
+    assert.equal(admitted.source, "user-attested");
+    assert.deepEqual(admitted.attestation, {wpId: "WP1", profile: {model: "openai/gpt-5.6-sol", reasoning: "medium"}, reusable: false});
+    assert.equal(fetchImpl.mock.calls.length, 0);
+    assert.equal((await checkExecutionEnvironment(plan, {...options, userAttested: false})).sufficient, false);
+    for (const changed of [{currentModel: "Z"}, {currentReasoning: "high"}, {attestedWp: "WP2"}]) {
+        await assert.rejects(() => checkExecutionEnvironment(plan, {...options, ...changed}), {code: "ATTESTATION_SCOPE_MISMATCH"});
+    }
+    completeWorkPackage({repoRoot: root, planPath, wpId: "WP1", evidence: "focused passed"}, {now: NOW});
+    await assert.rejects(() => checkExecutionEnvironment(loadExecutionPlan({planPath, repoRoot: root}), options), {code: "ATTESTATION_SCOPE_MISMATCH"});
+    const second = loadExecutionPlan({planPath, repoRoot: root});
+    assert.equal((await checkExecutionEnvironment(second, {env: {}, userAttested: true, attestedWp: "WP2"})).sufficient, true);
+    assert.equal((await checkExecutionEnvironment(second, {env: {}})).action, "decision-required");
+    await assert.rejects(() => checkExecutionEnvironment(second, {env: {}, userAttested: true, attestedWp: "WP2",
+        attestedModel: "Z", attestedReasoning: "max"}), {code: "ATTESTATION_SCOPE_MISMATCH"});
+});
+
+it("does not attest an invalid hierarchy or execute a non-ready plan through CLI", async () => {
+    const root = temporaryRepository();
+    const created = makePlan(root, [{id: "WP1", title: "Ready gate"}]);
+    const plan = loadExecutionPlan({planPath: created.planPath, repoRoot: root});
+    fs.writeFileSync(path.join(root, ".agents/config/model-hierarchy.json"), "{}");
+    await assert.rejects(() => checkExecutionEnvironment(plan, {userAttested: true, attestedWp: "WP1", env: {}}), {code: "INVALID_MODEL_HIERARCHY"});
+    const cli = spawnSync(process.execPath, [EXECUTE_SCRIPT, "check-environment", "--root", root, "--path", created.planPath,
+        "--user-attested", "--attested-wp", "WP1"], {encoding: "utf8"});
+    assert.equal(cli.status, 1);
+    assert.equal(JSON.parse(cli.stderr).error, "PLAN_NOT_READY");
+    const other = temporaryRepository();
+    const unreviewed = makePlan(other, [{id: "WP1", title: "Unreviewed"}], "user-input:cli-unreviewed");
+    fs.writeFileSync(unreviewed.planPath, unreviewed.saved.markdown.replace(/^(reviewed_revision|reviewed_body_sha256): .*\n/gm, ""));
+    const pending = spawnSync(process.execPath, [EXECUTE_SCRIPT, "check-environment", "--root", other, "--path", unreviewed.planPath,
+        "--user-attested", "--attested-wp", "WP1"], {encoding: "utf8"});
+    assert.equal(pending.status, 1);
+    assert.equal(JSON.parse(pending.stderr).error, "PLAN_NOT_READY");
+});
+
+it("smoke-checks CLI admission sources and the three-option user question contract", () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "CLI sources"}]);
+    const base = [EXECUTE_SCRIPT, "check-environment", "--root", root, "--path", planPath];
+    const env = {...process.env, OPENCODE_SESSION_MODEL: "openai/gpt-5.6-sol", OPENCODE_SESSION_VARIANT: "medium"};
+    const automatic = spawnSync(process.execPath, base, {env, encoding: "utf8"});
+    assert.equal(automatic.status, 0);
+    assert.equal(JSON.parse(automatic.stdout).source, "session-env");
+    // Synthetic explicit confirmation; does not attest the real session.
+    const attested = spawnSync(process.execPath, [...base, "--user-attested", "--attested-wp", "WP1",
+        "--attested-model", env.OPENCODE_SESSION_MODEL, "--attested-reasoning", env.OPENCODE_SESSION_VARIANT], {env, encoding: "utf8"});
+    assert.equal(attested.status, 0);
+    assert.equal(JSON.parse(attested.stdout).source, "user-attested");
+    const unknown = spawnSync(process.execPath, base, {env: {...env, OPENCODE_SESSION_VARIANT: ""}, encoding: "utf8"});
+    assert.deepEqual(JSON.parse(unknown.stdout).options, DECISION_OPTIONS);
+    const instructions = fs.readFileSync(new URL("../../../.agents/skills/plan-execute/SKILL.md", import.meta.url), "utf8");
+    assert.match(instructions, /Czy zmieniasz profil, potwierdzasz wystarczalność obecnego/);
+    assert.match(instructions, /czy zatrzymujemy wykonanie/);
+    const malformed = spawnSync(process.execPath, [...base, "--current-model", "", "--current-reasoning", "medium"], {env, encoding: "utf8"});
+    assert.equal(malformed.status, 2);
+    assert.equal(JSON.parse(malformed.stderr).error, "INVALID_ARGUMENT");
 });
 
 it("marks completion through task-plan with date and evidence", () => {
