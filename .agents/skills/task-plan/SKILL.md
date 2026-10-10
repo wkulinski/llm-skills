@@ -53,11 +53,14 @@ Task-plan:
 - tworzy kompletny plan, wykonuje jeden critical review i zawsze wykonuje
   odrębną fazę read-only `$code-review` gotowego kandydata planu;
 - zadaje wyłącznie pytania blokujące;
+- dopisuje do planu każdą zmianę, o którą użytkownik prosi w trakcie
+  planowania (np. „zapisz X w pliku Y”), zamiast od razu ją wprowadzać;
 - wyprowadza wynik `ready` albo `blocked` bezpośrednio z Markdowna.
 
 Task-plan nie:
 
-- implementuje kodu ani konfiguracji;
+- zmienia plików w repozytorium poza planem i jego cache: ani kodu, ani
+  konfiguracji, ani dokumentacji;
 - tworzy lub modyfikuje issue, branchy i PR-ów;
 - uruchamia `$code-implement`, `$qa-run` ani workerów;
 - deleguje fazy review do osobnego wykonawcy; review planu wykonuje bieżący agent

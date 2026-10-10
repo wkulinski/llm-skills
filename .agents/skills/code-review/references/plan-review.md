@@ -35,6 +35,7 @@ Use this section only for a `plan` target. Check the plan against the `$task-pla
 contract (`<skills_root>/_shared/references/task-plan-contract.md`, procedure owner
 `<skills_root>/task-plan/SKILL.md`) without editing it:
 
+- **sense before consistency:** for every planned change (each edited path and each `Scope` action) and every verification command, answer two questions separately: what requires it (source sentence, user decision, or acceptance criterion), and what concrete outcome is lost if it is removed. A source mapping proves only that the plan cites a point; a source requirement does not prove the action makes sense. No requirement means unrequested scope, at least MAJOR, including any edit to the plan's own source material, which stays read-only unless explicitly requested. Nothing lost on removal is a finding when the element traces only to the source's `Suggested diagnosis or solution`, an unclassified source sentence, or the planner's own inference: MAJOR for an edit or `Scope` action, actionable MINOR for a check. When it traces to `Requested outcome`, `Explicit constraints`, or a user decision (`D<n>`), the owner cannot drop it alone: raise an approval-affecting QUESTION that challenges the source instead of planning its execution. Once the user confirms such an element after the challenge, record it as `accepted` and do not raise it again. A check that confirms no acceptance criterion or named risk is an actionable MINOR: remove it rather than fix it;
 - `Source and objective` states the requested outcome, and `Source assessment` separates the actual requested outcome, symptoms, constraints, and verified versus unverified claims;
 - every source point is mapped to a WP or has a justified `excluded` decision;
 - `Scope`, ownership, boundaries, dependencies, and WP order are consistent;
@@ -75,6 +76,23 @@ For a `plan` target, also account for the source-to-WP mapping, required plan
 sections, open questions, discovery debt, evidence artifacts, and execution
 readiness. Do not treat a complete plan document as proof that its contents are
 correct.
+
+Report one outcome per check from "Plan integrity and execution readiness", using
+the coverage outcomes of `<skill_dir>/SKILL.md` Section 8. Cover the checks that
+the canonical plan validator enforces with one reference to its result (status and
+errors) instead of separate rows; a check it enforces only in part, such as the
+presence but not the accuracy of the source mapping, keeps a row for the part it
+does not check. Give every judgment-based check one row with brief evidence in its
+natural unit:
+
+- sense before consistency: one line per element with its requirement and its loss
+  on removal, e.g. `Scope 3 → AC2; loss: …`;
+- source-to-WP mapping: source point → WP only where the accuracy of the mapping is
+  in doubt;
+- other checks: one sentence per WP or per section.
+
+In a re-review, limit these rows to the scope defined by
+`<skill_dir>/references/re-review.md`.
 
 ## Plan verdicts
 

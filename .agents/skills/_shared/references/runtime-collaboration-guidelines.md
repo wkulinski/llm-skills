@@ -112,6 +112,12 @@ Ta lista nie luzuje żadnej bramki:
 - Nie używaj destrukcyjnych komend git bez wyraźnego polecenia użytkownika.
 - Commity wykonuj tylko po jednoznacznym poleceniu użytkownika i przez dedykowaną procedurę `$git-commit`.
 
+## 3a. Historia git
+- Historia jest liniowa: bez merge commitów. Zmiany z gałęzi bazowej wciągaj przez rebase albo `--ff-only`.
+- Stan gałęzi porównuj z `origin/<gałąź bazowa>`; lokalna gałąź bazowa bywa nieaktualna.
+- W commitach i opisach PR nie dodawaj `Co-Authored-By` ani stopki o generowaniu przez narzędzie.
+- Repozytorium konsumenta może to nadpisać w `AGENTS.md` (zob. §8).
+
 ## 4. Wykonanie techniczne
 - Przed implementacją sprawdź wersje bibliotek i kontekst środowiska.
 - Korzystaj z lokalnych entrypointów narzędzi projektu ustalonych wyłącznie przez `.agents/skills/_shared/scripts/env-load.sh` (`resolve_tool_cmd`).
