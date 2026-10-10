@@ -2,6 +2,24 @@
 
 Ten dokument rozszerza baseline `php-symfony-postgres-standards.md` o reguły modularnego monolitu z modułami w architekturze heksagonalnej i CQRS. Większość reguł uzupełnia baseline; reguła, która go zmienia, nazywa w treści odstępstwo i wskazuje sekcję baseline.
 
+### Trzy wzorce i lokalne decyzje profilu
+
+| Wzorzec | Chroniona zasada | Czego sam wzorzec nie wymaga |
+|---|---|---|
+| CQRS | Rozdzielenie odpowiedzialności zapisu i odczytu; jawna semantyka command/query i ich modeli | Busa, event sourcingu, osobnych baz, określonych katalogów ani `void` dla każdej komendy |
+| Modularny monolit | Własność odpowiedzialności i danych, ukrycie implementacji, współpraca przez uzgodnione kontrakty | Izolacji jak w mikroserwisach, zakazu wszystkich FK, joinów lub transakcji między modułami |
+| Hexagonal | Niezależność wnętrza od mechanizmów integracji; porty opisujące potrzeby i adaptery dostosowujące mechanizmy | Jednego układu katalogów, busa ani identycznych DTO na każdej granicy |
+
+Ścieżka busowa, lokalizacja portów, ograniczenie obcych komunikatów do adapterów i FCF są decyzjami tego profilu. Ich uzasadnieniem są spójne granice i gwarancje wykonania, nie twierdzenie, że wszystkie aplikacje CQRS/hexagonal muszą działać tak samo.
+
+### Siła reguł i ochrona przed pozorną zgodnością
+
+- Sformułowania „musi”, „wyłącznie”, „nie wolno” i „nie używaj” opisują wymagania; „preferuj”, „zalecane” i „domyślnie” opisują kierunek z dopuszczalnym, uzasadnionym odstępstwem.
+- Wyjątek ma konkretny zakres i uzasadnienie w kontrakcie/README; nie rozszerza automatycznie innych wyjątków. Decyzja o joinie nie uprawnia do zapisu cudzych danych, a dopuszczenie własnego `Api` w domenie nie dopuszcza własnego `Application`.
+- Lokalizacja klasy nie dowodzi jej roli. Nie przenoś logiki między warstwami ani nie kopiuj DTO wyłącznie dla zazielenienia analizy zależności.
+- Rozbudowę uzasadnia rzeczywisty invariant lub potrzeba integracji. Nie dodawaj nowych szyn, wspólnych wrapperów wyniku, mapperów, zdarzeń czy stanów procesu bez konkretnej korzyści.
+- Typy i importy są tylko częścią kontraktu. Osobno oceń publiczność, semantykę, uprawnienia, spójność, błędy i obserwowalność wykonania.
+
 ## 1. Aktywacja i pierwszeństwo
 Stosuj ten dokument tylko, gdy aktywne pliki env repo ustawiają końcową wartość:
 
@@ -13,32 +31,32 @@ Każda inna wartość albo brak flagi oznacza, że dokument jest nieaktywny.
 W razie konfliktu z baseline: ten dokument ma pierwszeństwo.
 
 ## 2. Architektura modułowa i warstwy
-- Architektura: modularny monolit + hexagonal + CQRS.
-- Moduł utrzymuj w warstwach: `Api`, `Application`, `Domain`, `Infrastructure`, `UI`. `Api` jest opcjonalna; powstaje, gdy moduł publikuje typy dla innych modułów (pkt 2.1).
-- Cały nowy kod umieszczaj w istniejących modułach/warstwach; nie dodawaj nowych warstw bez jawnej decyzji.
-- Porty umieszczaj w `Application/Port/In/**` i `Application/Port/Out/**` (pkt 6). `Domain/Port/**` służy wyłącznie zależnościom wychodzącym samej domeny (np. repozytorium agregatu, hasher), implementowanym w `Infrastructure`; nie jest kontraktem dla innych modułów.
 
-### 2.1 Warstwa `Api` (opublikowany kontrakt modułu)
-- `Api` zawiera typy danych publikowane innym modułom poza komunikatami busa: typy wyników query konsumowanych przez inne moduły, enumy i VO używane w komunikatach lub wynikach oraz definicje dostarczane do punktów rozszerzeń modułu (np. kolumny gridu, pozycje menu, uprawnienia).
-- Komunikaty `Command` / `Query` zostają w `Application/UseCase/**` (pkt 5), a kontrakty pluginowe w `Application/Port/In/**` (pkt 6). `Api` nie jest drugim miejscem na żadne z nich.
-- `Api` zawiera wyłącznie typy danych i wyjątki kontraktu: bez serwisów, handlerów, logiki biznesowej i interfejsów usług wywoływanych przez inne moduły.
-- `Api` zależy tylko od własnego `Api`, kontraktów z `Shared` i typów wbudowanych; nie importuje `Domain`, `Application` ani `Infrastructure` własnego modułu.
-- Klasy w `Api` nie znają wnętrza modułu: nie przyjmują encji, VO domenowych ani widoków modułu w konstruktorach ani fabrykach. Dane do typu `Api` przepisuje moduł właściciel, np. handler query w `Application`.
-- `Api` innego modułu jest jego publicznym kontraktem: może z niego korzystać każda warstwa konsumenta poza `Domain`. `Domain` zależy wyłącznie od własnej domeny, własnego `Api` i `Shared`, więc nie zna kontraktów innych modułów.
-- `Domain` może używać własnego `Api`, bo `Api` nie zależy od wnętrza modułu i kierunek zależności pozostaje jednostronny. Nie twórz w domenie kopii typów `Api` tylko po to, aby uniknąć tej zależności.
-- Reguła dotyczy typów. To, gdzie wywołuje się inne moduły i tłumaczy ich dane, określa pkt 5.
-- Zmiana typu w `Api` jest zmianą kontraktu: przed zmianą sprawdź konsumentów i dostosuj ich w tej samej zmianie.
+- Architektura: modularny monolit + hexagonal + CQRS, rozumiane według ich odpowiedzialności, a nie samego układu katalogów.
+- Moduł utrzymuj w warstwach `Api`, `Application`, `Domain`, `Infrastructure`, `UI`. `Api` jest opcjonalna; powstaje dla kontraktów danych punktów rozszerzeń (pkt 2.1). Udostępnienie command/query i ich wyników nie wymaga `Api`.
+- Nowy kod umieszczaj w istniejących modułach i warstwach; dodanie warstwy wymaga jawnej decyzji. Odpowiedzialność za model i dane pozostaje po stronie modułu właściciela.
+- Porty aplikacji należą do `Application/Port/In/**` i `Application/Port/Out/**` (pkt 6). `Domain/Port/**` służy wyłącznie potrzebom samej domeny, np. repozytorium agregatu; implementuje je adapter właściciela. Nie jest to kontrakt udostępniany innym modułom.
+- `Domain` nie zależy od własnego `Application`, `Infrastructure` lub `UI` ani wnętrza obcych modułów. Uzgodnione techniczne odstępstwa persystencji pozostają jawnie opisane w lokalnym profilu; nie dopuszczają użycia logiki infrastrukturalnej przez domenę. Dopuszczenie własnego `Api` określa pkt 2.1.
+
+### 2.1 Warstwa `Api` — kontrakty danych punktów rozszerzeń
+
+- `Api` zawiera opcjonalne, czyste typy danych mechanizmów rozszerzeń: np. pozycje Menu, definicje/query/wyniki Grid, deklaracje uprawnień Security i wynik renderera Email. Ich miejsce wynika z roli kontraktu, nie z liczby konsumentów lub warstw, które ich używają.
+- Dane wejściowe i wyniki command/query należą do `Application/UseCase/**`, obok komunikatu. Typ wspólny kilku komunikatów umieszczaj w najbliższym wspólnym katalogu `UseCase`. Nie przenoś go do `Api` wyłącznie dlatego, że używa go inny moduł.
+- Komunikaty pozostają w `Application/UseCase/**`; interfejsy punktów rozszerzeń — w `Application/Port/In/**`. `Api` nie jest miejscem na komunikaty, handlery ani interfejsy usług.
+- `Api` zawiera enumy, finalne klasy danych `readonly` (w tym atrybuty danych) i wyjątki kontraktu. Fabryki, normalizacja i kontrola poprawności reprezentacji są dopuszczalne; nie wykonują I/O, decyzji biznesowych ani dostępu do wnętrza modułu.
+- `Api` zależy tylko od własnego `Api`, uzgodnionych neutralnych kontraktów `Shared` i typów wbudowanych. Nie importuje `Domain`, `Application`, `Infrastructure` lub `UI`, własnych ani obcych. Nie przyjmuje ich modeli w konstruktorach lub fabrykach.
+- Mapowanie wnętrza modułu na `Api` wykonuje kod właściciela lub adapter rozszerzenia, nie sam typ kontraktu.
+- Obce `Api` jest dopuszczone w warstwach konsumenta poza `Domain`, w zakresie opublikowanego punktu rozszerzeń. Nie daje dostępu do usług ani prawa obchodzenia pkt 5.
+- **Preferuj niezależność `Domain` od własnego `Api`, ale nie wprowadzaj twardego zakazu.** Czysty typ własnego `Api` może być używany przez Domain, gdy odpowiada pojęciom lub regułom jego modelu. Brak cyklu zależności jest warunkiem koniecznym, nie wystarczającym uzasadnieniem semantycznym.
+- Nie twórz kopii typów ani nie przenoś klas wyłącznie dla usunięcia zależności Domain → własne Api. Nie uzasadniaj jednak użycia szczegółów prezentacji lub integracji w domenie samym dozwolonym importem. Nie przenoś modelu domenowego do `Api`, by go upublicznić.
+- **Domain nie korzysta z obcego `Api`**, również wtedy, gdy typ jest czysty. Nie zastępuj tej zależności importem obcego `UseCase` ani przenosinami jednego modułowego typu do `Shared`.
+- README właściciela wskazuje publikowane kontrakty rozszerzeń. Zmiany ich typów i semantyki wymagają sprawdzenia konsumentów; zmiany niekompatybilne koordynuj lub wersjonuj.
 
 ## 3. Granica UI -> Application (reguła twarda)
-- Warstwa UI (`Controller`, komendy CLI, `TwigComponent`, `LiveComponent`) wywołuje logikę modułu:
-  - bezpośrednio przez `CommandBus` / `QueryBus`,
-  - albo przez lokalny wrapper odczytu `UI/ReadFacade/*ReadFacade` zgodny z regułami z pkt 3.2.
-- Zmianę stanu realizuj wyłącznie przez `CommandBus` i klasy z `Application/UseCase/Command/**` tego samego modułu.
-- Odczyt danych realizuj przez `QueryBus` i klasy z `Application/UseCase/Query/**` tego samego modułu:
-  - bezpośrednio w komponencie/kontrolerze/komendzie CLI,
-  - albo pośrednio przez `UI/ReadFacade/*ReadFacade`, jeśli spełnione są kryteria z pkt 3.4.
-- UI nie wywołuje bezpośrednio `Application Service`, `Port/Out`, repozytoriów, serwisów domenowych ani adapterów infrastruktury.
-- UI nie tworzy własnych ścieżek odczytu/zapisu danych poza regułami z pkt 3.1-3.6.
+- Domyślne wejście UI/CLI do własnych operacji biznesowych stanowi `CommandBus` dla zapisu i `QueryBus` dla odczytu. Wyjątek stanowi jawnie uzasadniony workflow z pkt 4, nie dowolny serwis aplikacyjny.
+- UI nie wywołuje bezpośrednio repozytoriów, `Port/Out`, serwisów domenowych ani adapterów aplikacyjnych/infrastrukturalnych. Wrapper odczytu pod UI pozostaje zgodny z pkt 3.1–3.6.
+- Odczyt dispatchuj bezpośrednio albo przez lokalny `UI/ReadFacade/*ReadFacade`, jeśli spełnia pkt 3.1–3.6. Poza workflow nie wywołuj bezpośrednio serwisów Application w celu odczytu/zapisu danych biznesowych.
+- Tworzenie komunikatów i czystych danych kontraktu, mapowanie reprezentacji oraz rejestracja pluginu przez `::class` nie są wywołaniem use case'a ani adaptera. Nie umieszczaj w tych czynnościach biznesowych odczytów lub decyzji domenowych.
 
 ### 3.1 Tryb domyślny (bez wrappera)
 - Domyślnie używaj bezpośredniego dispatch:
@@ -85,74 +103,128 @@ W razie konfliktu z baseline: ten dokument ma pierwszeństwo.
 - W code review traktuj `ReadFacade` jako warstwę UI-read:
   - jeśli pojawia się logika domenowa albo zależność do `Port/Out`, to naruszenie.
 
-## 4. Workflow operacyjny (jedyny wyjątek od reguły z pkt 3)
-- Workflow operacyjny to wyjątek dla operacji wieloetapowych, które orkiestrują kilka use case i zwracają raport procesu.
-- Workflow operacyjny może być wywołany z UI przez dedykowany `Application/Port/In/**` zamiast pojedynczego `Command` / `Query`.
-- Workflow operacyjny nie może być pretekstem do omijania busa dla CRUD i prostych odczytów.
-- Workflow operacyjny nie jest substytutem `UI/ReadFacade/*ReadFacade`: facady służą tylko do odczytu pod UI, a workflow do orkiestracji procesu end-to-end.
+## 4. Workflow operacyjny — kontrolowany wyjątek wejścia
 
-### 4.1 Co jest workflow operacyjnym
-- Operacja uruchamia co najmniej dwa kroki use case i koordynuje ich kolejność.
-- Operacja zawiera logikę przekrojową (np. synchronizacja katalogu + aktualizacja tieru + aktualizacja grup uprawnień).
-- Operacja zwraca raport procesu (statusy kroków, pominięcia, podsumowanie).
+- Domyślnie modeluj operację jako command/query. Jeden command może poprawnie koordynować kilka kroków; sama liczba kroków nie uzasadnia nowego entrypointu.
+- Workflow operacyjny koordynuje rzeczywisty proces end-to-end: kolejność operacji, częściowe sukcesy, pominięcia, ponowienia lub podsumowanie. Może mieć dedykowany lokalny `Application/Port/In/**` wywoływany z UI/CLI, gdy zwykły kontrakt command/query nie oddaje potrzeb procesu.
+- Taki port nie jest serwisowym API dla innych modułów. Inny moduł uruchamia proces przez komendę zgodną z kontraktem między modułami według pkt 5.
+- Koordynator workflow nie wywołuje handlerów bezpośrednio; operacje modelowane jako command/query wysyła przez właściwe busy. Nie przenosi inwariantów zapisu z ich właścicieli do koordynatora.
+- Bezpośrednie wejście w workflow nie dziedziczy automatycznie middleware busa. Właściciel zapewnia odpowiednią autoryzację, kontekst i kontrakt wykonania procesu; kroki wymagające middleware nadal przechodzą przez bus.
+- Wynik wynika z potrzeb konsumenta: raport, identyfikator, status lub `void`. Raport jest częsty, nie obowiązkowy. Gdy kontynuacja wymaga potwierdzenia, obowiązuje pkt 5.2.
+- Dla procesu wieloetapowego opisuj atomowość albo częściowy sukces, efekty zewnętrzne i bezpieczny sposób ponowienia (pkt 5.4).
 
-### 4.2 Co nie jest workflow operacyjnym
-- Pojedynczy CRUD (`create`, `update`, `delete`, `get`, `list`).
-- Jedna komenda lub jedno zapytanie opakowane w serwis "dla wygody".
-- Ominięcie busa wyłącznie po to, aby skrócić kod UI.
-- Bezpośredni dostęp UI do `Port/Out` lub repozytorium pod pretekstem "szybszego odczytu".
+### 4.1 Kryteria zastosowania
 
-### 4.3 Checklista wyjątku workflow
-- Czy operacja składa się z co najmniej dwóch kroków use case?
-- Czy operacja koordynuje proces end-to-end, a nie pojedyncze wywołanie?
-- Czy wynik operacji jest raportem procesu, a nie zwykłym DTO CRUD?
-- Czy modelowanie jako pojedynczy `Command` / `Query` byłoby sztuczne?
-- Czy wyjątek został jawnie opisany w README modułu?
-- Jeśli którekolwiek pytanie ma odpowiedź "nie", wróć do reguły z pkt 3.
+- Jest realna odpowiedzialność za koordynację procesu, a nie jedynie dodatkowa warstwa nad pojedynczym dispatch.
+- Wskazano, dlaczego osobny entrypoint daje wartość względem jednej komendy albo kompozycji odczytów.
+- Właściciel i gwarancje procesu są jawne; UI nie podejmuje za niego decyzji biznesowych.
 
-## 5. Komunikacja `Application` -> inne moduły i udostępnianie danych
-- Warstwa `Application` odpytuje inne moduły wyłącznie przez `CommandBus` / `QueryBus` i publiczne klasy `Application/UseCase/Command/**` oraz `Application/UseCase/Query/**` modułu docelowego.
-- Publicznym kontraktem use case'a jest komunikat (`Command` / `Query`), a nie jego handler. Handler jest wewnętrznym szczegółem modułu: nie wstrzykuj go ani nie wywołuj poza busem, także gdy leży w tym samym katalogu co komunikat, bo pominięcie busa pomija jego middleware (transakcje, async, autoryzację).
-- Komunikat wysyłany przez inny moduł i wynik query, który ten moduł odbiera, są częścią kontraktu: pola komunikatu i wynik używają wyłącznie prymitywów, typów z `Shared` albo `Api` modułu właściciela (pkt 2.1). Zanim inny moduł zacznie wysyłać istniejący komunikat, doprowadź go do tej postaci.
-- Widok budowany pod własne UI modułu nie staje się przez to kontraktem dla innych modułów. Gdy inny moduł potrzebuje tych danych, udostępnij mu osobny, minimalny typ w `Api` (i osobne query, gdy zakres danych się różni), zamiast publikować widok UI.
-- `Shared` przechowuje wyłącznie kontrakty faktycznie wspólne (np. identyfikatory, kwoty), a nie typy jednego modułu przeniesione tam, by ominąć granicę.
-- Warstwa `Application` nie odwołuje się bezpośrednio do `Domain` ani `Infrastructure` obcego modułu.
-- Wyjątek od reguły busowej: kontrakty pluginowe `Application/Port/In/**` modułu docelowego, jeśli moduł docelowy publikuje jawnie punkt rozszerzeń (np. provider/resolver), a moduł wywołujący dostarcza implementację tego kontraktu.
-- Kontrakt pluginowy `Port/In` nie zastępuje `Command` / `Query` dla odczytu i zapisu danych biznesowych między modułami.
-- Kompozycja, mapowanie i tłumaczenie danych cross-module dzieją się w lokalnych adapterach `Application/Adapter/**` modułu wywołującego.
-- Pozostałe warstwy modułu wywołującego (`UI`, `Infrastructure`, reszta `Application`) nie wywołują innych modułów samodzielnie, tylko korzystają z jego lokalnych adapterów i use case'ów. Mogą przy tym używać typów z cudzego `Api` (pkt 2.1), np. jako parametrów i wyników metod.
-- Messages przekazywane przez bus przyjmują proste argumenty (`prymitywy` / `VO`), bez przekazywania encji i ciężkich DTO. VO domenowe są dozwolone tylko w komunikatach wewnątrz modułu; komunikat wysyłany przez inny moduł używa typów wskazanych wyżej (prymitywy, `Shared`, `Api` właściciela).
+### 4.2 Niedopuszczalne zastosowania
+
+- Omijanie busa dla prostego CRUD/read, skracanie kodu UI lub maskowanie bezpośredniego dostępu do repozytoriów.
+- Zastępowanie read-only `UI/ReadFacade` workflowem bez odpowiedzialności procesowej.
+- Tworzenie sztucznych kroków i raportów tylko dla spełnienia checklisty.
+
+### 4.3 Checklista wyjątku
+
+- Czy potrzeba osobnego entrypointu i odpowiedzialność koordynatora są opisane w README?
+- Czy zapewniono wymagane zabezpieczenia i wykonanie kroków przez właściwe kontrakty?
+- Czy konsument zna wynik, błędy, atomowość/częściowy sukces i zasady ponowienia?
+- Czy prostszy command/query lub read facade nie zapewnia tego samego?
+- Jeśli nie można uzasadnić wyjątku, pozostaw standardową ścieżkę busową. Liczba kroków i kształt DTO nie zastępują tej oceny.
+
+## 5. Komunikacja między modułami i ochrona lokalnego modelu
+
+- Operacje biznesowe innego modułu wywołuj przez `CommandBus` / `QueryBus` i komunikaty z jego `Application/UseCase/Command/**` lub `Query/**` zgodne z wymaganiami pkt 5.1. Wszystkie takie komunikaty są kontraktem modułu bez dodatkowego aktu publikacji. Wysyłka cudzego komunikatu należy do lokalnego `Application/Adapter/**`.
+- Lokalny `Port/Out`, gdy jest potrzebny, opisuje potrzeby konsumenta. Adapter realizuje go przez obcy kontrakt. Nie twórz portu dla każdego dispatch mechanicznie; oddzielenie stabilnej potrzeby od integracji ma dawać rzeczywistą wartość.
+- Publicznym kontraktem jest komunikat z danymi i semantyką wykonania, nie handler. Nie wstrzykuj ani nie wywołuj handlerów poza busem, również własnych.
+- Nie odwołuj się do obcego `Domain`, `Infrastructure`, `UI`, `Port/Out` lub wewnętrznych DTO. Kontrolowany odczyt schematu SQL jest odrębnym wyjątkiem z pkt 8.1.
+- **Mapuj obce wyniki UseCase na potrzeby lokalnego kontraktu; wykorzystuj prymitywy i istniejące lokalne typy, zamiast obowiązkowo tworzyć nowe DTO. Nie kopiuj uzgodnionych typów Shared ani kontraktów rozszerzeń Api tylko dla zmiany namespace'u.** Adapter tłumaczy obcy typ danych z `Application/UseCase/**` zanim przekaże wynik do lokalnych handlerów, serwisów, portów lub UI. Lokalny port nie zwraca obcego typu UseCase; brak potrzeby nowej klasy DTO nie oznacza zwolnienia z mapowania.
+- Uzgodniony typ `Shared` albo celowo współdzielony typ kontraktu rozszerzenia `Api` może przejść bez tworzenia lokalnego odpowiednika, również gdy dotarł jako wynik query. Sama obecność typu w obcym `Api` nie uzasadnia jego użycia poza rolą rozszerzenia. Nie przenoś DTO z UseCase do Api ani Shared dla obejścia guardu i nie wprowadzaj obcego Api do Domain.
+- `Shared` zawiera faktycznie wspólne, uzgodnione pojęcia/kontrakty, nie typy przeniesione tam dla obejścia granicy. Bazowy Shared nie zależy od modułów korzystających z niego.
+- Wyjątek komunikacji busowej stanowi rzeczywisty mechanizm pluginów z pkt 6. Właściciel wywołuje zarejestrowane implementacje, a implementacja odpowiada za delegację do operacji i danych własnego modułu. Nie jest to uniwersalny serwis CRUD obcego modułu.
+- Reszta Application oraz dopuszczone integracje Infrastructure korzystają z lokalnych adapterów/portów. UI stosuje pkt 3 i 4. Deklaracja `Provider::class` jest rejestracją, nie wywołaniem adaptera.
+
+### 5.1 Wszystkie zgodne komunikaty są kontraktem modułu — bez rejestru
+
+- Wszystkie command/query we wskazanych katalogach, zgodne z wymaganiami kontraktu między modułami, są dostępne dla innych modułów przez ścieżkę pkt 5. Nie potrzeba dodatkowego zgłoszenia, listy w README, oznaczenia publiczności, katalogu `Public`, wspólnej klasy bazowej ani nowej szyny.
+- Źródłem budowy kontraktu jest kod: komunikat, typy wejścia/wyniku i zachowanie operacji. Nie utrzymuj równoległego spisu use case'ów ani kopii pól i sygnatur w dokumentacji. Sam katalog lub czysty payload nie dowodzi pełnej zgodności z wymaganiami wykonania i bezpieczeństwa.
+- Właściciel zapewnia wymagane preconditions, autoryzację i inwarianty operacji. Zgodny use case nie może zakładać, że wywoła go wyłącznie konkretny lokalny workflow, a ten wcześniej wykona brakującą walidację. Użycie między modułami nie omija wymaganego kontekstu tenant/użytkownika.
+- Opisuj tylko semantykę, której nie da się jednoznacznie odczytać z kodu/typów: istotne preconditions i kontekst, znaczenie braków i błędów/blokady, gwarancje sync/async, spójność, retry/idempotencję lub częściowy sukces. Umieszczaj ją przy kontrakcie albo w jednej referencji README/ADR, bez powielania schematu danych i tworzenia rejestru publiczności.
+- Komunikaty dostępne między modułami i ich typy danych używają prymitywów, uzgodnionego `Shared`, czystych typów przy use case'ach lub własnego `Api`. Ochrona obejmuje również zagnieżdżone pola, kolekcje i interfejsy danych. Nie zależą od wnętrza właściciela: Domain, Infrastructure, UI ani wewnętrznych DTO.
+- Pomocniczy typ danych nie otrzymuje sufiksu `Command`, `Query` ani `Handler`. Wąski interfejs wyniku jest dopuszczalny, jeśli cały rzeczywisty wynik spełnia kontrakt; sam interfejs nie może maskować zwracania encji.
+- Komunikaty niespełniające tych wymagań mogą być używane wyłącznie wewnątrz właściciela, np. z lokalnymi VO; nie przekazują encji lub ciężkich modeli. Przed użyciem między modułami dostosuj kontrakt i gwarancje operacji. Nie tworzy to osobnego rejestru prywatnych komunikatów. Widok UI nie staje się kontraktem integracji; przygotuj minimalny model i osobne query, jeżeli zakres lub semantyka są inne.
+- Niekompatybilną zmianę kontraktu koordynuj z konsumentami; brak rejestru nie zwalnia ze sprawdzenia użyć w kodzie. W jednym wdrożeniu monolitu można skoordynować zmianę; dla wiadomości już w kolejce lub trwałych payloadów trzeba dodatkowo zapewnić kompatybilność podczas przejścia.
+
+### 5.2 Wynik busa, brak danych i niewykonanie
+
+- Rozróżniaj wynik biznesowy, brak zasobu, odrzucenie/blokadę wykonania i awarię techniczną. Kontrakt mówi, które sytuacje konsument może traktować identycznie.
+- Adapter sprawdza rzeczywisty wynik busa (`instanceof`, `is_*`, również elementy kolekcji). Niezgodny typ jest błędem integracji, nie pustym wynikiem; adnotacja `@var` nie jest walidacją.
+- `null`/pusta lista mogą być poprawnym wynikiem biznesowym. Nie oznaczają automatycznie niedostępności modułu ani sukcesu zapisu.
+- Middleware pomijające handler musi zapewniać obserwowalny sygnał niewykonania, gdy konsument potrzebuje rozróżnienia: np. dedykowany wyjątek lub wynik middleware. Wynik samego handlera nie rozwiąże problemu, jeśli handler nie zostanie uruchomiony. Profil nie narzuca wspólnego `Result<T>` ani jednej implementacji tego sygnału.
+- Obecne zwracanie `null` przez middleware opisuj jako ograniczenie do usunięcia dla operacji wymagających potwierdzenia, a nie dowód zgodności. Można je zachować dla konkretnego opcjonalnego odczytu, jeśli brak zasobu i blokada mają świadomie tę samą semantykę, bez ukrywania wymaganej funkcji.
+- Komenda synchroniczna `void` może być poprawna, gdy normalny powrót oznacza wykonanie, a blokada/odrzucenie są sygnalizowane inaczej. Jeżeli middleware może bezgłośnie pominąć wykonanie, normalny powrót tego nie dowodzi. Dalszy proces nie może zakładać wykonania bez odpowiedniej gwarancji.
+- Wysłanie do kolejki lub potwierdzenie przyjęcia nie oznacza wykonania komendy. Nie przedstawiaj go jako sukcesu zakończenia; opisz, jak konsument poznaje wynik, jeśli jest mu potrzebny.
+- Dla wymaganych danych/operacji adapter zgłasza lokalny błąd albo jawny stan niepowodzenia. Dla odczytu opcjonalnego może zwrócić brak wyniku. Przy autoryzacji brak dowodu uprawnienia nie daje dostępu; awarii nie maskuj jako zwykłego braku danych.
+- Nie zamieniaj dowolnego wyjątku na `null`, pustą listę lub „nie znaleziono”. Testy obejmują poprawny wynik, brak zasobu, niewykonanie, awarię oraz niezgodny typ w zakresie danego kontraktu.
+
+### 5.3 Semantyka CQRS i spójność odczytu
+
+- Query nie wykonuje biznesowej zmiany stanu ani nie uruchamia komend jako ukrytego efektu odczytu. Techniczne logowanie/cache może być dopuszczalne, jeśli nie zmienia wyniku biznesowego, uprawnień lub poprawności i ma jawny cykl życia.
+- Command może odczytywać dane potrzebne do wykonania. CQRS nie oznacza write-only handlera ani zakazu odczytu agregatu przed zmianą.
+- Inwariant zapisu weryfikuje właściciel operacji na danych i przy zabezpieczeniach zapewniających wymaganą spójność. Potencjalnie opóźniona projekcja nie wystarcza jako jedyna podstawa twardego inwariantu. Sam odczyt, również aktualny, nie usuwa race condition; potrzebne są odpowiednie constraints, blokady lub kontrola wersji.
+- Read-side może używać SQL/projekcji bez odtwarzania agregatów. Wspólna baza i model persystencji są dopuszczalne; wymagane jest rozdzielenie odpowiedzialności, nie automatyczne powielenie tabel.
+- Wynik komendy może być minimalnym identyfikatorem, potwierdzeniem lub statusem. Nie publikuj encji ani bogatego modelu UI jako wyniku integracyjnego. Wynik bogatszy, używany tylko wewnątrz właściciela, nie staje się API innych modułów.
+- Jeśli konsument potrzebuje odczytu po zapisie, kontrakt określa jego gwarancję: np. odczyt stanu zatwierdzonego lub eventual consistency. Nie obiecuj read-your-writes tylko dlatego, że obie operacje przechodzą przez busy.
+
+### 5.4 Transakcje, wiele kroków i efekty zewnętrzne
+
+- Właściciel komendy/procesu określa granicę transakcji i moment, w którym wynik oznacza trwały sukces. Bus i jego nazwa nie dowodzą istnienia ani zasięgu transakcji.
+- Dla zagnieżdżonych synchronicznych dispatchów ustal, czy kroki uczestniczą w tej samej transakcji i co oznacza błąd kroku. Nie zakładaj niezależnego commitu lub pełnego rollbacku bez weryfikacji konfiguracji i połączeń.
+- Transakcja obejmująca kilka modułów w jednej bazie jest dopuszczalną decyzją monolitu, gdy wymaga tego biznesowa atomowość, używa odpowiedniego wspólnego połączenia, respektuje właścicieli operacji i ma znany koszt blokad. Nie daje prawa zapisu cudzych tabel z pominięciem kontraktów.
+- Nie utrzymuj transakcji bazodanowej przez długie operacje sieciowe bez uzasadnienia i analizy ryzyka. Zewnętrzny efekt nie cofa się automatycznie wraz z rollbackiem bazy.
+- Proces obejmujący różne połączenia, async lub efekty zewnętrzne musi określić granice atomowości i zachowanie przy częściowym sukcesie. Nie zakładaj globalnej transakcji tylko dlatego, że kod działa w jednym procesie.
+- Retry/idempotencję, deduplikację, kompensację lub outbox stosuj tam, gdzie chronią konkretny wymagany invariant. Nie są obowiązkowymi elementami każdego workflow; nie obiecuj „exactly once” bez mechanizmu zapewniającego deklarowaną gwarancję.
+- Testuj istotne scenariusze: błąd późniejszego kroku, ponowienie i efekt przed/po commicie. Niesprawdzone właściwości konfiguracji są luką weryfikacji, nie gwarancją architektury.
+
+### 5.5 Zdarzenia i alternatywy integracji
+
+- Zdarzenia integracyjne nie są obowiązkowe dla CQRS ani modularnego monolitu. Synchroniczna komunikacja przez zgodne kontrakty command/query może być poprawna.
+- Zdarzenie domenowe opisuje fakt wewnątrz modelu właściciela i nie staje się automatycznie kontraktem między modułami. Jeżeli jest potrzebna integracja zdarzeniowa, Application właściciela publikuje osobny, czysty kontrakt danych; inni nie importują jego Domain.
+- Kontrakt zdarzenia umieszczaj według jawnie przyjętej konwencji projektu, np. `Application/IntegrationEvent/**`. Nie wkładaj go do `Api` wyłącznie dlatego, że jest publiczny; rola `Api` z pkt 2.1 pozostaje wąska. Dodanie takiej ścieżki wymaga objęcia jej guardem, nie nowej warstwy lub szyny z automatu.
+- Integrację zdarzeniową wybieraj dla konkretnej potrzeby, np. niezależnych reakcji kilku modułów lub retry. Przed jej użyciem opisz producenta/konsumentów, publikację względem commitu, dostarczenie, kolejność, duplikaty, idempotencję i błędy w zakresie wymaganym przez proces.
+- Skonfiguruj kanał i lokalne adaptery odbioru jako jawne rozszerzenie tego profilu. To osobny wyjątek od żądanie–odpowiedź z pkt 5, nie przyzwolenie na dowolne wywołania serwisów poza busami. Bez takiej decyzji nie dodawaj kanału „na zapas”.
 
 ## 6. Reguły `Port/In` i `Port/Out`
-### 6.1 Jednoznaczna definicja `Port/In` i `Port/Out`
-Reguły poniżej zawsze interpretuj z perspektywy jednego modułu `M`:
-- `Application/Port/In`:
-  - to publiczny kontrakt wejścia do modułu `M`,
-  - występuje w dwóch dopuszczalnych wariantach:
-    - `workflow entrypoint`: kontrakt uruchamiania workflow operacyjnego (pkt 4) z UI lub innej warstwy zewnętrznej wobec use case,
-    - `plugin extension point`: kontrakt rozszerzeń implementowany przez inne moduły i konsumowany przez moduł właściciela (np. provider/resolver),
-  - nie zastępuje standardowej ścieżki `CommandBus` / `QueryBus` dla CRUD i zwykłych odczytów.
-- `Application/Port/Out`:
-  - to kontrakt zależności wychodzącej z modułu `M`,
-  - opisuje, czego use case modułu `M` potrzebuje od świata zewnętrznego (I/O, repozytoria read-model, adaptery infrastruktury),
-  - jest używany wyłącznie przez warstwę `Application`, nigdy bezpośrednio przez UI.
-- `Application/Port` bez podfolderu:
-  - traktuj jako legacy i nie dodawaj nowych portów w tej lokalizacji,
-  - wyjątek: porty techniczne w module współdzielonym (np. `Shared`), gdy klasyfikacja In/Out nie wnosi wartości domenowej.
-- Interfejs używany i implementowany wyłącznie w warstwach adapterów (`UI`, `Infrastructure`) nie jest portem aplikacji: umieść go w warstwie, która go używa, zamiast w `Application/Port/**`.
+### 6.1 Porty aplikacji i konwencja punktów rozszerzeń
 
-### 6.2 Reguła decyzyjna tworzenia kontraktu wejścia
-- Domyślnie twórz `Command` / `Query` i wywołuj je przez bus.
-- `Port/In` typu `workflow entrypoint` twórz tylko wtedy, gdy operacja spełnia checklistę workflow z pkt 4.3.
-- `Port/In` typu `plugin extension point` twórz tylko wtedy, gdy moduł właściciel potrzebuje rejestru rozszerzeń dostarczanych przez inne moduły (provider/resolver/strategy), a nie wywołania CRUD/read use case.
-- `Port/In` nie służy do "opakowania jednego query/command", jeśli nie ma realnej orkiestracji albo realnego mechanizmu rozszerzeń.
+Reguły interpretuj z perspektywy modułu właściciela kontraktu, według kierunku zależności i wywołania, nie tylko nazwy katalogu.
 
-### 6.3 Checklista kontraktu pluginowego `Port/In`
-- Czy kontrakt reprezentuje punkt rozszerzeń modułu właściciela (a nie standardowy use case CRUD/read)?
-- Czy implementacje mają być dostarczane przez inne moduły jako adaptery `Application/Adapter/**`?
-- Czy moduł właściciel konsumuje implementacje jako rejestr/iterację (np. tag DI), a nie przez UI dispatch?
-- Czy kontrakt nie służy do bezpośredniego pobierania lub modyfikacji danych biznesowych obcego modułu?
-- Jeśli którekolwiek pytanie ma odpowiedź "nie", nie twórz `Port/In` pluginowego.
+- `Application/Port/In` zawiera lokalne workflow entrypointy z pkt 4 oraz interfejsy jawnych punktów rozszerzeń. Typy danych rozszerzeń należą do `Api`.
+- Lokalizacja pluginów w `Port/In` jest konwencją projektu, nie twierdzeniem, że ich każde wywołanie jest wejściem do use case'a. Gdy właściciel wywołuje provider, jest to wychodząca zależność w sensie hexagonal, a provider jest dostarczonym adapterem. Kontrakt należy do właściciela punktu rozszerzeń; nie wymaga to drugiego, identycznego interfejsu `Port/Out`.
+- `Application/Port/Out` opisuje potrzeby use case'ów wobec I/O, read modelu i integracji. Application używa go, a implementuje Infrastructure lub lokalny adapter. Nie jest wywoływany bezpośrednio przez UI.
+- Własna Infrastructure może używać `Port/Out` przy składaniu/dekorowaniu implementacji. Delegacja już zleconego zapisu do innego lokalnego portu nie wymaga kolejnej komendy. Nie tworzy to nowego wejścia biznesowego poza Application.
+- Integracja frameworkowa przed/poza busem (np. voter, middleware, ustalanie kontekstu) może użyć własnego portu odczytu, jeśli wejście przez use case wywołałoby rekursję lub udokumentowany, niedopuszczalny koszt. Odczyt respektuje kontekst i bezpieczeństwo, nie wykonuje zapisu biznesowego i nie przenosi decyzji domenowych do Infrastructure.
+- Samo „szybciej” lub „mniej klas” nie uzasadnia wyjątku frameworkowego. README opisuje przyczynę, zakres odczytu i gwarancje pomijanej ścieżki. Nie powstaje automatycznie nowa szyna bez transakcji.
+- Infrastructure nie używa obcego `Port/Out`. Nie twórz drugiego interfejsu nad tą samą implementacją wyłącznie dla uniknięcia zależności od własnego portu. Węższy interfejs wymaga odrębnej potrzeby lub segregacji odpowiedzialności.
+- Interfejs używany wyłącznie przez UI/Infrastructure nie jest portem aplikacji; umieść go przy właścicielu jego roli. Sufiks `Port` nie określa warstwy.
+- Płaski `Application/Port` jest legacy. Nie dodawaj tam nowych portów, poza uzgodnionymi technicznymi kontraktami Shared, gdy podział In/Out nie wnosi wartości.
+
+### 6.2 Wybór kontraktu wejścia lub rozszerzenia
+
+- Domyślnie używaj command/query przez bus. Workflow `Port/In` wymaga uzasadnienia z pkt 4.
+- Pluginowy port twórz, gdy właściciel potrzebuje rozszerzeń/providerów/strategii dostarczanych przez inne moduły, nie nowego serwisowego API do ich danych.
+- Kontrakt i sposób rejestracji publikuje właściciel. Implementacja w lokalnym `Application/Adapter/**` dostosowuje potrzeby rozszerzenia do możliwości własnego modułu.
+- Samo opakowanie jednego command/query nie jest ani workflowem, ani mechanizmem rozszerzeń.
+
+### 6.3 Checklista pluginu
+
+- Czy właściciel opisuje rzeczywisty punkt rozszerzeń i jego kontrakt?
+- Czy obce moduły dostarczają adaptery, a właściciel zbiera/wywołuje je w tym mechanizmie, np. przez tag DI?
+- Czy dane kontraktu są czyste, a implementacja nie ujawnia encji lub szczegółów persystencji?
+- Czy provider deleguje operacje biznesowe do własnych use case'ów/portów, zamiast pobierać cudze repozytoria?
+- Czy mechanizm nie udaje uniwersalnego CRUD/read API? Zwracanie danych przez rzeczywisty provider, np. Grid, jest dopuszczalne; sam fakt zwracania danych nie dyskwalifikuje pluginu.
+- Jeśli odpowiedź jest negatywna, popraw granicę albo użyj standardowego use case'a zgodnego z pkt 5.1.
 
 ## 7. Nazewnictwo klas, sufiksy i ścieżka decyzyjna
 Poniższe reguły służą do spójnego nazywania klas i katalogów w modularnym monolicie CQRS/hexagonal:
@@ -239,7 +311,7 @@ Jeśli taka klasa jest tylko modelem danych dla read-side lub wyszukiwania, pref
 ### 7.5 Ścieżka decyzyjna
 Przy dodawaniu nowej klasy przejdź przez poniższe pytania w kolejności:
 1. Czy to jest kontrakt graniczny?
-   - tak -> `Port`.
+   - tak -> jeśli to interfejs potrzeb/operacji, wybierz właściwy port według pkt 6; jeśli to komunikat lub typ danych kontraktu, stosuj pkt 2.1 i 5. Samo słowo „kontrakt” nie oznacza sufiksu `Port`.
 2. Czy to implementuje cudzy port albo tłumaczy kontrakt modułu `A` na kontrakt modułu `B`?
    - tak -> katalog `Application/Adapter/...`.
 3. Jeśli to adapter: jaka jest jego rzeczywista rola?
@@ -249,7 +321,7 @@ Przy dodawaniu nowej klasy przejdź przez poniższe pytania w kolejności:
 4. Czy to jest tylko model wejścia do wyszukiwania, filtrowania, sortowania lub paginacji?
    - tak -> `Criteria` / `QueryModel` / `FilterInput`, ale nie `Adapter`.
 5. Czy to jest model odczytu dla UI lub read-side?
-   - tak -> `View` / `RowView` / `ResultView` albo `DTO`; jeśli konsumuje go inny moduł -> `Api` (pkt 2.1).
+   - tak -> `View` / `RowView` / `ResultView` albo `DTO`. Dane kontraktu command/query umieszczaj przy komunikacie w `Application/UseCase/**`; dane mechanizmu rozszerzeń — w `Api`. Widok własnego UI nie staje się automatycznie żadnym z tych kontraktów. Publiczność określa pkt 5.1, nie sam katalog.
 6. Czy to jest dostęp do danych?
    - tak -> `Repository` albo `RepositoryPort`.
 7. Czy to jest logika operacyjna lub orkiestracyjna bez lepszego precyzyjnego sufiksu?
@@ -263,66 +335,60 @@ Przy dodawaniu nowej klasy przejdź przez poniższe pytania w kolejności:
 - Wyjątek (skip) w Deptracu to decyzja architektoniczna z uzasadnieniem, właścicielem i warunkiem usunięcia, a nie sposób na przepuszczenie zmiany. Powtarzające się wyjątki między tą samą parą modułów są sygnałem do przeglądu granicy (zdarzenia, odwrócenie zależności przez `Port/In`, przesunięcie odpowiedzialności).
 - Gdy repo nie ma Deptraca, stosuj pkt 8.1 w review i zgłoś brak automatycznej egzekucji.
 
-### 8.1 Twarde reguły zależności cross-module
-- Dozwolone cross-module:
-  - zależność do komunikatów z `TargetModule/Application/UseCase/Command/**` oraz `TargetModule/Application/UseCase/Query/**` jako publicznych kontraktów messages w tym profilu (bez handlerów),
-  - zależność do `TargetModule/Application/Port/In/**` wyłącznie przy implementacji jawnie udokumentowanego kontraktu pluginowego modułu docelowego,
-  - zależność do `TargetModule/Api/**` z każdej warstwy poza `Domain` (pkt 2.1); `Domain` korzysta wyłącznie z własnego `Api`,
-  - uzgodnione kontrakty współdzielone z `Shared`,
-  - kontrolowany, wyłącznie odczytowy read model SQL (`SELECT`, w tym `JOIN` / `UNION` / CTE) łączący tabele należące do kilku modułów, jeśli wszystkie poniższe warunki są spełnione:
-    - zapytanie działa na jednym połączeniu i w tej samej bazie danych; nie emuluje joinów między połączeniami,
-    - implementacja pozostaje w `Infrastructure/Repository/**` modułu będącego właścicielem przekrojowego use case'a i implementuje jego lokalny port z `Application/Port/Out/**` zakończony sufiksem `ReadRepositoryPort`,
-    - kod PHP nie importuje encji, repozytoriów, portów `Out`, klas `Domain` ani `Infrastructure` obcych modułów; zależność od obcych modułów istnieje wyłącznie na poziomie jawnie nazwanych tabel i kolumn SQL,
-    - zapytanie nie zapisuje, nie naprawia i nie usuwa danych w tabelach obcych modułów,
-    - read model respektuje tenant scope, soft-delete, uprawnienia do każdego źródła, stabilną paginację oraz semantykę danych właściciela tabeli,
-    - zależność od tabel obcych modułów jest jawnie opisana w dokumentacji modułu/read modelu i pokryta testami integracyjnymi wykrywającymi zmianę kontraktu tabel,
-    - wyjątek służy agregacji/reportingowi read-side, a nie obchodzeniu publicznego API modułu dla zwykłego odczytu CRUD.
-- Niedozwolone cross-module:
-  - zależność do `TargetModule/Application/Port/In/**` jako alternatywy dla `CommandBus` / `QueryBus` w odczycie i zapisie danych biznesowych,
-  - zależność do handlerów use case'ów modułu docelowego (np. `*Handler` w `TargetModule/Application/UseCase/**`); konfiguracja Deptrac wydziela je z publicznej warstwy use case'ów (osobna warstwa albo wykluczenie po roli klasy), żeby dozwolona zależność od komunikatów nie obejmowała handlerów,
-  - zależność do `TargetModule/Application/Port/Out/**`,
-  - zależność do `TargetModule/Application/Port/*.php` (płaskie porty legacy poza wyjątkami technicznymi),
-  - zależność do `TargetModule/Domain/**` i `TargetModule/Infrastructure/**` innego modułu,
-  - zależność `Domain` od `Api` innego modułu,
-  - typowanie wyniku cudzego query klasami spoza jego publicznego kontraktu (np. `TargetModule/Application/DTO/**`).
-- Niedozwolone obejścia:
-  - bezpośredni odczyt encji Doctrine, repozytoriów lub innych szczegółów persystencji obcego modułu; bezpośredni odczyt tabel jest dozwolony wyłącznie w kontrolowanym wyjątku read-side SQL opisanym powyżej,
-  - „sprytne” odpowiedniki cross-module API budowane poza `CommandBus` / `QueryBus`.
+### 8.1 Zależności między modułami i kontrolowany kontrakt SQL
 
-## 9. Doctrine i model relacji
-- Preferuj model relacji przez VO ID + jawne kolumny/indeksy.
-- Nie używaj bezpośrednich relacji encji Doctrine (np. `ManyToOne`, `OneToMany`, `ManyToMany`) jako domyślnego mechanizmu powiązań między modułami/agregatami; przechowuj identyfikatory zamiast referencji do obcych encji.
-- Rozdzielaj relacje obiektowe ORM od kluczy obcych w bazie: referencję przechowuj jako jawną kolumnę z identyfikatorem i zabezpieczaj ją FK w bazie, bez mapowania relacji encji Doctrine i bez importu klasy obcej encji. Sama granica modułów nie jest powodem do rezygnacji z FK w tej samej bazie danych.
-- Doctrine generuje FK tylko z mapowanych relacji, dlatego FK na zwykłej kolumnie deklaruj mechanizmem projektu, który dodaje go do schematu generowanego przez Doctrine. Przed dodaniem FK ustal ten mechanizm w lokalnych regułach (`AGENT_RULES_DOC`) i w kodzie (np. atrybut na property obsługiwany przez listener `postGenerateSchema`, wywołania `addForeignKeyConstraint`) i użyj go zamiast własnego rozwiązania.
-- Mechanizm FK (istniejący lub proponowany) spełnia warunki:
-  - deklaracja przy mapowaniu kolumny jest jedynym źródłem FK; migracja powstaje z porównania schematu, a nie z ręcznie dopisanego SQL,
-  - porównanie i walidacja schematu widzą FK i nie proponują jego usunięcia,
-  - cel FK wynika z nazwy tabeli i kolumny lub z jawnej konfiguracji, a nie z klasy obcej encji,
-  - zachowanie przy usuwaniu jest jawne; domyślnie `RESTRICT`, a `CASCADE` / `SET NULL` między modułami tylko po jawnej decyzji, zgodnie z wymaganiami domenowymi i ochroną danych historycznych,
-  - nazwa FK jest deterministyczna, zgodna z konwencją projektu i limitem długości identyfikatora bazy.
-- Po wygenerowaniu migracji sprawdź, że FK rzeczywiście się w niej znalazł i że kolumna ma indeks. Mechanizm może pominąć FK bez błędu, np. gdy tabela docelowa należy do innego połączenia (pkt 10). Referencji między bazami FK nie zabezpieczy; w README modułu opisz, co ją chroni.
-- Gdy projekt nie ma takiego mechanizmu, nie dopisuj FK wyłącznie ręcznie w migracji, bo Doctrine uzna go za rozbieżność schematu. Zgłoś lukę i zaproponuj mechanizm spełniający powyższe warunki jako decyzję użytkownika.
-- FK nie zastępuje komunikacji przez publiczne kontrakty modułów ani reguł z pkt 5 i 8.1.
+- Dozwolone zależności PHP:
+  - z lokalnego `Application/Adapter/**` do komunikatów i czystych danych use case'ów właściciela zgodnych z pkt 5.1, bez handlerów;
+  - z lokalnego `Application/Adapter/**` do obcego `Application/Port/In/**` przy implementacji opublikowanego pluginu, nie wywoływaniu cudzego workflow;
+  - do opublikowanego obcego `Api` z warstw poza Domain w zakresie rozszerzenia;
+  - do uzgodnionych kontraktów Shared, bez odwrotnej zależności bazowego Shared;
+  - do kontraktów integracji zdarzeniowej wyłącznie przez jawnie skonfigurowane adaptery i kanał według pkt 5.5.
+- Niedozwolone są zależności do obcego Domain, Infrastructure, UI, repozytoriów, `Port/Out`, wewnętrznych DTO, handlerów i komunikatów niespełniających wymagań pkt 5.1. Nie używaj serwisowego `Port/In` jako zamiennika busa.
+- Bezpośredni odczyt schematu obcego modułu to świadome sprzężenie danymi, nawet bez importów PHP. Dopuszczalny read model SQL (`SELECT`, także `JOIN` / `UNION` / CTE) musi spełniać wszystkie warunki:
+  - działa na jednym połączeniu i w tej samej bazie; nie emuluje joinów między połączeniami;
+  - należy do właściciela przekrojowego use case'a, pozostaje w `Infrastructure/Repository/**` i implementuje jego lokalny `Application/Port/Out/**` zakończony `ReadRepositoryPort`;
+  - nie importuje obcych encji, repozytoriów, Domain, Infrastructure lub portów Out i nie zapisuje/naprawia/usuwa cudzych danych; użycie `SELECT` nie usprawiedliwia funkcji wykonującej ukryty zapis biznesowy;
+  - służy agregacji/reportingowi, nie obejściu zwykłego kontraktu CRUD/read;
+  - właściciele źródeł akceptują zakres odczytu jako kontrakt read-side: tabele/kolumny lub widoki/projekcje, ich semantykę i istotne gwarancje świeżości;
+  - konsument respektuje tenant scope, soft-delete, uprawnienia do każdego źródła, stabilną paginację i semantykę właścicieli;
+  - właściciele komunikują niekompatybilne zmiany schematu i koordynują aktualizację konsumentów; zależność jest opisana i pokryta testami integracyjnymi.
+- Test nie czyni prywatnej tabeli publicznym kontraktem. Dokumentacja konsumenta sama nie zastępuje akceptacji właściciela. Stabilny widok/projekcja jest opcją ograniczenia sprzężenia, nie obowiązkiem dla każdego joinu.
+- Kod przekrojowego odczytu nie staje się właścicielem cudzych danych. Model odczytu nie może zastąpić wymaganej spójności walidacji zapisu (pkt 5.3).
+- Deptrac obejmuje `Api`, adaptery, kontrakty use case'ów, handlery i porty. Guard ogranicza użycia obcych komunikatów/typów UseCase do adapterów oraz dopuszcza obce Api zgodnie z pkt 2.1. Zgodność z pkt 5.1 oceniają reguły czystości typów, review i testy semantyki; samo objęcie całego katalogu warstwą nie dowodzi zgodności każdego komunikatu. Nie twórz dodatkowego rejestru publiczności na potrzeby guardu.
+- Domain może zależeć od własnego Api zgodnie z pkt 2.1; guard nie wprowadza zakazu tej zależności. Zależność Domain do obcego Api pozostaje zabroniona.
+- Guard zależności nie dowodzi semantyki pluginu, braku side effectów, autoryzacji, atomowości, publikacji kontraktu SQL ani znaczenia wyniku busa. Review i testy oceniają te właściwości osobno. Klasy uncovered, konfiguracja bez Api oraz supresje nie są dowodem zgodności.
+
+## 9. Relacje, własność danych i FK
+- Preferuj identyfikatory/VO ID zamiast referencji do obcych agregatów. Nie używaj mapowanych relacji encji Doctrine jako domyślnego powiązania między modułami/agregatami; granica modułu nie jest granicą ładowania całego obcego modelu.
+- Relacja obiektowa ORM i FK w bazie są osobnymi decyzjami. FK do jawnej tabeli/kolumny w tej samej bazie nie wymaga importu obcej encji i może poprawnie chronić integralność modularnego monolitu.
+- **FK stosuj dla referencji, których semantyka wymaga istnienia rekordu docelowego.** Nie każdy identyfikator jest taką referencją: ślad audytowy, historyczny snapshot lub identyfikator zewnętrzny mogą celowo przetrwać usunięcie celu. Opisz tę semantykę i ochronę danych, zamiast dopasowywać domenę do wymuszonego FK.
+- Dla referencji wymagającej integralności w tej samej bazie granica modułu sama nie uzasadnia rezygnacji z FK. Ustal właścicieli, zakres tenantowy i cykl życia danych; sam FK po ID nie dowodzi zgodności tenantów ani uprawnienia do użycia zasobu.
+- Polityka usuwania jest jawna. Domyślnie `RESTRICT`; `CASCADE` / `SET NULL` między modułami wymagają uzgodnienia właścicieli i ochrony historii. Nie mogą bezgłośnie omijać wymaganej logiki biznesowej właściciela, np. usuwania zasobów zewnętrznych lub emisji istotnych zdarzeń.
+- FK nie zastępuje wywołania opublikowanego kontraktu ani autoryzacji. Jest świadomym sprzężeniem schematem i cyklem życia danych, a nie przekazaniem odpowiedzialności biznesowej bazie.
+- Wykorzystaj istniejący mechanizm projektu, który utrzymuje deklarowany schemat i migracje w zgodzie. Profil nie wymaga jednego hooka/atrybutu ORM ani wyłącznie jednego sposobu generowania migracji; jest to polityka narzędziowa projektu, nie wymóg CQRS/hexagonal.
+- Przed dodaniem FK ustal w lokalnych regułach i kodzie: źródło deklaracji, sposób generowania/utrzymania migracji, walidację/drift schematu, jawny cel i deterministyczną nazwę FK. Nie twórz drugiego konkurencyjnego mechanizmu.
+- Gdy projekt deklaruje schemat przez ORM, użyj mechanizmu widocznego dla jego porównania albo jawnie uzgodnionego sposobu utrzymania ograniczeń zarządzanych poza ORM. Nie dopisuj ukrytego FK, który następny diff schematu usuwa. Brak mechanizmu jest decyzją do rozstrzygnięcia przed wdrożeniem ograniczenia.
+- Zweryfikuj wygenerowaną lub utrzymywaną migrację i rzeczywistą obecność FK. Indeks sprawdzaj według baseline §4 i potrzeb zapytań/usuwania; nie wymagaj dodatkowego identycznego indeksu, gdy istniejący zapewnia potrzebną obsługę. FK nie zabezpiecza referencji między bazami; ochronę takiej referencji opisuje właściciel.
 
 ### 9.1 Dodatkowe zasady danych (profil rozszerzony)
 - Unikaj `float/decimal` w modelu domenowym i trwałości dla wartości pieniężnych; preferuj liczby całkowite (np. grosze).
 - W kluczach relacyjnych używaj spójnego nazewnictwa snake_case oraz jawnych indeksów.
 - Nazwy kluczy obcych i tabel łączących utrzymuj spójnie i przewidywalnie (konwencja projektu).
 
-## 10. Wielobazowość / per-entity connection (gdy dotyczy)
-- Dopuszczalny jest model wielu connection/EntityManagerów (np. `core`/`tenant`) wybieranych per encja.
-- Repozytoria i konfiguracja EM powinny jednoznacznie wskazywać kontekst bazy.
-- Jeśli moduł wymaga tego modelu, dokumentuj konsekwencje w README modułu i migracjach.
+## 10. Wiele połączeń i EntityManagerów
+- Model wielu connection/EntityManagerów, np. core/tenant, jest dopuszczalny. Repozytoria i konfiguracja jednoznacznie wskazują kontekst bazy.
+- Jedna operacja na kilku połączeniach nie ma automatycznie jednej transakcji. Opisz gwarancje, częściowy sukces i retry według pkt 5.4; uwzględnij kontekst tenantowy.
+- FK i przekrojowy join wymagają wspierającego je kontekstu bazy; w tym profilu wyjątek SQL wymaga jednego połączenia. Nie ukrywaj przenoszenia danych między bazami pod tym wyjątkiem.
+- README i migracje opisują konsekwencje wyboru połączeń. Testy weryfikują właściwe routowanie operacji i istotne scenariusze błędów.
 
-## 11. FCF (Form-Command-First)
-- Formularze Symfony mapuj domyślnie bezpośrednio na command (`data_class = command`).
-- DTO formularzowe są wyjątkiem i wymagają krótkiego uzasadnienia.
-- Dla `Create` i `Update` preferuj osobne formularze z bazą wspólnych pól.
-- Prefill w update realizuj przez `fromView(...)` po stronie komendy update (nie ręczne mapowanie w kontrolerze).
-- Komenda mapowana przez formularz (`data_class`) ma publiczne, zapisywalne właściwości i jest tworzona przez `empty_data` albo przekazywana do formularza jako dane początkowe; to uzasadnione odstępstwo od preferencji `readonly` z baseline §2. Komendy niezwiązane z formularzem pozostają `final readonly`.
-- `fromView(...)` jest fabryką prefillu wewnątrz modułu: widok jest jej argumentem, a nie polem komendy, więc przez bus komenda przenosi wyłącznie dane zgodne z pkt 5.
-- Dla submitów preferuj jednolity schemat dispatchu oparty o zweryfikowane dane formularza.
-- Endpointy bez formularza nie podlegają regułom FCF.
+## 11. FCF jako preferencja integracji formularza
+- FCF (`Form-Command-First`) jest lokalną preferencją dla prostych formularzy, nie wymaganiem CQRS. Można mapować formularz bezpośrednio na command, gdy model edycji i żądanie operacji mają tę samą semantykę.
+- DTO formularza jest równoprawnym rozwiązaniem, gdy obsługuje stany częściowe, pola prezentacyjne, różne wejścia do tego samego use case'a lub stabilny kontrakt integracyjny/async. Właściciel podaje krótkie uzasadnienie wyboru, nie musi dowodzić, że DTO narusza preferowany wzorzec.
+- Dla create/update preferuj osobne formularze z bazą wspólnych pól. Nie wymuszaj ich połączenia kosztem różnych inwariantów operacji.
+- Prefill mapuj jawnie po stronie kodu właściciela, nie rozproszonym ręcznym mapowaniem w kontrolerach. Dla komendy używanej wyłącznie wewnętrznie `fromView(...)` może pozostać fabryką; argument nie staje się polem wiadomości. **Komunikat dostępny między modułami według pkt 5.1 nie zależy od wewnętrznego widoku przez taką fabrykę** — użyj mappera/fabryki poza typem kontraktu lub DTO formularza.
+- Command używany jako `data_class` może mieć publiczne zapisywalne właściwości i być tworzony przez `empty_data` lub przekazany jako dane początkowe. To uzasadnione odstępstwo od preferencji readonly z baseline §2. Komendy niezwiązane z formularzem pozostają `final readonly` według konwencji profilu.
+- Dispatch następuje po poprawnej obsłudze i walidacji formularza. Błędne lub częściowe dane nie mogą przypadkiem uruchomić komendy. Walidacja formularza nie zastępuje autoryzacji i inwariantów zapisu w Application/Domain.
+- Dla async zapewnij stabilny, serializowalny kontrakt, który nie zależy od cyklu życia formularza ani mutacji po dispatch. Endpointy bez formularzy nie podlegają FCF.
 
 ### 11.1 Odczyt danych dla pól formularza
 - Typy pól, opcje, callbacki etykiet i transformery identyfikatorów nie wykonują biznesowych odczytów — bezpośrednio ani przez `CommandBus`/`QueryBus`.
@@ -331,6 +397,8 @@ Przy dodawaniu nowej klasy przejdź przez poniższe pytania w kolejności:
 - Filtr UI zawęża prezentację, ale nie zastępuje walidacji zapisu; brakującej wartości nie maskuj dokładaniem opcji w warstwie formularza.
 - Wyjątek historyczny dopuszcza wyłącznie konkretny, jawnie wskazany identyfikator albo zakres, nigdy dowolne niedozwolone ID.
 - Reguła dotyczy pól formularza; nie zakazuje odczytów w jawnych akcjach wyszukiwania inicjowanych przez użytkownika ani nie nakazuje przenoszenia do use case każdej istniejącej ścieżki odczytu UI.
+- Query dostarczające opcje ustala dopuszczalny model odczytu, nie zatwierdza przyszłego zapisu. Command ponownie sprawdza istotne uprawnienia i inwarianty w aktualnym stanie.
+- Obsługa historycznych identyfikatorów pozostaje jawna i ograniczona. Nie rozszerzaj listy opcji ani wyjątków UI, aby ukryć brak zgodności z kontraktem zapisu.
 
 ## 12. Komponenty UI w strukturze modułów (gdy repo używa Twig/LiveComponent)
 - Komponenty Twig i Live Components trzymaj w warstwie `UI` modułu, który jest właścicielem ich danych, i stosuj jedną konwencję katalogów w całym repo.

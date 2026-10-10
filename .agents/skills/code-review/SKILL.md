@@ -337,6 +337,8 @@ Before publication, every candidate must pass this ordered publication gate:
 4. **strongest counterargument considered** — the best available reason the observation may be expected, already prevented elsewhere, or out of scope;
 5. **classification** — exactly one outcome: `finding`, `QUESTION`, `SUGGESTION`, or rejected candidate.
 
+Apply this gate to the expectation and proposed correction as well as the observation. Verify that the correction has an authoritative requirement and belongs to the responsibility under review; a mechanism or acceptance criterion appearing in a plan does not by itself justify maintaining or expanding it. Before recommending stronger checks or additional machinery, consider removing or simplifying the mechanism, or leaving an existing procedure with its current owner. A technically accurate observation does not justify a correction that adds unrequested scope or duplicates another owner's workflow.
+
 When a candidate depends on an evolving contract, establish which contract applies to the exact resource and the execution stage or supported path at issue. A historical implementation is not sufficient evidence that its assumptions still apply; check relevant superseding changes where needed. Conversely, a valid final state does not disprove a failure during a supported transition. Bound this verification to the candidate and apply the existing evidence and classification requirements.
 
 The publication gate is not independent verification of interpretation. Re-reading

@@ -8,19 +8,31 @@
     "profiles": [
         {
             "model": "openai/gpt-6.1-sol",
+            "reasoning": "xhigh"
+        },
+        {
+            "model": "openai/gpt-6.1-sol",
             "reasoning": "medium"
         },
         {
-            "model": "openai/gpt-6-luna",
-            "reasoning": "max"
+            "model": "anthropic/claude-opus-5-5",
+            "reasoning": "high"
         },
         {
-            "model": "deepseek/deepseek-v4.1-flash",
-            "reasoning": "max"
+            "model": "anthropic/claude-opus-5-5",
+            "reasoning": "medium"
         },
         {
-            "model": "openai/gpt-6-luna",
-            "reasoning": "xhigh"
+            "model": "anthropic/claude-sonnet-5-5",
+            "reasoning": "high"
+        },
+        {
+            "model": "anthropic/claude-sonnet-5-5",
+            "reasoning": "medium"
+        },
+        {
+            "model": "commandcode/deepseek/deepseek-v4.1-flash",
+            "reasoning": "max"
         }
     ]
 }
