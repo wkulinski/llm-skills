@@ -237,7 +237,7 @@ scope, using `<skills_root>/_shared/references/rule-conformance-policy.md` for t
 semantics of sources, scope, force, evidence and result.
 
 - Derive the active sources for the touched paths from repository instructions,
-  the `docs_map` documents, shared references, path-specific instructions and
+  rule documents designated by repository instructions, shared references, path-specific instructions and
   conditional profiles, respecting the repository's existing precedence and
   environment-level instructions.
 - The stack baseline and the CQRS profile from "Reference routing" are active

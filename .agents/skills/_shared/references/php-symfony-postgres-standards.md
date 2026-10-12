@@ -38,6 +38,7 @@ Ten dokument opisuje **domyślny baseline** dla skilli używanych w projektach P
 
 ## 5. Walidacja, bezpieczeństwo i niezawodność
 - Waliduj wejście na granicach systemu (HTTP/CLI/API).
+- Autoryzację i walidację egzekwuj po stronie serwera; ograniczenia po stronie klienta poprawiają UX, ale nie chronią operacji.
 - Uwzględniaj scenariusze błędne, race conditions i granice transakcji.
 - Nie dodawaj nowych zależności bez świadomej decyzji użytkownika.
 - Zmiany bezpieczeństwa/autoryzacji i migracje danych traktuj jako high-risk i jawnie raportuj.

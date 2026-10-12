@@ -24,8 +24,12 @@ warstwa, moduł, typ pliku, przepływ albo warunek aktywacji.
 - Reguła o węższym zakresie ma pierwszeństwo przed regułą ogólną w swoim zakresie.
 
 ## 3. Aktywne źródła i pierwszeństwo
-Aktywne źródła ustalasz z: instrukcji repozytorium, mapy dokumentów (`docs_map`),
-referencji wspólnych, instrukcji path-specific oraz profili warunkowych.
+Aktywne źródła ustalasz z: instrukcji repozytorium i wskazanych przez nie
+dokumentów zasad (np. `docs_map.AGENT_RULES_DOC`), referencji wspólnych,
+instrukcji path-specific oraz profili warunkowych.
+- Dokumentacja modułów i kontrakty (np. `MODULE_DOCS_GLOB`) nie są źródłem reguł.
+  Są źródłem oczekiwanego zachowania i miejscem uzasadnienia wyjątku
+  przewidzianego w samej regule (sekcja 8).
 - Profil warunkowy jest aktywny tylko wtedy, gdy jego warunek aktywacji jest
   jednoznacznie spełniony. Profil nieaktywny nie jest źródłem reguł i nie
   powoduje naruszenia.
@@ -91,6 +95,9 @@ Zasady dodatkowe:
 - `EXEMPTED` wymaga decyzji autoryzatywnej (właściciel reguły, użytkownik albo
   jawnie wskazany kontrakt) oraz określonego zakresu: które reguły, gdzie i do
   kiedy.
+- Kontrakt lub dokumentacja modułu uzasadnia `EXEMPTED` tylko dla wyjątku
+  przewidzianego w samej regule. Odstępstwo od wymagania ustanawia wyłącznie
+  źródło, które według pierwszeństwa repozytorium może zmieniać zasady.
 - Wyjątek opisany wyłącznie w kodzie, historii zmian lub konwencji, bez decyzji,
   nie jest wyjątkiem; taki przypadek pozostaje `VIOLATED` albo `NOT_VERIFIED`.
 - Wyjątek nie rozciąga się automatycznie na inne reguły ani na inne przypadki tej

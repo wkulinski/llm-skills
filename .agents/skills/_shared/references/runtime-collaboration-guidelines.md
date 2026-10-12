@@ -159,7 +159,7 @@ Ta lista nie luzuje żadnej bramki:
 ## 8. Priorytet reguł (rozstrzyganie konfliktów)
 Stosuj zasady w tej kolejności (od najwyższego priorytetu):
 1. Polecenie użytkownika z bieżącego zadania.
-2. Lokalne zasady repo z `AGENTS.md` i dokumentów przez niego wskazanych.
+2. Lokalne zasady repo: `AGENTS.md` i wskazane przez niego dokumenty zasad. Dokumentacja modułów (`MODULE_DOCS_GLOB`) i kontrakty opisują moduły, ale nie są lokalnymi zasadami repo i nie zmieniają zasad.
 3. Aktywny profil architektoniczny z `cqrs-monolith-standard-overrides.md` (tylko gdy `CQRS_MONOLITH_STANDARD_OVERRIDES=1`).
 4. Baseline stacka z `php-symfony-postgres-standards.md`.
 5. Runtime współpracy i jakości: ten plik + `runtime-quality-procedures.md`.
