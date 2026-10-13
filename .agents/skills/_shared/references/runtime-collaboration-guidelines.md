@@ -100,6 +100,28 @@ Ta lista nie luzuje żadnej bramki:
   polecenia użytkownika, a lista nie rozszerza punktowego checka do pełnego
   suite ani pełnej macierzy.
 
+## 2c. Kontynuacja po niepełnym wykonaniu
+
+- Niepełny wynik delegacji, limit kroków lub czasu wykonawcy ani brak odpowiedniej
+  fixture nie stanowią samodzielnego blockera zadania. Agent główny odpowiada za
+  kontynuację: wykorzystuje zweryfikowane dotychczasowe wyniki, przejmuje pozostałą
+  pracę albo deleguje zawężony wycinek bez powtarzania ukończonego rozpoznania.
+- Brak fixture lub bezpiecznej ścieżki weryfikacji najpierw oceń jako pracę do
+  wykonania w ramach uzgodnionego zakresu i dozwolonej autonomii, nie jako
+  automatyczny powód zakończenia zadania. Ocena nie nadpisuje wyniku
+  `targeted-check-decision`: gdy helper zwraca `REVIEW_ONLY`, raportuj
+  `verification_gap` zamiast rozszerzać weryfikację.
+- Przed zatrzymaniem wskaż konkretną przeszkodę i dowód jej wystąpienia, wyjaśnij,
+  dlaczego nie można jej bezpiecznie usunąć w ramach autonomii, oraz określ
+  potrzebną decyzję lub dostęp użytkownika. Brak dowodu ukończenia nie jest
+  sam w sobie dowodem blokady.
+- Przeszkoda dotycząca jednej operacji blokuje tę operację, nie całe zadanie;
+  wykonaj pozostałe niezależne i bezpieczne czynności, o ile nie narusza to
+  warunków zatrzymania aktywnego workflow.
+- Ta zasada nie rozszerza zakresu ani uprawnień, nie pozwala uznać niepełnej
+  weryfikacji za ukończenie i nie omija `STOP_CODES`, bramek bezpieczeństwa,
+  walidacji raportów ani limitów ponowień określonych przez właściwą procedurę.
+
 ## 3. Zasady bezpiecznej edycji
 - Nie nadpisuj cudzych zmian i nie edytuj plików „w ciemno”.
 - Przed modyfikacją pliku już zmienionego w repo przeczytaj jego aktualną treść i diff,

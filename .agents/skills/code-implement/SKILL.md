@@ -224,9 +224,26 @@ Po `STATUS: COMPLETED` agent główny powinien tylko:
 2. uruchomić wskazany punktowy check,
 3. zaktualizować własny stan bez ponownego szerokiego discovery.
 
-Po `STATUS: ESCALATE_TO_PRIMARY` agent główny przejmuje wskazaną decyzję lub
-brakujący kontekst; nie deleguje ponownie tego samego pakietu bez zmiany
-kontraktu.
+Po `STATUS: ESCALATE_TO_PRIMARY` agent główny rozróżnia przyczynę:
+
+- **Eskalacja merytoryczna** — brakująca decyzja lub kontekst, wyczerpany limit
+  cykli poprawek workera albo patch poza dozwolonym zakresem. Agent główny
+  przejmuje wskazaną decyzję lub brakujący kontekst; nie deleguje ponownie tego
+  samego pakietu bez rozstrzygnięcia przyczyny i aktualizacji kontraktu.
+- **Przerwanie wykonawcze** — wyłącznie limit kroków lub czasu przy ustalonym
+  rozwiązaniu. Agent główny przejmuje pozostałe wykonanie albo deleguje tylko
+  niedokończony wycinek, przekazując zweryfikowane dotychczasowe wyniki. Nie
+  wymaga to zmiany decyzji projektowych; kolejna delegacja nadal musi przejść
+  bramki atomowości i kosztu. Po drugim przerwaniu wykonawczym tego samego `R#`
+  agent główny kończy wykonanie samodzielnie, bez kolejnej delegacji.
+- **Blokada środowiskowa weryfikacji** — agent główny nie deleguje ponownie
+  pakietu, tylko sam ponawia dozwoloną komendę przez `resolve_tool_cmd`.
+  `env_blocker` stosuje wyłącznie na warunkach z
+  `<skill_dir>/references/state-and-report-contract.md`; brak punktowej komendy
+  raportuje jako `verification_gap`.
+
+Kontynuację i warunki zatrzymania określa sekcja „Kontynuacja po niepełnym
+wykonaniu” w `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`.
 
 Jeśli wskazany agent lub entrypoint jest niedostępny, wykonaj właściwy skill
 bezpośrednio albo użyj opisanego fallbacku. Nie deleguj automatycznie
