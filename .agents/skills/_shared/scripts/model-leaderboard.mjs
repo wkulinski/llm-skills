@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 
-import fs from "node:fs";
-
 import {isMainModule} from "./is-main-module.mjs";
-import {loadModelHierarchy} from "./model-hierarchy.mjs";
 
 export const LEADERBOARD_URL = "https://aicodingdaily.com/leaderboard";
 
@@ -103,83 +100,9 @@ function normalizeEntries(entries) {
     });
 }
 
-function normalizeHierarchy(hierarchy) {
-    if (hierarchy?.version !== 1 || hierarchy.order !== "strongest-to-weakest"
-        || !Array.isArray(hierarchy.profiles) || !hierarchy.profiles.length) fail("INVALID_PROFILES");
-    const seen = new Set();
-    return hierarchy.profiles.map((profile) => {
-        const normalized = {
-            model: requiredString(profile?.model, "INVALID_PROFILES"),
-            reasoning: requiredString(profile.reasoning, "INVALID_PROFILES"),
-        };
-        const key = profileKey(normalized);
-        if (seen.has(key)) fail("INVALID_PROFILES");
-        seen.add(key);
-        return normalized;
-    });
-}
-
-function profileKey(profile) {
-    return JSON.stringify([profile.model, profile.reasoning]);
-}
-
-/** Agent-supplied pairings: an exact local profile and the exact displayed label. */
-function normalizePairings(pairings, profiles) {
-    if (!Array.isArray(pairings)) fail("INVALID_PAIRING");
-    const local = new Set(profiles.map(profileKey));
-    const byProfile = new Map();
-    for (const pairing of pairings) {
-        const profile = normalizeProfile(pairing, "INVALID_PAIRING");
-        const key = profileKey(profile);
-        if (!local.has(key) || byProfile.has(key)) fail("INVALID_PAIRING");
-        byProfile.set(key, profile.label);
-    }
-    return byProfile;
-}
-
-function normalizeInputs(hierarchy, minimumPoints, pairings) {
-    points(minimumPoints, "INVALID_MINIMUM_POINTS");
-    const profiles = normalizeHierarchy(hierarchy);
-    return {profiles, labels: normalizePairings(pairings, profiles)};
-}
-
-function duplicateLabels(labels) {
-    const seen = new Set();
-    return [...new Set(labels.filter((label) => seen.has(label) || !seen.add(label)))];
-}
-
-/** Pick the weakest qualifying local profile, never reorder by benchmark score.
- * Points always come from `entries`; a pairing only names which row to read.
+/** Shared live evidence boundary for planning and external environment comparisons.
+ * Entries remain in memory; WP executor selection belongs to the planning agent.
  */
-export function selectLocalProfile(hierarchy, {entries, minimumPoints, pairings = []} = {}) {
-    const {profiles, labels} = normalizeInputs(hierarchy, minimumPoints, pairings);
-    const pointsByLabel = new Map(normalizeEntries(entries).map((entry) => [entry.label, entry.totalPoints]));
-    const decision = (reason, details) => ({status: "decision-required", reason, selected: null, minimumPoints, ...details});
-    const duplicated = duplicateLabels([...labels.values()]);
-    if (duplicated.length > 0) {
-        return decision("ambiguous-pairing", {labels: duplicated});
-    }
-    const missing = [...labels.values()].filter((label) => !pointsByLabel.has(label));
-    if (missing.length > 0) {
-        return decision("label-not-found", {labels: missing});
-    }
-    let selected = null;
-    const unscored = [];
-    profiles.forEach((profile, rank) => {
-        const label = labels.get(profileKey(profile));
-        if (typeof label === "undefined") unscored.push({...profile, rank});
-        else if (pointsByLabel.get(label) >= minimumPoints) selected = {...profile, rank, label, totalPoints: pointsByLabel.get(label)};
-    });
-    return {
-        status: selected ? "recommended" : "decision-required",
-        reason: selected ? null : "no-candidate",
-        selected,
-        minimumPoints,
-        unscored,
-    };
-}
-
-/** Shared live boundary for planning and later comparisons; entries remain in memory. */
 export async function fetchFreshLeaderboard({fetchImpl = globalThis.fetch} = {}) {
     if (typeof fetchImpl !== "function") fail("INVALID_FETCH_IMPLEMENTATION");
     try {
@@ -192,25 +115,6 @@ export async function fetchFreshLeaderboard({fetchImpl = globalThis.fetch} = {})
         if (error instanceof LeaderboardError) throw error;
         fail("LEADERBOARD_FETCH_FAILED");
     }
-}
-
-/** A fresh fetch for EVERY new decision. The result never contains the whole ranking. */
-export async function recommendFreshProfile(hierarchy, {
-    minimumPoints, pairings = [], fetchImpl = globalThis.fetch,
-} = {}) {
-    // Caller/configuration errors are not network failures.
-    normalizeInputs(hierarchy, minimumPoints, pairings);
-    if (typeof fetchImpl !== "function") fail("INVALID_FETCH_IMPLEMENTATION");
-    let fetched;
-    try {
-        fetched = await fetchFreshLeaderboard({fetchImpl});
-    } catch (error) {
-        if (!(error instanceof LeaderboardError)) throw error;
-        return {status: "decision-required", reason: "ranking-unavailable", selected: null,
-            minimumPoints, source: LEADERBOARD_URL, code: error.code};
-    }
-    const {entries, source, fetchedAt} = fetched;
-    return {...selectLocalProfile(hierarchy, {entries, minimumPoints, pairings}), source, fetchedAt};
 }
 
 function normalizeProfile(value, code = "INVALID_PROFILE") {
@@ -269,10 +173,9 @@ function usage() {
     return [
         "Usage:",
         "  model-leaderboard.mjs entries",
-        "  model-leaderboard.mjs recommend --minimum-points <0-70> --pairings <file|-> [--root <repo>]",
         "",
-        "entries prints the freshly parsed rows (label, totalPoints) for the agent to pair; never save them.",
-        "recommend reads [{model, reasoning, label}] pairings, fetches the ranking again and takes points from it.",
+        "entries prints fresh evidence (label, totalPoints, source, fetchedAt); never save the rows.",
+        "The planning agent chooses the lowest sufficient project hierarchy profile; this helper does not recommend one.",
     ].join("\n");
 }
 
@@ -303,24 +206,10 @@ async function main(argv) {
         process.stdout.write(`${usage()}\n`);
         return;
     }
-    let result;
-    if (command === "entries") {
-        result = await fetchFreshLeaderboard();
-    } else if (command === "recommend") {
-        if (typeof args.minimum_points !== "string" || !args.minimum_points.trim() || typeof args.pairings !== "string") {
-            throw new LeaderboardError("INVALID_ARGUMENT", "recommend requires --minimum-points and --pairings.");
-        }
-        let pairings;
-        try {
-            pairings = JSON.parse(fs.readFileSync(args.pairings === "-" ? 0 : args.pairings, "utf8"));
-        } catch {
-            throw new LeaderboardError("INVALID_PAIRING", "Pairings must be a readable JSON array.");
-        }
-        const hierarchy = loadModelHierarchy({repoRoot: typeof args.root === "string" ? args.root : process.cwd()});
-        result = await recommendFreshProfile(hierarchy, {minimumPoints: Number(args.minimum_points), pairings});
-    } else {
+    if (command !== "entries") {
         throw new LeaderboardError("INVALID_ARGUMENT", usage());
     }
+    const result = await fetchFreshLeaderboard();
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 

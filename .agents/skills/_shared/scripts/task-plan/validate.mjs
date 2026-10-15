@@ -6,7 +6,7 @@ import path from "node:path";
 
 import {isMainModule} from "../is-main-module.mjs";
 import {hasModelProfile, loadModelHierarchy} from "../model-hierarchy.mjs";
-import {loadDifficultyPolicy, parsePackageDifficulty} from "./difficulty.mjs";
+import {parsePackageDifficulty} from "./difficulty.mjs";
 
 export const PLAN_RESULTS = Object.freeze(["invalid", "blocked", "ready"]);
 
@@ -122,7 +122,7 @@ export function validatePlanDocument(markdown, options = {}) {
         packageIds.add(packageRecord.id);
         errors.push(...validatePackage(packageRecord, difficultyFormat));
     }
-    errors.push(...validateDifficulty(packages, options, difficultyFormat));
+    errors.push(...validateDifficulty(packages, difficultyFormat));
     errors.push(...validateSourceCoverage(parsed.body, packageIds));
     errors.push(...validateExecutionEnvironment(parsed.body, packages, options));
     errors.push(...validateExecutionContract(parsed.body, packages));
@@ -925,22 +925,15 @@ function validateNamedBullets(body) {
  *
  * A plan whose work packages declare no real `Difficulty:` marker keeps the
  * legacy contract unchanged. As soon as one work package declares difficulty,
- * every package needs a complete, consistent `Difficulty: v1` block and the
- * project policy must load; a malformed policy is a validation error, never a
- * silent fallback to defaults.
+ * every package needs a complete, consistent `Difficulty: v1` block.
+ * Executor selection is separate from this assessment.
  */
-function validateDifficulty(packages, options, difficultyFormat) {
+function validateDifficulty(packages, difficultyFormat) {
     if (!difficultyFormat) {
         return [];
     }
-    let policy;
-    try {
-        policy = loadDifficultyPolicy({repoRoot: options.repoRoot ?? process.cwd(), fsOps: options.fsOps ?? fs});
-    } catch (error) {
-        return [error instanceof Error ? error.message : String(error)];
-    }
     return packages.flatMap((packageRecord) => {
-        const parsed = parsePackageDifficulty(packageRecord.body, policy);
+        const parsed = parsePackageDifficulty(packageRecord.body);
         if (!parsed.present) {
             return [`${packageRecord.id} must contain a complete Difficulty: v1 block.`];
         }

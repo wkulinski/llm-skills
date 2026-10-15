@@ -1,20 +1,9 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
-import path from "node:path";
 
 import {isMainModule} from "../is-main-module.mjs";
 
-export const DIFFICULTY_POLICY_PATH = ".agents/config/task-plan-difficulty.json";
-
-export const DIFFICULTY_LEVELS = Object.freeze(["simple", "moderate", "hard", "very-hard"]);
-
-export const DEFAULT_DIFFICULTY_POLICY = Object.freeze({
-    version: 1,
-    thresholds: Object.freeze({simple: 30, moderate: 40, hard: 50, "very-hard": 60}),
-});
-
-const THRESHOLD_KEYS = DIFFICULTY_LEVELS;
 const DIMENSION_KEYS = Object.freeze(["dependencies", "logic", "discovery", "verification"]);
 const DIMENSION_LABELS = Object.freeze({
     dependencies: "Dependencies",
@@ -43,50 +32,22 @@ export class DifficultyError extends Error {
 }
 
 /**
- * Assess one work package against the difficulty rubric and project policy.
+ * Assess one work package against the difficulty rubric.
  *
- * Pure: no filesystem or network access. Invalid rubric or policy input throws
+ * Pure: no filesystem or network access. Invalid rubric input throws
  * `DifficultyError` with a stable code. The returned level never falls below
  * the level implied by the rubric sum; a risk floor only raises it.
  *
  * @param {{dependencies: {score: number, rationale: string}, logic: {score: number, rationale: string},
  *   discovery: {score: number, rationale: string}, verification: {score: number, rationale: string},
  *   risk: string}} input
- * @param {{version: 1, thresholds: Record<string, number>}} [policy]
- * @returns {{score: number, level: string, minimumPoints: number}}
+ * @returns {{score: number, level: string}}
  */
-export function assessDifficulty(input, policy = DEFAULT_DIFFICULTY_POLICY) {
-    const normalizedPolicy = validateDifficultyPolicy(policy);
+export function assessDifficulty(input) {
     const rubric = normalizeRubric(input);
     const score = DIMENSION_KEYS.reduce((total, key) => total + rubric[key].score, 0);
     const level = maxLevel(levelForScore(score), RISK_FLOORS[rubric.risk]);
-    return {score, level, minimumPoints: normalizedPolicy.thresholds[level]};
-}
-
-/**
- * Load the optional project difficulty policy.
- *
- * A missing file returns the documented defaults. An existing file must be a
- * complete, valid version 1 table: invalid JSON, malformed shape, missing or
- * extra threshold keys, non-number or non-finite values, values outside 0..70
- * and decreasing thresholds all fail closed with `DifficultyError`.
- *
- * @param {{repoRoot?: string, fsOps?: typeof fs}} [options]
- * @returns {{version: 1, thresholds: {simple: number, moderate: number, hard: number, "very-hard": number}}}
- */
-export function loadDifficultyPolicy({repoRoot = process.cwd(), fsOps = fs} = {}) {
-    const root = path.resolve(repoRoot);
-    const configPath = path.resolve(root, DIFFICULTY_POLICY_PATH);
-    if (!fsOps.existsSync(configPath)) {
-        return validateDifficultyPolicy(DEFAULT_DIFFICULTY_POLICY);
-    }
-    let input;
-    try {
-        input = JSON.parse(fsOps.readFileSync(configPath, "utf8"));
-    } catch (error) {
-        throw new DifficultyError("INVALID_DIFFICULTY_POLICY", "Difficulty policy must be valid JSON.", causeDetails(error));
-    }
-    return validateDifficultyPolicy(input);
+    return {score, level};
 }
 
 /**
@@ -99,10 +60,9 @@ export function loadDifficultyPolicy({repoRoot = process.cwd(), fsOps = fs} = {}
  * set only when the whole block is valid.
  *
  * @param {string} body
- * @param {{version: 1, thresholds: Record<string, number>}} [policy]
- * @returns {{present: boolean, errors: string[], assessment: {score: number, level: string, minimumPoints: number}|null}}
+ * @returns {{present: boolean, errors: string[], assessment: {score: number, level: string}|null}}
  */
-export function parsePackageDifficulty(body, policy = DEFAULT_DIFFICULTY_POLICY) {
+export function parsePackageDifficulty(body) {
     const lines = nonFencedLines(String(body ?? ""));
     const markerIndexes = lines
         .map((line, index) => (DIFFICULTY_MARKER.test(line.text) ? index : -1))
@@ -178,7 +138,7 @@ export function parsePackageDifficulty(body, policy = DEFAULT_DIFFICULTY_POLICY)
         return {present: true, errors: [...new Set(errors)], assessment: null};
     }
 
-    const assessment = assessDifficulty({...rubric, risk}, policy);
+    const assessment = assessDifficulty({...rubric, risk});
     if (level !== assessment.level) {
         return {
             present: true,
@@ -248,47 +208,6 @@ function parseDimensionValue(label, value) {
     return {score, rationale};
 }
 
-function validateDifficultyPolicy(policy) {
-    if (!policy || typeof policy !== "object" || Array.isArray(policy)) {
-        throw new DifficultyError("INVALID_DIFFICULTY_POLICY", "Difficulty policy must be an object.");
-    }
-    if (policy.version !== 1) {
-        throw new DifficultyError("INVALID_DIFFICULTY_POLICY", "Difficulty policy must use version 1.");
-    }
-    const thresholds = policy.thresholds;
-    if (!thresholds || typeof thresholds !== "object" || Array.isArray(thresholds)) {
-        throw new DifficultyError("INVALID_DIFFICULTY_POLICY", "Difficulty policy must contain a thresholds object.");
-    }
-    const missing = THRESHOLD_KEYS.filter((key) => !Object.hasOwn(thresholds, key));
-    const extra = Object.keys(thresholds).filter((key) => !THRESHOLD_KEYS.includes(key));
-    if (missing.length > 0 || extra.length > 0) {
-        throw new DifficultyError(
-            "INVALID_DIFFICULTY_POLICY",
-            `Difficulty policy thresholds must contain exactly: ${THRESHOLD_KEYS.join(", ")}.`,
-        );
-    }
-    const values = {};
-    let previous = null;
-    for (const key of THRESHOLD_KEYS) {
-        const value = thresholds[key];
-        if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 70) {
-            throw new DifficultyError(
-                "INVALID_DIFFICULTY_POLICY",
-                `Difficulty policy threshold ${key} must be a finite number from 0 to 70.`,
-            );
-        }
-        if (previous !== null && value < previous) {
-            throw new DifficultyError(
-                "INVALID_DIFFICULTY_POLICY",
-                "Difficulty policy thresholds must not decrease from simple to very-hard.",
-            );
-        }
-        previous = value;
-        values[key] = value;
-    }
-    return {version: 1, thresholds: values};
-}
-
 function isValidScore(score) {
     return Number.isInteger(score) && score >= 0 && score <= 2;
 }
@@ -349,10 +268,10 @@ function causeDetails(error) {
 function usage() {
     return [
         "Usage:",
-        "  difficulty.mjs assess --body <file|-> [--root <repo>]",
+        "  difficulty.mjs assess --body <file|->",
         "",
         "assess reads one work package body with its Difficulty: v1 block and prints",
-        "the computed score, level and minimumPoints from the project policy.",
+        "the computed score and level; it does not select an executor profile.",
     ].join("\n");
 }
 
@@ -392,8 +311,7 @@ function main(argv) {
     } catch (error) {
         throw new DifficultyError("INVALID_ARGUMENT", "Work package body must be a readable file or stdin.", causeDetails(error));
     }
-    const policy = loadDifficultyPolicy({repoRoot: typeof args.root === "string" ? args.root : process.cwd()});
-    const parsed = parsePackageDifficulty(body, policy);
+    const parsed = parsePackageDifficulty(body);
     if (!parsed.present) {
         throw new DifficultyError("DIFFICULTY_MISSING", "Work package body does not contain a Difficulty: v1 block.");
     }

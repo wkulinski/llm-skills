@@ -7,13 +7,11 @@ import {fileURLToPath} from "node:url";
 import {it} from "vitest";
 
 import {
-    DEFAULT_DIFFICULTY_POLICY,
-    DIFFICULTY_POLICY_PATH,
     DifficultyError,
     assessDifficulty,
-    loadDifficultyPolicy,
     parsePackageDifficulty,
 } from "../../../.agents/skills/_shared/scripts/task-plan/difficulty.mjs";
+import {parseExecutionEnvironment, validatePlanDocument} from "../../../.agents/skills/_shared/scripts/task-plan/validate.mjs";
 import {normalizeUserInput, persistSource} from "../../../.agents/skills/task-plan/scripts/source.mjs";
 import {savePlan, StoreError} from "../../../.agents/skills/task-plan/scripts/store.mjs";
 
@@ -63,8 +61,8 @@ function temporaryRepository() {
     return root;
 }
 
-function writeDifficultyPolicy(root, contents) {
-    const configPath = path.join(root, DIFFICULTY_POLICY_PATH);
+function writeObsoleteDifficultyPolicy(root, contents) {
+    const configPath = path.join(root, ".agents", "config", "task-plan-difficulty.json");
     fs.mkdirSync(path.dirname(configPath), {recursive: true});
     fs.writeFileSync(configPath, typeof contents === "string" ? contents : `${JSON.stringify(contents, null, 2)}\n`, "utf8");
 }
@@ -182,7 +180,7 @@ Run the focused unit test.
 `;
 }
 
-it("returns 4/moderate/40 for the canonical rubric and level minima at the sum edges", () => {
+it("returns only score and level for the canonical rubric and sum edges", () => {
     const canonical = assessDifficulty({
         dependencies: {score: 0, rationale: "Jeden właściciel zmiany."},
         logic: {score: 1, rationale: "Kilka rozstrzygniętych gałęzi."},
@@ -190,36 +188,36 @@ it("returns 4/moderate/40 for the canonical rubric and level minima at the sum e
         verification: {score: 1, rationale: "Test integracyjny kontraktu."},
         risk: "none",
     });
-    assert.deepEqual(canonical, {score: 4, level: "moderate", minimumPoints: 40});
-    assert.deepEqual(assessDifficulty(rubricWithScores([0, 0, 0, 0])), {score: 0, level: "simple", minimumPoints: 30});
-    assert.deepEqual(assessDifficulty(rubricWithScores([2, 0, 0, 0])), {score: 2, level: "simple", minimumPoints: 30});
-    assert.deepEqual(assessDifficulty(rubricWithScores([2, 1, 0, 0])), {score: 3, level: "moderate", minimumPoints: 40});
-    assert.deepEqual(assessDifficulty(rubricWithScores([2, 2, 2, 0])), {score: 6, level: "hard", minimumPoints: 50});
-    assert.deepEqual(assessDifficulty(rubricWithScores([2, 2, 1, 0])), {score: 5, level: "hard", minimumPoints: 50});
-    assert.deepEqual(assessDifficulty(rubricWithScores([2, 2, 2, 1])), {score: 7, level: "very-hard", minimumPoints: 60});
-    assert.deepEqual(assessDifficulty(rubricWithScores([2, 2, 2, 2])), {score: 8, level: "very-hard", minimumPoints: 60});
+    assert.deepEqual(canonical, {score: 4, level: "moderate"});
+    assert.deepEqual(assessDifficulty(rubricWithScores([0, 0, 0, 0])), {score: 0, level: "simple"});
+    assert.deepEqual(assessDifficulty(rubricWithScores([2, 0, 0, 0])), {score: 2, level: "simple"});
+    assert.deepEqual(assessDifficulty(rubricWithScores([2, 1, 0, 0])), {score: 3, level: "moderate"});
+    assert.deepEqual(assessDifficulty(rubricWithScores([2, 2, 2, 0])), {score: 6, level: "hard"});
+    assert.deepEqual(assessDifficulty(rubricWithScores([2, 2, 1, 0])), {score: 5, level: "hard"});
+    assert.deepEqual(assessDifficulty(rubricWithScores([2, 2, 2, 1])), {score: 7, level: "very-hard"});
+    assert.deepEqual(assessDifficulty(rubricWithScores([2, 2, 2, 2])), {score: 8, level: "very-hard"});
 });
 
 it("raises the computed level by the risk floor and never lowers it", () => {
     assert.deepEqual(
         assessDifficulty(rubricWithScores([1, 0, 0, 0], "authorization")),
-        {score: 1, level: "hard", minimumPoints: 50},
+        {score: 1, level: "hard"},
     );
     assert.deepEqual(
         assessDifficulty(rubricWithScores([1, 0, 0, 0], "irreversible-migration")),
-        {score: 1, level: "hard", minimumPoints: 50},
+        {score: 1, level: "hard"},
     );
     assert.deepEqual(
         assessDifficulty(rubricWithScores([1, 0, 0, 0], "concurrent-financial")),
-        {score: 1, level: "very-hard", minimumPoints: 60},
+        {score: 1, level: "very-hard"},
     );
     assert.deepEqual(
         assessDifficulty(rubricWithScores([2, 2, 2, 2], "authorization")),
-        {score: 8, level: "very-hard", minimumPoints: 60},
+        {score: 8, level: "very-hard"},
     );
     assert.deepEqual(
         assessDifficulty(rubricWithScores([0, 0, 0, 2], "concurrent-financial")),
-        {score: 2, level: "very-hard", minimumPoints: 60},
+        {score: 2, level: "very-hard"},
     );
 });
 
@@ -244,51 +242,10 @@ it("rejects invalid rubric values and placeholder rationales", () => {
     }
 });
 
-it("validates a custom or invalid policy passed to assessDifficulty", () => {
-    const custom = {version: 1, thresholds: {simple: 10.5, moderate: 10.5, hard: 25, "very-hard": 70}};
-    assert.equal(assessDifficulty(rubricWithScores([0, 1, 2, 1]), custom).minimumPoints, 10.5);
-    assert.equal(assessDifficulty(rubricWithScores([2, 2, 2, 2]), custom).minimumPoints, 70);
-
-    const invalidPolicies = [
-        null,
-        {version: 2, thresholds: {simple: 30, moderate: 40, hard: 50, "very-hard": 60}},
-        {version: 1, thresholds: {simple: 30, moderate: 40, hard: 50}},
-        {version: 1, thresholds: {simple: 30, moderate: 40, hard: 50, "very-hard": 60, extra: 70}},
-        {version: 1, thresholds: {simple: 40, moderate: 30, hard: 50, "very-hard": 60}},
-        {version: 1, thresholds: {simple: "30", moderate: 40, hard: 50, "very-hard": 60}},
-        {version: 1, thresholds: {simple: Number.NaN, moderate: 40, hard: 50, "very-hard": 60}},
-        {version: 1, thresholds: {simple: 30, moderate: 40, hard: 50, "very-hard": Number.POSITIVE_INFINITY}},
-        {version: 1, thresholds: {simple: -1, moderate: 40, hard: 50, "very-hard": 60}},
-        {version: 1, thresholds: {simple: 30, moderate: 40, hard: 50, "very-hard": 71}},
-    ];
-    for (const policy of invalidPolicies) {
-        assert.throws(() => assessDifficulty(rubricWithScores([0, 0, 0, 0]), policy), isDifficultyError("INVALID_DIFFICULTY_POLICY"));
-    }
-});
-
-it("loads the project policy and fails closed on malformed files", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-plan-difficulty-policy-"));
-    assert.deepEqual(loadDifficultyPolicy({repoRoot: root, fsOps: fs}), {
-        version: 1,
-        thresholds: {simple: 30, moderate: 40, hard: 50, "very-hard": 60},
-    });
-    assert.deepEqual(DEFAULT_DIFFICULTY_POLICY.thresholds, {simple: 30, moderate: 40, hard: 50, "very-hard": 60});
-
-    const custom = {version: 1, thresholds: {simple: 12, moderate: 24, hard: 36, "very-hard": 48}};
-    writeDifficultyPolicy(root, custom);
-    assert.deepEqual(loadDifficultyPolicy({repoRoot: root, fsOps: fs}), custom);
-
-    writeDifficultyPolicy(root, "{not json");
-    assert.throws(() => loadDifficultyPolicy({repoRoot: root, fsOps: fs}), isDifficultyError("INVALID_DIFFICULTY_POLICY"));
-
-    writeDifficultyPolicy(root, {version: 1, thresholds: {simple: 30, moderate: 40, hard: 50}});
-    assert.throws(() => loadDifficultyPolicy({repoRoot: root, fsOps: fs}), isDifficultyError("INVALID_DIFFICULTY_POLICY"));
-});
-
-it("prints the policy threshold for a work package body through the assess CLI", () => {
+it("prints only score and level through assess even with a legacy root argument and obsolete policy", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-plan-difficulty-cli-"));
     try {
-        writeDifficultyPolicy(root, {version: 1, thresholds: {simple: 12, moderate: 24, hard: 36, "very-hard": 48}});
+        writeObsoleteDifficultyPolicy(root, "{not json");
         const assess = (input) => spawnSync(process.execPath, [CLI_SCRIPT, "assess", "--body", "-", "--root", root], {
             input,
             encoding: "utf8",
@@ -297,7 +254,7 @@ it("prints the policy threshold for a work package body through the assess CLI",
 
         const assessed = assess(`### WP1 — Example\n\n- Verification: Run the focused unit test.\n${CANONICAL_DIFFICULTY}\n`);
         assert.equal(assessed.status, 0, assessed.stderr);
-        assert.deepEqual(JSON.parse(assessed.stdout), {score: 4, level: "moderate", minimumPoints: 24});
+        assert.deepEqual(JSON.parse(assessed.stdout), {score: 4, level: "moderate"});
 
         const missing = assess("### WP1 — Example\n\n- Verification: Run the focused unit test.\n");
         assert.equal(missing.status, 1);
@@ -317,7 +274,7 @@ it("parses the canonical block and ignores absent or fenced markers", () => {
     assert.deepEqual(parsed, {
         present: true,
         errors: [],
-        assessment: {score: 4, level: "moderate", minimumPoints: 40},
+        assessment: {score: 4, level: "moderate"},
     });
 
     const legacy = parsePackageDifficulty("### WP1 — Example\n\n- Source: Point 1\n- Verification: Run the focused unit test.\n");
@@ -426,19 +383,55 @@ it("keeps the difficulty Verification score separate from the WP verification re
     assert.throws(() => saveBody(root, reordered), isInvalidPlanWith("essential field Verification cannot be none"));
 });
 
-it("keeps legacy plans valid and fails closed for new-format plans with a malformed policy", () => {
-    const legacyRoot = temporaryRepository();
-    prepareSource(legacyRoot);
-    writeDifficultyPolicy(legacyRoot, "{not json");
-    const legacy = saveBody(legacyRoot, planBody());
-    assert.equal(legacy.validation.valid, true, legacy.validation.errors.join("\n"));
-    assert.equal(legacy.validation.errors.some((message) => message.includes("Difficulty")), false);
+it("validates legacy and current plan bodies independently of obsolete threshold configuration", () => {
+    const rationales = [
+        "",
+        "- Profile rationale: Najniższy profil wystarcza do lokalnej zmiany według istniejącego wzorca.",
+        "- Profile rationale: openai/gpt-5.6-sol z reasoning medium.\n  - Threshold: moderate, minimum 40 Total points.\n  - Total points: 53.31",
+    ];
+    for (const difficulty of ["", CANONICAL_DIFFICULTY]) {
+        for (const rationale of rationales) {
+            const root = temporaryRepository();
+            try {
+                prepareSource(root);
+                writeObsoleteDifficultyPolicy(root, "{not json");
+                const body = planBody({difficulty: `${difficulty}\n${rationale}`});
+                const saved = saveBody(root, body);
+                assert.equal(saved.validation.valid, true, saved.validation.errors.join("\n"));
+                const invalidEnvironment = validatePlanDocument(
+                    saved.markdown.replace("Default reasoning: medium", "Default reasoning: high"),
+                    {repoRoot: root},
+                );
+                assert.equal(invalidEnvironment.valid, false);
+                assert.equal(invalidEnvironment.errors.includes("Execution environment default model/reasoning profile is not present in the project hierarchy."), true,
+                    invalidEnvironment.errors.join("\n"));
+            } finally {
+                fs.rmSync(root, {recursive: true, force: true});
+            }
+        }
+    }
+});
 
-    const newRoot = temporaryRepository();
-    prepareSource(newRoot);
-    writeDifficultyPolicy(newRoot, "{not json");
-    assert.throws(
-        () => saveBody(newRoot, planBody({difficulty: CANONICAL_DIFFICULTY})),
-        isInvalidPlanWith("Difficulty policy"),
-    );
+it("accepts independent hierarchy choices for equally difficult WPs with shared profile evidence", () => {
+    const root = temporaryRepository();
+    try {
+        prepareSource(root);
+        fs.writeFileSync(path.join(root, ".agents", "config", "model-hierarchy.json"), JSON.stringify({
+            version: 1,
+            order: "strongest-to-weakest",
+            profiles: [{model: "provider/strong", reasoning: "high"}, {model: "provider/economy", reasoning: "medium"}],
+        }));
+        const body = planBody({difficulty: CANONICAL_DIFFICULTY, second: true, secondDifficulty: CANONICAL_DIFFICULTY})
+            .replaceAll(CANONICAL_DIFFICULTY, `${CANONICAL_DIFFICULTY}\n- Profile rationale: Profil przypisany w środowisku obejmuje wymagania tego pakietu.`)
+            .replace("Default model: openai/gpt-5.6-sol", "Default model: provider/economy")
+            .replace("- WP overrides: none", "- WP overrides: configured\n  - WP2: model=provider/strong; reasoning=high; justification=Koordynacja niezależnych kontraktów.\n- Profile evidence: Syntetyczne dane testowe; bez odczytu rankingu z sieci.");
+        const saved = saveBody(root, body);
+        assert.equal(saved.validation.valid, true, saved.validation.errors.join("\n"));
+        const environment = parseExecutionEnvironment(saved.markdown);
+        assert.equal(environment.defaultModel, "provider/economy");
+        assert.deepEqual(environment.overrides, [{id: "WP2", model: "provider/strong", reasoning: "high", justification: "Koordynacja niezależnych kontraktów."}]);
+        assert.equal(saved.markdown.match(/^- Profile evidence:/gm).length, 1);
+    } finally {
+        fs.rmSync(root, {recursive: true, force: true});
+    }
 });
