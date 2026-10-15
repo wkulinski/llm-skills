@@ -313,31 +313,16 @@ trudności work package” kontraktu: rubryka 0–2 z konkretnymi uzasadnieniami
 wykonania WP, nie na wrażeniu o modelu. Dotychczasowe plany bez bloku pozostają
 czytelne; nie migruj ich masowo.
 
-Dla każdego nowego WP wykonaj dobór ze świeżego rankingu i zapisz
-`Profile rationale` według sekcji „Dobór profilu wykonania” kontraktu. Wypisz
-wiersze rankingu poleceniem `entries`, sparuj sam profile lokalnej hierarchii
-z dokładnymi etykietami wierszy, a rekomendację uzyskaj poleceniem `recommend`
-z progiem `minimumPoints` zwróconym przez `difficulty.mjs assess` dla treści
-WP (polityka projektu, nie progi z pamięci); punkty pochodzą z nowego odczytu,
-nie od Ciebie.
-Wynik `decision-required` wymaga poprawienia parowania albo odpowiedzi
-użytkownika przed rekomendacją; nie zastępuj go domysłem o pierwszym modelu
-w hierarchii. Zapisuj wyłącznie uzasadnienie wyboru z użytą etykietą, nigdy kopię
-rankingu. Następnie ustaw default i override tak, aby każdy WP otrzymał swój
-wybrany profil.
+Dla każdego nowego WP sam wybierz najniższy wystarczający profil z
+`./.agents/config/model-hierarchy.json` według sekcji „Dobór profilu wykonania”
+kontraktu. Zapisz krótkie `Profile rationale`, wspólne `Profile evidence`
+w `Execution environment` oraz dokładne profile przez default i override.
+Trudność nie jest przelicznikiem na model; helper dostarcza dane, nie rekomendację.
 
-Przykład nowej decyzji (wiersze tylko w kontekście; do planu zapisz
-uzasadnienie według kontraktu, nie dane źródłowe):
+Przykład odczytu evidence (bez zapisywania wierszy rankingu):
 
 ```bash
-node <skills_root>/_shared/scripts/task-plan/difficulty.mjs assess --body - <<'WP'
-<pełna treść WP z blokiem Difficulty: v1>
-WP
 node <skills_root>/_shared/scripts/model-leaderboard.mjs entries
-node <skills_root>/_shared/scripts/model-leaderboard.mjs recommend \
-  --minimum-points 40 --pairings - <<'PAIRINGS'
-[{"model": "provider/model-a", "reasoning": "high", "label": "Model A (High)"}]
-PAIRINGS
 ```
 
 ### 4. Critical review
@@ -368,9 +353,10 @@ Dla każdego nowego WP sprawdź też, czy blok `Difficulty: v1` jest zgodny z
 sekcją „Ocena trudności work package” kontraktu: rubryka, wybrany `Risk floor`
 i `Level` muszą odpowiadać wykonaniu WP, a nie ogólnemu wrażeniu. Sprawdź
 również, czy `Profile rationale` ma format z sekcji „Dobór profilu wykonania”
-kontraktu, podaje próg wynikający z tej oceny i wskazuje ten sam model oraz
-reasoning, które WP otrzymuje w `Execution environment`. Walidator tego pola nie
-sprawdza, więc brak albo sprzeczność popraw przed `ready`.
+kontraktu i uzasadnia najniższy wystarczający profil przypisany WP w
+`Execution environment`, a wspólne `Profile evidence` uczciwie opisuje podstawę
+wyboru i ograniczenia. Walidator nie ocenia tej decyzji, więc brak uzasadnienia,
+niepoparty wybór albo sprzeczność popraw przed `ready`.
 
 Zapisz wynik w `Direction, simplicity and consistency`, a następnie wprowadź
 jedną rewizję wynikającą z review zgodnie z inwariantami treści. Nie uruchamiaj

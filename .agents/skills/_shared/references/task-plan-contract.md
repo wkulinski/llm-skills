@@ -226,7 +226,7 @@ Rubryka ocenia cztery kategorie, każda w skali 0–2:
 
 Suma punktów 0–2 oznacza proste (`simple`), 3–4 umiarkowane (`moderate`),
 5–6 trudne (`hard`), 7–8 bardzo trudne (`very-hard`). Autor zapisuje oceny,
-poziom i uzasadnienie; minimalne Total points wynikają z polityki projektu.
+poziom i uzasadnienie. Poziom nie wyznacza profilu wykonawcy ani progu benchmarku.
 
 Ryzyko (`Risk floor`) podnosi minimalny poziom, ale nigdy nie obniża poziomu
 wynikającego z sumy:
@@ -240,20 +240,17 @@ zakresu WP. Walidator odczytuje jawny `Risk floor`, nie interpretuje prozy.
 Nierozstrzygnięta decyzja albo nieznana przyczyna błędu nadal blokuje
 `ready` i nie dodaje punktów trudności.
 
-Progi punktowe pochodzą z opcjonalnej tabeli projektu
-`.agents/config/task-plan-difficulty.json`. Brak pliku używa domyślnych progów
-30/40/50/60. Tabela projektu zastępuje domyślne w całości i musi zawierać
-politykę progów, nie wyniki modeli. To heurystyka startowa, nie wynik kalibracji;
-zmiana skali punktowej wymaga rewizji polityki. Tabela ma zawierać
-dokładnie cztery skończone, niemalejące progi liczbowe (`simple`, `moderate`, `hard`,
-`very-hard`) w zakresie 0–70; równy próg i wartość ułamkowa są dozwolone.
-Błędna tabela blokuje walidację nowego planu i nie jest po cichu zastępowana
-domyślną. Szablon skopiujesz poleceniem:
+Ocenę bloku można sprawdzić poleceniem:
 
 ```bash
-mkdir -p .agents/config
-cp <skills_root>/task-plan/task-plan-difficulty.json.dist .agents/config/task-plan-difficulty.json
+node <skills_root>/_shared/scripts/task-plan/difficulty.mjs assess --body - <<'WP'
+<pełna treść WP z blokiem Difficulty: v1>
+WP
 ```
+
+Wynik zawiera tylko `score` i `level`. Dawna konfiguracja
+`./.agents/config/task-plan-difficulty.json` nie jest odczytywana i nie wpływa
+na ocenę ani walidację planu; nie wymaga migracji plików konsumenta.
 
 Dokładny blok w WP (dzieci zapisuj wcięciem dwóch spacji; `Level` musi
 odpowiadać wyliczonemu poziomowi, a każda kategoria i `Rationale` wymagają
@@ -409,107 +406,90 @@ rozstrzygnąć, zastosuj test wpływu discovery debt opisany w critical review.
 `Estimated size` jest szacunkiem planistycznym przekazywanym wykonawcy. Nie
 steruje batchingiem ani trwałym stanem wykonania.
 
-Po ocenie trudności nowego WP pobierz ranking na żywo przez wspólną granicę
-`<skills_root>/_shared/scripts/model-leaderboard.mjs`. Próg `minimumPoints`
-odczytaj poleceniem `assess`, które ocenia blok `Difficulty: v1` treści WP
-według polityki projektu (z kodu: `parsePackageDifficulty(body,
-loadDifficultyPolicy({repoRoot}))`). Nie powielaj rubryki, nie przepisuj progów
-z pamięci ani nie wyprowadzaj progu z `Estimated size`:
+Wybierz najniższy wciąż w pełni wystarczający profil z
+`./.agents/config/model-hierarchy.json`. Para model i reasoning jest jednym
+profilem; kolejność `strongest-to-weakest` określa możliwości według projektu,
+nie ceny. Nie przestawiaj jej na podstawie benchmarków.
+
+Decyzję podejmuje agent planujący, nie punktowy selektor:
+
+1. Oceń rozumowanie pozostawione wykonawcy po uwzględnieniu planu i potwierdzonego
+   kontekstu: odtwarzanie wzorca albo projektowanie, współzależność kontraktów,
+   pułapki stanu i czasu oraz błędy niewidoczne w bezpośrednim teście. Wystarczalność
+   obejmuje całe `Scope`, kryteria akceptacji i weryfikację, bez przejmowania
+   trudnych fragmentów przez agenta głównego.
+2. Rozpatruj profile od dołu hierarchii. Wybierz pierwszy, po którym można
+   rozsądnie oczekiwać samodzielnego wykonania bez rażących błędów, na podstawie
+   wymagań WP i dostępnych danych o możliwościach modeli. `Difficulty.Level`,
+   `Estimated size` i wynik benchmarku są sygnałami, nie progami dopuszczenia.
+3. Uzasadnij granicę wyboru: dlaczego profil wystarczy i dlaczego bezpośrednio
+   niższy kandydat jest zbyt ryzykowny. Gdy wybierasz najniższy, wyjaśnij, dlaczego
+   obejmuje wymagania całego WP. Nie uzasadniaj wyboru samą nazwą modelu,
+   przekroczeniem wyniku punktowego ani założeniem, że review naprawi błędy.
+4. Przy istotnej niepewności co do konkretnego wymagania wybierz wyższy profil
+   i nazwij powód. Gdy żadnego dostępnego profilu nie można uzasadnić, zapytaj
+   użytkownika o świadomy wybór albo zmianę zakresu; nie uznawaj automatycznie
+   najwyższego za wystarczający.
+
+#### Evidence dotyczące profili
+
+Dla nowego doboru odczytaj aktualne dane AICodingDaily przez wspólną granicę:
 
 ```bash
-node <skills_root>/_shared/scripts/task-plan/difficulty.mjs assess --body - <<'WP'
-<pełna treść WP z blokiem Difficulty: v1>
-WP
+node <skills_root>/_shared/scripts/model-leaderboard.mjs entries
 ```
 
-Wynik zawiera `score`, `level` i `minimumPoints`; brak albo błąd bloku kończy
-polecenie błędem zamiast progu.
+Wiersze i HTML pozostają wyłącznie w pamięci, bez cache, sidecara, pliku
+tymczasowego ani fixture prawdziwej strony. Nie używaj do tego odczytu narzędzia
+automatycznie zapisującego odpowiedź. Testy odczytu używają danych syntetycznych.
+Jeden odczyt może wspierać dobór kilku WP w tej samej fazie planowania;
+nie wykorzystuj historycznego uzasadnienia jako świeżego odczytu przy nowym doborze.
 
-Ranking `https://aicodingdaily.com/leaderboard` pobieraj na nowo dla każdej
-decyzji. Granica odczytu działa wyłącznie w pamięci, bez cache, sidecara, pliku
-tymczasowego albo fixture prawdziwej strony. Nie pobieraj strony narzędziem, które
-automatycznie zapisuje odpowiedzi, i nie drukuj surowego HTML. Testy używają
-wyłącznie syntetycznej odpowiedzi przekazanej w pamięci.
+Gdy danych brakuje, są sprzeczne albo ogólny wynik nie rozstrzyga istotnej
+kompetencji, doczytaj adekwatne źródło, nie wszystkie rankingi dla każdego WP:
 
-Parowanie wierszy rankingu z lokalnymi profilami wykonuje agent:
+- AICodingDaily: https://aicodingdaily.com/leaderboard — wyniki zadań kodowych;
+- Artificial Analysis: https://artificialanalysis.ai/leaderboards/models — wyniki rozumowania i programowania; interpretuj je według https://artificialanalysis.ai/methodology/intelligence-benchmarking, nie tylko ogólnego indeksu;
+- SWE-bench: https://www.swebench.com/ — zmiany i naprawy w istniejących repozytoriach;
+- Terminal-Bench: https://www.tbench.ai/ — wieloetapowa praca agentowa z narzędziami.
 
-1. Wypisz sparsowane wiersze do kontekstu agenta. Każdy wiersz ma pełną etykietę
-   wyświetlaną przez stronę (nazwa modelu z wariantem w nawiasie) i
-   `totalPoints`. Wiersze wolno czytać w kontekście, ale nie zapisuj ich do
-   pliku, cache ani planu:
+Porównuj tę samą wersję modelu i reasoning; uwzględnij wersję benchmarku,
+agenta, narzędzia oraz pojedynczą próbę versus wielokrotne próby. DeepSWE jest
+modelem/agentem, nie benchmarkiem. Brak dopasowanego wyniku albo niedostępność
+źródła to ograniczenie evidence, nie automatyczna dyskwalifikacja profilu ani
+dowód jego wystarczalności. Nie wymyślaj wyników i nie agreguj różnych skal
+w nowy wynik punktowy; zastosuj ocenę niepewności z procedury wyboru powyżej.
 
-   ```bash
-   node <skills_root>/_shared/scripts/model-leaderboard.mjs entries
-   ```
+Zapisz raz w `Execution environment` pole `Profile evidence`: użyte źródła
+i daty odczytu, istotne ustalenia dla porównywanych profili oraz ograniczenia,
+albo jawny brak dostępnych danych. To krótki opis podstaw decyzji, nie kopia
+rankingu ani tabela wszystkich modeli. Odpowiedź użytkownika odnotuj przez
+referencję do decyzji planu.
 
-2. Dla każdego profilu z `.agents/config/model-hierarchy.json` wskaż dokładną
-   etykietę jednego wiersza, który odpowiada temu samemu modelowi i temu samemu
-   reasoning, np. `openai/gpt-6-luna` z `max` → `GPT-6-Luna (Max)`. Nie
-   utożsamiaj różnych wariantów (`Max` i `High`, `Flash` i `Pro`). Profil,
-   którego nie potrafisz jednoznacznie sparować, pomiń: zostanie nieoceniony.
-3. Przekaż parowania `[{model, reasoning, label}]` (model i reasoning dokładnie
-   jak w hierarchii) do rekomendacji. Skrypt pobiera ranking ponownie, sprawdza,
-   że każda etykieta istnieje w tym odczycie, i bierze punkty wyłącznie z niego:
+#### Krótkie uzasadnienie WP
 
-   ```bash
-   node <skills_root>/_shared/scripts/model-leaderboard.mjs recommend \
-     --minimum-points 40 --pairings - <<'PAIRINGS'
-   [{"model": "provider/model-a", "reasoning": "high", "label": "Model A (High)"}]
-   PAIRINGS
-   ```
-
-   Z kodu użyj `recommendFreshProfile(hierarchy, {minimumPoints, pairings})`,
-   gdzie `hierarchy` pochodzi z `loadModelHierarchy({repoRoot})`.
-
-Rekomendacja filtruje sparowane profile z Total points **co najmniej** równymi
-progowi, bez tolerancji dwóch punktów. Spośród nich wybiera najniższy w lokalnej
-kolejności `strongest-to-weakest`, nawet gdy punktacja nie jest monotoniczna.
-Wynik `recommended` zawiera `selected` (z etykietą i punktami) oraz listę
-`unscored`; nieocenione profile nie blokują ocenionego kandydata, ale zapisz to
-ograniczenie. Nie poprawiaj kolejności lokalnej na podstawie rankingu. Zmiana
-struktury tabeli, skali 0–70 albo wadliwy wiersz kończą się brakiem porównania
-całego odczytu, nie częściowo odgadniętymi punktami.
-
-Przy `decision-required` (`no-candidate`, `ranking-unavailable`,
-`label-not-found` albo `ambiguous-pairing`) popraw parowanie, jeśli to Twoja
-pomyłka, a w pozostałych przypadkach zapytaj użytkownika o świadome przyjęcie
-wskazanego lokalnego profilu bez potwierdzenia punktowego, zmianę konfiguracji
-albo przeprojektowanie WP. Do odpowiedzi nie przypisuj automatycznie pierwszego
-profilu jako wystarczającego. Zapisz odpowiedź i jej źródło jako decyzję planu.
-Błędna konfiguracja hierarchii, progu albo parowanie profilu spoza hierarchii nie
-jest błędem sieci i wymaga poprawienia wejścia.
-
-Zapisz w każdym nowym WP `Profile rationale`: wybrany profil, trudność i próg,
-użytą etykietę rankingu, historyczny wynik Total points, datę odczytu
-(`fetchedAt`), URL źródła i ograniczenie
-nieocenionych profili. Dla świadomego wyboru zapisz zamiast punktów odpowiedź
-użytkownika. To uzasadnienie historyczne, nie cache do kolejnego porównania.
-Umieść je bezpośrednio po bloku `Difficulty: v1`, z dziećmi wciętymi dwiema
-spacjami:
+Bezpośrednio po `Difficulty: v1` zapisz `Profile rationale` jako 1–3 zdania
+uzasadniające granicę wyboru. Nie powtarzaj modelu, reasoning, URL-i, dat,
+punktów i list nieocenionych profili; konkretne pary należą do środowiska,
+a źródła do wspólnego `Profile evidence`. Odsyłaj do źródła tylko gdy rozstrzyga
+wybór tego WP. Przykład dla najniższego profilu:
 
 ```md
-- Profile rationale: openai/gpt-6-luna z reasoning max.
-  - Threshold: moderate, minimum 40 Total points.
-  - Ranking label: GPT-6-Luna (Max)
-  - Total points: 44
-  - Fetched at: 2026-10-08T19:00:00.000Z
-  - URL: https://aicodingdaily.com/leaderboard
-  - Unscored profiles: Wszystkie profile hierarchii mają parowanie.
+- Profile rationale: Najniższy profil wystarcza, ponieważ zmiana odtwarza istniejący wzorzec prezentacji i nie wymaga projektowania ani koordynacji niezależnych kontraktów.
 ```
 
-Przy świadomym wyborze bez potwierdzenia punktowego zastąp `Ranking label`,
-`Total points`, `Fetched at` i `URL` jednym wpisem
-`- User decision: <odpowiedź użytkownika> (<ID decyzji planu>).`, a powód braku
-porównania podaj w wartości `Profile rationale`. Walidator nie sprawdza tego
-pola; jego obecność i zgodność z `Execution environment` ocenia review planu.
+Walidator nie ocenia semantyki tego pola; jego obecność, wystarczalność wyboru
+i zgodność z przypisaniem w `Execution environment` ocenia review planu.
 W `Execution environment` ustaw jako default najniższy z wybranych profili,
 a dla wszystkich WP z innym wyborem zapisz override z dokładnym modelem
 i reasoning. Każdy WP musi dostać swój wybrany profil, nie przypadkowo default.
 
-Brak konfiguracji, duplikat albo rekomendacja spoza hierarchii blokuje walidację;
-nie zgaduj ani nie dopisuj profilu. Szablon znajduje się
-w `<skills_root>/plan-execute/model-hierarchy.json.dist`. Dotychczasowe plany
-bez `Difficulty` pozostają czytelne bez ponownego pobierania lub migracji.
+Brak konfiguracji, duplikat albo profil przypisany w `Execution environment`
+spoza hierarchii blokuje walidację;
+nie zgaduj ani nie dopisuj profilu. Konfigurację hierarchii opisuje
+`<skills_root>/plan-execute/SKILL.md`. Dotychczasowe plany, także z rozbudowanym
+uzasadnieniem punktowym, pozostają czytelne bez migracji ani ponownego doboru;
+nowy lub materialnie zmieniony wybór uzasadniaj już według tej procedury.
 
 ## Kolejność i pokrycie źródła
 
@@ -604,6 +584,7 @@ go zamyka):
 - Default model: provider/model
 - Default reasoning: concrete-level
 - WP overrides: none
+- Profile evidence: <źródła i daty odczytu, istotne ustalenia oraz ograniczenia doboru>
 
 </details>
 ```
