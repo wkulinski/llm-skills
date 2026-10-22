@@ -68,21 +68,6 @@
         "context-scout": {
             "model": "openai/gpt-5.6-luna",
             "variant": "high"
-        },
-        "frontend-ui-engineer": {
-            "model": "openai/gpt-5.6-luna",
-            "variant": "max"
-        },
-        "implementation-worker": {
-            "model": "commandcode/deepseek/deepseek-v4.1-flash",
-            "variant": "max"
-        },
-        "runtime-diagnostician": {
-            "model": "commandcode/deepseek/deepseek-v4.1-flash",
-            "variant": "max",
-            "permission": {
-                "mate_*": "allow"
-            }
         }
     },
     "mcp": {

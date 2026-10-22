@@ -252,7 +252,6 @@ pola WP, w tym `Goal`, `Scope`, `Out of scope`, `Acceptance criteria` i
 jest źródłem prawdy dla:
 
 - intake i read-before-write;
-- decyzji o delegacji do `implementation-worker`;
 - implementacji;
 - punktowego testu lub checku;
 - `$review-quick`;

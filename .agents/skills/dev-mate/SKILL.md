@@ -196,6 +196,11 @@ Co zrobić z wynikiem:
 - Komendy AI Mate dostarczają dowody runtime i introspekcji, ale nie zastępują czytania kodu, diffów i dokumentacji.
 - Każdy wniosek mapuj do konkretnego problemu: log/error, request/profile, serwis/DI albo środowisko.
 - Gdy wynik jest pusty, zbyt szeroki albo nie rozstrzyga problemu, zawęź parametry albo wróć do standardowego workflow repo.
+- Jeśli dowód runtime wskazuje plik lub symbol, potwierdź go w repo przed
+  sformułowaniem wniosku o przyczynie. Oddziel potwierdzone obserwacje od hipotez
+  i podaj poziom pewności; przy niewystarczających danych nazwij brakujący sygnał.
+- Nie ujawniaj sekretów, tokenów, wartości env ani pełnych logów. Raportuj tylko
+  fragmenty dowodów potrzebne do diagnozy, po usunięciu danych wrażliwych.
 
 ## Następny krok po użyciu skilla
 Po zebraniu danych z komend AI Mate zawsze wybierz jedno z działań:
@@ -206,5 +211,8 @@ Po zebraniu danych z komend AI Mate zawsze wybierz jedno z działań:
 
 ## Format odpowiedzi
 - Wynik: co udało się ustalić.
-- Dowody: jakie narzędzia i parametry zostały użyte.
+- Dowody: jakie narzędzia, niesekretne parametry i zakres czasu logów/profilera
+  zostały użyte oraz jakie pliki lub symbole potwierdzono w repo.
+- Hipotezy i luki: poziom pewności przyczyn oraz brakujący sygnał, jeśli diagnoza
+  pozostaje niepełna.
 - Następny krok: co zrobić dalej na podstawie otrzymanych danych.

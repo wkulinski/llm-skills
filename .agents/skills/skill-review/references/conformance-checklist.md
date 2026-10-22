@@ -47,7 +47,7 @@ pozostają poza oceną.
 | A1 | Frontmatter | brak `model`, `variant` i `thinking`; pola `mode`, `steps` i uprawnienia są kompletne i spójne z rolą | `inventory.mjs` (`metrics.frontmatter.forbidden_fields`) |
 | A2 | Opis jako trigger delegacji | opis mówi, jakie zadanie agent przyjmuje, co odrzuca i co zwraca; długość i język są metryką bez twardego progu | `inventory.mjs` (`metrics.frontmatter.description`) |
 | A3 | Kontrakt delegacji i format zwrotu | body zawiera wejście, granice autonomii, warunek eskalacji i format zwrotu (`STATUS`) | odczyt body; zgodność z delegującym skillem |
-| A4 | Relacje | delegujący skill wskazuje agenta; plik ma wpis w `opencode.jsonc`; testy agentowe pinują kontrakt; brak osieroconego pliku, wpisu i brakującego właściciela | `inventory.mjs` (`metrics.config`, `metrics.delegating_skills`, `metrics.test_pins`) |
+| A4 | Relacje | adapter wskazuje właściciela procedury; workflow wymagający delegacji wskazuje wykonawcę, opcjonalny adapter nie narzuca delegacji; plik ma wpis w `opencode.jsonc`; testy agentowe pinują kontrakt; brak osieroconego pliku, wpisu i brakującego właściciela | odczyt body i routingu; `inventory.mjs` (`metrics.config`, `metrics.delegating_skills`, `metrics.test_pins`) |
 | A5 | Spójność z delegującym skillem | pola handoffu i oczekiwany format wyniku nie są sprzeczne między agentem a skillem | porównanie body agenta z sekcją delegacji skilla |
 | A6 | Jakość treści | wymiar 9 standardu: szum, niejasność, powtórzenia i błędne odwołania w body agenta. Zgodność kontraktu z delegującym skillem zostaje w A5 | odczyt body agenta |
 
@@ -56,6 +56,7 @@ pozostają poza oceną.
 - kod, zmiany i plany — `$code-review`;
 - dokumentacja domenowa i porządki `docs/**` — `$docs-sync`;
 - synchronizacja i edycja reguł — `$rules-sync`;
-- runtime behavior agentów i efekty ich pracy — `$opencode-workflow-economics`,
-  `$runtime-diagnostician`, `$code-review`, `$qa-run`;
+- runtime behavior agentów — `$opencode-workflow-economics`;
+- efekty pracy agentów: kod, QA i błędy runtime aplikacji — `$code-review`,
+  `$qa-run`, `$dev-mate`;
 - automatyczne poprawki i zmiany standardu — poza `$skill-review`.
