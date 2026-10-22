@@ -73,6 +73,12 @@ znajduje się na końcu dokumentu.
 | Przekaż kontekst kolejnemu agentowi | `$handoff-refresh` | zrzut stanu dla nowej sesji |
 | Wyczyść lokalny cache agenta | `$agent-cache-clear` | usunięcie stanu z `CACHE_PATH` |
 
+### Komunikacja
+
+| Intencja | Skill | Następny krok |
+| --- | --- | --- |
+| Odczytaj kanał lub wątek Slacka albo na wyraźne polecenie wyślij, edytuj lub usuń własną wiadomość | `$slack` | bezpieczne wywołanie Slack CLI z konfiguracją projektu konsumenta |
+
 ## Lista skilli
 
 - `$agent-cache-clear`
@@ -99,4 +105,5 @@ znajduje się na końcu dokumentu.
 - `$rules-sync`
 - `$skill-review`
 - `$skills-index-refresh`
+- `$slack`
 - `$task-plan`

@@ -102,6 +102,42 @@ export default defineConfig([
         },
     },
     {
+        // The Slack skill and its offline tests mirror the Slack Web API
+        // snake_case contract. Only those exact protocol fields are allowed;
+        // keep the original stricter structural limits for the new code.
+        files: [
+            ".agents/skills/slack/scripts/slack.mjs",
+            "tests/skills/slack/slack.test.mjs",
+        ],
+        rules: {
+            "camelcase": ["error", {
+                properties: "always",
+                allow: [
+                    "app_id",
+                    "author_lookup_error",
+                    "author_name",
+                    "bot_id",
+                    "display_name",
+                    "has_more",
+                    "is_archived",
+                    "is_member",
+                    "is_private",
+                    "next_cursor",
+                    "reply_count",
+                    "response_metadata",
+                    "team_id",
+                    "thread_ts",
+                    "unfurl_links",
+                    "unfurl_media",
+                    "user_id",
+                    "workspace_url",
+                ],
+            }],
+            "complexity": ["error", 20],
+            "max-depth": ["error", {"max": 2}],
+        },
+    },
+    {
         // Protocol parsers, benchmark fixtures, and their tests mirror external
         // JSON contracts and intentionally use compact data-oriented helpers.
         files: [
