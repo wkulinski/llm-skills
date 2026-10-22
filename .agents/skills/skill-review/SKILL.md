@@ -79,7 +79,8 @@ Do samego zebrania metryk użyj `collector-only`, a do audytu końcowego `full`.
 | synchronizacja i edycja reguł lokalnych | `$rules-sync` |
 | ocena instrukcji w regułach | target `rules` tego skilla |
 | odświeżenie indeksu skilli | `$skills-index-refresh` |
-| runtime behavior agentów i efekty ich pracy | `$opencode-workflow-economics`, `$runtime-diagnostician`, `$code-review`, `$qa-run` |
+| runtime behavior agentów | `$opencode-workflow-economics` |
+| efekty pracy agentów: kod, QA i błędy runtime aplikacji | `$code-review`, `$qa-run`, `$dev-mate` |
 | utworzenie albo zmiana skilla lub agenta | `$task-plan` + `$code-implement` |
 
 ## Routing referencji
@@ -190,7 +191,7 @@ repozytorium.
 ## Przykłady
 
 - `$skill-review` — zaudytuj `.agents/skills/code-implement/SKILL.md` w trybie `conformance`.
-- `$skill-review` — zaudytuj `.opencode/agents/implementation-worker.md` pod kątem frontmattera, opisu i relacji z konfiguracją.
+- `$skill-review` — zaudytuj `.opencode/agents/context-refresher.md` pod kątem frontmattera, opisu i relacji z konfiguracją.
 - `$skill-review` — sprawdź `AGENTS.md` i bloki instrukcji w `README.md` (target `rules`).
 - `$skill-review` — zaudytuj cały katalog (target `catalog`, `--run-mode full`) i oceń relacje oraz triangulację.
 - `$skill-review` — zgłoś `standard-gap` dla wymiaru, którego standard nie opisuje.

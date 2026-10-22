@@ -5,7 +5,7 @@ description: >-
   jego wzorców; chroni kontrakty Twig, Symfony UX Live Components i Stimulus oraz
   weryfikuje zmiany przez Playwright CLI. Użyj, gdy tworzysz lub opiniujesz
   widoki przed implementacją.
-compatibility: opencode
+compatibility: Wymaga Bash, Node.js, Git, Playwright CLI oraz narzędzia do odczytu screenshotów jako obrazów.
 shared_files:
   - _shared/references/playwright-cli-verification.md
   - _shared/references/symfony-ux-twig-components.md
@@ -123,8 +123,7 @@ walidacji, ładowania lub nawigacji.
 
 `SKILL.md` jest źródłem prawdy dla trybów, zakresu, kryteriów ukończenia i blokad.
 References są źródłem prawdy dla procedur operacyjnych, komend i checklist.
-Prompt agenta określa tylko routing oraz nieprzekraczalne ograniczenia. Przy
-powtórzeniu lub konflikcie obowiązuje ta kolejność.
+Przy powtórzeniu lub konflikcie pierwszeństwo ma `SKILL.md`.
 
 ## Klasyfikacja pracy
 
@@ -341,7 +340,7 @@ konflikt albo zatrzymaj polish do czasu decyzji.
 
 Jeśli wybór zależy od nierozstrzygniętej preferencji marki, sprzecznych wzorców
 albo zmiany o istotnym wpływie na charakter produktu, nie zgaduj. Zatrzymaj
-edycję i zwróć głównemu agentowi:
+edycję i przygotuj:
 
 ```text
 DECISION_REQUIRED
@@ -353,8 +352,10 @@ Dowody: ...
 Ryzyko decyzji: ...
 ```
 
-Główny agent zadaje pytanie użytkownikowi i wznawia subagenta z odpowiedzią.
-Subagent nie prowadzi równoległego dialogu i nie omija kontekstu głównego agenta.
+Przy wykonaniu bezpośrednim zapytaj użytkownika i kontynuuj po otrzymaniu
+odpowiedzi. Przy wykonaniu delegowanym zwróć `DECISION_REQUIRED` agentowi
+głównemu; to on prowadzi dialog z użytkownikiem i przekazuje odpowiedź wykonawcy.
+Delegowany wykonawca nie prowadzi równoległego dialogu.
 
 ## Hierarchia źródeł prawdy
 

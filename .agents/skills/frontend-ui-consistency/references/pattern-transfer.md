@@ -59,8 +59,9 @@ Rozstrzygaj konflikt według kolejności:
 3. wzorzec częściej używany w tej samej domenie,
 4. reguła zgodna z tokenami i kontraktami komponentów.
 
-Jeśli dowody nie wskazują zwycięzcy, nie twórz hybrydy. Zwróć `DECISION_REQUIRED`
-do głównego agenta wraz z obiema opcjami, rekomendacją i konsekwencjami.
+Jeśli dowody nie wskazują zwycięzcy, nie twórz hybrydy. Zastosuj procedurę
+„Niepewność i decyzja użytkownika” z `SKILL.md`, przedstawiając obie opcje,
+rekomendację i konsekwencje.
 
 ## Nowy element
 

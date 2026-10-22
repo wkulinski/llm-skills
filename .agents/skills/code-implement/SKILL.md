@@ -123,6 +123,7 @@ Odczytaj tylko pliki wymagane przez aktywny krok:
 | implementacja lub punktowa weryfikacja w renderowanej przeglądarce | `<skills_root>/_shared/references/playwright-cli-verification.md` |
 | brak ważnego manifestu kontekstu dla bieżącej sesji | `$context-refresh` (`<skills_root>/context-refresh/SKILL.md`) |
 | problemy runtime, DI, logów albo profilera | `$dev-mate` (`<skills_root>/dev-mate/SKILL.md`) |
+| tworzenie, zmiana lub opiniowanie renderowanego UI | `$frontend-ui-consistency` (`<skills_root>/frontend-ui-consistency/SKILL.md`) |
 | szybkie review bieżącego przyrostu | `$review-quick` (`<skills_root>/review-quick/SKILL.md`) |
 | pełne QA wyłącznie na wyraźne polecenie użytkownika | `$qa-run` (`<skills_root>/qa-run/SKILL.md`) |
 | commit po zakończeniu zmiany | `$git-commit` (`<skills_root>/git-commit/SKILL.md`) |
@@ -130,128 +131,37 @@ Odczytaj tylko pliki wymagane przez aktywny krok:
 Nie ładuj referencji, których aktywny krok nie wymaga; sama deklaracja
 w `shared_files` nie tworzy obowiązku odczytu.
 
-## Delegacja do skilli specjalistycznych
-Podczas implementacji nie wykonuj ręcznie operacji, które są już opisane przez
-wyspecjalizowany skill, jeśli ten skill może wykonać je precyzyjniej, szybciej
-albo z mniejszym ryzykiem pomyłki.
+## Wykonanie i skille specjalistyczne
 
-### Delegacja do specjalistycznych agentów i skryptów
-Podczas implementacji nie wykonuj ręcznie operacji, które są już opisane przez
-wyspecjalizowany skill, jeśli ten skill albo jego entrypoint może wykonać je
-precyzyjniej, szybciej albo z mniejszym ryzykiem pomyłki.
+Implementację wykonuje bieżący agent. Pracuj nad jednym aktywnym wymaganiem
+`R#` w iteracji: ustal spójny rezultat, zakres, niezmienniki, obszary wyłączone
+ze zmiany i punktową weryfikację. Nie łącz niezależnych poprawek tylko dlatego,
+że dotyczą sąsiednich plików. Testy i konieczna aktualizacja kontraktu wspierają
+ten sam rezultat.
 
-Stosuj bezpośrednie trasy:
+Gdy operację opisuje wyspecjalizowany skill, zastosuj jego procedurę zamiast
+tworzyć drugą. Implementacja, UI i diagnostyka nie wymagają dedykowanego
+subagenta. Procedury kontekstowe zachowują własne zasady wykonania:
+
 - repozytoryjny rekonesans wykonuj przez
   `<skills_root>/_shared/scripts/context-scout-hybrid-run.mjs` i jego lifecycle
   `prepare → claim → settle/abort`; po walidacji raportu możesz wykonywać
   punktowe odczyty,
 - pełny `$context-refresh` wykonuj jako agent główny albo deleguj bezpośrednio
   `context-refresher`, gdy nie istnieje ważny manifest,
-- problemy runtime, DI, logów i profilera deleguj bezpośrednio
-  `runtime-diagnostician`, a jeśli agent jest niedostępny, użyj `$dev-mate`,
-- dokładnie jedno aktywne wymaganie `R#` opisujące jeden obserwowalny rezultat
-  behawioralny i jedną główną odpowiedzialność produkcyjną deleguj bezpośrednio
-  `implementation-worker`; testy i konieczna aktualizacja kontraktu mogą
-  wspierać ten sam rezultat, ale nie tworzą osobnych outcome. Worker zwraca
-  `STATUS: COMPLETED` albo `STATUS: ESCALATE_TO_PRIMARY`.
-
-Minimalny handoff do `implementation-worker`:
-
-```text
-Requirement: <dokładnie jedno aktywne R#>
-Single outcome: <jeden obserwowalny rezultat behawioralny>
-Primary responsibility: <jedna odpowiedzialność produkcyjna>
-Allowed production scope: <dozwolone pliki, symbole, moduł lub wąski katalog>
-Allowed supporting tests: <testy bezpośrednio potwierdzające ten sam outcome>
-Constraints: <zachowanie i obszary, których nie wolno zmieniać>
-Decisions: <decyzje projektowe już podjęte przez agenta głównego>
-References: <istniejące implementacje, wzorce lub dokumentacja>
-Non-goals: <sąsiednie zachowania jawnie poza zakresem>
-Acceptance criterion: <jeden obserwowalny warunek sukcesu>
-Verification: <jedna punktowa komenda lub check potwierdzający outcome>
-```
-
-Jeśli któregoś pola brakuje i nie można bezpiecznie uzupełnić go z lokalnych
-konwencji, nie deleguj zadania — doprecyzuj je albo wykonaj eskalację.
-
-### Twarda bramka delegacji do `implementation-worker`
-
-Przed każdym wywołaniem workera agent główny **MUSI** potwierdzić wszystkie
-warunki:
-
-1. delegacja realizuje dokładnie jedno wymaganie `R#` ze statusem `IN_PROGRESS`;
-2. ma dokładnie jeden obserwowalny rezultat behawioralny;
-3. dotyczy jednej głównej odpowiedzialności produkcyjnej;
-4. wszystkie decyzje projektowe zostały już podjęte;
-5. testy, fixtures i zmiany kontraktu dotyczą bezpośrednio tego samego rezultatu;
-6. handoff zawiera jawne `Non-goals`;
-7. istnieje jedna punktowa komenda albo check weryfikujący ukończenie;
-8. ukończenie wycinka nie zależy od implementacji drugiej niezależnej funkcji.
-
-Jeśli dowolny warunek nie jest spełniony, **NIE wywołuj**
-`implementation-worker`. Podziel pracę na osobne wymagania lub iteracje i wybierz
-jedno `R#` jako aktualnie `IN_PROGRESS`. Wyliczenie kilku niezależnych czasowników
-w `Single outcome`, np. „naprawić, dodać, przebudować i udokumentować”, jest
-sygnałem obowiązkowego podziału, chyba że wszystkie opisują nierozłączne części
-jednego obserwowalnego zachowania.
-
-Przed delegacją zapisz decyzję bramki w `STATE_PATH` przez `state-log.mjs`:
-
-```text
-Delegation gate: PASS
-Requirement: R#
-Single outcome: ...
-Primary responsibility: ...
-Non-goals: ...
-Verification: ...
-```
-
-Nie zapisuj `PASS`, jeśli nie potrafisz wypełnić każdego pola bez ogólników.
-
-### Bramka kosztowa delegacji
-Nie deleguj do `implementation-worker`, jeśli:
-- zmiana jest trywialna i lokalna, bez potrzeby testu lub dodatkowej weryfikacji,
-- agent główny musiałby dopiero odkrywać zakres albo wybierać podejście,
-- worker prawdopodobnie będzie musiał zadawać pytania lub wracać po decyzję.
-
-Deleguj, gdy worker może samodzielnie wykonać pełny cykl `odczyt → implementacja
-→ weryfikacja`, a koszt przygotowania handoffu i końcowego review jest mniejszy
-niż wykonanie tych kroków przez agenta głównego. Nie stosuj sztywnego limitu
-plików; oceniaj zamknięcie zakresu i liczbę wymaganych interakcji.
-
-Po `STATUS: COMPLETED` agent główny powinien tylko:
-1. obejrzeć scoped diff i listę zmienionych plików,
-2. uruchomić wskazany punktowy check,
-3. zaktualizować własny stan bez ponownego szerokiego discovery.
-
-Po `STATUS: ESCALATE_TO_PRIMARY` agent główny rozróżnia przyczynę:
-
-- **Eskalacja merytoryczna** — brakująca decyzja lub kontekst, wyczerpany limit
-  cykli poprawek workera albo patch poza dozwolonym zakresem. Agent główny
-  przejmuje wskazaną decyzję lub brakujący kontekst; nie deleguje ponownie tego
-  samego pakietu bez rozstrzygnięcia przyczyny i aktualizacji kontraktu.
-- **Przerwanie wykonawcze** — wyłącznie limit kroków lub czasu przy ustalonym
-  rozwiązaniu. Agent główny przejmuje pozostałe wykonanie albo deleguje tylko
-  niedokończony wycinek, przekazując zweryfikowane dotychczasowe wyniki. Nie
-  wymaga to zmiany decyzji projektowych; kolejna delegacja nadal musi przejść
-  bramki atomowości i kosztu. Po drugim przerwaniu wykonawczym tego samego `R#`
-  agent główny kończy wykonanie samodzielnie, bez kolejnej delegacji.
-- **Blokada środowiskowa weryfikacji** — agent główny nie deleguje ponownie
-  pakietu, tylko sam ponawia dozwoloną komendę przez `resolve_tool_cmd`.
-  `env_blocker` stosuje wyłącznie na warunkach z
-  `<skill_dir>/references/state-and-report-contract.md`; brak punktowej komendy
-  raportuje jako `verification_gap`.
+- problemy runtime, DI, logów i profilera diagnozuj przez `$dev-mate`,
+- przy tworzeniu, zmianie lub opiniowaniu renderowanego UI zastosuj
+  `$frontend-ui-consistency`, niezależnie od tego, kto wykonuje zadanie.
 
 Kontynuację i warunki zatrzymania określa sekcja „Kontynuacja po niepełnym
 wykonaniu” w `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`.
 
-Jeśli wskazany agent lub entrypoint jest niedostępny, wykonaj właściwy skill
-bezpośrednio albo użyj opisanego fallbacku. Nie deleguj automatycznie
-`$review-quick` ani `$qa-run`; ich procedury już ograniczają output i stanowią
-część głównego workflow jakości.
+Nie zastępuj walidowanego lifecycle rekonesansu wykonaniem bezpośrednim.
+Nie deleguj automatycznie `$review-quick` ani `$qa-run`; ich procedury już
+ograniczają output i stanowią część głównego workflow jakości.
 
 Jeśli implementacja albo jej punktowa weryfikacja wymaga renderowanej
-przeglądarki, skieruj agenta (także specjalistę od UI) do
+przeglądarki, stosuj
 `<skills_root>/_shared/references/playwright-cli-verification.md`. Jedynym
 przygotowaniem dostępu jest
 `<skills_root>/_shared/scripts/playwright-access-prepare.sh` z `--protected`
@@ -270,8 +180,7 @@ Reguła praktyczna:
 - jeśli Serena nie jest dostępna, ale działa inna warstwa symboliczna dla
   języka, użyj jej według tej samej logiki,
 - jeśli zadanie dotyczy runtime, autowiringu, DI, logów albo profilera,
-  najpierw deleguj `runtime-diagnostician`, gdy jest dostępny; w przeciwnym
-  razie użyj `$dev-mate`,
+  użyj `$dev-mate`,
 - jeśli zadanie jest czysto tekstowe albo banalnie lokalne, użyj zwykłego patcha.
 
 Dla PHP użyj `$php-structure-refactor` dopiero wtedy, gdy po zawężeniu zakresu

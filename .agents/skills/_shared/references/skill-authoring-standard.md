@@ -66,6 +66,10 @@ Reguły wydzielania do referencji:
 
 ### 4. Granice decyzyjne i definicja ukończenia
 
+- Skill jest właścicielem procedury, a agent jej wykonawcą. Procedura działa
+  bez dedykowanego subagenta; opcjonalny adapter nie przechowuje jej unikalnych
+  kroków ani bramek. Wyjątki wymagające delegacji i izolacji, takie jak
+  repository-context, zachowują kontrakt swojego kanonicznego właściciela.
 - Artefakt mówi, kiedy działa samodzielnie, kiedy pyta, a kiedy przekazuje
   sterowanie innemu workflow.
 - Warunek zakończenia jest obserwowalny: lista statusów, dowodów albo kryteriów,
@@ -135,9 +139,11 @@ pozostają poza oceną.
   runtime żyje w `opencode.jsonc`.
 - Body zawiera kontrakt delegacji (co agent dostaje) i format zwrotu (status i
   pola wyniku), spójny z delegującym skillem.
-- Relacje są kompletne: delegujący skill wskazuje agenta, plik agenta ma wpis
-  w `opencode.jsonc`, a kontrakt jest pinowany testem agentowym. Osierocony plik,
-  osierocony wpis konfiguracji albo brak delegującego skilla to finding.
+- Relacje są kompletne: adapter wskazuje właściciela procedury — skill albo
+  wspólny kontrakt. Plik agenta ma wpis w `opencode.jsonc`, a kontrakt jest pinowany testem
+  agentowym. Jeśli workflow wymaga delegacji, wskazuje również rolę wykonawcy;
+  opcjonalny adapter nie wymaga obowiązkowego kierowania do niego pracy.
+  Osierocony plik, wpis konfiguracji albo brak właściciela procedury to finding.
 - Długość i język opisu agenta są metryką monitorowaną, bez twardego progu
   długości.
 

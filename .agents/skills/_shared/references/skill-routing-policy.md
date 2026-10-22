@@ -128,7 +128,8 @@ Jawne polecenie „zaimplementuj ten już wybrany WP bezpośrednio przez
 - **not for**: kod i plany → `$code-review`; dokumentacja domenowa → `$docs-sync`;
   synchronizacja i edycja reguł lokalnych → `$rules-sync`; odświeżenie indeksu
   skilli → `$skills-index-refresh`; runtime behavior agentów →
-  `$opencode-workflow-economics` i `$runtime-diagnostician`; tworzenie albo
+  `$opencode-workflow-economics`; błędy runtime aplikacji po pracy agenta →
+  `$dev-mate`; tworzenie albo
   zmiana skilla → `$task-plan` + `$code-implement`.
 
 ## Wznowienie i częściowo wykonany WP
