@@ -22,8 +22,15 @@ if [[ "\${1:-}" == "daemon" && "\${2:-}" == "status" ]]; then
   exit 0
 fi
 if [[ "\${1:-}" == "provider" && "\${2:-}" == "diagnostic" ]]; then exit 0; fi
-if [[ "\${1:-}" == "ls" ]]; then printf 'agent-a\\nagent-b\\n'; exit 0; fi
-if [[ "\${1:-}" == "agent" && "\${2:-}" == "reload" ]]; then exit 0; fi
+if [[ "\${1:-}" == "ls" ]]; then
+  if [[ "\${STUB_LIST_FAIL:-0}" == "1" ]]; then exit 1; fi
+  printf '%s\\n' "\${STUB_AGENTS:?}"
+  exit 0
+fi
+if [[ "\${1:-}" == "agent" && "\${2:-}" == "reload" ]]; then
+  if [[ "\${3:-}" == "\${STUB_RELOAD_FAIL:-}" ]]; then exit 1; fi
+  exit 0
+fi
 exit 0
 `;
 
@@ -56,6 +63,10 @@ function createSandbox() {
             PATH: `${binDir}:${process.env.PATH ?? ""}`,
             STUB_LOG: logPath,
             STUB_MODE: "success",
+            STUB_AGENTS: JSON.stringify([
+                {id: "agent-a", status: "running"},
+                {id: "agent-b", status: "idle"},
+            ]),
         },
     };
 }
@@ -135,5 +146,77 @@ describe("paseo refresh daemon readiness gate", () => {
         } finally {
             rmSync(sandbox.root, {force: true, recursive: true});
         }
+    });
+});
+
+describe("paseo refresh agent selection", () => {
+    const active = {id: "active-full-id", shortId: "active", status: "running"};
+    const idle = {id: "idle-full-id", status: "idle"};
+    const closed = {id: "closed-full-id", status: "closed"};
+
+    function runSelection(agents, extraEnv = {}) {
+        const sandbox = createSandbox();
+        try {
+            const result = spawnSync(BASH, [SCRIPT], {
+                cwd: sandbox.root,
+                env: {...sandbox.env, STUB_AGENTS: JSON.stringify(agents), ...extraEnv},
+                encoding: "utf8",
+            });
+            return {...result, calls: readCalls(sandbox.logPath)};
+        } finally {
+            rmSync(sandbox.root, {force: true, recursive: true});
+        }
+    }
+
+    it("skips closed agents and reloads full IDs of running and idle agents", () => {
+        const result = runSelection([active, closed, idle]);
+        expect(result.status).toBe(0);
+        expect(result.calls).toContain("ls -g --json");
+        expect(result.calls.filter(call => call.startsWith("agent reload"))).toEqual([
+            "agent reload active-full-id", "agent reload idle-full-id",
+        ]);
+        expect(result.stdout).toContain("Skipping closed-full-id (closed)");
+        expect(result.stdout).toContain("2 agent(s) reloaded");
+        expect(result.stdout).toContain("1 closed agent(s) skipped");
+    });
+
+    it("succeeds without reloading when every agent is closed", () => {
+        const result = runSelection([closed]);
+        expect(result.status).toBe(0);
+        expect(result.calls.some(call => call.startsWith("agent reload"))).toBe(false);
+        expect(result.stdout).toContain("0 agent(s) reloaded");
+        expect(result.stdout).toContain("1 closed agent(s) skipped");
+    });
+
+    it("handles an empty list without attempting reloads", () => {
+        const result = runSelection([]);
+        expect(result.status).toBe(0);
+        expect(result.stderr).toContain("No Paseo agents found");
+        expect(result.calls.some(call => call.startsWith("agent reload"))).toBe(false);
+    });
+
+    it("preserves reload failures and continues with remaining agents", () => {
+        const result = runSelection([active, closed, idle], {STUB_RELOAD_FAIL: active.id});
+        expect(result.status).toBe(1);
+        expect(result.calls).toContain("agent reload idle-full-id");
+        expect(result.stderr).toContain("1 failed reload(s) out of 2; 1 closed agent(s) skipped");
+    });
+
+    it("fails when listing agents fails", () => {
+        const result = runSelection([active], {STUB_LIST_FAIL: "1"});
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain("Could not list Paseo agents");
+        expect(result.calls.some(call => call.startsWith("agent reload"))).toBe(false);
+    });
+
+    it.each([
+        "not-json", "{}", '[{"id":"missing-status"}]',
+        '[{"id":"bad\\tid","status":"idle"}]',
+        '[{"id":"valid","status":"idle"},{"id":"invalid"}]',
+    ])("fails closed on invalid agent data: %s", raw => {
+        const result = runSelection([], {STUB_AGENTS: raw});
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain("Could not parse Paseo agent list");
+        expect(result.calls.some(call => call.startsWith("agent reload"))).toBe(false);
     });
 });
