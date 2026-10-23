@@ -13,7 +13,9 @@ Default:
   1. Refresh the OpenCode and Claude provider catalogs in Paseo
      (Claude: re-detects the Claude Code version and models from
      ~/.claude/settings.json)
-  2. Reload all Paseo agents
+  2. Reload Paseo agents except closed sessions (which are kept, not deleted)
+
+Requires: paseo and node in PATH (Node.js parses the agent list).
 
 Note: Paseo's built-in Claude model list ships with Paseo itself;
 models newer than the installed Paseo release require a Paseo upgrade.
@@ -50,6 +52,10 @@ wait_for_daemon_ready() {
 
 command -v paseo >/dev/null 2>&1 || {
   fail "paseo not found in PATH"
+  exit 1
+}
+command -v node >/dev/null 2>&1 || {
+  fail "node not found in PATH (required to parse the Paseo agent list)"
   exit 1
 }
 
@@ -101,21 +107,49 @@ refresh_provider() {
 refresh_provider opencode OpenCode
 refresh_provider claude Claude
 
-step "Reloading all Paseo agents"
-if ! agent_output="$(paseo ls -g -q 2>/dev/null)"; then
+step "Reloading Paseo agents (excluding closed sessions)"
+if ! agent_output="$(paseo ls -g --json)"; then
   fail "Could not list Paseo agents"
   exit 1
 fi
 
-mapfile -t AGENTS < <(printf '%s\n' "$agent_output" | sed '/^[[:space:]]*$/d')
+if ! agent_rows="$(printf '%s\n' "$agent_output" | node -e '
+  let input = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", chunk => { input += chunk; });
+  process.stdin.on("end", () => {
+    try {
+      const agents = JSON.parse(input);
+      if (!Array.isArray(agents) || agents.some(agent =>
+        !agent || typeof agent.id !== "string" || !agent.id.trim() || /\s/.test(agent.id) ||
+        typeof agent.status !== "string" || !agent.status.trim() || /\s/.test(agent.status)
+      )) throw new Error("Expected an array of agents with non-empty id and status strings");
+      for (const agent of agents) console.log(`${agent.id}\t${agent.status}`);
+    } catch (error) {
+      console.error(error.message);
+      process.exitCode = 1;
+    }
+  });
+')"; then
+  fail "Could not parse Paseo agent list"
+  exit 1
+fi
 
-if ((${#AGENTS[@]} == 0)); then
+if [[ -z "$agent_rows" ]]; then
   warn "No Paseo agents found; nothing to reload"
   exit 0
 fi
 
 failed=0
-for id in "${AGENTS[@]}"; do
+total=0
+skipped=0
+while IFS=$'\t' read -r id status; do
+  if [[ "$status" == "closed" ]]; then
+    printf '  Skipping %s (closed)\n' "$id"
+    skipped=$((skipped + 1))
+    continue
+  fi
+  total=$((total + 1))
   printf '  Reloading %s... ' "$id"
   if paseo agent reload "$id" >/dev/null; then
     printf 'OK\n'
@@ -123,12 +157,12 @@ for id in "${AGENTS[@]}"; do
     printf 'FAILED\n'
     failed=$((failed + 1))
   fi
-done
+done <<< "$agent_rows"
 
 printf '\n'
 if (( failed == 0 )); then
-  ok "Refresh complete (${#AGENTS[@]} agent(s) reloaded)"
+  ok "Refresh complete ($total agent(s) reloaded); $skipped closed agent(s) skipped"
 else
-  warn "Refresh finished with $failed failed reload(s) out of ${#AGENTS[@]}"
+  warn "Refresh finished with $failed failed reload(s) out of $total; $skipped closed agent(s) skipped"
   exit 1
 fi
