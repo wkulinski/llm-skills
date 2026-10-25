@@ -15,17 +15,24 @@ describe("commit-message-render", () => {
     it("parses and renders a full draft", () => {
         const draft = parseCommitMessageDraft(`
             Subject: feat: add render pipeline
-            general:
+            general: General changes
             - update docs
-            db:
+            db: Database schema changes
             - add index
-            cli:
+            cli: CLI command API changes
             - expose --output
         `);
 
         expect(renderCommitMessage(draft)).toBe(
-            "feat: add render pipeline\n\n## Zmiany ogólne\n- update docs\n\n## Zmiany wpływające na strukturę bazy danych\n- add index\n\n## Zmiany API poleceń CLI\n- expose --output\n\n",
+            "feat: add render pipeline\n\n## General changes\n- update docs\n\n## Database schema changes\n- add index\n\n## CLI command API changes\n- expose --output\n\n",
         );
+    });
+
+    it("takes section headings from the draft instead of imposing a language", () => {
+        const draft = parseCommitMessageDraft("Subject: fix: poprawiono walidację\ncli: Zmiany API poleceń CLI\n- nowa opcja --dry-run\n");
+        expect(renderCommitMessage(draft)).toBe("fix: poprawiono walidację\n\n## Zmiany API poleceń CLI\n- nowa opcja --dry-run\n\n");
+        expect(() => parseCommitMessageDraft("Subject: fix: x\ngeneral:\n- item\n")).toThrow("Missing heading for section general");
+        expect(() => parseCommitMessageDraft("Subject: fix: x\ngeneral: A\n- a\ngeneral: B\n- b\n")).toThrow("Duplicate section: general");
     });
 
     it("rejects filler items and unknown sections", () => {
@@ -33,12 +40,12 @@ describe("commit-message-render", () => {
         expect(sectionKeyFromLabel("db")).toBe("db");
         expect(() => parseCommitMessageDraft(`
             Subject: feat: add render pipeline
-            other:
+            other: Other
             - nope
         `)).toThrow("Unknown section: other");
         expect(() => parseCommitMessageDraft(`
             Subject: feat: add render pipeline
-            general:
+            general: General changes
             - Brak zmian
         `)).toThrow("Filler bullet is not allowed: Brak zmian");
     });
@@ -50,14 +57,14 @@ describe("commit-message-render", () => {
             await renderCommitMessageDraftToFile({
                 input: [
                     "Subject: fix: stabilize output",
-                    "general:",
+                    "general: General changes",
                     "- tighten validation",
                     "",
                 ].join("\n"),
                 outputFile,
             });
 
-            expect(readFileSync(outputFile, "utf-8")).toBe("fix: stabilize output\n\n## Zmiany ogólne\n- tighten validation\n\n");
+            expect(readFileSync(outputFile, "utf-8")).toBe("fix: stabilize output\n\n## General changes\n- tighten validation\n\n");
         } finally {
             rmSync(tempRoot, {force: true, recursive: true});
         }

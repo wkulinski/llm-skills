@@ -82,6 +82,11 @@ describe("skill shared_files contract", () => {
             "_shared/bar.md",
         ]);
     });
+
+    it("rejects inconsistent indentation in the flat shared_files list", () => {
+        expect(() => parseSharedFiles("---\nname: example\nshared_files:\n    - _shared/foo.mjs\n  - _shared/bar.md\n---\n", "example/SKILL.md"))
+            .toThrow("inconsistent shared_files indentation");
+    });
 });
 
 function skillFiles() {
@@ -100,10 +105,15 @@ function parseSharedFiles(source, skillFile) {
     if (start === -1) { return []; }
 
     const values = [];
+    let itemIndent = null;
     for (const line of lines.slice(start + 1)) {
-        const item = line.match(/^\s+-\s+(.+?)\s*$/);
+        const item = line.match(/^(\s+)-\s+(.+?)\s*$/);
         if (item) {
-            values.push(item[1].replace(/^['"]|['"]$/g, ""));
+            itemIndent ??= item[1];
+            if (item[1] !== itemIndent) {
+                throw new Error(`${skillFile}: inconsistent shared_files indentation`);
+            }
+            values.push(item[2].replace(/^['"]|['"]$/g, ""));
             continue;
         }
         if (/^\s+/.test(line) || line.trim() === "") { continue; }

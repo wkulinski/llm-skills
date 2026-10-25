@@ -7,6 +7,8 @@ description: >-
 shared_files:
   - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
+  - _shared/references/project-profiles.md
+  - _shared/scripts/env-load.sh
   - _shared/scripts/is-main-module.mjs
 ---
 
@@ -36,6 +38,11 @@ Uruchomić QA w sposób deterministyczny:
 - Agent nie dobiera komend "na wyczucie"; wykonuje komendy z matrixa i fazy opisane w tym skillu.
 
 ## Tryb domyślny
+Przed uruchomieniem komend macierzy rozstrzygnij profil według
+`<skills_root>/_shared/references/project-profiles.md`; błąd konfiguracji
+zatrzymuje procedurę przed komendami i naprawami. Dobór standardów dla fazy
+`$review-quick` pozostaje własnością `$review-quick`, a algorytm macierzy nie zależy od profilu.
+
 - Domyślnie `$qa-run` działa w trybie `repair`.
 - `repair` oznacza: matrix QA -> naprawa po FAIL -> delta rerun -> `$review-quick` -> naprawa po review -> delta rerun -> ewentualny final full pass.
 - Tryb `report-only` uruchamiaj tylko, gdy użytkownik wyraźnie zaznaczy brak napraw (np. "tylko sprawdź", "bez poprawek", "check-only").

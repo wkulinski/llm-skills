@@ -168,9 +168,15 @@ potrzebę użytkownika, a `Suggested diagnosis or solution` proponowaną
 interakcję; hipotezy o celu użytkownika trafiają do
 `Claims corrected or still unverified`.
 
-Uwagi produktowe w `Decisions and open questions` zapisuj w formacie:
+Wpisy w `Decisions and open questions` mają dokładnie te formaty; walidator
+odrzuca wpis `D`, `N` albo `Q` w innej postaci:
 
 ```md
+- D1: <decyzja>
+- Q1 [open]: <pytanie>
+- Q2 [answered]: <pytanie>
+  - Answer: <odpowiedź użytkownika>
+  - Source: current conversation
 - N1 [note]: <interakcja>; koszt: <koszt dla użytkownika>; podstawa: <źródło | fakt kodowy | hipoteza>; kierunek: <kierunek albo pytanie>
 ```
 
@@ -439,7 +445,9 @@ Dla nowego doboru odczytaj aktualne dane AICodingDaily przez wspólną granicę:
 node <skills_root>/_shared/scripts/model-leaderboard.mjs entries
 ```
 
-Wiersze i HTML pozostają wyłącznie w pamięci, bez cache, sidecara, pliku
+Etykieta wiersza ma postać `Model (Reasoning) — Harness`: ten sam model jest
+oceniany osobno w każdym harnessie, więc porównuj wiersze harnessu, w którym WP
+będzie wykonany. Wiersze i HTML pozostają wyłącznie w pamięci, bez cache, sidecara, pliku
 tymczasowego ani fixture prawdziwej strony. Nie używaj do tego odczytu narzędzia
 automatycznie zapisującego odpowiedź. Testy odczytu używają danych syntetycznych.
 Jeden odczyt może wspierać dobór kilku WP w tej samej fazie planowania;
@@ -499,7 +507,12 @@ osobnego grafu ani mechanizmu batchowania.
 
 `Source coverage` mapuje każdy punkt źródła do WP. Po odpowiedzi użytkownika
 punkt może zamiast tego otrzymać krótkie, uzasadnione `excluded`. Nie twórz WP
-dla samej ceremonii procesu.
+dla samej ceremonii procesu. Format punktu:
+
+```md
+- S1: <punkt źródła> → WP1, WP2
+- S2: <punkt źródła> → excluded: <uzasadnienie>
+```
 
 ## Streszczenia WP
 

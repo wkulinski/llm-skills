@@ -30,9 +30,9 @@ const DEFAULT_PROFILES = [
 ];
 
 function leaderboardResponse(rows) {
-    const body = `<table><thead><tr><th>#</th><th>Model</th><th>Total points (max 70)</th></tr>
+    const body = `<table><thead><tr><th>#</th><th>Model</th><th>Total points (max 70)</th><th>Cost</th><th>Time</th><th>Video</th><th>Tested with</th></tr>
 <tr><th>Other project scores</th></tr></thead><tbody>${rows.map((row, index) =>
-    `<tr><td>${index + 1}</td><td><a href="https://aicodingdaily.com/model/synthetic-${index}">${row.label}</a></td><td>${row.totalPoints}</td>${"<td>other</td>".repeat(8)}</tr>`).join("")}</tbody></table>`;
+    `<tr><td>${index + 1}</td><td><a href="https://aicodingdaily.com/model/synthetic-${index}">${row.label}</a></td><td>${row.totalPoints}</td>${"<td>other</td>".repeat(3)}<td></td>${"<td>other</td>".repeat(4)}</tr>`).join("")}</tbody></table>`;
     return {
         ok: true,
         status: 200,

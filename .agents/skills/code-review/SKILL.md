@@ -18,6 +18,8 @@ shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/rule-conformance-policy.md
   - _shared/references/php-symfony-postgres-standards.md
+  - _shared/references/project-profiles.md
+  - _shared/scripts/env-load.sh
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/references/repository-context-hybrid.md
   - _shared/references/playwright-cli-verification.md
@@ -79,8 +81,7 @@ Read only the files required by the active step. Declared references are availab
 | workflow routing and skill-selection guard before this skill starts | `<skills_root>/_shared/references/skill-routing-policy.md` |
 | repository reconnaissance, broad versus targeted reads, and scout lifecycle | `<skills_root>/_shared/references/repository-context-hybrid.md` |
 | applicable-rules register semantics (source, scope, force, evidence, result) | `<skills_root>/_shared/references/rule-conformance-policy.md` |
-| the reviewed scope touches PHP, Symfony, Doctrine, PostgreSQL or Twig code | `<skills_root>/_shared/references/php-symfony-postgres-standards.md` |
-| the active repository env files finally set `CQRS_MONOLITH_STANDARD_OVERRIDES=1` | `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` |
+| every review: resolve the profile before review and read only the standards activated there; configuration errors stop the procedure | `<skills_root>/_shared/references/project-profiles.md` |
 | choosing, running and limiting verification commands | `<skills_root>/_shared/references/runtime-collaboration-guidelines.md` (section "QA Command Policy") |
 | working-tree change inventory | `<skills_root>/_shared/scripts/change-inventory.mjs` |
 | rendered UI change, or a change to the interactions of code running in the browser, and Playwright checkpoint | `<skills_root>/_shared/references/playwright-cli-verification.md` |
@@ -240,10 +241,9 @@ semantics of sources, scope, force, evidence and result.
   rule documents designated by repository instructions, shared references, path-specific instructions and
   conditional profiles, respecting the repository's existing precedence and
   environment-level instructions.
-- The stack baseline and the CQRS profile from "Reference routing" are active
-  sources whenever their routing condition holds. When the final value of
-  `CQRS_MONOLITH_STANDARD_OVERRIDES` cannot be established, record the profile's
-  relevant rules as `NOT_VERIFIED` instead of assuming either state.
+- Resolve stack standards through `<skills_root>/_shared/references/project-profiles.md`
+  before judging the artifact; do not infer activation from the reviewed language.
+  Stop on configuration errors rather than assuming an active or inactive profile.
 - Select only the rules relevant to the reviewed scope; do not enumerate or number
   every rule in the repository.
 - Record for each selected rule: source (file and section), force

@@ -160,12 +160,16 @@ Automatyczna bramka ma dwie rozłączne gałęzie:
   ```
 
   Wskaż dokładne etykiety wierszy odpowiadających wymaganemu i bieżącemu
-  profilowi, z tym samym modelem i reasoning, i powtórz preflight:
+  profilowi, z tym samym modelem i reasoning. Etykieta ma postać
+  `Model (Reasoning) — Harness`, bo ten sam model występuje osobno dla każdego
+  harnessu z kolumny „Tested with”; wybieraj wiersz harnessu, w którym WP będzie
+  wykonany. Gdy takiego wiersza brak, nie podstawiaj innego harnessu — potraktuj
+  to jak `decision-required`. Następnie powtórz preflight:
 
   ```bash
   node <skill_dir>/scripts/execute.mjs check-environment \
     --path ./docs/plans/<plan-id>.md \
-    --required-label "Model A (Medium)" --current-label "Model B (Max)"
+    --required-label "Model A (Medium) — OpenCode" --current-label "Model B (Max) — OpenCode"
   ```
 
   Helper pobiera ranking ponownie, sprawdza obie etykiety w jednym odczycie,
@@ -236,7 +240,7 @@ cp <skill_dir>/model-hierarchy.json.dist .agents/config/model-hierarchy.json
 W OpenCode projekt powinien mieć także plugin
 `./.opencode/plugins/session-model-env.js` (część tego katalogu skills), żeby
 metoda 1 działała bez pytań do użytkownika; plugin wymaga restartu OpenCode po
-dodaniu. Kontrakt zmiennych opisuje `./README.md`. W innym harnessie metoda 2 i
+dodaniu. Kontrakt zmiennych opisuje nagłówek tego pluginu. W innym harnessie metoda 2 i
 atestacja użytkownika pozostają dostępne bez pluginu.
 
 Szablon pozostaje zwykłym JSON-em i zamiast komentarzy używa pól `_comment`.

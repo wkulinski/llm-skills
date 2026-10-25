@@ -9,6 +9,8 @@ shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
+  - _shared/references/project-profiles.md
+  - _shared/scripts/env-load.sh
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/references/symbolic-navigation-and-editing-policy.md
   - _shared/references/context-subagent-contract.md
@@ -106,13 +108,11 @@ Jeśli zgodnie z sekcją „Jak wybrać tryb” refresh jest pomijany, przejdź 
 Przeczytaj w całości (to jest minimalny “rdzeń” reguł i konwencji):
 1. `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`
 2. `<skills_root>/_shared/references/runtime-quality-procedures.md`
-3. `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
-4. Ustal aktywność `CQRS_MONOLITH_STANDARD_OVERRIDES` na podstawie aktywnych plików env repo:
-   - uwzględnij kolejność nadpisań zgodną z helperem `<skills_root>/_shared/scripts/env-load.sh`: `.env`, `.env.local` (poza `APP_ENV=test`), `.env.<APP_ENV>`, `.env.<APP_ENV>.local`,
-   - jeśli `APP_ENV` nie wynika z aktywnego env, przyjmij `dev`,
-   - `.env.dist` traktuj jako szablon/default dokumentacyjny, nie aktywne źródło runtime,
-   - jeśli końcowa aktywna wartość to `1`: przeczytaj `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`,
-   - w podsumowaniu odnotuj aktywną wartość i plik, który ją ustawił, jeśli override został załadowany.
+3. `<skills_root>/_shared/references/project-profiles.md`: rozstrzygnij profil
+   przez wskazany tam helper przed odczytem standardów; po błędzie zatrzymaj procedurę.
+4. Wczytaj wyłącznie standardy aktywowane przez tę referencję; zapisz profil
+   w polu `stack_profile` manifestu, aktywny override w `active_overrides`, a oba
+   także w podsumowaniu.
 5. Odczytaj `MAIN_DOC`.
    - Jeśli mapy lub klucza `MAIN_DOC` brakuje: zatrzymaj się i dopytaj użytkownika.
 6. Odczytaj `AGENT_RULES_DOC` — jeśli zdefiniowano.
@@ -227,7 +227,7 @@ issue, komentarzy, pełnych dokumentów ani sekretów.
 - ```text
   Wynik: Kontekst załadowany/odświeżony.
   Tryb: Quick
-  Wczytane: `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`, `<skills_root>/_shared/references/runtime-quality-procedures.md`, `<skills_root>/_shared/references/php-symfony-postgres-standards.md`, `MAIN_DOC` z `docs_map`.
+  Wczytane: przenośny rdzeń, `MAIN_DOC` z `docs_map` i standardy aktywowane według `<skills_root>/_shared/references/project-profiles.md`.
   Zmiany w repo: dotknięte moduły: Core, Migration (12 plików zmienionych, 1 untracked).
   Uwagi: brak.
   ```
@@ -250,6 +250,6 @@ issue, komentarzy, pełnych dokumentów ani sekretów.
 Kontekst projektu jest wczytany, a ewentualne braki lub niejasności zostały jasno odnotowane; agent wie też, jakie obszary są zmienione w repo.
 
 ## Przypadki brzegowe
-- Brak jednego z kluczowych plików baseline skilli (`<skills_root>/_shared/references/runtime-collaboration-guidelines.md`, `<skills_root>/_shared/references/runtime-quality-procedures.md`, `<skills_root>/_shared/references/php-symfony-postgres-standards.md`).
+- Brak pliku rdzenia lub standardu aktywowanego według `<skills_root>/_shared/references/project-profiles.md` — zatrzymaj procedurę i wskaż brakujący plik.
 - Brak mapy `docs_map` w `AGENTS.md` — dopytaj użytkownika o wymagane klucze i wstrzymaj wykonanie.
 - Brak klucza `MAIN_DOC` w `docs_map` — dopytaj użytkownika i wstrzymaj wykonanie.

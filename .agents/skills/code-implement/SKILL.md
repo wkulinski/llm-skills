@@ -12,6 +12,7 @@ shared_files:
     - _shared/references/runtime-quality-procedures.md
     - _shared/references/rule-conformance-policy.md
     - _shared/references/php-symfony-postgres-standards.md
+    - _shared/references/project-profiles.md
     - _shared/references/cqrs-monolith-standard-overrides.md
     - _shared/references/symbolic-navigation-and-editing-policy.md
     - _shared/references/context-subagent-contract.md
@@ -115,8 +116,7 @@ Odczytaj tylko pliki wymagane przez aktywny krok:
 | zasady współpracy i wykonania technicznego | `<skills_root>/_shared/references/runtime-collaboration-guidelines.md` |
 | checklisty jakości | `<skills_root>/_shared/references/runtime-quality-procedures.md` |
 | kontrakt zgodności reguła → zakres → dowód → wynik | `<skills_root>/_shared/references/rule-conformance-policy.md` |
-| baseline techniczny stacka | `<skills_root>/_shared/references/php-symfony-postgres-standards.md` |
-| override architektoniczny (tylko gdy aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`) | `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` |
+| każde zadanie: wybór profilu przed zmianami i odczyt wyłącznie aktywowanych standardów | `<skills_root>/_shared/references/project-profiles.md` |
 | wybór nawigacji symbolicznej, zwykłego patcha i narzędzi refactor | `<skills_root>/_shared/references/symbolic-navigation-and-editing-policy.md` |
 | kontrakt kontekstu między agentami | `<skills_root>/_shared/references/context-subagent-contract.md` |
 | rekonesans repozytoryjny i macierz broad vs targeted | `<skills_root>/_shared/references/repository-context-hybrid.md` |
@@ -280,10 +280,10 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
 4. Ustal obszar zmian:
    - znajdź docelowe moduły/pliki (np. przez `rg` po symbolach),
    - doczytaj README dokumentacji dla dotkniętych modułów (zgodnie z `docs_map` z `AGENTS.md`).
-   - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: doczytaj `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` przed decyzjami architektonicznymi (warstwy/CQRS/Doctrine/FCF).
+   - rozstrzygnij profil według `<skills_root>/_shared/references/project-profiles.md` i doczytaj wyłącznie aktywowane standardy przed decyzjami implementacyjnymi; błąd konfiguracji zatrzymuje pracę przed zmianami.
 5. Zrób preflight entrypointów narzędzi:
    - załaduj helper `env-load.sh` wskazany w `shared_files`,
-   - ustal komendy narzędziowe dla repo (co najmniej `composer`, `console`, `yarn`, `codecept`) wyłącznie przez `resolve_tool_cmd`,
+   - ustal przez `resolve_tool_cmd` wyłącznie komendy narzędzi potrzebnych w wykonywanym kroku; nie wymagaj narzędzi PHP z samego wyboru workflow lub profilu,
    - `resolve_tool_cmd` traktuj jako jedyne źródło prawdy; aktywne pliki env repo są ładowane automatycznie w resolverze,
    - nie mieszaj wielu wariantów entrypointów w ramach jednego zadania.
 6. Przed zmianą krytycznego pliku **lub** przed edycją pliku, którego aktualnej wersji
@@ -309,7 +309,7 @@ kopiuje macierzy ani nie powtarza zakazów broad rediscovery i read-before-write
 2. Jeśli w trakcie okaże się, że zakres rośnie: zatrzymaj się, zaktualizuj plan i poproś o potwierdzenie.
 
 ### 4) Implementacja (zasady + bramki)
-1. Implementuj zgodnie z `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`, baseline `<skills_root>/_shared/references/php-symfony-postgres-standards.md` oraz aktywnym override (jeśli flaga włączona). Rozliczaj istotne reguły dotknięte zmianą według `<skills_root>/_shared/references/rule-conformance-policy.md` i zapisz wyniki w Dowodach wymagania — nie zamiast statusu R#.
+1. Implementuj zgodnie z `<skills_root>/_shared/references/runtime-collaboration-guidelines.md` i standardami aktywowanymi według `<skills_root>/_shared/references/project-profiles.md`. Rozliczaj istotne reguły dotknięte zmianą według `<skills_root>/_shared/references/rule-conformance-policy.md` i zapisz wyniki w Dowodach wymagania — nie zamiast statusu R#.
 2. Twierdzenia oparte na dowodach (anty-“kłamstwo”):
    - nie pisz “sprawdziłem/zweryfikowałem/przeczytałem”, jeśli nie wykonałeś realnego odczytu pliku lub komendy w tej sesji,
    - jeśli nie wiesz (albo nie sprawdziłeś): powiedz wprost i sprawdź,

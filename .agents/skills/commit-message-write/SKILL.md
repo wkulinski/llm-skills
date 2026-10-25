@@ -9,6 +9,8 @@ shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
+  - _shared/references/project-profiles.md
+  - _shared/scripts/env-load.sh
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/scripts/issue-branch.mjs
   - _shared/scripts/slugify-title.mjs
@@ -55,20 +57,41 @@ Ten skill działa dwuetapowo:
 - Jeśli branch nie pasuje do wzorca issue, nie dopisuj numeru.
 
 ## Sekcjonowanie body
-- Body dziel na sekcje:
-  - `Zmiany ogólne`
-  - `Zmiany wpływające na strukturę bazy danych`
-  - `Zmiany API poleceń CLI`
+- Body dziel na sekcje o stałych kluczach:
+  - `general` — zmiany ogólne,
+  - `db` — zmiany wpływające na strukturę bazy danych,
+  - `cli` — zmiany API poleceń CLI.
+- Nagłówek każdej sekcji zapisz w języku commita (`COMMIT_LANGUAGE`); klucz jest tylko technicznym oznaczeniem w drafcie.
 - Każdy punkt body przypisz do dokładnie jednej sekcji.
-- `Zmiany ogólne` obejmują tylko punkty, których nie da się przypisać do dwóch pozostałych sekcji.
-- `Zmiany wpływające na strukturę bazy danych` obejmują zmiany skutkujące migracjami zmieniającymi schemat, relacje, indeksy, constraints lub słowniki.
-- `Zmiany API poleceń CLI` obejmują dodanie lub usunięcie poleceń CLI, zmianę parametrów, opcji, exit code oraz zewnętrznego kontraktu poleceń: stdout, stderr i typu zwracanych wartości.
-- Jeśli zmiana pasuje do kilku sekcji, przypisz ją do najbardziej specyficznej sekcji.
-- Klasyfikację stosuj w kolejności: najpierw `Zmiany API poleceń CLI`, potem `Zmiany wpływające na strukturę bazy danych`, a wszystko co nie pasuje do tych dwóch sekcji trafia do `Zmiany ogólne`; sekcje zapisuj potem zawsze w kolejności zdefiniowanej niżej.
+- `general` obejmuje tylko punkty, których nie da się przypisać do dwóch pozostałych sekcji.
+- `db` obejmuje zmiany skutkujące migracjami zmieniającymi schemat, relacje, indeksy, constraints lub słowniki.
+- `cli` obejmuje dodanie lub usunięcie poleceń CLI, zmianę parametrów, opcji, exit code oraz zewnętrznego kontraktu poleceń: stdout, stderr i typu zwracanych wartości.
+- Jeśli zmiana pasuje do kilku sekcji, przypisz ją do najbardziej specyficznej: najpierw `cli`, potem `db`, a resztę do `general`.
 - Puste sekcje pomiń.
-- Finalny zapis body wykonuj przez `node <skills_root>/commit-message-write/scripts/commit-message-render.mjs`; helper renderuje sekcje bezpośrednio do `<COMMIT_MESSAGE_DIR>/commit-message.txt` i odrzuca fillery typu `Brak zmian`.
+- Finalny zapis body wykonuj przez `node <skills_root>/commit-message-write/scripts/commit-message-render.mjs`; helper renderuje sekcje w kolejności `general`, `db`, `cli` bezpośrednio do `<COMMIT_MESSAGE_DIR>/commit-message.txt` i odrzuca fillery typu `Brak zmian`.
+
+## Zasady treści
+Subject (linia 1):
+- format: `<type>: <Krótki tytuł>`,
+- `<type>` dobierz zgodnie z Conventional Commits (`feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `build`, `ci`, `style`, `perf`, `revert`),
+- `Krótki tytuł` adekwatny do zmian i zapisany w języku wynikającym z `COMMIT_LANGUAGE`,
+- `Krótki tytuł` formułuj bezosobowo i w aspekcie dokonanym, opisując stan po zmianie, a nie czynność autora,
+- jeśli wykryto issue w branchu, `Krótki tytuł` ma zawierać sufiks `(#<ID>)`,
+- `<type>` pozostaje technicznym prefiksem Conventional Commits i nie zmienia języka reszty subjectu ani body,
+- zakazane są formy rozkazujące (np. `Dodaj`, `Ustaw`, `Zrób`), formy osobowe w czasie teraźniejszym (np. `dodaje`, `ustawia`) i kalka językowa.
+
+Body:
+- ma odzwierciedlać realnie wykryte i zrozumiane zmiany wyłącznie z `COMMIT_SCOPE`,
+- ma być zgodne z `COMMIT_LANGUAGE`, łącznie z nagłówkami sekcji,
+- formułuj je bezosobowo i w aspekcie dokonanym,
+- każdy punkt ma być krótki, konkretny i bez duplikatów,
+- kolejność punktów w obrębie sekcji idzie od zmian najbardziej istotnych do pomocniczych.
 
 ## Kroki
+Przed krokami poniżej rozstrzygnij profil według
+`<skills_root>/_shared/references/project-profiles.md` i wczytaj wyłącznie
+aktywowane standardy. Błąd konfiguracji zatrzymuje procedurę przed zapisem plików.
+
 1. Otwórz `AGENTS.md` i odczytaj mapę `docs_map`.
 2. Odczytaj klucz `COMMIT_MESSAGE_DIR`.
    - Jeśli mapy lub klucza brakuje: zatrzymaj się i dopytaj użytkownika o ścieżkę katalogu.
@@ -94,48 +117,29 @@ Ten skill działa dwuetapowo:
    - jeśli tak: ustaw `COMMIT_LANGUAGE` na język wymagany przez dokumentację projektu,
    - jeśli nie: ustaw `COMMIT_LANGUAGE` na język bieżącej komunikacji z użytkownikiem,
    - nie przełączaj języka domyślnie na angielski tylko dlatego, że commit ma format Conventional Commits.
-7. Przygotuj strukturalny draft treści commit message:
+7. Przygotuj strukturalny draft treści commit message według sekcji „Zasady treści”:
    - subject w konwencji Conventional Commits, bez kropki na końcu,
-   - trzy koszyki punktów body oznaczone jako `general`, `db` i `cli`,
-   - subject i body twórz w języku wynikającym z `COMMIT_LANGUAGE`.
+   - trzy koszyki punktów body oznaczone kluczami `general`, `db` i `cli`, każdy z nagłówkiem w języku `COMMIT_LANGUAGE`.
 8. Wykonaj etap `Prune` (obowiązkowy) i przytnij draft wyłącznie do `COMMIT_SCOPE`:
    - każdy punkt body musi mapować się do co najmniej jednego pliku z `COMMIT_SCOPE`,
    - punkty niemapowalne usuń albo przepisz tak, aby odzwierciedlały wyłącznie zmiany commitowalne,
    - subject zbuduj po przycięciu, na podstawie punktów które przeszły filtr `COMMIT_SCOPE`,
    - nie zostawiaj w finalnym tekście wzmianek o zmianach wyłącznie kontekstowych (np. z plików ignorowanych), jeśli nie mają pokrycia w `COMMIT_SCOPE`.
-9. Zasady tworzenia subjectu (linia 1):
-   - format: `<type>: <Krótki tytuł>`
-   - `<type>` dobierz zgodnie z Conventional Commits (`feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `build`, `ci`, `style`, `perf`, `revert`),
-   - `Krótki tytuł` adekwatny do zmian i zapisany w języku wynikającym z `COMMIT_LANGUAGE`,
-   - `Krótki tytuł` formułuj bezosobowo i w aspekcie dokonanym, opisując stan po zmianie, a nie czynność autora,
-   - jeśli wykryto issue w branchu, `Krótki tytuł` ma zawierać sufiks `(#<ID>)`,
-   - `<type>` pozostaje technicznym prefiksem Conventional Commits i nie zmienia języka reszty subjectu ani body,
-   - zakazane są formy rozkazujące (np. `Dodaj`, `Ustaw`, `Zrób`), formy osobowe w czasie teraźniejszym (np. `dodaje`, `ustawia`) i kalka językowa.
-10. Zasady tworzenia body:
-   - body ma odzwierciedlać realnie wykryte i zrozumiane zmiany,
-   - body ma opisywać wyłącznie zmiany z `COMMIT_SCOPE`,
-   - body ma być zgodne z `COMMIT_LANGUAGE`,
-   - body formułuj bezosobowo i w aspekcie dokonanym,
-   - każdy punkt ma być krótki, konkretny i bez duplikatów,
-   - kolejność sekcji ma być zawsze taka: `Zmiany ogólne`, `Zmiany wpływające na strukturę bazy danych`, `Zmiany API poleceń CLI`,
-   - kolejność punktów w obrębie sekcji powinna iść od zmian najbardziej istotnych do pomocniczych,
-   - jeśli dana sekcja jest pusta, pomiń ją całkowicie.
-9. Wygeneruj finalny plik przez `node <skills_root>/commit-message-write/scripts/commit-message-render.mjs`:
+9. Przed renderem wykonaj końcowy check języka:
+   - potwierdź, że subject, body i nagłówki sekcji są zgodne z `COMMIT_LANGUAGE`,
+   - jeśli commit jest w złym języku, popraw draft.
+10. Wygeneruj finalny plik przez `node <skills_root>/commit-message-write/scripts/commit-message-render.mjs`:
    - przekaż helperowi strukturalny draft przez stdin w formacie:
      - `Subject: ...`
-     - `general:`
+     - `general: <nagłówek sekcji w języku commita>`
      - `- ...`
-     - `db:`
+     - `db: <nagłówek sekcji w języku commita>`
      - `- ...`
-     - `cli:`
+     - `cli: <nagłówek sekcji w języku commita>`
      - `- ...`
    - wskaż `--output <COMMIT_MESSAGE_DIR>/commit-message.txt`,
-   - helper ma zapisać commit message bezpośrednio do pliku docelowego, bez plików pośrednich,
-   - helper ma pominąć puste sekcje i odrzucić fillery typu `Brak zmian`.
-   - nie używaj starszych nagłówków sekcji ani innych alternatywnych formatów wejścia.
-10. Przed zapisem wykonaj końcowy check języka:
-   - potwierdź, że subject i body są zgodne z `COMMIT_LANGUAGE`,
-   - jeśli commit jest w złym języku, popraw go przed renderem.
+   - helper zapisuje commit message bezpośrednio do pliku docelowego, bez plików pośrednich,
+   - helper pomija puste sekcje, odrzuca sekcję bez nagłówka i fillery typu `Brak zmian`.
 11. Po renderze zweryfikuj, że plik istnieje, jest czytelny i nie jest pusty.
     - Jeśli walidacja nie przejdzie: przerwij z błędem.
 

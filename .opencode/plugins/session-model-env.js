@@ -2,7 +2,7 @@
 // agent shell command, so deterministic skill helpers can read it instead of
 // asking the user or scraping logs.
 //
-// Contract (documented in README.md):
+// Contract (this header is the source of truth for consumers):
 //   OPENCODE_SESSION_MODEL   - "provider/model" exactly as used by model-hierarchy.json
 //   OPENCODE_SESSION_VARIANT - resolved reasoning variant, e.g. "high" / "max"
 //   OPENCODE_SESSION_AGENT   - agent name, e.g. "build"

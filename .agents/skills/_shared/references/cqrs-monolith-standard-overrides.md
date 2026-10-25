@@ -22,15 +22,11 @@ Ten dokument rozszerza baseline `php-symfony-postgres-standards.md` o reguły mo
 - Typy i importy są tylko częścią kontraktu. Osobno oceń publiczność, semantykę, uprawnienia, spójność, błędy i obserwowalność wykonania.
 
 ## 1. Aktywacja i pierwszeństwo
-Stosuj ten dokument tylko, gdy aktywne pliki env repo ustawiają końcową wartość:
+Stosuj ten dokument wyłącznie po aktywacji według `./project-profiles.md`.
+Ta referencja określa również relację override do baseline; hierarchię źródeł
+instrukcji określa `./skill-structure-contract.md`.
 
-`CQRS_MONOLITH_STANDARD_OVERRIDES=1`
-
-Aktywne pliki env są ładowane w kolejności nadpisań zgodnej z `<skills_root>/_shared/scripts/env-load.sh`: `.env`, `.env.local` (poza `APP_ENV=test`), `.env.<APP_ENV>`, `.env.<APP_ENV>.local`. `.env.dist` jest szablonem/defaultem dokumentacyjnym, nie aktywnym źródłem runtime.
-
-Każda inna wartość albo brak flagi oznacza, że dokument jest nieaktywny.
-
-- Miejsce tego dokumentu w kolejności reguł określa `runtime-collaboration-guidelines.md` §8: ma pierwszeństwo przed baseline i procedurami runtime, a ustępuje poleceniu użytkownika i lokalnym zasadom repo. Konflikt z tymi źródłami rozstrzygaj według tej kolejności, bez dopytywania.
+- Konflikty rozstrzygaj według tych kontraktów, bez tworzenia drugiej hierarchii.
 - Jeśli aktywny dokument jest sprzeczny z instrukcją skilla w sprawie architektonicznej, której ta kolejność nie rozstrzyga, zgłoś rozbieżność użytkownikowi i nie zgaduj rozwiązania.
 
 ## 2. Architektura modułowa i warstwy

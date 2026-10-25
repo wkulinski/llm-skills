@@ -1,12 +1,11 @@
 # PHP + Symfony + PostgreSQL Standards
 
-Ten dokument opisuje **domyślny baseline** dla skilli używanych w projektach PHP + Symfony + PostgreSQL.
+Ten dokument opisuje baseline PHP + Symfony + PostgreSQL, aktywowany wyłącznie
+według `./project-profiles.md`.
 
 ## 1. Zakres i pierwszeństwo
 - Ten dokument jest źródłem prawdy dla standardowego (niewyjątkowego) podejścia do implementacji.
-- Jeżeli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`, to dodatkowo obowiązuje:
-  - `./cqrs-monolith-standard-overrides.md`
-- W razie konfliktu: aktywny override ma pierwszeństwo nad tym dokumentem.
+- Aktywację i pierwszeństwo baseline/override określa `./project-profiles.md`.
 
 ## 2. PHP i styl kodu
 - Każdy plik PHP zaczynaj od `declare(strict_types=1);`.

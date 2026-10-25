@@ -9,6 +9,9 @@ shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/cqrs-monolith-standard-overrides.md
+  - _shared/references/php-symfony-postgres-standards.md
+  - _shared/references/project-profiles.md
+  - _shared/scripts/env-load.sh
   - _shared/references/symbolic-navigation-and-editing-policy.md
 ---
 
@@ -86,7 +89,7 @@ Jeśli zmiany w kodzie spełniają **którykolwiek** z warunków poniżej, trakt
    - sprawdź `git status -sb`,
    - zbierz listę zmienionych plików (`git diff --name-only`) i nowe pliki (`git ls-files --others --exclude-standard`),
    - określ, które moduły są dotknięte zmianami (`src/<Module>/...`) i czy spełniony jest threshold kompletności (sekcja wyżej).
-   - jeśli aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: uwzględnij `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` jako aktywne zasady architektoniczne.
+   - rozstrzygnij profil według `<skills_root>/_shared/references/project-profiles.md` przed zmianami i uwzględnij wyłącznie aktywowane standardy; po błędzie konfiguracji przerwij.
 2. (Faza domenowa) Odczytaj wymagane klucze mapy `docs_map`: `MAIN_DOC`, `MODULE_INDEX_DOC`, `MODULE_DOCS_GLOB`.
    - Jeśli mapy lub któregoś wymaganego klucza brakuje: zatrzymaj się i dopytaj użytkownika.
    - Odczytaj też `AGENT_RULES_DOC` i `QUALITY_PROCEDURES_DOC`, jeśli te klucze są zdefiniowane (będą użyte obowiązkowo w fazie proceduralnej).
@@ -163,7 +166,7 @@ Jeśli zmiany w kodzie spełniają **którykolwiek** z warunków poniżej, trakt
   - lista skilli, które zaktualizowano, bo to one są źródłem prawdy.
 - Użyte klucze dokumentacji: lista użytych kluczy `docs_map` z resolved paths.
 - Uwagi: opcjonalne ryzyka lub braki.
-- Przy aktywnym `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: wskaż ewentualne rozbieżności docs względem `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`.
+- Wskaż ewentualne rozbieżności docs względem standardów aktywowanych według `<skills_root>/_shared/references/project-profiles.md`.
 - Jeśli brak rozbieżności, napisz: "Brak rozbieżności w dokumentacji."
 
 ## Przykłady wejścia

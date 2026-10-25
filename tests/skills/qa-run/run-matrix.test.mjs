@@ -1,4 +1,4 @@
-import {mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
+import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {spawnSync} from "node:child_process";
@@ -6,6 +6,7 @@ import {pathToFileURL} from "node:url";
 import {afterEach, describe, expect, it} from "vitest";
 
 import {parseConfig as parseConfigFromNormalizer} from "../../../.agents/skills/qa-run/scripts/run-matrix/config/normalizer.mjs";
+import {detectActiveSections} from "../../../.agents/skills/qa-run/scripts/run-matrix/patterns/section-activation.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const runnerPath = path.join(repoRoot, ".agents/skills/qa-run/scripts/run-matrix.mjs");
@@ -358,6 +359,57 @@ describe("run-matrix output contract", () => {
                 }),
             ]));
         }
+    });
+
+    it.each([
+        ".agents/skills/example/SKILL.md",
+        ".agents/skills/_shared/references/example.md",
+        ".opencode/agents/example.md",
+    ])("selects contract tests for an instruction-only change: %s", (file) => {
+        const config = parseConfig(readFileSync(path.join(repoRoot, ".agents/qa-run.matrix.json"), "utf8"), "repo matrix");
+        for (const mode of ["full", "rerun"]) {
+            const active = detectActiveSections([file], config, mode);
+            expect(active.INSTRUCTIONS_CHANGED).toBe(true);
+            expect(active.PUBLIC_DOCS_CHANGED).toBe(true);
+            expect(active.JS_TS_CHANGED).toBe(false);
+        }
+        const commands = config.sections.INSTRUCTIONS_CHANGED.commands.map(command => command.cmd).join("\n");
+        for (const test of ["skills-shared-files.test.mjs", "skill-description-contract.test.mjs", "catalog-inventory.test.mjs", "context-scout-agent-contract.test.mjs"]) {
+            expect(commands).toContain(test);
+        }
+
+        // Exercise the real Git detection + CLI on an isolated repository. Stub
+        // commands only: this tests selection, never recursively starts real QA.
+        const raw = JSON.parse(readFileSync(path.join(repoRoot, ".agents/qa-run.matrix.json"), "utf8"));
+        for (const section of Object.values(raw.sections)) {
+            section.commands = section.commands.map(() => 'node -e "process.exit(0)"');
+        }
+        const {configPath, tempRoot} = writeMatrixConfig(raw);
+        expect(spawnSync("git", ["init", "--quiet", tempRoot]).status).toBe(0);
+        mkdirSync(path.dirname(path.join(tempRoot, file)), {recursive: true});
+        writeFileSync(path.join(tempRoot, file), "# Synthetic instruction\n");
+        const result = spawnSync("node", [runnerPath, "--config", configPath, "--rerun-reason", "initial"], {
+            cwd: tempRoot,
+            encoding: "utf8",
+            env: {...process.env, CACHE_PATH: path.join(tempRoot, "cache")},
+        });
+        expect(result.status, result.stderr).toBe(0);
+        const summary = readSummary(result, tempRoot);
+        expect(summary.activeSections).toContain("INSTRUCTIONS_CHANGED");
+        expect(summary.commands.some(command => command.section === "INSTRUCTIONS_CHANGED")).toBe(true);
+    });
+
+    it("selects the link gate for docs and target changes, not unrelated consumer source", () => {
+        const config = parseConfig(readFileSync(path.join(repoRoot, ".agents/qa-run.matrix.json"), "utf8"), "repo matrix");
+        for (const file of ["README.md", "SECURITY.md", "docs/new-guide.md", ".agents/skills/example/data.txt", "distribution/example.json"]) {
+            expect(detectActiveSections([file], config, "rerun").PUBLIC_DOCS_CHANGED, file).toBe(true);
+        }
+        expect(config.sections.PUBLIC_DOCS_CHANGED.commands.map(command => command.cmd)).toEqual([
+            "npm run test:unit -- tests/documentation/local-links.test.mjs",
+        ]);
+        expect(detectActiveSections(["src/Application.php"], config, "rerun").INSTRUCTIONS_CHANGED).toBe(false);
+        expect(detectActiveSections(["src/Application.php"], config, "rerun").PUBLIC_DOCS_CHANGED).toBe(false);
+        expect(detectActiveSections([], config, "rerun").INSTRUCTIONS_CHANGED).toBe(false);
     });
 
     it("keeps bundled dist machine-output commands aligned with current proxy contract", () => {
@@ -981,12 +1033,12 @@ function runMatrixConfig(configPath, tempRoot, args) {
     });
 }
 
-function readSummary(result) {
+function readSummary(result, root = repoRoot) {
     const output = `${result.stdout}\n${result.stderr}`;
     const match = output.match(/INFO: QA summary written: (.+)$/m);
     expect(match, output).not.toBeNull();
 
-    const summaryPath = path.resolve(repoRoot, match[1]);
+    const summaryPath = path.resolve(root, match[1]);
     return JSON.parse(readFileSync(summaryPath, "utf-8"));
 }
 

@@ -30,6 +30,7 @@ function writeFixtures(dir, mode = "targeted") {
         repository: "",
         branch: "",
         head: "",
+        stack_profile: "generic",
         rules: ["AGENTS.md"],
         documentation: [],
         "active_overrides": [],
@@ -37,9 +38,6 @@ function writeFixtures(dir, mode = "targeted") {
         "already_read": ["AGENTS.md"],
         omitted: [],
     });
-    if (!sourceManifest.repository) {
-        sourceManifest.repository = "local/repository";
-    }
     fs.writeFileSync(manifest, JSON.stringify(sourceManifest));
     fs.writeFileSync(handoff, JSON.stringify({
         mode,

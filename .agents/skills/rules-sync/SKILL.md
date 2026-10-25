@@ -9,6 +9,8 @@ shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
+  - _shared/references/project-profiles.md
+  - _shared/scripts/env-load.sh
   - _shared/references/cqrs-monolith-standard-overrides.md
 ---
 
@@ -70,8 +72,7 @@ Fallback resolve ścieżek:
   - wszystkie `<skills_root>/*/SKILL.md` (z pominięciem `<skills_root>/_shared/` i tego skilla),
   - `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`,
   - `<skills_root>/_shared/references/runtime-quality-procedures.md`,
-  - `<skills_root>/_shared/references/php-symfony-postgres-standards.md`,
-  - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`.
+  - wyłącznie standardy aktywowane według `<skills_root>/_shared/references/project-profiles.md` (także przy czytaniu odwołań ze skilli).
 
 Poza zakresem:
 - dokumentacja domenowa i modułowa (`MAIN_DOC`, `MODULE_DOCS_GLOB`),
@@ -82,6 +83,11 @@ Poza zakresem:
 - Nadpisanie lokalne: świadoma reguła repo, która doprecyzowuje, zawęża lub zmienia baseline ze skilli/_shared.
 
 ## Kroki
+Przed krokami poniżej rozstrzygnij profil według
+`<skills_root>/_shared/references/project-profiles.md`; błąd konfiguracji
+zatrzymuje procedurę przed zmianami. Nie usuwaj lokalnych zasad stacka jako
+duplikatów nieaktywnych standardów; migracja należy do tej referencji.
+
 1. Otwórz `AGENTS.md` i odczytaj `docs_map`.
    - Jeśli mapy brak: zatrzymaj się i dopytaj użytkownika.
 2. Odczytaj `MAIN_DOC` (jeśli istnieje) i wyznacz bazowy katalog wyszukiwania `<dirname(MAIN_DOC)>`.
@@ -166,4 +172,4 @@ Lokalna dokumentacja zasad jest odchudzona, nie dubluje procedur ze skilli/_shar
 - Brak pliku `quality_procedures_doc_path` — utwórz minimalny dokument i kontynuuj.
 - Brak pliku `agent_rules_doc_path` — pomiń bez błędu i zgłoś to w raporcie.
 - Brak kluczowych plików `_shared` — zgłoś brak i nie usuwaj reguł, których nie da się zweryfikować.
-- Aktywny `CQRS_MONOLITH_STANDARD_OVERRIDES=1` — traktuj override jako część źródeł prawdy podczas deduplikacji.
+- Aktywne standardy podczas deduplikacji wyznacza `<skills_root>/_shared/references/project-profiles.md`.

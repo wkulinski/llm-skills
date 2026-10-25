@@ -23,7 +23,7 @@ function requiredString(value, code) {
 }
 
 function points(value, code = "INVALID_LEADERBOARD") {
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 70) fail(code);
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) fail(code);
     return value;
 }
 
@@ -53,9 +53,11 @@ function elements(html, tag) {
 }
 
 /** A deliberately narrow, fail-closed adapter for the server-rendered table.
- * It is not a general HTML parser. A layout/scale change requires a new adapter.
- * Labels stay exactly as displayed; pairing them with local profiles is the
- * agent's job, so the parser never derives model identity or reasoning.
+ * It is not a general HTML parser. A layout change requires a new adapter.
+ * Labels stay as displayed, suffixed with the harness from "Tested with" when
+ * present (the same model appears once per harness): `Model (High) — OpenCode`.
+ * Pairing them with local profiles is the agent's job, so the parser never
+ * derives model identity or reasoning. Single-cell rows (banners) are skipped.
  */
 export function parseLeaderboardHtml(html) {
     if (typeof html !== "string" || !html.trim()) fail();
@@ -71,12 +73,15 @@ export function parseLeaderboardHtml(html) {
     if (headings.length !== 2) fail();
     if (heads[0].body.replace(/<tr\b[^>]*>[\s\S]*?<\/tr\s*>/gi, "").trim()) fail();
     const headers = elements(headings[0].body, "th").map(({body}) => plainText(body.replace(/<[^>]+>/g, " ")));
-    if (headers[0] !== "#" || headers[1] !== "Model" || headers[2] !== "Total points (max 70)") fail();
+    if (headers[0] !== "#" || headers[1] !== "Model" || !headers[2]?.startsWith("Total points")
+        || headers[6] !== "Tested with") fail();
     const rows = elements(bodies[0].body, "tr");
     if (!rows.length || bodies[0].body.replace(/<tr\b[^>]*>[\s\S]*?<\/tr\s*>/gi, "").trim()) fail();
-    const entries = rows.map(({body}) => {
+    const entries = rows.flatMap(({body}) => {
         const cells = elements(body, "td");
-        if (cells.length !== 11 || body.replace(/<td\b[^>]*>[\s\S]*?<\/td\s*>/gi, "").trim()) fail();
+        if (body.replace(/<td\b[^>]*>[\s\S]*?<\/td\s*>/gi, "").trim()) fail();
+        if (cells.length === 1) return [];
+        if (cells.length !== 11) fail();
         if (!/^[1-9][0-9]*$/.test(plainText(cells[0].body))) fail();
         const link = cells[1].body.trim().match(/^<a\b([^>]*)>([^<]*)<\/a\s*>$/i);
         if (!link) fail();
@@ -84,7 +89,9 @@ export function parseLeaderboardHtml(html) {
         if (hrefs.length !== 1 || !/^https:\/\/aicodingdaily\.com\/model\/[a-z0-9-]+$/.test(hrefs[0][2])) fail();
         const score = plainText(cells[2].body);
         if (!/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(score)) fail();
-        return {label: plainText(link[2]), totalPoints: points(Number(score))};
+        const harness = plainText(cells[6].body.replace(/<time\b[^>]*>[^<]*<\/time\s*>/gi, "").replace(/<br\s*\/?>/gi, " "));
+        const model = plainText(link[2]);
+        return [{label: harness ? `${model} — ${harness}` : model, totalPoints: points(Number(score))}];
     });
     return normalizeEntries(entries);
 }

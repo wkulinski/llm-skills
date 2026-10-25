@@ -9,6 +9,8 @@ shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
   - _shared/references/php-symfony-postgres-standards.md
+  - _shared/references/project-profiles.md
+  - _shared/scripts/env-load.sh
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/scripts/is-main-module.mjs
 ---
@@ -28,6 +30,8 @@ Celem jest przeprowadzenie kompletnej procedury QA, przygotowania commit message
   - `COMMIT_MESSAGE_DIR`: katalog z plikiem `commit-message.txt`.
 - Opcjonalne:
   - `HANDOFF_DOC`: plik handoffu (lokalny, niecommitowany).
+  - `MODULE_INDEX_DOC` i `MODULE_DOCS_GLOB`: włączają krok `$docs-sync`.
+  - `SKILLS_INDEX_DOC`: włącza krok `$skills-index-refresh`.
 
 ## Reguła aktywacji
 Uruchom ten skill zawsze, gdy użytkownik wyraża intencję wykonania commita
@@ -61,8 +65,7 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
 3. Przeczytaj aktualne:
    - `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`
    - `<skills_root>/_shared/references/runtime-quality-procedures.md`
-   - `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
-   - jeśli aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`
+   - `<skills_root>/_shared/references/project-profiles.md`: rozstrzygnij profil i wczytaj wyłącznie aktywowane standardy; po błędzie konfiguracji przerwij przed poprawkami, QA i commitem.
    oraz:
    - sprawdź `git status -sb`
    - odczytaj `docs_map` i klucz `COMMIT_MESSAGE_DIR`; jeśli mapy lub klucza brakuje — przerwij i dopytaj użytkownika
@@ -77,8 +80,8 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
    - Po ukończeniu skilla, jeżeli w trakcie jego wykonania dokonywałeś poprawek, wróć do kroku 3 i kontynuuj od tego punktu włącznie.
    - Zasada: nie uruchamiaj „na boku” pojedynczych lintów/testów poza `$qa-run` tylko po to, aby „coś się uruchomiło”.
    - Jeśli `$qa-run` zdecyduje, że nie ma relewantnych zmian (wszystkie kategorie pominięte), to jest poprawny wynik — przejdź dalej w procedurze.
-6. Wykonaj skill `$docs-sync`.
-7. Wykonaj skill `$skills-index-refresh`.
+6. Jeśli `docs_map` definiuje `MODULE_INDEX_DOC` i `MODULE_DOCS_GLOB`, wykonaj skill `$docs-sync`. W przeciwnym razie pomiń ten krok bez pytania i odnotuj pominięcie w podsumowaniu.
+7. Jeśli `docs_map` definiuje `SKILLS_INDEX_DOC`, wykonaj skill `$skills-index-refresh`. W przeciwnym razie pomiń ten krok bez pytania i odnotuj pominięcie w podsumowaniu.
    - Zmiany ograniczone do dokumentacji oraz indeksu skilli, powstałe w krokach 6-7, nie uruchamiają ponownie `$qa-run`; przejdź z nimi bezpośrednio do kroku akceptacji delty.
    - Nie interpretuj każdej zmiany po QA jako automatycznego powodu do kolejnego przebiegu. Powrót do kroku 3 i ponowne QA jest dozwolone tylko wtedy, gdy kroki 6-7 ujawniły konieczność zmiany kodu, konfiguracji lub toolingu poza dokumentacją albo inna procedura wymaga tego jawnie.
    - Jeśli taki wyjątkowy powrót jest konieczny po zakończonym `PASS`, rozpocznij nową sesję `$qa-run`; nie uruchamiaj ponownie `initial` w zakończonej sesji.

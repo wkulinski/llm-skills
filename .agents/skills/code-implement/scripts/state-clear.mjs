@@ -22,7 +22,24 @@ export function runStateClear({cachePath} = {}) {
     return {code: 0, stdout: `${statePresent ? display : readEventsDisplay} (cleared)\n`};
 }
 
-async function main() {
+function usage() {
+    return [
+        "Usage: state-clear.mjs",
+        "Removes the code-implement state file and its read-event log.",
+        "Takes no arguments. Help (`--help` or `-h`) exits with code 0 without touching state.",
+    ].join("\n");
+}
+
+async function main(argv) {
+    if (argv.length === 1 && (argv[0] === "--help" || argv[0] === "-h")) {
+        process.stdout.write(`${usage()}\n`);
+        return;
+    }
+    if (argv.length > 0) {
+        process.stderr.write(`ERROR: unexpected arguments: ${argv.join(" ")}\n${usage()}\n`);
+        process.exitCode = 2;
+        return;
+    }
     const result = runStateClear();
     if (result.stdout) { process.stdout.write(result.stdout); }
     if (result.stderr) { process.stderr.write(result.stderr); }
@@ -30,7 +47,7 @@ async function main() {
 }
 
 if (isMainModule(import.meta.url)) {
-    main().catch((error) => {
+    main(process.argv.slice(2)).catch((error) => {
         process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
         process.exitCode = 1;
     });

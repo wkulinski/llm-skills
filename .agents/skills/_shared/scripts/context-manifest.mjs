@@ -13,6 +13,7 @@ const REQUIRED_KEYS = [
     "repository",
     "branch",
     "head",
+    "stack_profile",
     "rules",
     "documentation",
     "active_overrides",
@@ -23,6 +24,7 @@ const REQUIRED_KEYS = [
 ];
 
 const ROLES = new Set(["primary", "context-refresher"]);
+const STACK_PROFILES = new Set(["generic", "php-symfony-postgres"]);
 const PATH_KEYS = ["rules", "documentation", "already_read", "omitted"];
 const WORKTREE_HASH_KEYS = ["staged_sha256", "unstaged_sha256", "untracked_sha256", "combined_sha256"];
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
@@ -100,12 +102,20 @@ function normalizeRepository(value) {
         .replace(/\.git$/, "");
 }
 
+/** Origin remote when present; otherwise a local identifier from the repository root name. */
+function repositoryIdentity(execFile, cwd) {
+    const origin = normalizeRepository(gitValue(["remote", "get-url", "origin"], execFile, cwd));
+    if (origin) { return origin; }
+    const toplevel = gitValue(["rev-parse", "--show-toplevel"], execFile, cwd);
+    return toplevel ? `local/${path.basename(toplevel)}` : "";
+}
+
 export function enrichContextManifest(manifest, {execFile = execFileSync, now = new Date(), cwd = process.cwd()} = {}) {
     const repositoryRoot = path.resolve(cwd);
     return {
         ...manifest,
         version: manifest.version ?? 1,
-        repository: manifest.repository || normalizeRepository(gitValue(["remote", "get-url", "origin"], execFile, repositoryRoot)),
+        repository: manifest.repository || repositoryIdentity(execFile, repositoryRoot),
         branch: manifest.branch || gitValue(["branch", "--show-current"], execFile, repositoryRoot) || "detached",
         head: manifest.head || gitValue(["rev-parse", "HEAD"], execFile, repositoryRoot),
         worktree: getWorktreeFingerprint({cwd: repositoryRoot, execFile}),
@@ -128,6 +138,9 @@ export function validateContextManifest(manifest) {
 
     if (manifest.version !== 1) { errors.push("version must be 1"); }
     if (!ROLES.has(manifest.role)) { errors.push("role must be primary or context-refresher"); }
+    if (!STACK_PROFILES.has(manifest.stack_profile)) {
+        errors.push("stack_profile must be generic or php-symfony-postgres (result of resolve_stack_profile)");
+    }
     for (const key of ["repository", "branch", "head"]) {
         if (typeof manifest[key] !== "string" || manifest[key].trim() === "") {
             errors.push(`${key} must be a non-empty string`);
@@ -173,7 +186,7 @@ export function renderContextManifestSummary(manifest) {
 
     return [
         `context-manifest v${manifest.version} (${manifest.role})`,
-        `repository=${manifest.repository} branch=${manifest.branch}`,
+        `repository=${manifest.repository} branch=${manifest.branch} stack_profile=${manifest.stack_profile}`,
         `head=${manifest.head ?? "unknown"}`,
         `rules=${manifest.rules.length} documentation=${manifest.documentation.length} already_read=${manifest.already_read.length}`,
         `overrides=${manifest.active_overrides.length} constraints=${manifest.constraints.length} omitted=${manifest.omitted.length}`,
@@ -191,7 +204,7 @@ function parseOutputPath(args) {
 
 export function currentGitMetadata(cwd = process.cwd()) {
     return {
-        repository: normalizeRepository(gitValue(["remote", "get-url", "origin"], execFileSync, cwd)),
+        repository: repositoryIdentity(execFileSync, cwd),
         branch: gitValue(["branch", "--show-current"], execFileSync, cwd) || "detached",
         head: gitValue(["rev-parse", "HEAD"], execFileSync, cwd),
     };

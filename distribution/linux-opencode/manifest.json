@@ -1,0 +1,36 @@
+{
+    "version": 1,
+    "id": "linux-opencode-starter-v1",
+    "description": "12-skill starter closure, all shared files, and three conditional specialist branches. Trees expand to a sorted, hashed regular-file list at the pinned source revision.",
+    "trees": [
+        ".agents/skills/_shared",
+        ".agents/skills/agent-cache-clear",
+        ".agents/skills/code-implement",
+        ".agents/skills/code-review",
+        ".agents/skills/commit-message-write",
+        ".agents/skills/context-refresh",
+        ".agents/skills/docs-sync",
+        ".agents/skills/git-commit",
+        ".agents/skills/plan-execute",
+        ".agents/skills/qa-run",
+        ".agents/skills/review-quick",
+        ".agents/skills/skills-index-refresh",
+        ".agents/skills/task-plan",
+        ".agents/skills/dev-mate",
+        ".agents/skills/frontend-ui-consistency",
+        ".agents/skills/php-structure-refactor"
+    ],
+    "files": [
+        {"source": ".opencode/agents/context-refresher.md", "target": ".opencode/agents/context-refresher.md"},
+        {"source": ".opencode/agents/context-scout-fast.md", "target": ".opencode/agents/context-scout-fast.md"},
+        {"source": ".opencode/agents/context-scout.md", "target": ".opencode/agents/context-scout.md"},
+        {"source": ".opencode/plugins/session-model-env.js", "target": ".opencode/plugins/session-model-env.js"},
+        {"source": ".agents/skills/plan-execute/model-hierarchy.json.dist", "target": ".agents/skills-templates/model-hierarchy.json.dist"},
+        {"source": "distribution/linux-opencode/opencode.json.dist", "target": ".agents/skills-templates/opencode.json.dist"},
+        {"source": ".env.dist", "target": ".agents/skills-templates/env.dist"},
+        {"source": "LICENSE", "target": ".agents/skills-templates/LICENSE"}
+    ],
+    "consumerOwned": ["AGENTS.md", "opencode.jsonc", ".agents/config/model-hierarchy.json", ".agents/qa-run.matrix.json"],
+    "requiredRoles": ["context-refresher", "context-scout-fast", "context-scout"],
+    "requiredMcp": ["codebase-memory", "serena", "context7"]
+}

@@ -614,6 +614,10 @@ export function parseQuestions(body) {
             entries.push({id: note[1], type: "note", text: entryText(note[2], entryContinuation(lines, index), "  ")});
             continue;
         }
+        if (/^\s*-\s+[DN][1-9][0-9]*\b/.test(line)) {
+            errors.push(`Invalid decision entry (expected "- D1: …" or "- N1 [note]: …"): ${line.trim()}.`);
+            continue;
+        }
         if (!/^\s*-\s+Q[1-9][0-9]*/.test(line)) {
             continue;
         }

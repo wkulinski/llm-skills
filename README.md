@@ -1,331 +1,133 @@
 # Curated LLM Skills
 
-This repository is a source catalog of reusable LLM skills for PHP/Symfony/PostgreSQL projects. It contains skill definitions, shared runtime rules, and helper scripts that can be consumed from other repositories with a similar stack.
+Reusable agent workflows for taking a repository task from **context and plan**
+to **implementation, review, QA and a deliberately requested commit**. This is a
+source catalog of instructions and small helpers, not an application framework
+or an autonomous one-click coding service.
 
-## About This Repository
+The core is portable across project stacks. An **optional PHP/Symfony/PostgreSQL
+profile** retains the more specific conventions for those applications, with an
+independent CQRS/modular-monolith override. Generic projects do not inherit PHP
+rules just because the catalog ships them.
 
-### Intended stack
-These skills are tuned for:
-- PHP 8.x
-- Symfony
-- PostgreSQL
-- Doctrine ORM (with optional CQRS/monolith overrides)
+## What you get
 
-### Recommended use cases
-Use this set when you want reusable implementation workflows for:
-- feature/bugfix/refactor tasks in Symfony backends,
-- quality gates (quick review + full QA),
-- worklog + commit automation,
-- documentation consistency after code changes.
+- Workflows with explicit scope, stopping conditions and evidence rather than
+  ad-hoc prompts or an unconditional “done”.
+- Separate planning, implementation and read-only review; QA uses the consumer's
+  configured commands. Implementation does not silently become a commit request.
+- Shared runtime rules, dependency-aware delivery and context handoffs.
+- Optional specialist workflows for UI consistency, Symfony runtime diagnosis,
+  PHP structural changes, GitHub and other tasks.
 
-The skills are designed to be portable between projects using the same stack. Runtime rules required by skills live inside `.agents/skills/**`, not in project-specific `docs/` files.
+The [skills index](docs/SKILLS.md) is the single human catalog: choose by intent,
+then check stack, harness, tools/configuration, effects and dependencies. Do not
+install seven entrypoint directories and assume they form a standalone starter.
 
-### Rules model
-- Baseline standards (always on):
-  - `.agents/skills/_shared/references/php-symfony-postgres-standards.md`
-- Optional strict profile (only with env flag):
-  - `.agents/skills/_shared/references/cqrs-monolith-standard-overrides.md`
-- Runtime collaboration and quality procedures used by skills:
-  - `.agents/skills/_shared/references/runtime-collaboration-guidelines.md`
-  - `.agents/skills/_shared/references/runtime-quality-procedures.md`
+## Requirements
 
-`AGENTS.md` in this repository root is reserved for rules specific to this repository as a skills catalog, not for runtime rules of consumer projects.
+The reference environment is **Linux with OpenCode**. Expect to prepare Git,
+Bash, Node.js 22+, an authenticated model provider, native context-role adapters
+and the required MCP tools (`codebase-memory`, `serena`, `context7`). Copying
+skills alone does not configure the agent runtime. Model use can incur provider
+charges. PHP, Playwright and other specialist tools are needed only by the
+workflows that declare them; see [configuration](docs/CONFIGURATION.md).
 
-## Using These Skills in Another Project
+This is for users who already work with a coding agent and can review local
+configuration and changes. Start on a disposable copy or recoverable snapshot,
+not a production checkout with unprotected changes or credentials.
 
-### Recommended installation and management
-For installing, updating, and managing these skills in consumer repositories, use [LLM Skills Manager (LSM)](https://github.com/wkulinski/lsm).
+Before granting tool/account access, read [Security and trust boundaries](SECURITY.md):
+read-only review is not a sandbox, snapshot checks detect rather than prevent
+changes, and external writes or delegated model sessions can have real effects
+and costs. The same page explains safe security reporting without public secrets.
 
-Treat this repository as the source catalog, and use LSM as the default operational workflow for:
-- installing selected skills into a target project,
-- updating synchronized skills,
-- managing additions and removals in a controlled way.
+## First result
 
-Prefer LSM over manually copying or maintaining `.agents/skills/**` in downstream projects.
+1. Install with the recommended [LLM Skills Manager (LSM)](https://github.com/wkulinski/lsm),
+   or use the independent [pinned-source reference procedure](docs/INSTALLATION.md).
+2. Merge the [minimal consumer configuration](docs/CONFIGURATION.md#ownership-and-skill-paths),
+   configure the OpenCode roles/MCP access, and restart the harness.
+3. Follow [First safe result](docs/FIRST-USE.md) for the local generic-profile
+   check and send this prompt from the **consumer root**:
 
-### Claude Code access to skills
-`.agents/skills` is the only authored source. Claude Code reads skills from `.claude/skills`, which is materialized differently per environment:
+```text
+$context-refresh Quick. Load this project's context and report the manifest path
+and any missing configuration. Do not edit application code, run full QA, or commit.
+```
 
-- **This repository:** `.claude/skills` is a tracked relative symlink to `../.agents/skills`, so every clone already contains it. `tests/skills/_shared/claude-skills-access.test.mjs` checks that the link resolves every skill and `_shared` to the same physical files. On Windows enable `core.symlinks` (Developer Mode); otherwise git writes the link as a plain text file and the test fails.
-- **Downstream projects:** skills arrive as regular physical copies installed by LSM, never as symlinks to this catalog. LSM clones this repository, skips symlinks (including `.claude/skills`) and copies only regular files from `.agents/skills`. The copy contract this repository requires from LSM is described in `docs/drafts/lsm-skill-projection-brief.md`; it is a requirement, not a statement that a released LSM version already supports the Claude target.
+Expect a context summary, the actual documentation paths used and a validated
+local manifest/change inventory — or a concrete missing dependency, not a guessed
+success. Ignored cache/state may be written; application code should not change.
+This prompt is for the agent, **not Bash**. The walkthrough explains prerequisites
+and expected results; [troubleshooting](docs/TROUBLESHOOTING.md) explains failures.
 
-LSM does not synchronize configuration or memory: `.claude/settings.json`, `CLAUDE.md`, `AGENTS.md`, `opencode.jsonc`, `.mcp.json`, workspace trust and permissions stay owned by the consumer project. When the same skills exist as two physical copies (`.agents/skills` and `.claude/skills`), OpenCode may list them twice; the consumer can opt into `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`.
+## Installation and ownership
+
+LSM is the recommended installation/update workflow. This catalog defines
+[the delivery contract](docs/INSTALLATION.md#delivery-and-ownership); LSM is
+responsible for implementing it correctly. Installer release testing and
+certification belong to LSM, not this repository.
+
+The [versioned manifest](distribution/linux-opencode/manifest.json) covers the
+starter closure, shared files, role adapters, session plugin and configuration
+templates. The [reference procedure](docs/INSTALLATION.md) includes preview,
+preflight, update and rollback. Consumer rules, active env/secrets, model hierarchy,
+QA matrix and harness/MCP configuration remain consumer-owned. Use regular files,
+not symlinks into the author's checkout.
 
 ### What to paste into project `AGENTS.md`
-If a consumer project uses these skills, add the following blocks to that project's `AGENTS.md`.
 
-#### 1. Skill path resolution contract
-```md
-## Globalny kontrakt ścieżek dla skilli
-- Po wybraniu skilla agent zna pełną ścieżkę do aktywnego `SKILL.md`.
+Use the [minimal map and canonical path-contract reference](docs/CONFIGURATION.md#ownership-and-skill-paths).
+Add keys only for the workflows you use. Documentation paths are normally
+repository-relative; **`COMMIT_MESSAGE_DIR` explicitly permits an absolute
+directory such as `/tmp/`**. Do not copy this catalog's `AGENTS.md` into your app.
 
-Definicje:
-- `skill_dir` oznacza katalog aktywnego `SKILL.md`.
-- `skills_root` oznacza katalog nadrzędny wobec `skill_dir`.
+### OpenCode agent runtime (model + thinking)
 
-## Notacja ścieżek w skillach
-- W treści `SKILL.md` używaj wyłącznie jawnej notacji:
-    - `./...` dla ścieżek repo-relative (`./` = root repo),
-    - `<skill_dir>/...` dla plików należących do aktywnego skilla,
-    - `<skills_root>/_shared/...` dla plików współdzielonych,
-    - `<skills_root>/<nazwa-skilla>/SKILL.md` dla odwołań do innych skilli.
-- Nie używaj w treści `SKILL.md` gołych ścieżek względnych typu `scripts/...`, `references/...`, `assets/...`, `templates/...`, `_shared/...` ani `../...`.
-- Frontmatter `shared_files` pozostaje zapisywany bez placeholderów, ewentualnie do `skills_root`, bo jest konsumowany przez tooling repo.
-- Jeśli skill wskazuje plik lub skrypt, agent ma użyć dokładnie tej ścieżki po podstawieniu placeholderów według powyższej notacji.
-- Brak pliku, brak skryptu, brak prawa wykonania albo błąd uruchomienia wymaganego skryptu jest twardym błędem procedury.
-- W takim przypadku agent przerywa wykonanie i czeka na decyzję użytkownika.
-- Agent nie stosuje fallbacków ani obejść dla brakujących lub niesprawnych skryptów.
-```
+Configure models/reasoning and MCP access in consumer OpenCode config, not `.env`
+or role Markdown. Follow the [runtime/session-plugin guide](docs/CONFIGURATION.md#opencode-agent-runtime-model--thinking)
+and restart the OpenCode process after configuration changes. The
+[hybrid policy](.agents/skills/_shared/references/repository-context-hybrid.md)
+owns context discovery; the guides do not create a second delegation procedure.
 
-#### 2. `docs_map` block
-Start with a minimal map and add more keys only for skills you actually use.
+## Supported environment and verification status
 
-Minimal example:
-```yaml
-docs_map:
-    MAIN_DOC: docs/README.md
-    AGENT_RULES_DOC: docs/AGENTS.md
-    COMMIT_MESSAGE_DIR: /tmp/
-    HANDOFF_DOC: var/agent/HANDOFF.md
-    SKILLS_INDEX_DOC: docs/SKILLS.md
-```
+The first public release targets **OpenCode on Linux**. This is a release target,
+not a claim that every workflow has passed a consumer run. Other agent
+environments (Claude Code, Codex) and operating systems have no runtime guarantee
+from file availability alone. Statuses describe skill workflows, not installers.
 
-Extended example:
-```yaml
-docs_map:
-    MAIN_DOC: docs/README.md
-    AGENT_RULES_DOC: docs/AGENTS.md
-    QUALITY_PROCEDURES_DOC: docs/QUALITY-PROCEDURES.md
-    MODULE_INDEX_DOC: docs/modules/README.md
-    MODULE_DOCS_GLOB: docs/modules/*/README.md
-    TESTS_README: docs/tests/README.md
-    COMMIT_MESSAGE_DIR: /tmp/
-    HANDOFF_DOC: var/agent/HANDOFF.md
-    SKILLS_INDEX_DOC: docs/SKILLS.md
-```
+| Status | Meaning |
+| --- | --- |
+| Verified | Documented contract, passing deterministic checks and a recorded consumer run for a named environment |
+| Experimental | Contract available, but behavior may change or evidence is incomplete |
+| Unverified | No consumer run has been performed |
 
-Key semantics:
-- `*_DOC`: single file path
-- `*_DIR`: directory path
-- All paths are repo-relative.
+Until recorded evidence says otherwise, treat a skill as **Unverified**. See the
+[per-skill requirements and evidence](docs/SKILLS.md#support-metrics); a passing
+file-copy test does not promote a workflow's support status.
 
-Required vs optional keys in this skills set:
-- Required by `context-refresh`: `MAIN_DOC`
-- Required by `docs-sync`: `MAIN_DOC`, `MODULE_INDEX_DOC`, `MODULE_DOCS_GLOB`
-- Required by `docs-todo`: `MAIN_DOC`, `MODULE_DOCS_GLOB`
-- Required by `commit-message-write`: `COMMIT_MESSAGE_DIR`
-- Required by `handoff-refresh`: `HANDOFF_DOC`
-- Required by `skills-index-refresh`: `SKILLS_INDEX_DOC`
-- Required by `git-commit`: `COMMIT_MESSAGE_DIR`
-- Optional in selected skills: `TESTS_README`, `HANDOFF_DOC`, `SKILLS_INDEX_DOC`, `MODULE_INDEX_DOC`, `MODULE_DOCS_GLOB`, `COMMIT_MESSAGE_DIR`
+## Language and sources of truth
 
-Important:
-- You do not have to define every key globally.
-- Define only keys needed by skills you actually use in the target project.
-- Missing a required key blocks only the currently invoked skill; it does not invalidate the whole skills set.
-- If a required key is missing, the skill should stop and ask for the missing path instead of guessing.
+Public user documentation is **English**. Skill descriptions and `SKILL.md`
+instructions remain **Polish**; there is no second full language edition. The
+agent can still be asked to report in your preferred language.
 
-Configuration boundary:
-- `.env` keys like `BIN_PATH` and `CACHE_PATH` are runtime or environment configuration.
-- `docs_map` in `AGENTS.md` is repository structure configuration.
+Skills own operational procedures. Shared references own common runtime rules;
+consumer `AGENTS.md` owns local project rules and documentation paths. Guides
+explain setup and expected outcomes, not replacement QA/commit/review algorithms.
+For PHP activation and migration, use the
+[project-profile contract](.agents/skills/_shared/references/project-profiles.md).
 
-## Runtime Setup for Consumer Projects
+## Documentation and contributing
 
-## Development in This Repository
+- [Documentation map](docs/README.md)
+- [First use](docs/FIRST-USE.md) · [Configuration](docs/CONFIGURATION.md) · [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Installation, update and rollback](docs/INSTALLATION.md)
+- [Developing this catalog](docs/DEVELOPMENT.md) — tests, authoring and catalog-local extensions
 
-### Tests
-This repository uses Vitest for executable tests around skill helper scripts.
+## License
 
-Run the test suite with:
-```bash
-npm test
-```
-
-The local QA matrix (`.agents/qa-run.matrix.json`) runs `npm test` when Node scripts, test files, or package metadata change.
-
-### Shell Script Standard
-Keep a script as `sh` when it is mostly glue:
-- env loading,
-- path wiring,
-- `git` or filesystem orchestration,
-- traps and cleanup,
-- simple argument dispatch.
-
-Move logic to `mjs` when the script starts to contain real behavior:
-- parsing and normalization,
-- branching with non-trivial rules,
-- JSON or structured output,
-- transformations that are easier to unit test.
-
-Preferred testing split:
-- `sh`: `bash -n`, then a focused smoke test for the real entrypoint and exit code.
-- `sh` with non-trivial logic: keep a thin shell wrapper and move the logic into `mjs`.
-- `mjs`: test with Vitest, using temp directories and fixture files instead of the real repo state.
-
-Rule of thumb: do not rewrite a shell helper to `mjs` just because Vitest exists. Rewrite only when the shell is becoming hard to reason about or hard to test without fragile integration setup.
-
-### Environment contract
-Minimal `.env.local` or `.env.dist` variables used by this repository:
-- `GH_TOKEN` (optional): token for GitHub CLI/MCP work.
-- `BIN_PATH` (optional): wrapper prefix for project tools (proxy path).
-- `CACHE_PATH` (optional): local agent cache/state directory.
-- `OWC_PATH` (optional): persistent OpenCode Workflow Economics report directory.
-- `CQRS_MONOLITH_STANDARD_OVERRIDES` (`0|1`): enables CQRS/monolith overrides.
-
-Shell scripts in `.agents/skills/**/scripts` auto-load `.env` and `.env.local` through `.agents/skills/_shared/scripts/env-load.sh`. This helper also exposes `resolve_tool_cmd` for deterministic entrypoint resolution.
-
-#### OpenCode agent runtime (model + thinking)
-
-Project-local `opencode.jsonc` owns every subagent's model and thinking configuration. Subagent definitions in `.opencode/agents/*.md` do not carry `model`, `variant`, or `options.thinking`; OpenCode resolves those runtime settings from the project config when it loads the instance for this project directory.
-
-Repository `.env` files remain reserved for script configuration and secrets such as tool paths, cache paths, profile flags, and `GH_TOKEN`. They do not configure subagent models or thinking levels.
-
-To configure a subagent, edit the `agent` section in the project's `opencode.jsonc`. Use the filename without `.md` as the agent key:
-
-```jsonc
-{
-    "agent": {
-        "context-scout": {
-            "model": "openai/gpt-5.6-luna",
-            "variant": "high"
-        },
-        "context-scout-fast": {
-            "model": "commandcode/deepseek/deepseek-v4.1-flash",
-            "options": {
-                "thinking": {
-                    "type": "disabled"
-                }
-            }
-        }
-    }
-}
-```
-
-Use `model` for the provider/model identifier. For regular subagents use `variant` for the reasoning level. `context-scout-fast` is the exception: its provider-specific reasoning setting is configured as `options.thinking.type`. Apply the regular pattern to `context-refresher` as well.
-
-Implementation, frontend quality and runtime diagnostics are procedures owned by
-`code-implement`, `frontend-ui-consistency` and `dev-mate`, respectively. The
-current agent executes those skills without requiring dedicated subagents.
-Context initialization and repository-context discovery retain their existing
-delegation policies.
-
-OpenCode reads this file once when it loads the project instance and keeps it for the lifetime of the running process. Restart OpenCode (for `opencode web`, the server process) after changing these settings; opening another session in an already-loaded instance does not reload them. Verify the resolved configuration from the project root with:
-
-```bash
-opencode debug agent context-scout
-opencode debug agent context-scout-fast
-```
-
-Do not put model or thinking settings back into `.opencode/agents/*.md`, and do not add `OPENCODE_AGENT_*` variables to `.env`; those files have different responsibilities.
-
-##### Session model environment (`.opencode/plugins/session-model-env.js`)
-
-OpenCode 1.18.x does not expose the active model or reasoning level to shell commands (upstream requests [#10453](https://github.com/anomalyco/opencode/issues/10453) and [#10247](https://github.com/anomalyco/opencode/issues/10247) remain closed and unimplemented). Skills that must compare the current profile against a work-package requirement would otherwise guess it from logs, the session database, or the user.
-
-The project plugin `.opencode/plugins/session-model-env.js` closes that gap. It caches the resolved model on `chat.message` and falls back to `client.session.get` on a cold session, then adds these variables to every agent shell command through the `shell.env` hook:
-
-| Variable | Example | Meaning |
-|---|---|---|
-| `OPENCODE_SESSION_MODEL` | `commandcode/deepseek/deepseek-v4.1-flash` | Runtime `provider/model` identifier; `model-hierarchy.json` comparison ignores the provider prefix |
-| `OPENCODE_SESSION_VARIANT` | `max` | Resolved reasoning variant; omitted when the runtime reports the neutral `default` |
-| `OPENCODE_SESSION_AGENT` | `build` | Agent name, for diagnostics |
-| `OPENCODE_SESSION_ID` | `ses_…` | Session id, for diagnostics |
-
-```bash
-# The plugin is loaded automatically from the project directory.
-# After a restart, ask the agent to print the resolved profile:
-opencode run "Run exactly: echo \"MODEL=\$OPENCODE_SESSION_MODEL VARIANT=\$OPENCODE_SESSION_VARIANT\""
-```
-
-`$plan-execute` uses this contract with harness-portable fallbacks. `execute.mjs check-environment` resolves the current profile from the first available source:
-
-1. `OPENCODE_SESSION_MODEL`/`OPENCODE_SESSION_VARIANT` (`source: "session-env"`, the plugin path);
-2. explicit `--current-model`/`--current-reasoning` (`source: "flags"`, e.g. a harness that exposes its own model flags).
-
-The gate then has two disjoint branches:
-
-- **Local pair.** When the current profile is in `.agents/config/model-hierarchy.json`, the local order decides: the profile is sufficient only when it ranks at or above the WP requirement. No ranking is fetched, and benchmark points cannot override the local order.
-- **Pair outside the hierarchy.** Without ranking labels the helper returns `action: "pairing-required"` and fetches nothing. The agent prints the fresh ranking rows with `node .agents/skills/_shared/scripts/model-leaderboard.mjs entries` (into its context only, never to a file), picks the exact row labels for the required and the current profile, and reruns the check with `--required-label "<label>" --current-label "<label>"`. The helper fetches the ranking again, reads both points from that single read and admits `currentPoints >= requiredPoints - 2` (`source: "leaderboard"`).
-
-Profile matching in the local hierarchy compares the model path without the provider prefix: `commandcode/deepseek/deepseek-v4.1-flash` and `deepseek/deepseek-v4.1-flash` are the same profile, while the reasoning level must match exactly. Distinct model names that only share a segment prefix (for example `gpt-6-sol` and `gpt-6-sol-lite`) never match.
-
-An unknown current profile, a label missing from the fresh ranking, the same label for both sides, or a network failure returns `action: "decision-required"` instead of a guessed score; a profile that is automatically too weak returns `action: "change-environment"`. Both results offer `options: ["change-profile", "user-attested", "stop"]`. Only `action: "execute"` with `sufficient: true` admits the work package; the exit code alone does not.
-
-A user attestation is an explicit exception for one work package, used only after the user confirms it: `--user-attested --attested-wp <WPn>`, plus `--attested-model`/`--attested-reasoning` matching the observed profile when one is observable. A changed work package or profile yields `ATTESTATION_SCOPE_MISMATCH`. The result has `source: "user-attested"` and `attestation: {wpId, profile, reusable: false}`; nothing is persisted for reuse. The helper still requires a `ready` plan and validates the required profile against the hierarchy (`UNRANKED_REQUIRED_PROFILE` when unknown).
-
-Operational notes:
-- The plugin loads once at startup, like `opencode.jsonc`; restart OpenCode after adding or changing it.
-- Consumer projects must receive `.opencode/plugins/session-model-env.js` together with the skills, the same way LSM synchronizes `.opencode/agents/*.md`; a project without the plugin falls back to explicit flags or a user attestation instead of guessing.
-- Terminal `!` commands (PTY) in 1.18.31 do not receive a `sessionID` on `shell.env`; the variables are available in agent bash calls, which is the path all skills use.
-- The lookup is best-effort: a failed or slow session API call never breaks the shell command, it only leaves the variables unset.
-- When upstream ships native `OPENCODE_MODEL_FULL_ID`-style variables (draft PR [#10451](https://github.com/anomalyco/opencode/pull/10451)), this plugin can be removed in favor of the built-in contract.
-
-##### Context price guard (`.opencode/plugins/context-price-guard.js`)
-
-The project-local plugin tracks request input tokens, including cache-read and
-cache-write tokens, for every model used through the OpenAI provider. When a
-session reaches a higher warning level, it posts a no-reply notification with
-the current token count and a handoff recommendation. The same fixed thresholds
-apply to every OpenAI model:
-
-| Input-token threshold | Notification |
-|---|---|
-| 230,000 | Context heads-up |
-| 240,000 | Handoff recommended |
-| 250,000 | Handoff now |
-| 265,000 | Critical context |
-| More than 272,000 | Configured high-token threshold exceeded |
-
-The plugin does not send these notifications for other providers. It does not
-derive thresholds from a model's context window or pricing schedule, so a model
-whose context limit is below a warning level may not reach that level. If token
-usage drops below the last reached level, crossing that level again can produce
-another notification. Restart OpenCode after adding or changing the plugin.
-
-##### Removing an agent and orphan overrides
-
-Removing a managed agent means removing both the file and its `agent` entry. An existing consumer instance can keep an `agent` key after the matching `.opencode/agents/<name>.md` disappears; OpenCode can then recreate that agent from the leftover key with default mode and permissions. Treat such an orphan override as a migration defect, not as a harmless leftover.
-
-Before removing an agent role from this catalog:
-
-1. remove `.opencode/agents/<name>.md` and the `agent.<name>` key from `opencode.jsonc` together;
-2. keep every remaining `agent` key backed by a file, or by a documented built-in such as `build` and `title`;
-3. after publishing the change, ask consumers to drop the removed key from their `opencode.jsonc` and restart OpenCode, because a running instance keeps the configuration it loaded at startup.
-
-Detection of orphan overrides belongs to the synchronizer that manages downstream configuration (LSM), so that it can compare resolved runtime agents with published agent files and warn about keys that no longer have an owning file. That follow-up is generic: it must not special-case the name of one removed role.
-
-For consumers that previously synchronized the removed `diff-reviewer` role, migration is a one-off cleanup: delete the stale `diff-reviewer` key from `opencode.jsonc`, remove any leftover `.opencode/agents/diff-reviewer.md`, and restart OpenCode. Naming that removed role here is migration provenance only; it is not a permanent blacklist, so no current skill, agent, or test needs to forbid the string.
-
-### Tool entrypoints
-Proxy wrappers are optional.
-
-`resolve_tool_cmd` from `.agents/skills/_shared/scripts/env-load.sh` is the single source of truth for tool entrypoints. Always run preflight through this helper; do not build tool paths manually from `BIN_PATH` and do not use extra heuristics.
-
-Recommended shell pattern:
-```bash
-source .agents/skills/_shared/scripts/env-load.sh
-COMPOSER_CMD="$(resolve_tool_cmd composer composer)"
-CONSOLE_CMD="$(resolve_tool_cmd console bin/console)"
-YARN_CMD="$(resolve_tool_cmd yarn yarn)"
-CODECEPT_CMD="$(resolve_tool_cmd codecept vendor/bin/codecept codecept)"
-```
-
-If a required command cannot be resolved by `resolve_tool_cmd`, treat it as a blocker and ask the user for the correct entrypoint. `resolve_tool_cmd` lazy-loads `.env` and `.env.local` automatically.
-
-`CACHE_PATH` is used by local cache scripts. It is auto-loaded from `.env` or `.env.local`, but you can still override it with `export` in the current shell session.
-`OWC_PATH` controls the persistent OWE report directory; without it OWE uses `$CACHE_PATH/owc` or `var/agent/cache/owc`.
-
-### MCP servers (Claude Code)
-Claude Code reads project MCP servers from `.mcp.json` in the repository root (OpenCode uses `opencode.jsonc`, Codex uses `.codex/config.toml`; the files are not interchangeable).
-
-`serena` is started by command name, so it must be on `PATH` when Claude Code starts. A `uv tool` install puts it in `~/.local/bin`, which `~/.profile` adds only for login shells; if Claude Code is launched from another kind of shell, add that directory to `PATH` or the server fails to start. Check with `command -v serena` in the shell that launches Claude Code.
-
-The `.mcp.json` entry uses `--context=claude-code`; see `serena context list` for the contexts your Serena version provides.
-
-### Deterministic QA matrix (`$qa-run`)
-`$qa-run` uses repo-level matrix config in `.agents/qa-run.matrix.json`.
-
-If the file is missing, the runner creates a default skeleton automatically. Commands are executed exactly as defined in this JSON, with no command discovery or heuristics and with fail-fast on the first error.
-
-### Optional architecture profile
-Set `CQRS_MONOLITH_STANDARD_OVERRIDES=1` to activate additional CQRS or modular-monolith conventions from `.agents/skills/_shared/references/cqrs-monolith-standard-overrides.md`.
+Original material is released under the [MIT License](LICENSE). Referenced
+third-party projects (including OpenCode, LSM and Paseo) keep their own licenses.

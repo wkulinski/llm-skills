@@ -93,6 +93,27 @@ ensure_repo_env_loaded() {
     __repo_env_loaded_root="$repo_root"
 }
 
+# Profile activation contract: _shared/references/project-profiles.md.
+resolve_stack_profile() {
+    ensure_repo_env_loaded "${1:-}" || return $?
+
+    local profile="${SKILLS_STACK_PROFILE:-generic}"
+    case "$profile" in
+        generic | php-symfony-postgres) ;;
+        *)
+            printf '%s\n' 'SKILLS_STACK_PROFILE_INVALID: expected generic or php-symfony-postgres' >&2
+            return 2
+            ;;
+    esac
+
+    if [ "$profile" = "generic" ] && [ "${CQRS_MONOLITH_STANDARD_OVERRIDES:-0}" = "1" ]; then
+        printf '%s\n' 'CQRS_OVERRIDE_REQUIRES_PHP_PROFILE: select php-symfony-postgres explicitly' >&2
+        return 2
+    fi
+
+    printf '%s\n' "$profile"
+}
+
 resolve_tool_cmd() {
     local tool_name="${1:-}"
     shift || true

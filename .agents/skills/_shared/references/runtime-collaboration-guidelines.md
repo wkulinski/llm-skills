@@ -6,37 +6,15 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
 ## 1. Mapa źródeł prawdy
 - Współpraca i sposób działania agenta: ten plik.
 - Procedura jakości (kolejność kroków): `./runtime-quality-procedures.md`.
-- Baseline techniczny stacka: `./php-symfony-postgres-standards.md`.
-- Odstępstwa architektoniczne (warunkowe): `./cqrs-monolith-standard-overrides.md`.
+- Wybór profilu i aktywnych standardów (baseline/override): `./project-profiles.md`.
 - Routing nadrzędnego workflow między skillami: `./skill-routing-policy.md`.
 - Polityka wyboru nawigacji symbolicznej i zwykłego patcha, w tym preferencji `Serena-first` gdy Serena jest dostępna: `./symbolic-navigation-and-editing-policy.md`.
 - Procedury operacyjne (QA/commit/commit-message/review): właściwe skille (`$qa-run`, `$git-commit`, `$commit-message-write`, `$review-quick`, ...).
 
 ## 1a. Reguły ścieżek i priorytetu dla skilli
-- Po wybraniu skilla agent zna pełną ścieżkę do aktywnego `SKILL.md`.
-- Definicje kontraktowe:
-  - `skill_dir` = katalog aktywnego `SKILL.md`
-  - `skills_root` = katalog nadrzędny wobec `skill_dir`
-- W treści `SKILL.md` używaj wyłącznie jawnej notacji:
-  - `./...` dla ścieżek repo-relative (`./` = root repo),
-  - `<skill_dir>/...` dla plików aktywnego skilla,
-  - `<skills_root>/_shared/...` dla plików współdzielonych,
-  - `<skills_root>/<nazwa-skilla>/SKILL.md` dla odwołań do innych skilli.
-- Nie używaj w treści `SKILL.md` gołych ścieżek względnych typu `scripts/...`, `references/...`, `assets/...`, `templates/...`, `_shared/...` ani `../...`.
-- Skill nie odwołuje się do wewnętrznych plików innego skilla (`<skills_root>/<inny-skill>/scripts|references|assets|templates|...`), ani w treści, ani w kodzie.
-  - Wspólny artefakt potrzebny więcej niż jednemu skillowi przenieś do `<skills_root>/_shared/...`; nie kopiuj go do drugiego skilla i nie sięgaj po wersję z jego katalogu.
-  - Odwołanie do innego skilla jest dozwolone wyłącznie jako wskazanie właściciela procedury przez `<skills_root>/<nazwa-skilla>/SKILL.md`, zgodnie z §6 (linkuj do źródła prawdy, nie duplikuj procedury).
-  - Naruszenie tej reguły to dług strukturalny: przy dotknięciu obszaru przenieś artefakt do `_shared` zamiast utrwalać zależność.
-- W `shared_files` ścieżki pozostają relative względem `skills_root` z powodów kompatybilności z toolingiem repo.
-- Zalecany porządek priorytetu reguł w skillach:
-  1. Instrukcje systemowe/developerskie środowiska
-  2. `./AGENTS.md` i dokumenty z `docs_map`
-  3. Bieżący `SKILL.md`
-  4. Pliki wskazane w `shared_files`
-- Wyjątek przed wyborem aktywnego skilla: routing nadrzędnego workflow odbywa się
-  według `./skill-routing-policy.md`. Bieżący `SKILL.md` nie może nadpisać tej
-  reguły, ponieważ nie został jeszcze wybrany; po wyborze obowiązują powyższe
-  priorytety dla procedur wykonawczych.
+Stosuj `./skill-structure-contract.md` — jedynego właściciela notacji ścieżek,
+priorytetu zasad, semantyki `shared_files` i entrypointów. Ten dokument nie
+ustanawia alternatywnej hierarchii.
 
 ## 2. Współpraca i komunikacja
 - Najpierw doprecyzuj cel i kryteria akceptacji; nie zgaduj, gdy brakuje kluczowych danych.
@@ -174,17 +152,11 @@ Ta lista nie luzuje żadnej bramki:
 - Nie duplikuj tej samej procedury w wielu miejscach; zamiast tego linkuj do źródła prawdy.
 
 ## 7. Baseline vs override
-- Zawsze stosuj baseline z `php-symfony-postgres-standards.md`.
-- Jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`, dołącz reguły z `cqrs-monolith-standard-overrides.md`.
-- Przy sprzeczności baseline/override: override ma pierwszeństwo.
+Rozstrzygnij profil i stosuj aktywne standardy według `./project-profiles.md`
+przed pracą; ta referencja jest też właścicielem migracji konsumentów.
 
 ## 8. Priorytet reguł (rozstrzyganie konfliktów)
-Stosuj zasady w tej kolejności (od najwyższego priorytetu):
-1. Polecenie użytkownika z bieżącego zadania.
-2. Lokalne zasady repo: `AGENTS.md` i wskazane przez niego dokumenty zasad. Dokumentacja modułów (`MODULE_DOCS_GLOB`) i kontrakty opisują moduły, ale nie są lokalnymi zasadami repo i nie zmieniają zasad.
-3. Aktywny profil architektoniczny z `cqrs-monolith-standard-overrides.md` (tylko gdy `CQRS_MONOLITH_STANDARD_OVERRIDES=1`).
-4. Baseline stacka z `php-symfony-postgres-standards.md`.
-5. Runtime współpracy i jakości: ten plik + `runtime-quality-procedures.md`.
-
-Reguła: poziom niższy jest fallbackiem i nie nadpisuje poziomu wyższego.
-Wyjątek: twarde guardraile bezpieczeństwa (np. zakaz destrukcyjnych komend git bez wyraźnej zgody) pozostają obowiązujące.
+Priorytet źródeł określa `./skill-structure-contract.md`, a wybór aktywnych
+standardów i relację baseline/override — `./project-profiles.md`. Dokumentacja
+modułów opisuje kontrakty, nie stanowi alternatywnej hierarchii zasad.
+Guardraile bezpieczeństwa pozostają obowiązujące.

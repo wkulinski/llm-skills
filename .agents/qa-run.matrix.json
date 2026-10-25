@@ -18,6 +18,8 @@
         "SHELL_SCRIPTS_CHANGED",
         "JS_TS_CHANGED",
         "MARKDOWN_CHANGED",
+        "INSTRUCTIONS_CHANGED",
+        "PUBLIC_DOCS_CHANGED",
         "QA_CONFIG_CHANGED"
     ],
     "sections": {
@@ -81,6 +83,37 @@
                 "full",
                 "rerun"
             ],
+            "requiresFinalFullPass": false
+        },
+        "INSTRUCTIONS_CHANGED": {
+            "patterns": [
+                ".agents/skills/**/SKILL.md",
+                ".agents/skills/_shared/references/**",
+                ".opencode/agents/**",
+                "opencode.jsonc",
+                ".agents/qa-run.matrix.json"
+            ],
+            "commands": [
+                "npm run test:unit -- tests/skills/_shared/skills-shared-files.test.mjs tests/skills/_shared/skill-description-contract.test.mjs tests/skills/skill-review/catalog-inventory.test.mjs tests/skills/_shared/context-scout-agent-contract.test.mjs"
+            ],
+            "runOn": ["full", "rerun"],
+            "requiresFinalFullPass": false
+        },
+        "PUBLIC_DOCS_CHANGED": {
+            "patterns": [
+                "*.md",
+                "docs/**",
+                ".agents/skills/**",
+                ".opencode/**",
+                "distribution/**",
+                "tests/helpers/documentation-links.mjs",
+                "tests/documentation/**",
+                ".agents/qa-run.matrix.json"
+            ],
+            "commands": [
+                "npm run test:unit -- tests/documentation/local-links.test.mjs"
+            ],
+            "runOn": ["full", "rerun"],
             "requiresFinalFullPass": false
         },
         "QA_CONFIG_CHANGED": {

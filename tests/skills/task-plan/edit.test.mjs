@@ -946,3 +946,11 @@ it("rejects an edit when its snapshot changes before the canonical save", () => 
         cleanup(fixture);
     }
 });
+
+it("rejects decision and note entries that do not match the contract format", () => {
+    const result = parseQuestions("## Decisions and open questions\n- D1 [decision]: Keep the owner.\n- N2: Missing note tag.\n- D3: Valid decision.\n");
+    assert.deepEqual(result.entries.map((entry) => entry.id), ["D3"]);
+    assert.equal(result.errors.length, 2);
+    assert.match(result.errors[0], /Invalid decision entry .*- D1 \[decision\]: Keep the owner\./);
+    assert.match(result.errors[1], /Invalid decision entry .*- N2: Missing note tag\./);
+});

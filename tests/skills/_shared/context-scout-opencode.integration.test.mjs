@@ -44,6 +44,7 @@ function writeLifecycleFixtures(dir) {
         repository: "",
         branch: "",
         head: "",
+        stack_profile: "generic",
         rules: ["AGENTS.md"],
         documentation: [],
         active_overrides: [],

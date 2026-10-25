@@ -136,9 +136,10 @@ role: primary | context-refresher
 repository: stabilny identyfikator repozytorium
 branch: bieżący branch
 head: opcjonalny hash commita
+stack_profile: generic | php-symfony-postgres (wynik resolve_stack_profile)
 rules: [ścieżki repo-relative]
 documentation: [ścieżki repo-relative]
-active_overrides: [krótkie nazwy i wartości]
+active_overrides: [krótkie nazwy i wartości, np. aktywny override CQRS]
 constraints: [krótkie inwarianty]
 already_read: [ścieżki repo-relative]
 omitted: [znane, celowo niezaładowane źródła]

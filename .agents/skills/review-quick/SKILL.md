@@ -10,6 +10,7 @@ shared_files:
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/rule-conformance-policy.md
   - _shared/references/php-symfony-postgres-standards.md
+  - _shared/references/project-profiles.md
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/references/symbolic-navigation-and-editing-policy.md
   - _shared/references/playwright-cli-verification.md
@@ -46,8 +47,7 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
 - Sprawdzenia opieraj na:
   - promptcie użytkownika i/lub planie zadania,
   - realnie zmienionych plikach w repo,
-  - baseline `<skills_root>/_shared/references/php-symfony-postgres-standards.md`,
-  - override `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` (gdy `CQRS_MONOLITH_STANDARD_OVERRIDES=1`),
+  - standardach aktywowanych według `<skills_root>/_shared/references/project-profiles.md`; rozstrzygnij profil przed review (także przy wywołaniu przez `$qa-run`) i zatrzymaj procedurę po błędzie konfiguracji,
   - kontrakt `<skills_root>/_shared/references/rule-conformance-policy.md` dla semantyki reguła → zakres → dowód → wynik,
   - dowodach z odczytów plików i komend uruchomionych w tej sesji.
 - Jeśli uruchamiasz komendy pomocnicze podczas weryfikacji:
@@ -94,10 +94,8 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
    Jeśli zmiana trafia na niespójne dane, brak wymaganej relacji, niepoprawny stan domenowy albo stary format danych, nie zakładaj automatycznie potrzeby kompatybilności wstecznej. Oceń, czy prompt lub istniejący kontrakt wymaga tolerowania takiego stanu. Jeśli nie, preferuj wykrycie błędu i jawne zgłoszenie ryzyka zamiast cichego fallbacku, naprawy w locie lub rozszerzania kontraktu.
 
    Raportuj tylko ustalenia, dla których da się wskazać konkretny koszt utrzymaniowy, ryzyko błędu, niejasność kontraktu albo istniejący wzorzec w repo, z którym zmiana powinna być spójna.
-4. Zweryfikuj zgodność zmian z baseline:
-   - `<skills_root>/_shared/references/php-symfony-postgres-standards.md`
-5. Jeśli aktywne pliki env repo ustawiają końcowo `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: zweryfikuj zgodność zmian z:
-   - `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md`
+4. Zweryfikuj zgodność zmian ze standardami aktywowanymi według `<skills_root>/_shared/references/project-profiles.md`.
+5. Nie traktuj nieaktywnych standardów ani samej deklaracji `shared_files` jako źródła naruszeń.
 6. Ustal istotne reguły dla przyrostu i jego bezpośrednich zależności oraz oceń zgodność według `<skills_root>/_shared/references/rule-conformance-policy.md`:
    - nie skanuj całego repozytorium; wybierz reguły rzeczywiście dotknięte przyrostem,
    - dla każdej wskaż źródło (plik i sekcja), moc, zastosowanie, dowód i wynik `SATISFIED`/`VIOLATED`/`NOT_APPLICABLE`/`NOT_VERIFIED`/`EXEMPTED`,

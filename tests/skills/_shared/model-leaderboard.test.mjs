@@ -13,10 +13,13 @@ const entries = [["Model X (Low)", 40], ["Model Y (Max)", 25], ["Model G (Medium
     .map(([label, totalPoints]) => ({label, totalPoints}));
 const CLI_SCRIPT = fileURLToPath(new URL("../../../.agents/skills/_shared/scripts/model-leaderboard.mjs", import.meta.url));
 
+// A label "Model — Harness" renders the harness in the "Tested with" cell.
 function table(rows = entries) {
-    return `<table><thead><tr><th>#</th><th>Model</th><th>Total points (max 70)</th></tr>
-<tr><th>Other project scores</th></tr></thead><tbody>${rows.map((row, i) =>
-    `<tr><td>${i + 1}</td><td><a href="https://aicodingdaily.com/model/synthetic-${i}">${row.label}</a></td><td>${row.totalPoints}</td>${"<td>other</td>".repeat(8)}</tr>`).join("")}</tbody></table>`;
+    return `<table><thead><tr><th>#</th><th>Model</th><th>Total points (max 70)</th><th>Cost</th><th>Time</th><th>Video</th><th>Tested with</th></tr>
+<tr><th>Other project scores</th></tr></thead><tbody>${rows.map((row, i) => {
+    const [model, harness = ""] = row.label.split(" — ");
+    return `<tr><td>${i + 1}</td><td><a href="https://aicodingdaily.com/model/synthetic-${i}">${model}</a></td><td>${row.totalPoints}</td>${"<td>other</td>".repeat(3)}<td><time datetime="2026-10-20">5 days ago</time><br> ${harness}</td>${"<td>other</td>".repeat(4)}</tr>`;
+}).join("")}</tbody></table>`;
 }
 
 function response(html = table()) {
@@ -102,11 +105,17 @@ describe("fresh model evidence and external profile comparison", () => {
         expect(parseLeaderboardHtml(`<!-- <table>fake</table> --><script>const x='<table>fake</table>';</script>${table()}`)).toEqual(entries);
     });
 
+    it("labels each harness run separately and skips single-cell banner rows", () => {
+        const runs = [{label: "Model K (High) — OpenCode", totalPoints: 76.84}, {label: "Model K (High) — Kimi Code", totalPoints: 56.9}];
+        const html = table(runs).replace("</tr></tbody>", '</tr><tr wire:key="cta"><td colspan="11"><p>Subscribe</p></td></tr></tbody>');
+        expect(parseLeaderboardHtml(html)).toEqual(runs);
+    });
+
     it("fails closed on layout, scale, row, number and duplicate changes", () => {
         const original = table();
         const malformed = ["", "<html>unavailable</html>", table([]), original + original,
-            original.replace("max 70", "max 100"), original.replace("Model</th>", "Models</th>"),
-            original.replace("<td>40</td>", "<td>71</td>"), original.replace("<td>40</td>", "<td>40?</td>"),
+            original.replace("Tested with", "Harness"), original.replace("Model</th>", "Models</th>"),
+            original.replace("<td>40</td>", "<td>40?</td>"),
             original.replace("<td>40</td>", "<td><span>40</span></td>"),
             original.replace("<td>other</td>", ""), original.replace("</td>", ""),
             original.replace("</tr>", ""), original.replace("</tbody>", ""),

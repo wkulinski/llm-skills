@@ -1,0 +1,9 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "skills": {"paths": [".agents/skills"]},
+    "agent": {
+        "context-refresher": {"model": "YOUR_PROVIDER/YOUR_FAST_MODEL", "variant": "YOUR_VARIANT"},
+        "context-scout-fast": {"model": "YOUR_PROVIDER/YOUR_FAST_MODEL", "options": {"thinking": {"type": "disabled"}}},
+        "context-scout": {"model": "YOUR_PROVIDER/YOUR_STRONGER_MODEL", "variant": "YOUR_VARIANT"}
+    }
+}

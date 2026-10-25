@@ -1,0 +1,43 @@
+name: Catalog CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Unspecified scopes are disabled. Never execute PR code with pull_request_target.
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    name: Linux / Node 22 / offline checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CI: "true"
+      CLAUDE_REVIEW_SMOKE: "0"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source without retaining credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Install locked development dependencies
+        run: npm ci
+      - name: Lint JavaScript
+        run: npm --silent run lint:js -- --format json
+      - name: Check shell syntax
+        run: find .agents/skills -type f -path '*/scripts/*.sh' -print0 | xargs -0 -r -n1 bash -n
+      # The unit project includes WP7 instruction contracts and public local links.
+      # Do not replace this with npm test: that also selects tool integrations.
+      - name: Run offline unit and instruction/documentation contracts
+        run: npm run test:unit -- --maxWorkers=1

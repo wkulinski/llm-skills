@@ -14,6 +14,7 @@ export function normalize(value = "") {
 export function isFillerItem(value = "") {
     switch (normalize(value)) {
         case "brak zmian":
+        case "no changes":
         case "n/a":
         case "-":
             return true;
@@ -43,6 +44,7 @@ export function parseCommitMessageDraft(input) {
         db: [],
         general: [],
     };
+    const titles = {};
 
     for (const rawLine of lines) {
         const line = trim(rawLine);
@@ -65,17 +67,27 @@ export function parseCommitMessageDraft(input) {
             continue;
         }
 
-        if (line.endsWith(":")) {
+        const sectionLine = line.match(/^([^\s:-][^:]*):\s*(.*)$/);
+        if (sectionLine) {
             if (!subjectSeen) {
                 throw new Error("Subject line must appear before sections.");
             }
 
-            const label = trim(line.slice(0, -1));
+            const label = trim(sectionLine[1]);
             const sectionKey = sectionKeyFromLabel(label);
             if (!sectionKey) {
                 throw new Error(`Unknown section: ${label}`);
             }
+            if (sectionKey in titles) {
+                throw new Error(`Duplicate section: ${label}`);
+            }
 
+            const title = trim(sectionLine[2]);
+            if (title === "") {
+                throw new Error(`Missing heading for section ${label}; write it in the commit language, e.g. "${label}: <heading>".`);
+            }
+
+            titles[sectionKey] = title;
             currentSection = sectionKey;
             continue;
         }
@@ -107,7 +119,7 @@ export function parseCommitMessageDraft(input) {
         throw new Error("Missing Subject line.");
     }
 
-    return {sections, subject};
+    return {sections, subject, titles};
 }
 
 function renderSection(title, items) {
@@ -119,14 +131,14 @@ function renderSection(title, items) {
 }
 
 export function renderCommitMessage(draft) {
-    const {sections, subject} = draft;
+    const {sections, subject, titles} = draft;
     let message = `${subject}\n`;
 
     if (sections.general.length > 0 || sections.db.length > 0 || sections.cli.length > 0) {
         message += "\n";
-        message += renderSection("Zmiany ogólne", sections.general);
-        message += renderSection("Zmiany wpływające na strukturę bazy danych", sections.db);
-        message += renderSection("Zmiany API poleceń CLI", sections.cli);
+        message += renderSection(titles.general, sections.general);
+        message += renderSection(titles.db, sections.db);
+        message += renderSection(titles.cli, sections.cli);
     }
 
     return message;

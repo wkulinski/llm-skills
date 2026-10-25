@@ -9,10 +9,9 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
 2. Sprawdź źródła reguł wymagane do implementacji:
    - `./runtime-collaboration-guidelines.md`
    - `./skill-routing-policy.md`
-   - `./php-symfony-postgres-standards.md`
-   - jeśli `CQRS_MONOLITH_STANDARD_OVERRIDES=1`: `./cqrs-monolith-standard-overrides.md`
+   - `./project-profiles.md`: rozstrzygnij profil przed dalszą pracą i wczytaj wyłącznie aktywowane tam standardy; błąd konfiguracji zatrzymuje procedurę przed zmianami.
 3. Zweryfikuj entrypointy narzędzi projektu **wyłącznie** przez helper `.agents/skills/_shared/scripts/env-load.sh`:
-   - wyznacz komendy przez `resolve_tool_cmd` (np. `composer`, `console`, `yarn`, `codecept`),
+   - wyznacz przez `resolve_tool_cmd` wyłącznie narzędzia potrzebne w wykonywanym kroku; nie wymagaj zestawu narzędzi PHP z samego wyboru workflow lub profilu,
    - nie wyprowadzaj ścieżek ręcznie z `BIN_PATH` i nie stosuj dodatkowych heurystyk,
    - `resolve_tool_cmd` ładuje aktywne pliki env repo automatycznie.
    - wyjątek: `$qa-run` w trybie macierzy JSON uruchamia komendy 1:1 z `.agents/qa-run.matrix.json` (bez discovery entrypointów).

@@ -830,7 +830,9 @@ function parseSkillsIndex(source) {
     const lines = splitLines(source);
     const skills = new Map();
     const rows = [];
+    const support = {present: false, header_line: null, rows: []};
     let group = null;
+    let table = null;
     for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index];
         const heading = /^###\s+(.+?)\s*$/.exec(line);
@@ -848,10 +850,33 @@ function parseSkillsIndex(source) {
             continue;
         }
         if (!line.startsWith("|")) {
+            table = null;
             continue;
         }
         const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
-        if (cells.length !== 3 || cells[0] === "Intencja" || /^-+$/.test(cells[0])) {
+        const nextCells = (lines[index + 1] ?? "").split("|").slice(1, -1).map((cell) => cell.trim());
+        if (nextCells.length === cells.length && nextCells.every((cell) => /^:?-{3,}:?$/.test(cell))) {
+            // Markdown header + separator, independent of the heading language.
+            table = cells.length === 3 ? "triggers" : cells.length > 3 && /^Skill$/i.test(cells[0]) ? "support" : null;
+            if (table === "support") {
+                support.present = true;
+                support.header_line = index + 1;
+            }
+            continue;
+        }
+        if (cells.every((cell) => /^:?-{3,}:?$/.test(cell))) {
+            continue;
+        }
+        if (table === "support" && cells.length > 3) {
+            const skillCell = /^`\$([a-z0-9-]+)`$/.exec(cells[0]);
+            if (skillCell !== null) {
+                support.rows.push({
+                    skill: skillCell[1], values: cells.slice(1), line: index + 1,
+                });
+            }
+            continue;
+        }
+        if (table !== "triggers" || cells.length !== 3) {
             continue;
         }
         const skillCell = /^`\$([a-z0-9-]+)`$/.exec(cells[1]);
@@ -865,6 +890,7 @@ function parseSkillsIndex(source) {
             .map(([name, linesFound]) => ({name, lines: linesFound}))
             .sort((left, right) => compareStrings(left.name, right.name)),
         rows,
+        support,
     };
 }
 
@@ -1518,6 +1544,23 @@ function collectIndexSignals({index, skillDirs}) {
             indexOccurrences.set(row.skill, row.line);
         }
     }
+    if (index.support.present) {
+        const supportSkills = new Set();
+        for (const row of index.support.rows) {
+            if (!indexOccurrences.has(row.skill)) {
+                indexOccurrences.set(row.skill, row.line);
+            }
+            if (supportSkills.has(row.skill)) {
+                signals.push({id: "index-duplicate-support-metrics", severity: "major", detail: `Powtórzone metryki skilla "$${row.skill}".`, evidence: `docs/SKILLS.md:${row.line}`});
+            }
+            supportSkills.add(row.skill);
+        }
+        for (const name of diskNames) {
+            if (!supportSkills.has(name)) {
+                signals.push({id: "missing-support-metrics", severity: "major", detail: `Skill "$${name}" nie ma wiersza metryk wsparcia.`, evidence: `docs/SKILLS.md:${index.support.header_line}`});
+            }
+        }
+    }
     for (const [name, line] of indexOccurrences) {
         if (!diskNames.has(name)) {
             signals.push({
@@ -1615,7 +1658,7 @@ function buildCatalogReport({root, runMode, previousPath = null, reviewPath = nu
     let index = null;
     if (existsSync(indexFile)) {
         const parsed = parseSkillsIndex(readText(indexFile));
-        index = {file: "docs/SKILLS.md", skills: parsed.skills, rows: parsed.rows};
+        index = {file: "docs/SKILLS.md", skills: parsed.skills, rows: parsed.rows, support: parsed.support};
         areas.push({id: "index", status: "covered", detail: `${parsed.skills.length} wpisów, ${parsed.rows.length} wierszy triggerów`});
     } else {
         areas.push({id: "index", status: "not_covered", detail: "brak docs/SKILLS.md"});

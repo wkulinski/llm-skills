@@ -23,19 +23,30 @@ Celem jest odświeżenie indeksu skilli tak, aby odzwierciedlał aktualny stan k
 ## Wymagane klucze dokumentacji (docs_map)
 - Wymagane:
   - `SKILLS_INDEX_DOC`: ścieżka pliku indeksu skilli.
+- Przy tworzeniu nieistniejącego indeksu:
+  - `MAIN_DOC`: źródło języka nowego dokumentu.
 
 ## Kroki
 1. Otwórz `AGENTS.md` i odczytaj mapę `docs_map`.
 2. Odczytaj klucz `SKILLS_INDEX_DOC`.
    - Jeśli mapy lub klucza brakuje: zatrzymaj się i dopytaj użytkownika o ścieżkę indeksu skilli.
-   - Jeśli plik nie istnieje: utwórz go razem z brakującymi katalogami nadrzędnymi.
+   - Jeśli indeks istnieje: ustal język z jego treści i zachowaj go, niezależnie od języka tego skilla lub rozmowy.
+   - Jeśli plik nie istnieje: odczytaj `MAIN_DOC`, ustal jego język i utwórz w nim indeks razem z katalogami nadrzędnymi. Brak klucza, dokumentu lub niejednoznaczny język blokuje tylko utworzenie indeksu — dopytaj zamiast zgadywać.
 3. Przejrzyj katalog `<skills_root>` i zbierz wszystkie dostępne skille oraz ich triggery z pól `description` (`Użyj, gdy …`).
 4. Zaktualizuj `SKILLS_INDEX_DOC`, zachowując oba elementy formatu:
    - alfabetyczną listę wszystkich skilli z prefiksem `$`;
-   - tabelę triggerów w kolumnach `Intencja | Skill | Następny krok`, pogrupowaną na planowanie, implementację, review kodu i planu, review instrukcji, QA i commit, dokumentację, obsługę issue oraz diagnostykę, pokrywającą wszystkie skille z listy.
+   - trzykolumnową tabelę triggerów o znaczeniu `intencja | skill | następny krok`, pokrywającą wszystkie skille z listy. Zachowaj istniejące grupy i kolejność grup; dla nowego indeksu użyj grup planowania, implementacji, review kodu i planu, review instrukcji, QA i commita, dokumentacji, obsługi issue, diagnostyki oraz komunikacji. Nagłówki, opisy i nowe triggery pisz w ustalonym języku dokumentu (np. `Intent | Skill | Next step` w angielskim).
 5. Dla wierszy głównego workflow użyj tabeli routingu z `<skills_root>/_shared/references/skill-routing-policy.md` jako źródła; nie zmieniaj tej polityki lokalnie i nie kopiuj z niej reguł, których indeks nie potrzebuje.
 6. Usuń odwołania do nieistniejących skilli, dodaj brakujące i uzupełnij brakujące triggery na podstawie opisu skilla.
 7. Upewnij się, że nazwy w indeksie mają prefiks `$`.
+8. Jeśli indeks zawiera osobną tabelę metryk wsparcia:
+   - zachowaj bez zmian metryki i dowody istniejących skilli; odświeżenie nie podnosi statusów wsparcia,
+   - dodaj wiersz dla każdego nowego skilla w języku indeksu: cztery niezależne osie (stack, środowisko agenta, narzędzia, profil architektury), skutki i zależności ustal z jego instrukcji; nieustalone wymagania oznacz jako wymagające sprawdzenia, a wsparcie jako niezweryfikowane (`Unverified` w indeksie angielskim),
+   - usuń wiersze nieistniejących skilli; utrzymuj dokładnie jeden wiersz na skill,
+   - utrzymuj odrębną tabelę z inną liczbą kolumn niż trzykolumnowa tabela triggerów; nie mieszaj metryk z listą ani triggerami,
+   - jeśli indeks opisuje zestaw startowy, sprawdź jego zależności pośrednie po zmianie katalogu; nie myl odwołania do właściciela innej procedury z obowiązkowym wywołaniem.
+   Jeśli indeks nie zawiera takiej sekcji, nie twórz jej — także przy tworzeniu nowego indeksu. Metryki są opcjonalnym kontraktem indeksu, nie obowiązkiem konsumenta.
+9. Sprawdź kompletność listy i triggerów oraz, gdy istnieją, metryk. Porównaj wynik ze stanem wejściowym: jeśli indeks jest już kompletny i aktualny, odświeżenie ma być no-op; nie przepisuj języka, grup, poprawnych opisów ani metryk „dla stylu”.
 
 ## Format odpowiedzi
 - Wynik: krótka informacja, czy indeks został zaktualizowany lub czy nie było zmian.

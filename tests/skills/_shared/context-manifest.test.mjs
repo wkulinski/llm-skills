@@ -23,6 +23,7 @@ const validManifest = {
     repository: "acme/project",
     branch: "feature/context-routing",
     head: "abc123",
+    stack_profile: "generic",
     rules: ["AGENTS.md"],
     documentation: ["docs/README.md"],
     active_overrides: [],
@@ -69,6 +70,24 @@ describe("context manifest", () => {
         expect(result.valid).toBe(false);
         expect(result.errors).toContain("role must be primary or context-refresher");
         expect(result.errors).toContain("manifest must not contain issue/comments/document contents");
+    });
+
+    it("requires a resolved stack profile", () => {
+        const {stack_profile: _omitted, ...withoutProfile} = validManifest;
+        expect(validateContextManifest(withoutProfile).errors).toContain("missing key: stack_profile");
+        expect(validateContextManifest({...validManifest, stack_profile: "symfony"}).valid).toBe(false);
+        expect(validateContextManifest({...validManifest, stack_profile: "php-symfony-postgres"}).valid).toBe(true);
+    });
+
+    it("derives a local repository identity when origin is missing and verifies against it", () => {
+        const repo = makeGitRepo();
+        try {
+            const manifest = enrichContextManifest({...validManifest, repository: "", branch: "", head: ""}, {cwd: repo});
+            expect(manifest.repository).toBe(`local/${path.basename(repo)}`);
+            expect(verifyContextManifest(manifest, repo)).toEqual({valid: true, errors: []});
+        } finally {
+            rmSync(repo, {recursive: true, force: true});
+        }
     });
 
     it("requires all collection fields to be string arrays", () => {
@@ -222,7 +241,7 @@ describe("context manifest", () => {
         try {
             const manifest = enrichContextManifest({
                 ...validManifest,
-                repository: "local/repository",
+                repository: "",
                 branch: "",
                 head: "",
             }, {cwd: repo});
@@ -250,7 +269,7 @@ describe("context manifest", () => {
         try {
             const manifest = enrichContextManifest({
                 ...validManifest,
-                repository: "local/repository",
+                repository: "",
                 branch: "",
                 head: "",
             }, {cwd: repo});

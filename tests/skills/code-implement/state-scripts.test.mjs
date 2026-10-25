@@ -48,6 +48,37 @@ describe("code-implement state scripts", () => {
         }
     });
 
+    it("prints help for init, log and clear without touching state", () => {
+        const tempRoot = mkdtempSync(path.join(os.tmpdir(), "code-implement-help-test-"));
+        try {
+            const cachePath = path.join(tempRoot, "cache");
+            const scriptsDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../.agents/skills/code-implement/scripts");
+            const run = (script, args) => spawnSync(process.execPath, [path.join(scriptsDir, script), ...args], {
+                cwd: tempRoot,
+                env: {...process.env, CACHE_PATH: cachePath},
+                encoding: "utf8",
+            });
+            for (const script of ["state-init.mjs", "state-log.mjs", "state-clear.mjs"]) {
+                for (const flag of ["--help", "-h"]) {
+                    const result = run(script, [flag]);
+                    expect(result.status).toBe(0);
+                    expect(result.stdout).toContain(`Usage: ${script}`);
+                }
+            }
+            expect(existsSync(resolveStatePath(cachePath).absolute)).toBe(false);
+
+            runStateInit({cachePath});
+            const before = readFileSync(resolveStatePath(cachePath).absolute, "utf-8");
+            const unknown = run("state-log.mjs", ["--message", "text"]);
+            expect(unknown.status).toBe(2);
+            expect(unknown.stderr).toContain("unknown option: --message");
+            expect(run("state-init.mjs", ["extra"]).status).toBe(2);
+            expect(readFileSync(resolveStatePath(cachePath).absolute, "utf-8")).toBe(before);
+        } finally {
+            rmSync(tempRoot, {force: true, recursive: true});
+        }
+    });
+
     it("initializes a state file once and keeps it stable on rerun", () => {
         const tempRoot = mkdtempSync(path.join(os.tmpdir(), "code-implement-state-test-"));
         try {
