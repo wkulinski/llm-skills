@@ -1,11 +1,14 @@
 # Deep review checklists
 
 This file is the conditional reference of `$code-review`. It holds the domain
-checklists of the "Deep review contract"; load only the sections required by the
-active target and the review depth chosen in Section 4 of the skill root
-(`<skill_dir>/SKILL.md`).
+checklists of the "Deep review contract". Triage every `###` section in Section 4
+of the skill root (`<skill_dir>/SKILL.md`), then read or receive in context the
+selected sections before investigating their risks in Section 5; do not load
+unselected sections merely because this reference is available.
 
 ### Correctness and propagation
+
+Key question: Which callers and distinct usage patterns can be affected by the change?
 
 Check where relevant:
 
@@ -33,6 +36,8 @@ If a public name, signature, field, message, event, configuration key, output, o
 
 ### Contracts and integrations
 
+Key question: Do both sides of the boundary, transitional states, and consumers of the old contract remain compatible?
+
 When behavior crosses a boundary, inspect both sides of that boundary.
 
 Examples include:
@@ -54,6 +59,8 @@ safe default for a feature flag.
 
 ### State, persistence, and data flow
 
+Key question: What state remains after a material failure?
+
 When stateful behavior changes, inspect where relevant:
 
 - creation and consumption of identifiers/values being matched
@@ -66,6 +73,8 @@ When stateful behavior changes, inspect where relevant:
 - serialization and compatibility of stored data
 
 ### Security and privacy
+
+Key question: Who gains which operation or visibility, and where is the boundary enforced?
 
 Inspect only relevant trust boundaries, including where applicable:
 
@@ -84,6 +93,8 @@ place where permission is enforced, and check it for a concrete object as well
 as for list, bulk, export, and background-job paths.
 
 ### Reliability and concurrency
+
+Key question: What happens on retry, restart, duplicate delivery, or concurrent execution?
 
 Where relevant, inspect:
 
@@ -105,6 +116,8 @@ instead of a general claim of a race.
 
 ### Reactivity, lifecycle and feedback loops
 
+Key question: Can the mechanism trigger itself, and where is its termination condition?
+
 Check where relevant:
 
 - whether a new observer, listener, watcher, or subscription can react to changes
@@ -125,6 +138,8 @@ silent assumption.
 
 ### Performance
 
+Key question: What realistic data size or lifetime exposes the cost?
+
 Report performance issues only when they are meaningful for realistic workloads.
 
 Look for:
@@ -140,6 +155,8 @@ Look for:
 Do not report micro-optimizations without evidence of practical impact.
 
 ### Architecture and maintainability
+
+Key question: Does the change preserve ownership and responsibility boundaries instead of creating a parallel mechanism?
 
 Review architecture only when it affects correctness, change risk, or long-term maintainability.
 
@@ -164,6 +181,8 @@ Do not block on “I would design it differently.”
 
 ### Tests and verification
 
+Key question: Can the tests detect the defect they claim to prevent, and on which inherited environment does their result depend?
+
 Treat test quality as first-class.
 
 Check whether tests:
@@ -181,7 +200,9 @@ Check whether tests:
   established, rather than merely passing against the new implementation
 - control or explicitly isolate time, time zone, locale, randomness, ordering,
   asynchronous completion, external I/O, and shared state whenever they can
-  affect the result
+  affect the result; for subprocesses, check inherited environment, user or
+  system configuration, working directory, tool defaults, and process outcome,
+  and identify what the fixture actually isolates
 - use stable contracts, roles, or selectors. A test may cover translated or
   rendered UI behavior, but should not couple to incidental copy, fragile DOM
   structure, or parser output when a stable behavioral contract exists

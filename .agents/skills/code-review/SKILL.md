@@ -49,7 +49,7 @@ A good review answers:
 4. What was actually reviewed and what remains uncertain?
 5. Is the change safe to merge, or is the plan ready for execution?
 
-Prefer a small number of high-confidence findings over speculative noise, but do not stop after finding the first serious issue.
+Search all selected risk areas before deciding how many findings to publish. High confidence is a publication requirement, not a limit on candidate discovery. Publish every supported defect; do not target a minimum or maximum finding count.
 
 ## Core principles
 
@@ -77,7 +77,7 @@ Read only the files required by the active step. Declared references are availab
 
 | Condition | File |
 |---|---|
-| deep review checklists for the active target and risk depth (correctness and propagation, contracts and integrations, state/persistence/data flow, security and privacy, reliability and concurrency, reactivity, lifecycle and feedback loops, performance, architecture and maintainability, tests and verification) | `<skill_dir>/references/review-checklists.md` |
+| before investigating a risk, read or receive in context the checklist sections selected in Section 4: Correctness and propagation; Contracts and integrations; State, persistence, and data flow; Security and privacy; Reliability and concurrency; Reactivity, lifecycle and feedback loops; Performance; Architecture and maintainability; Tests and verification | `<skill_dir>/references/review-checklists.md` |
 | workflow routing and skill-selection guard before this skill starts | `<skills_root>/_shared/references/skill-routing-policy.md` |
 | repository reconnaissance, broad versus targeted reads, and scout lifecycle | `<skills_root>/_shared/references/repository-context-hybrid.md` |
 | applicable-rules register semantics (source, scope, force, evidence, result) | `<skills_root>/_shared/references/rule-conformance-policy.md` |
@@ -273,6 +273,36 @@ Increase review depth when the change spans subsystems or has material risk invo
 - deployment, configuration, scheduled execution, or operational behavior
 - changes whose correctness depends on several independent assumptions
 
+Before investigation, triage the risk axes in this order: identify the changed
+behavior, consider every `###` section in the deep review checklists, then read
+or receive in context the selected sections before investigating their risks.
+The checklist sections define the set of axes, not a list of change types.
+For each section, record one sentence: **selected**, with a signal from the
+change or plan, or **omitted**, with a concrete fact about the change that rules
+it out. A generic “not applicable” is insufficient. For a trivial change, one
+line may combine the selection and the reasons for all omissions.
+
+The following are example signals, not exhaustive triggers or the sole selection
+rule. A change matching none of them still goes through triage of every checklist
+section; several axes may be selected.
+
+| Example signal in the change or plan | Sections to consider |
+|---|---|
+| Execution path, shared unit, or broad refactor | `Correctness and propagation` and `Architecture and maintainability` |
+| Write, replace, delete, lock, or persistent state | `State, persistence, and data flow` and `Reliability and concurrency` |
+| Async processing, retries, ordering, idempotency, or scheduled execution | `Reliability and concurrency` |
+| New subprocess, fixture, or integration test | `Tests and verification` and `Contracts and integrations` |
+| Added or changed test | `Tests and verification` |
+| Changed contract, CLI, schema, integration, configuration, or deployment | `Contracts and integrations` and `Correctness and propagation` |
+| Observer, listener, lifecycle, or feedback loop | `Reactivity, lifecycle and feedback loops` |
+| Authorization, untrusted-data, or data-exposure boundary | `Security and privacy` |
+| Changed path with material load or resource growth | `Performance` |
+| Correctness depends on several independent assumptions | Sections relevant to each assumption |
+
+Repository rules remain in `Applicable rules` and `Rule violations`, outside
+checklist triage. For a `plan` target, `<skill_dir>/references/plan-review.md`
+remains the workflow owner; triage only behavior actually covered by the plan.
+
 Review depth means relevant lenses and verification. Do not add a pass that repeats an already covered question. The publication gate in Section 6 applies at every depth: more depth adds lenses and evidence, it does not remove the obligation to weigh the strongest counterargument and classify the candidate.
 
 For a large change, order the review by risk, contracts and state before the
@@ -306,10 +336,20 @@ Record one gate outcome in the coverage/summary:
 
 ## 5. Deep review contract
 
-Trace risk beyond edited lines as far as needed to evaluate behavior. Apply only
-the checklists required by the active target and the depth chosen in Section 4;
-they live in `<skill_dir>/references/review-checklists.md` (see "Reference
-routing").
+For each axis selected in Section 4, trace an input or event through the relevant
+calls and contracts to its effect, beyond edited lines as far as needed to
+evaluate behavior. Use the selected sections of
+`<skill_dir>/references/review-checklists.md` (see "Reference routing"). Record
+either a candidate with its location or a concrete checked scenario with no
+defect found. An initial lead need not already meet the high-confidence
+publication requirement.
+
+Rejecting a candidate or obtaining a green test does not end investigation of
+the other selected axes. Finish only when every checklist section has a recorded
+selection or omission reason, and every selected axis has its key question
+resolved with evidence or a named gap. This bounds the accepted review scope;
+it does not require reviewing the whole repository or prove the absence of all
+defects.
 
 When Section 1 loaded `<skill_dir>/references/active-plan.md`, also assess the
 change against the mapped work package as that reference describes.
@@ -317,6 +357,8 @@ change against the mapped work package as that reference describes.
 For a `plan` target, also apply "Plan integrity and execution readiness" in `<skill_dir>/references/plan-review.md`.
 
 ## 6. Verify candidate findings
+
+This gate evaluates the candidates collected in Section 5.
 
 A candidate becomes a finding only if it has:
 
@@ -336,6 +378,9 @@ Before publication, every candidate must pass this ordered publication gate:
 3. **demonstrated consequence or contract violation** — the concrete failure mode, violated invariant, or missing-verification surface, not merely a difference in approach;
 4. **strongest counterargument considered** — the best available reason the observation may be expected, already prevented elsewhere, or out of scope;
 5. **classification** — exactly one outcome: `finding`, `QUESTION`, `SUGGESTION`, or rejected candidate.
+
+Record the strongest counterargument actually considered and the classification
+at this gate; unclassified candidates are not published.
 
 Apply this gate to the expectation and proposed correction as well as the observation. Verify that the correction has an authoritative requirement and belongs to the responsibility under review; a mechanism or acceptance criterion appearing in a plan does not by itself justify maintaining or expanding it. Before recommending stronger checks or additional machinery, consider removing or simplifying the mechanism, or leaving an existing procedure with its current owner. A technically accurate observation does not justify a correction that adds unrequested scope or duplicates another owner's workflow.
 
@@ -417,18 +462,15 @@ limits the verdict.
 
 ## 7. Review the review
 
-Before publishing findings, perform a false-positive pass.
+Before publishing findings, check the review's coverage and publication readiness.
 
-For each candidate ask:
+Confirm that every selected axis has evidence or a named gap and every omitted
+axis has its concrete triage reason. For findings that passed Section 6, ask:
 
-1. Did I read the actual relevant code, plan, or evidence?
-2. Is the claimed behavior or plan outcome reachable?
-3. Is the expectation authoritative or merely my preference?
-4. Does existing validation or surrounding logic already prevent the failure?
-5. Is this the same underlying failure mode as another finding?
-6. Is the severity proportional to actual impact?
-7. Can the user act on the finding?
-8. Is the cited location real and relevant?
+1. Is this the same underlying failure mode as another finding? Deduplicate by failure mode, not by file.
+2. Is the severity proportional to actual impact?
+3. Can the user act on the finding?
+4. Is the cited location real and relevant?
 
 When an applicable-rules register was produced, also check that no relevant rule
 was dropped: revisit the active sources and the reviewed scope, confirm that every
@@ -461,18 +503,11 @@ For a non-trivial change, also ask what the change omits:
 Every candidate from these questions passes the Section 6 publication gate
 unchanged.
 
-For every surviving candidate, record the strongest counterargument you actually
-considered and classify it through the Section 6 publication gate, or have it
-explicitly discarded as a rejected candidate; unclassified candidates are not
-published.
-
-Deduplicate overlapping findings by failure mode, not by file.
-
 When your interpretation of a rule or a finding is challenged, read the specific governing text and weigh the strongest counterargument before keeping or correcting the assessment. Agreement is not required, but a challenge is answered with the concrete rule, not with a restatement of the earlier position. An auxiliary check with a narrow scope does not prove coverage of an axis it never examined, so do not cite it as evidence for that axis. Correct the assessment in either direction when the governing text requires it.
 
 Discard compliments, generic advice, speculative refactors, and style-only comments from the findings list.
 
-After the false-positive pass, ensure that each inventory entry has an explicit
+After this pass, ensure that each inventory entry has an explicit
 review outcome before publishing the verdict.
 
 ## 8. Coverage
@@ -485,6 +520,17 @@ Use one of the following outcomes for every inventory entry:
 - `REVIEWED` — reviewed, no issue found
 - `NOT_RELEVANT` — no behavioral review needed
 - `NOT_COVERED` — insufficient context, tools, or evidence
+
+For each selected area, record one concise entry containing its scope or paths,
+risk question, checked scenario and evidence, coverage outcome above, and
+remaining gap (or explicitly none). Related files may be grouped, but the groups
+must account for the entire accepted scope. Account for axes omitted in Section 4
+in one line with their omission reasons, without full area entries.
+
+`REVIEWED` requires analysis of the risk, not merely reading a file or obtaining
+a green test. Not running a test does not mean source analysis was absent;
+record mechanical verification limits separately. A material coverage gap still
+limits the verdict under Section 10.
 
 For a `plan` target, also apply "Plan coverage" in `<skill_dir>/references/plan-review.md`.
 
@@ -574,6 +620,11 @@ Then include:
 
 For `QUESTION`, replace **Fix direction** with **Needs decision**.
 
+When rejecting or reclassifying a material candidate affects the safety
+assessment, scope, or verdict, include a brief disposition in the review details:
+observation, decision, concrete reason, and evidence. This is not a log of every
+suspicion or hidden reasoning and requires no new report heading or JSON.
+
 Then provide:
 
 ### Target
@@ -584,9 +635,15 @@ with the requested inputs.
 
 ### Coverage
 
-A compact table/list of reviewed areas and any `NOT_COVERED` surfaces. For every
-high-risk area, the entry names the risks and paths checked and the remaining
-gap.
+A compact table/list with one concise entry per selected area: scope or paths,
+risk question, checked scenario and evidence, coverage outcome from Section 8,
+and remaining gap (or explicitly none). Related files may be grouped if the
+groups account for the entire accepted scope, including any `NOT_COVERED`
+surfaces. For every high-risk area identified in Section 4, explicitly name the
+risks and paths checked and the remaining gap. Account for omitted axes in one
+line with their concrete triage reasons, not full area entries. Neither a file
+read nor a green test alone earns `REVIEWED`; distinguish sufficient source
+analysis from an unrun mechanical check and apply Section 10's verdict limits.
 Include the applicable-rules results for the reviewed scope when a register was
 produced, and the `Complexity/value gate` outcome when the gate was relevant.
 
