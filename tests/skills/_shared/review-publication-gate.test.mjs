@@ -33,6 +33,14 @@ describe("review publication gate", () => {
         expect(gate).toMatch(/\*\*strongest counterargument considered\*\*/);
         expect(gate).toMatch(/\*\*classification\*\*/);
         expect(gate).toMatch(/`finding`, `QUESTION`, `SUGGESTION`, or rejected candidate/);
+        const elements = [...gate.matchAll(/^\d\. \*\*([^*]+)\*\*/gm)].map((match) => match[1]);
+        expect(elements).toEqual([
+            "observation",
+            "authoritative source of expected behavior",
+            "demonstrated consequence or contract violation",
+            "strongest counterargument considered",
+            "classification",
+        ]);
     });
 
     it("checks evolving contracts for the exact resource and execution path", () => {
@@ -64,11 +72,12 @@ describe("review publication gate", () => {
     it("keeps the gate inside existing sections without a new process section", () => {
         const content = read(CODE_REVIEW);
         const depth = section(content, "## 4. Assess risk and choose review depth", "## 5. Deep review contract");
-        const review = section(content, "## 7. Review the review", "## 8. Coverage");
+        const gate = section(content, "## 6. Verify candidate findings", "## 7. Review the review");
 
         expect(depth).toMatch(/publication gate in Section 6 applies at every depth/);
-        expect(review).toMatch(/strongest counterargument you actually\s+considered/);
-        expect(review).toMatch(/explicitly discarded as a rejected candidate/);
+        expect(gate).toMatch(/Record the strongest counterargument actually considered and the classification\s+at this gate/);
+        expect(gate).toMatch(/`finding`, `QUESTION`, `SUGGESTION`, or rejected candidate/);
+        expect(gate).toMatch(/unclassified candidates are not published/);
     });
 
     it("declares review-quick as the only in-agent quick review without delegation or verdict", () => {

@@ -28,8 +28,81 @@ describe("code-review risk lenses", () => {
 
         expect(lens).toMatch(/react to changes\s+made by the mechanism itself or by its own dependencies/);
         expect(lens).toMatch(/`NOT_VERIFIED` coverage entry, not a\s+silent assumption/);
-        expect(routing).toContain("reactivity, lifecycle and feedback loops");
+        expect(routing.toLowerCase()).toContain("reactivity, lifecycle and feedback loops");
         expect(depth).toMatch(/framework\/runtime lifecycle behavior \(see "Reactivity, lifecycle and feedback\s+loops"/);
+    });
+
+    it("routes every checklist axis and starts each with a key question", () => {
+        const root = read(CODE_REVIEW);
+        const checklists = read(CHECKLISTS);
+        const axes = [...checklists.matchAll(/^### (.+)$/gm)];
+        const routing = root.split("\n").find((line) => line.includes("`<skill_dir>/references/review-checklists.md`")) ?? "";
+        const condition = routing.split("|")[1] ?? "";
+        const routedAxes = condition.slice(condition.indexOf(":") + 1).split(";").map((name) => name.trim().toLowerCase());
+
+        expect(axes.length).toBeGreaterThan(0);
+        expect(routedAxes.sort()).toEqual(axes.map((axis) => axis[1].toLowerCase()).sort());
+        for (const [index, axis] of axes.entries()) {
+            const end = axes[index + 1]?.index ?? checklists.length;
+            const firstParagraph = checklists.slice(axis.index + axis[0].length, end).trimStart().split("\n")[0];
+            expect(firstParagraph, axis[1]).toMatch(/^Key question: .+\?$/);
+        }
+    });
+
+    it("triages every axis before loading selected sections and investigating", () => {
+        const root = read(CODE_REVIEW);
+        const depth = section(root, "## 4. Assess risk and choose review depth", "### Complexity/value gate");
+        const investigation = section(root, "## 5. Deep review contract", "## 6. Verify candidate findings");
+        const header = read(CHECKLISTS).split("### ")[0];
+
+        expect(depth).toMatch(/identify the changed\s+behavior, consider every `###` section[\s\S]+then read\s+or receive in context the selected sections before investigating/);
+        expect(depth).toMatch(/For each section, record[\s\S]+\*\*selected\*\*, with a signal[\s\S]+\*\*omitted\*\*, with a concrete fact/);
+        expect(depth).toMatch(/generic “not applicable” is insufficient/);
+        expect(depth).toMatch(/example signals, not exhaustive triggers or the sole selection\s+rule/);
+        expect(depth).toMatch(/matching none of them still goes through triage of every checklist\s+section/);
+        expect(header).toMatch(/Section 4[\s\S]+selected sections before investigating their risks in Section 5/);
+        expect(investigation).toMatch(/For each axis selected in Section 4, trace an input or event[\s\S]+calls and contracts to its effect/);
+        expect(investigation).toMatch(/candidate with its location or a concrete checked scenario with no\s+defect/);
+        expect(investigation).toMatch(/Rejecting a candidate or obtaining a green test does not end investigation of\s+the other selected axes/);
+        expect(investigation).toMatch(/Finish only when every checklist section has a recorded\s+selection or omission reason[\s\S]+every selected axis has its key question\s+resolved with evidence or a named gap/);
+    });
+
+    it("preserves the high-risk depth criteria used by coverage and verdicts", () => {
+        const depth = section(read(CODE_REVIEW), "Increase review depth when", "Before investigation,");
+
+        for (const risk of [
+            "authorization, privacy, or trust boundaries",
+            "persistent state, migrations, or data integrity",
+            "public or inter-component contracts",
+            "asynchronous processing, retries, idempotency, ordering, or concurrency",
+            "external effects or integrations",
+            "framework/runtime lifecycle behavior",
+            "performance-sensitive or high-volume paths",
+            "broad refactors with many callers/consumers",
+            "deployment, configuration, scheduled execution, or operational behavior",
+            "changes whose correctness depends on several independent assumptions",
+        ]) {
+            expect(depth).toContain(risk);
+        }
+    });
+
+    it("accounts for selected and omitted axes without conflating source review and test execution", () => {
+        const root = read(CODE_REVIEW);
+        const coverage = section(root, "## 8. Coverage", "## 9. Severity");
+        const output = section(root, "### Coverage", "### Finding resolutions");
+        const verdict = section(root, "## 10. Verdict", "## 11. Output format");
+
+        for (const text of [coverage, output]) {
+            expect(text).toMatch(/scope or paths/);
+            expect(text).toMatch(/risk question, checked scenario and evidence/);
+            expect(text).toMatch(/coverage outcome/);
+            expect(text).toMatch(/remaining gap/);
+            expect(text).toMatch(/entire accepted scope/);
+            expect(text).toMatch(/omitted[\s\S]+one\s+line[\s\S]+reasons/);
+        }
+        expect(coverage).toMatch(/`REVIEWED` requires analysis of the risk, not merely reading a file or obtaining\s+a green test/);
+        expect(coverage).toMatch(/Not running a test does not mean source analysis was absent/);
+        expect(verdict).toMatch(/An unrun test alone does not force `DISCUSS` when source\s+analysis is sufficient/);
     });
 
     it("does not count a test double replacing the source of risk as coverage", () => {
@@ -38,6 +111,8 @@ describe("code-review risk lenses", () => {
         expect(tests).toMatch(/a test that fully replaces that dependency with a double is\s+not evidence for that risk/);
         expect(tests).toMatch(/record a `verification_gap` naming the missing\s+scenario/);
         expect(tests).toMatch(/A double remains\s+legitimate for behavior that is not the source of risk/);
+        expect(tests).toMatch(/for subprocesses, check inherited environment, user or\s+system configuration, working directory, tool defaults, and process outcome/);
+        expect(tests).toMatch(/identify what the fixture actually isolates/);
     });
 
     it("compares twin components and checks dependent values", () => {
