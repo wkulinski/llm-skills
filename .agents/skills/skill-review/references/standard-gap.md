@@ -53,7 +53,5 @@ pokrycia, który nie wpływa na werdykt, może być `MINOR` albo `SUGGESTION`.
 
 - Artefakt opisuje rolę modelu, ale standard nie mówi, jak oceniać przypięcie
   modelu w tekście normatywnym → `standard-gap` na wymiarze przenośności.
-- Test pinuje frazę, której właściciel reguły już nie istnieje → `standard-gap`
-  z właścicielem `$task-plan` + `$code-implement`.
 - Standard nie definiuje, czy opis agenta ma limit długości → `standard-gap`
   `MINOR`; raport nadal podaje długość jako metrykę.

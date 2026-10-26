@@ -13,8 +13,7 @@ Nie jest to konfiguracja konkretnego projektu biznesowego.
 
 ## 1a. Reguły ścieżek i priorytetu dla skilli
 Stosuj `./skill-structure-contract.md` — jedynego właściciela notacji ścieżek,
-priorytetu zasad, semantyki `shared_files` i entrypointów. Ten dokument nie
-ustanawia alternatywnej hierarchii.
+priorytetu zasad, semantyki `shared_files` i entrypointów.
 
 ## 2. Współpraca i komunikacja
 - Najpierw doprecyzuj cel i kryteria akceptacji; nie zgaduj, gdy brakuje kluczowych danych.
@@ -116,7 +115,7 @@ Ta lista nie luzuje żadnej bramki:
 - Historia jest liniowa: bez merge commitów. Zmiany z gałęzi bazowej wciągaj przez rebase albo `--ff-only`.
 - Stan gałęzi porównuj z `origin/<gałąź bazowa>`; lokalna gałąź bazowa bywa nieaktualna.
 - W commitach i opisach PR nie dodawaj `Co-Authored-By` ani stopki o generowaniu przez narzędzie.
-- Repozytorium konsumenta może to nadpisać w `AGENTS.md` (zob. §8).
+- Repozytorium konsumenta może to nadpisać w `AGENTS.md` (zob. „Priorytet zasad” w `./skill-structure-contract.md`).
 
 ## 4. Wykonanie techniczne
 - Przed implementacją sprawdź wersje bibliotek i kontekst środowiska.
@@ -150,13 +149,3 @@ Ta lista nie luzuje żadnej bramki:
 - Aktualizuj dokumentację tylko tam, gdzie zmiana faktycznie wpływa na opis działania.
 - Dla procedur operacyjnych trzymaj zasadę skills-first: kroki są w skillach, w docs zostają skróty/intencje.
 - Nie duplikuj tej samej procedury w wielu miejscach; zamiast tego linkuj do źródła prawdy.
-
-## 7. Baseline vs override
-Rozstrzygnij profil i stosuj aktywne standardy według `./project-profiles.md`
-przed pracą; ta referencja jest też właścicielem migracji konsumentów.
-
-## 8. Priorytet reguł (rozstrzyganie konfliktów)
-Priorytet źródeł określa `./skill-structure-contract.md`, a wybór aktywnych
-standardów i relację baseline/override — `./project-profiles.md`. Dokumentacja
-modułów opisuje kontrakty, nie stanowi alternatywnej hierarchii zasad.
-Guardraile bezpieczeństwa pozostają obowiązujące.

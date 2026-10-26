@@ -11,11 +11,10 @@ const USAGE_TRIGGER = "Użyj, gdy";
 const POLISH_DIACRITICS = /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/;
 const POLISH_WORDS = /(?:^|[^\p{L}])(?:gdy|oraz|albo|jest|który|dla)(?:[^\p{L}]|$)/iu;
 const MIN_DUPLICATE_LINES = 4;
-const MAX_TEST_PINS = 50;
 const MAX_PREVIEW_LENGTH = 120;
 const CONFIG_FILE = "opencode.jsonc";
-const SKILL_CHECKS = ["description", "frontmatter", "root-sections", "shared-files", "test-pins", "duplicate-blocks"];
-const AGENT_CHECKS = ["frontmatter", "body-sections", "config-entry", "delegating-skills", "test-pins"];
+const SKILL_CHECKS = ["description", "frontmatter", "root-sections", "shared-files", "duplicate-blocks"];
+const AGENT_CHECKS = ["frontmatter", "body-sections", "config-entry", "delegating-skills"];
 const CATALOG_VERSION = 1;
 const CATALOG_CHECKS = [
     "skills",
@@ -26,7 +25,6 @@ const CATALOG_CHECKS = [
     "rules",
     "shared-files-graph",
     "mjs-dependencies",
-    "test-pins",
     "description-budget",
     "model-names",
     "language",
@@ -283,25 +281,6 @@ function walkFiles(directory) {
     return files;
 }
 
-function collectTestPins({root, needles}) {
-    const testsRoot = path.join(root, "tests");
-    if (!isDirectory(testsRoot)) {
-        return [];
-    }
-    const pins = [];
-    const files = walkFiles(testsRoot).filter((file) => file.endsWith(".mjs")).sort();
-    for (const file of files) {
-        const matched = matchingLines(readFileSync(file, "utf8"), needles);
-        if (matched.length > 0) {
-            pins.push({file: toPosix(path.relative(root, file)), lines: matched});
-        }
-        if (pins.length >= MAX_TEST_PINS) {
-            break;
-        }
-    }
-    return pins;
-}
-
 function collectDelegatingArtifacts({root, needles}) {
     const skillsRoot = path.join(root, ".agents", "skills");
     if (!isDirectory(skillsRoot)) {
@@ -406,10 +385,6 @@ function buildSkillInventory({root, artifact}) {
             declared: declared.map((entry) => entry.value),
             missing: missing.map((entry) => entry.value),
         },
-        test_pins: collectTestPins({
-            root,
-            needles: [artifact.relativePath],
-        }),
         duplicate_blocks: collectDuplicateBlocks(artifact.lines),
     };
     return assembleInventory({
@@ -643,9 +618,11 @@ function buildAgentInventory({root, artifact}) {
         : describeAgentText("", 1);
     const bodyLines = artifact.lines.slice(frontmatter.bodyStartIndex);
     const agentName = path.basename(artifact.relativePath, ".md");
-    const needles = [`${agentName}.md`, toPosix(path.join(".opencode", "agents", `${agentName}.md`))];
     const config = parseAgentConfig({root, agentName});
-    const delegatingSkills = collectDelegatingSkills({root, needles: [...needles, agentName]});
+    const delegatingSkills = collectDelegatingSkills({
+        root,
+        needles: [`${agentName}.md`, toPosix(path.join(".opencode", "agents", `${agentName}.md`)), agentName],
+    });
     const metrics = {
         frontmatter: {
             present: true,
@@ -660,7 +637,6 @@ function buildAgentInventory({root, artifact}) {
         },
         config,
         delegating_skills: delegatingSkills,
-        test_pins: collectTestPins({root, needles}),
     };
     return assembleInventory({
         mode: "agent",
@@ -830,7 +806,6 @@ function parseSkillsIndex(source) {
     const lines = splitLines(source);
     const skills = new Map();
     const rows = [];
-    const support = {present: false, header_line: null, rows: []};
     let group = null;
     let table = null;
     for (let index = 0; index < lines.length; index += 1) {
@@ -857,23 +832,10 @@ function parseSkillsIndex(source) {
         const nextCells = (lines[index + 1] ?? "").split("|").slice(1, -1).map((cell) => cell.trim());
         if (nextCells.length === cells.length && nextCells.every((cell) => /^:?-{3,}:?$/.test(cell))) {
             // Markdown header + separator, independent of the heading language.
-            table = cells.length === 3 ? "triggers" : cells.length > 3 && /^Skill$/i.test(cells[0]) ? "support" : null;
-            if (table === "support") {
-                support.present = true;
-                support.header_line = index + 1;
-            }
+            table = cells.length === 3 ? "triggers" : null;
             continue;
         }
         if (cells.every((cell) => /^:?-{3,}:?$/.test(cell))) {
-            continue;
-        }
-        if (table === "support" && cells.length > 3) {
-            const skillCell = /^`\$([a-z0-9-]+)`$/.exec(cells[0]);
-            if (skillCell !== null) {
-                support.rows.push({
-                    skill: skillCell[1], values: cells.slice(1), line: index + 1,
-                });
-            }
             continue;
         }
         if (table !== "triggers" || cells.length !== 3) {
@@ -890,7 +852,6 @@ function parseSkillsIndex(source) {
             .map(([name, linesFound]) => ({name, lines: linesFound}))
             .sort((left, right) => compareStrings(left.name, right.name)),
         rows,
-        support,
     };
 }
 
@@ -974,42 +935,6 @@ function listAgentEntries(source) {
         index += 1;
     }
     return entries;
-}
-
-function matchTargetLines(lines, needles) {
-    const matched = [];
-    for (let index = 0; index < lines.length; index += 1) {
-        if (needles.some((needle) => matchNeedle(lines[index], needle))) {
-            matched.push(index + 1);
-        }
-    }
-    return matched;
-}
-
-function collectCatalogTestPins({root, artifacts, inputs}) {
-    const testsRoot = path.join(root, "tests");
-    if (!isDirectory(testsRoot)) {
-        return {files_scanned: 0, artifacts: []};
-    }
-    const files = walkFiles(testsRoot).filter((file) => file.endsWith(".mjs")).sort();
-    const targets = artifacts.map((artifact) => ({file: artifact.file, needles: artifact.needles, pins: []}));
-    for (const file of files) {
-        const source = readFileSync(file, "utf8");
-        recordInput(inputs, {root, absolutePath: file, source});
-        const lines = splitLines(source);
-        for (const target of targets) {
-            const matched = matchTargetLines(lines, target.needles);
-            if (matched.length > 0) {
-                target.pins.push({file: toPosix(path.relative(root, file)), lines: matched});
-            }
-        }
-    }
-    return {
-        files_scanned: files.length,
-        artifacts: targets
-            .filter((target) => target.pins.length > 0)
-            .map((target) => ({file: target.file, pins: target.pins})),
-    };
 }
 
 function summarizeDescriptionBudget(skills) {
@@ -1371,7 +1296,6 @@ function buildCatalogSkill({root, name, skillsRoot, inputs, signals, index, rout
         shared_files: shared,
         sections: collectSections(artifact.lines, 0),
         duplicate_blocks: duplicateBlocks,
-        test_pins: [],
         in_index: inIndex,
         in_routing_policy: inRouting,
     };
@@ -1445,7 +1369,6 @@ function buildCatalogAgent({root, absolutePath, inputs, signals, configEntries, 
         },
         config,
         delegating_skills: delegatingSkills,
-        test_pins: [],
     };
     signals.push(...buildAgentSignals({artifact, forbidden, config, delegatingSkills}));
     if (description.language !== "pl") {
@@ -1542,23 +1465,6 @@ function collectIndexSignals({index, skillDirs}) {
     for (const row of index.rows) {
         if (!indexOccurrences.has(row.skill)) {
             indexOccurrences.set(row.skill, row.line);
-        }
-    }
-    if (index.support.present) {
-        const supportSkills = new Set();
-        for (const row of index.support.rows) {
-            if (!indexOccurrences.has(row.skill)) {
-                indexOccurrences.set(row.skill, row.line);
-            }
-            if (supportSkills.has(row.skill)) {
-                signals.push({id: "index-duplicate-support-metrics", severity: "major", detail: `Powtórzone metryki skilla "$${row.skill}".`, evidence: `docs/SKILLS.md:${row.line}`});
-            }
-            supportSkills.add(row.skill);
-        }
-        for (const name of diskNames) {
-            if (!supportSkills.has(name)) {
-                signals.push({id: "missing-support-metrics", severity: "major", detail: `Skill "$${name}" nie ma wiersza metryk wsparcia.`, evidence: `docs/SKILLS.md:${index.support.header_line}`});
-            }
         }
     }
     for (const [name, line] of indexOccurrences) {
@@ -1658,7 +1564,7 @@ function buildCatalogReport({root, runMode, previousPath = null, reviewPath = nu
     let index = null;
     if (existsSync(indexFile)) {
         const parsed = parseSkillsIndex(readText(indexFile));
-        index = {file: "docs/SKILLS.md", skills: parsed.skills, rows: parsed.rows, support: parsed.support};
+        index = {file: "docs/SKILLS.md", skills: parsed.skills, rows: parsed.rows};
         areas.push({id: "index", status: "covered", detail: `${parsed.skills.length} wpisów, ${parsed.rows.length} wierszy triggerów`});
     } else {
         areas.push({id: "index", status: "not_covered", detail: "brak docs/SKILLS.md"});
@@ -1787,19 +1693,6 @@ function buildCatalogReport({root, runMode, previousPath = null, reviewPath = nu
     signals.push(...collectIndexSignals({index, skillDirs}));
     signals.push(...collectRoutingSignals({routing, routingSource, skillDirs, agentNames}));
 
-    const pinTargets = [
-        ...skills.map((skill) => ({file: skill.file, needles: [skill.file]})),
-        ...agents.map((agent) => ({file: agent.file, needles: [`${agent.name}.md`, toPosix(path.join(".opencode", "agents", `${agent.name}.md`)), agent.name]})),
-    ];
-    const testPins = collectCatalogTestPins({root, artifacts: pinTargets, inputs});
-    const pinsByFile = new Map(testPins.artifacts.map((entry) => [entry.file, entry.pins]));
-    for (const skill of skills) {
-        skill.test_pins = pinsByFile.get(skill.file) ?? [];
-    }
-    for (const agent of agents) {
-        agent.test_pins = pinsByFile.get(agent.file) ?? [];
-    }
-
     const modelProfiles = new Set();
     const modelHierarchyPath = path.join(root, MODEL_HIERARCHY_FILE);
     if (existsSync(modelHierarchyPath)) {
@@ -1823,7 +1716,6 @@ function buildCatalogReport({root, runMode, previousPath = null, reviewPath = nu
             : "brak katalogu .agents/skills/_shared",
     });
     areas.push({id: "mjs-dependencies", status: "covered", detail: `${mjsEdges.length} krawędzi importów`});
-    areas.push({id: "test-pins", status: "covered", detail: `${testPins.files_scanned} plików testów`});
     areas.push({id: "description-budget", status: "covered", detail: `${descriptionBudget.total_chars} znaków, ~${descriptionBudget.total_tokens} tokenów`});
     areas.push({id: "model-names", status: "covered", detail: `${textArtifacts.length} artefaktów, ${modelSignals.length} trafień`});
     areas.push({id: "language", status: "covered", detail: `${skills.length} opisów skilli, ${agents.length} opisów agentów`});
@@ -1905,7 +1797,6 @@ function buildCatalogReport({root, runMode, previousPath = null, reviewPath = nu
                 edges: mjsEdges.sort((left, right) => compareStrings(left.from, right.from) || compareStrings(left.to, right.to)),
                 undeclared: mjsUndeclared.sort((left, right) => compareStrings(left.skill, right.skill) || compareStrings(left.imported, right.imported)),
             },
-            test_pins: testPins,
             description_budget: descriptionBudget,
             language: {
                 skill_descriptions: countLanguages(skills, (skill) => skill.description.language),

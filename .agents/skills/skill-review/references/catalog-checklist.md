@@ -40,9 +40,9 @@ checklisty pojedynczych targetów: każdy obszar raportu oceniaj właściwą sek
 
 | Obszar | Co ocenić |
 |---|---|
-| `metrics.skills` | kompletność indeksu, triggery opisów, budżet opisów (metryka bez progu), duplikaty bloków, deklaracje `shared_files`, pin testowy |
+| `metrics.skills` | kompletność indeksu, triggery opisów, budżet opisów (metryka bez progu), duplikaty bloków, deklaracje `shared_files` |
 | `metrics.shared_files_graph` | brakujące i między-skillowe deklaracje; plik współdzielony bez odwołania; zależności `.mjs` bez deklaracji (`metrics.mjs_dependencies`) |
-| `metrics.agents` + `metrics.agent_config` | plik bez wpisu w `opencode.jsonc`, wpis bez pliku (osierocony klucz), brak delegującego skilla, pin testowy, frontmatter bez `model`/`variant`/`thinking` |
+| `metrics.agents` + `metrics.agent_config` | plik bez wpisu w `opencode.jsonc`, wpis bez pliku (osierocony klucz), brak delegującego skilla, frontmatter bez `model`/`variant`/`thinking` |
 | `metrics.rules` | duplikaty bloków i nagłówków, spójność `docs_map` ze ścieżkami, reguły runtime poza `.agents/skills/**`, nieaktualne lub bezwarunkowe zdania |
 | `metrics.index` + `metrics.routing_policy` | triangulacja: polityka routingu ↔ opisy/triggery ↔ `docs/SKILLS.md` ↔ katalog na dysku |
 | `metrics.language` | języki artefaktów; opis agenta jest metryką monitorowaną bez twardego progu |
@@ -52,10 +52,6 @@ checklisty pojedynczych targetów: każdy obszar raportu oceniaj właściwą sek
 
 - Listy duplikatów zawierają wszystkie wykryte, niezależne bloki; podbloki
   zawarte w dłuższym duplikacie są scalane, nie ograniczane kwotą wyników.
-- `test_pins` skilla wskazuje literalne odwołania do jego kwalifikowanej ścieżki.
-  Sam napis `SKILL.md` nie wiąże testu ze skillem. Pusta lista nie dowodzi braku
-  testów: testy ogólnokatalogowe i ścieżki składane dynamicznie wymagają osobnej
-  oceny, nie są automatycznie przypisywane do każdego skilla.
 - Każdy wpis `metrics.rules.files` ma `coverage.status` i `coverage.reason`.
   `document-not-found` oznacza brak pliku, a `instruction-span-not-located` —
   nierozpoznany zakres instrukcji README, nie brak instrukcji. Obszar `rules`

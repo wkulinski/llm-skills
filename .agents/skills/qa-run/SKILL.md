@@ -38,11 +38,6 @@ Uruchomić QA w sposób deterministyczny:
 - Agent nie dobiera komend "na wyczucie"; wykonuje komendy z matrixa i fazy opisane w tym skillu.
 
 ## Tryb domyślny
-Przed uruchomieniem komend macierzy rozstrzygnij profil według
-`<skills_root>/_shared/references/project-profiles.md`; błąd konfiguracji
-zatrzymuje procedurę przed komendami i naprawami. Dobór standardów dla fazy
-`$review-quick` pozostaje własnością `$review-quick`, a algorytm macierzy nie zależy od profilu.
-
 - Domyślnie `$qa-run` działa w trybie `repair`.
 - `repair` oznacza: matrix QA -> naprawa po FAIL -> delta rerun -> `$review-quick` -> naprawa po review -> delta rerun -> ewentualny final full pass.
 - Tryb `report-only` uruchamiaj tylko, gdy użytkownik wyraźnie zaznaczy brak napraw (np. "tylko sprawdź", "bez poprawek", "check-only").
@@ -300,6 +295,10 @@ Stary format z płaskimi tablicami nie jest obsługiwany. Runner ma przerwać wy
 - Jeśli finalny pełny przebieg nie jest wymagany, status końcowy QA można zwrócić po udanych sekcjach i `$review-quick`.
 
 ## Pętla wykonania (kontrakt)
+Przed komendami macierzy i naprawami rozstrzygnij profil według
+`<skills_root>/_shared/references/project-profiles.md`; po błędzie przerwij.
+Profil nie zmienia wyboru sekcji ani komend macierzy.
+
 - `MAX_ITERATIONS=20`.
 - Iteracja = jedno uruchomienie matrix runnera (`full` albo `delta`) albo faza `$review-quick` zakończona poprawką wymagającą rerunu.
 

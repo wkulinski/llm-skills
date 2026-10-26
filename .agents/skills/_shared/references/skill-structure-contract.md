@@ -34,9 +34,15 @@ repozytorium; ten plik opisuje kontrakt, a nie jego implementację.
 Po wybraniu aktywnego skilla stosuj kolejność (od najwyższego priorytetu):
 
 1. Instrukcje systemowe/developerskie środowiska
-2. `./AGENTS.md` i dokumenty z `docs_map`
-3. Bieżący `SKILL.md`
-4. Pliki wskazane w `shared_files`
+2. Polecenie użytkownika z bieżącego zadania
+3. `./AGENTS.md` i dokumenty z `docs_map` (lokalne zasady repo). Dokumentacja
+   modułów (`MODULE_DOCS_GLOB`) opisuje kontrakty modułów, ale nie zmienia zasad.
+4. Bieżący `SKILL.md`
+5. Pliki wskazane w `shared_files`; kolejność aktywnych standardów stacka
+   względem reguł runtime określa `<skills_root>/_shared/references/project-profiles.md`.
+
+Twarde guardraile bezpieczeństwa (np. zakaz destrukcyjnych komend git bez
+wyraźnej zgody) obowiązują niezależnie od tej kolejności.
 
 Wyjątek przed wyborem aktywnego skilla: routing nadrzędnego workflow odbywa się
 według `<skills_root>/_shared/references/skill-routing-policy.md`. Bieżący
@@ -78,5 +84,4 @@ a nie do pojedynczego skilla.
 
 - Routing nadrzędnego workflow: `skill-routing-policy.md`.
 - Zasady współpracy i wykonania technicznego: `runtime-collaboration-guidelines.md`.
-- Egzekwowanie reguł MUST: testy kontraktowe `skills-shared-files.test.mjs` oraz
-  `playwright-routing-contract.test.mjs`.
+- Egzekwowanie reguł MUST: `skills-shared-files.test.mjs`.

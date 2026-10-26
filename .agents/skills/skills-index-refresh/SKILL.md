@@ -39,14 +39,8 @@ Celem jest odświeżenie indeksu skilli tak, aby odzwierciedlał aktualny stan k
 5. Dla wierszy głównego workflow użyj tabeli routingu z `<skills_root>/_shared/references/skill-routing-policy.md` jako źródła; nie zmieniaj tej polityki lokalnie i nie kopiuj z niej reguł, których indeks nie potrzebuje.
 6. Usuń odwołania do nieistniejących skilli, dodaj brakujące i uzupełnij brakujące triggery na podstawie opisu skilla.
 7. Upewnij się, że nazwy w indeksie mają prefiks `$`.
-8. Jeśli indeks zawiera osobną tabelę metryk wsparcia:
-   - zachowaj bez zmian metryki i dowody istniejących skilli; odświeżenie nie podnosi statusów wsparcia,
-   - dodaj wiersz dla każdego nowego skilla w języku indeksu: cztery niezależne osie (stack, środowisko agenta, narzędzia, profil architektury), skutki i zależności ustal z jego instrukcji; nieustalone wymagania oznacz jako wymagające sprawdzenia, a wsparcie jako niezweryfikowane (`Unverified` w indeksie angielskim),
-   - usuń wiersze nieistniejących skilli; utrzymuj dokładnie jeden wiersz na skill,
-   - utrzymuj odrębną tabelę z inną liczbą kolumn niż trzykolumnowa tabela triggerów; nie mieszaj metryk z listą ani triggerami,
-   - jeśli indeks opisuje zestaw startowy, sprawdź jego zależności pośrednie po zmianie katalogu; nie myl odwołania do właściciela innej procedury z obowiązkowym wywołaniem.
-   Jeśli indeks nie zawiera takiej sekcji, nie twórz jej — także przy tworzeniu nowego indeksu. Metryki są opcjonalnym kontraktem indeksu, nie obowiązkiem konsumenta.
-9. Sprawdź kompletność listy i triggerów oraz, gdy istnieją, metryk. Porównaj wynik ze stanem wejściowym: jeśli indeks jest już kompletny i aktualny, odświeżenie ma być no-op; nie przepisuj języka, grup, poprawnych opisów ani metryk „dla stylu”.
+8. Jeśli indeks opisuje zestaw startowy, sprawdź jego zależności pośrednie po zmianie katalogu; nie myl odwołania do właściciela innej procedury z obowiązkowym wywołaniem.
+9. Sprawdź kompletność listy i triggerów. Porównaj wynik ze stanem wejściowym: jeśli indeks jest już kompletny i aktualny, odświeżenie ma być no-op; nie przepisuj języka, grup ani poprawnych opisów „dla stylu”.
 
 ## Format odpowiedzi
 - Wynik: krótka informacja, czy indeks został zaktualizowany lub czy nie było zmian.

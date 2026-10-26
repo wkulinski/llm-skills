@@ -1,13 +1,14 @@
-# Profile projektu
+# Project profiles
 
-Ten plik jest jedynym właścicielem wyboru profilu stacka i aktywacji jego reguł.
-Profil wybiera reguły, nie workflow ani zestaw narzędzi do uruchomienia.
+This file is the single owner of stack-profile selection and the activation of
+its rules. A profile selects rules, not workflows or the set of tools to run.
 
-## Rozstrzygnięcie przed pracą
+## Resolve before work
 
-Przed odczytem standardów stacka, implementacją, review, QA lub zapisem plików projektu
-załaduj istniejący `<skills_root>/_shared/scripts/env-load.sh` i wywołaj
-`resolve_stack_profile` w root repo konsumenta. Nie kontynuuj po błędzie:
+Before reading stack standards, implementing, reviewing, running QA or writing
+project files, source the existing `<skills_root>/_shared/scripts/env-load.sh`
+and call `resolve_stack_profile` in the consumer repository root. Do not continue
+after an error:
 
 ```bash
 source .agents/skills/_shared/scripts/env-load.sh
@@ -15,61 +16,59 @@ ensure_repo_env_loaded || exit $?
 STACK_PROFILE="$(resolve_stack_profile)" || exit $?
 ```
 
-Odczytowy snapshot i lokalne artefakty workflow (cache, stan, snapshot commita)
-mogą powstać wcześniej; nie uprawniają do zmian w projekcie przed walidacją.
+A read-only snapshot and local workflow artifacts (cache, state, commit snapshot)
+may be created earlier; they do not permit project changes before validation.
 
-Przykład zakłada instalację w `.agents/skills`; przy innym położeniu użyj
-rzeczywistego `skills_root`. Funkcja korzysta z istniejącego ładowania aktywnych
-env przez `ensure_repo_env_loaded`; nie parsuj env ponownie w skillu.
-Kolejność pozostaje: `.env`, `.env.local` (poza `APP_ENV=test`),
-`.env.<APP_ENV>`, `.env.<APP_ENV>.local`; domyślny `APP_ENV` to `dev`.
-`.env.dist` jest szablonem, nie aktywnym plikiem runtime.
+The example assumes installation in `.agents/skills`; otherwise use the actual
+`skills_root`. The function relies on the existing active-env loading in
+`ensure_repo_env_loaded`; do not parse env again in a skill. The order is
+`.env`, `.env.local` (except with `APP_ENV=test`), `.env.<APP_ENV>`,
+`.env.<APP_ENV>.local`; the default `APP_ENV` is `dev`. `.env.dist` is a
+template, not an active runtime file.
 
-| Końcowe `SKILLS_STACK_PROFILE` | Aktywne standardy |
+| Final `SKILLS_STACK_PROFILE` | Active standards |
 |---|---|
-| brak, puste lub `generic` | przenośne reguły współpracy i jakości; bez baseline PHP |
-| `php-symfony-postgres` | obowiązkowo `php-symfony-postgres-standards.md` |
-| inna wartość | `SKILLS_STACK_PROFILE_INVALID`, exit 2; zatrzymaj procedurę przed zmianami |
+| unset, empty or `generic` | portable collaboration and quality rules; no PHP baseline |
+| `php-symfony-postgres` | `php-symfony-postgres-standards.md` is mandatory |
+| any other value | `SKILLS_STACK_PROFILE_INVALID`, exit 2; stop the procedure before any change |
 
-`CQRS_MONOLITH_STANDARD_OVERRIDES` jest osobną osią konfiguracji. Wartość `1`
-dołącza `cqrs-monolith-standard-overrides.md` wyłącznie w profilu PHP, z jego
-dotychczasowym pierwszeństwem względem baseline. W profilu `generic` wartość
-`1` daje `CQRS_OVERRIDE_REQUIRES_PHP_PROFILE`, exit 2 — nigdy nie wybiera PHP
-automatycznie. Pozostałe wartości pozostawiają override nieaktywny.
+`CQRS_MONOLITH_STANDARD_OVERRIDES` is a separate configuration axis. The value
+`1` adds `cqrs-monolith-standard-overrides.md` only in the PHP profile. In the
+`generic` profile, `1` yields `CQRS_OVERRIDE_REQUIRES_PHP_PROFILE`, exit 2 — it
+never selects PHP automatically. Any other value leaves the override inactive.
 
-Nie wnioskuj profilu z rozszerzeń plików, obecności `composer.json`, nazwy
-workflow ani samej flagi CQRS. Zapisz rozstrzygnięty profil i aktywność override
-w istniejącym manifeście/stanie/raporcie, bez kopiowania całego env. Przy zmianie
-konfiguracji rozstrzygnij profil ponownie w świeżym shellu i odśwież kontekst.
+Do not infer the profile from file extensions, the presence of `composer.json`,
+the workflow name or the CQRS flag alone. Record the resolved profile and override
+state in the existing manifest/state/report without copying the whole env. After
+a configuration change, resolve the profile again in a fresh shell and refresh
+the context.
 
-## Konsumpcja i narzędzia
+When active standards conflict, precedence is (highest first): the CQRS override,
+the stack baseline, the runtime rules (`runtime-collaboration-guidelines.md`,
+`runtime-quality-procedures.md`). The position of standards relative to the
+user's command, repository rules and `SKILL.md` is defined by
+`./skill-structure-contract.md`.
 
-Skille odsyłają tutaj zamiast powtarzać warunki wyboru. Czytaj i stosuj tylko
-standardy aktywowane powyżej. `shared_files` pozostaje deklaracją dostępności:
-zachowaj baseline, override, tę referencję i `env-load.sh` w dystrybucji skilli,
-które ich używają; obecność na liście nie aktywuje standardu.
+## Consumption and tools
 
-Preflight obejmuje tylko narzędzia potrzebne w bieżącym kroku, przez istniejący
-`resolve_tool_cmd`. Sam profil PHP nie wymaga uruchomienia wszystkich narzędzi
-PHP, a `generic` nie wyłącza narzędzia potrzebnego konkretnemu zadaniu. Komendy
-macierzy QA i kolejność workflow pozostają własnością ich dotychczasowych skilli.
+Read and apply only the standards activated above. `shared_files` remains a
+declaration of availability: keep the baseline, the override, this reference and
+`env-load.sh` in the distribution of the skills that use them; being listed does
+not activate a standard.
 
-## Migration for existing consumers
+Preflight covers only the tools needed in the current step, through the existing
+`resolve_tool_cmd`. The PHP profile alone does not require running every PHP
+tool, and `generic` does not exclude a tool a specific task needs. QA matrix
+commands and workflow order stay with their skills.
 
-The default changes from an unconditional PHP baseline to the portable core.
-**Before updating the installed skills**, existing PHP consumers must add
-`SKILLS_STACK_PROFILE=php-symfony-postgres` to their active repository env
-(for example `.env.local` outside `APP_ENV=test`). Preserve the existing CQRS
-flag; it does not replace the stack profile. For test environments, put the
-selection in an active test env file or exported runtime configuration.
+## Migrating existing consumers
 
-Then update the skills together with their declared shared files, run the
-resolution command above in a fresh shell, and refresh the context manifest.
-Verify that the resolved profile is `php-symfony-postgres`, the PHP baseline is
-loaded, and the prior CQRS override remains active if configured. Do not copy
-secrets or overwrite local env from `.env.dist` during migration.
+The default profile is `generic`. An existing PHP consumer, **before updating
+the skills**, sets `SKILLS_STACK_PROFILE=php-symfony-postgres` in the active
+repository env (for example `.env.local` outside `APP_ENV=test`, or an active
+test env file for tests) and keeps its existing CQRS flag. After the update,
+resolve the profile in a fresh shell and refresh the context manifest.
 
-New portable consumers may leave the variable unset or select `generic`.
-To deliberately migrate away from the PHP rules, first disable the CQRS override,
-then select `generic` and refresh context; do not silently remove existing
-consumer rules through `$rules-sync` as a substitute for this decision.
+To leave the PHP rules: first disable the CQRS override, then select `generic`
+and refresh the context. `$rules-sync` does not remove local stack rules in place
+of this decision.

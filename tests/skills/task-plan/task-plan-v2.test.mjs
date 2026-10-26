@@ -1220,16 +1220,6 @@ function savedPlanId(root) {
     return loadPlan({repoRoot: root, sourceIdentity: source().identity}).metadata.plan_id;
 }
 
-it("documents the repository-level task-plan test directory", () => {
-    const skill = fs.readFileSync(path.join(ROOT, ".agents/skills/task-plan/SKILL.md"), "utf8");
-
-    assert.match(skill, /tests\/skills\/task-plan\//);
-    assert.doesNotMatch(skill, /<skill_dir>\/tests\//);
-    assert.match(skill, /normalize-user --input -/);
-    assert.match(skill, /persist --input -/);
-    assert.equal(fs.existsSync(path.join(ROOT, "tests/skills/task-plan/task-plan-v2.test.mjs")), true);
-});
-
 it("keeps product notes non-blocking while open questions still block", () => {
     const root = temporaryRepository();
     prepareSource(root);

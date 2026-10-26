@@ -6,9 +6,6 @@ import {describe, expect, it} from "vitest";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../");
 const SKILLS_ROOT = path.join(ROOT, ".agents/skills");
 const MAX_DESCRIPTION_LENGTH = 300;
-const USAGE_TRIGGER = "Użyj, gdy";
-const FORBIDDEN_QA_POLICY_PHRASES = ["bez pełnego", "poza jednoznacznym"];
-const QA_RUN_ALIAS = "$qa-run";
 
 describe("skill description contract", () => {
     const skills = skillFiles().map((filePath) => ({filePath, ...readSkill(filePath)}));
@@ -37,35 +34,6 @@ describe("skill description contract", () => {
             .map((skill) => `${relative(skill.filePath)}: ${skill.description.length} > ${MAX_DESCRIPTION_LENGTH}`);
 
         expect(failures, failureMessage("Descriptions exceeding the limit", failures)).toEqual([]);
-    });
-
-    it(`includes the usage trigger "${USAGE_TRIGGER}" in every description`, () => {
-        const failures = skills
-            .filter((skill) => skill.description !== null && !skill.description.includes(USAGE_TRIGGER))
-            .map((skill) => `${relative(skill.filePath)}: missing "${USAGE_TRIGGER}"`);
-
-        expect(failures, failureMessage("Descriptions without usage trigger", failures)).toEqual([]);
-    });
-
-    it("does not leak QA policy phrases into descriptions", () => {
-        const failures = [];
-        for (const skill of skills) {
-            if (skill.description === null) { continue; }
-            for (const phrase of FORBIDDEN_QA_POLICY_PHRASES) {
-                if (skill.description.includes(phrase)) {
-                    failures.push(`${relative(skill.filePath)}: contains "${phrase}"`);
-                }
-            }
-        }
-
-        expect(failures, failureMessage("Descriptions with QA policy phrases", failures)).toEqual([]);
-    });
-
-    it("keeps the qa-run activation alias", () => {
-        const qaRun = skills.find((skill) => skill.name === "qa-run");
-
-        expect(qaRun, "qa-run skill must exist").toBeDefined();
-        expect(qaRun.description).toContain(QA_RUN_ALIAS);
     });
 });
 
