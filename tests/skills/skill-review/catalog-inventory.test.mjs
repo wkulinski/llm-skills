@@ -145,12 +145,6 @@ const AGENT_TWO_SOURCE = [
     "",
 ].join("\n");
 
-const TEST_SOURCE = [
-    "export const ALPHA_PATH = \".agents/skills/alpha/SKILL.md\";",
-    "export const AGENT_PATH = \".opencode/agents/agent-two.md\";",
-    "",
-].join("\n");
-
 let fixtureRoot;
 
 beforeEach(() => {
@@ -185,8 +179,6 @@ describe("skill-review catalog collector", () => {
         expect(signalIds).toContain("missing-config-entry");
         expect(signalIds).toContain("orphan-config-entry");
         expect(signalIds).toContain("index-orphan-skill");
-        expect(signalIds).not.toContain("missing-support-metrics");
-        expect(report.metrics.index.support).toEqual({present: false, header_line: null, rows: []});
 
         const duplicates = report.signals.filter((signal) => signal.id === "duplicate-block");
         const expectedDuplicates = DUPLICATE_BLOCKS.map((block) => ({
@@ -198,10 +190,6 @@ describe("skill-review catalog collector", () => {
         }));
         expect(duplicates).toHaveLength(expectedDuplicates.length);
         expect(duplicates.map(({preview, occurrences}) => ({preview, occurrences}))).toEqual(expect.arrayContaining(expectedDuplicates));
-        expect(report.metrics.skills.find((skill) => skill.name === "alpha").test_pins).toEqual([
-            {file: "tests/example.test.mjs", lines: [lineOf(TEST_SOURCE, ALPHA)]},
-        ]);
-        expect(report.metrics.skills.find((skill) => skill.name === "beta").test_pins).toEqual([]);
 
         const overlap = report.signals.find((signal) => signal.id === "trigger-overlap");
         expect(overlap.detail).toContain(OVERLAP_INTENT);
@@ -229,7 +217,6 @@ describe("skill-review catalog collector", () => {
             "rules",
             "shared-files-graph",
             "mjs-dependencies",
-            "test-pins",
             "description-budget",
             "model-names",
             "language",
@@ -251,16 +238,16 @@ describe("skill-review catalog collector", () => {
         "Intent | Skill | Next step",
         "Intencja | Skill | Następny krok",
         "Absicht | Skill | Nächster Schritt",
-    ])("parses trigger header %s structurally and checks optional support completeness", (header) => {
+    ])("parses trigger header %s structurally and ignores other tables", (header) => {
         write(fixtureRoot, "docs/SKILLS.md", [
             "# Skills Index", "", "## Triggers", "", "### Planning", "",
             `| ${header} |`, "| :--- | ---: | :---: |",
             "| Plan work | `$alpha` | Prepare a plan |",
             "| Review work | `$beta` | Return findings |", "",
-            "## Support metrics", "",
-            "| Skill | Stack | Agent environment | Tools | Architecture | Effects | Support | Dependencies |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- |",
-            "| `$alpha` | Neutral | CLI | Node | Not prescribed | Read-only | Unverified | — |", "",
+            "## Other table", "",
+            "| Skill | Stack | Tools | Notes |",
+            "| --- | --- | --- | --- |",
+            "| `$alpha` | Neutral | Node | — |", "",
             "## Skill list", "", "- `$alpha`", "- `$beta`", "",
         ].join("\n"));
         const result = runCatalog([]);
@@ -270,34 +257,7 @@ describe("skill-review catalog collector", () => {
             {group: "Planning", intent: "Plan work", skill: "alpha", line: 9},
             {group: "Planning", intent: "Review work", skill: "beta", line: 10},
         ]);
-        expect(report.metrics.index.support.present).toBe(true);
-        expect(report.metrics.index.support.rows.map((row) => row.skill)).toEqual(["alpha"]);
-        expect(report.signals.filter((signal) => signal.id === "missing-support-metrics")).toEqual([
-            expect.objectContaining({severity: "major", detail: expect.stringContaining("$beta"), evidence: "docs/SKILLS.md:14"}),
-        ]);
         expect(report.signals.some((signal) => signal.id === "index-skill-without-trigger")).toBe(false);
-    });
-
-    it("accepts a complete support table and detects orphan or duplicate support rows", () => {
-        const support = [
-            "", "## Support metrics", "",
-            "| Skill | Stack | Environment | Support |",
-            "| --- | --- | --- | --- |",
-            "| `$alpha` | Neutral | File tools | Unverified |",
-            "| `$beta` | Neutral | File tools | Unverified |", "",
-        ].join("\n");
-        write(fixtureRoot, "docs/SKILLS.md", INDEX_SOURCE + support);
-        const complete = JSON.parse(runCatalog([]).stdout);
-        expect(complete.metrics.index.rows).toHaveLength(2);
-        expect(complete.signals.some((signal) => signal.id === "missing-support-metrics")).toBe(false);
-
-        write(fixtureRoot, "docs/SKILLS.md", INDEX_SOURCE + support.trimEnd()
-        + "\n| `$alpha` | Neutral | File tools | Unverified |\n| `$support-orphan` | Neutral | File tools | Unverified |\n");
-        const invalid = JSON.parse(runCatalog([]).stdout);
-        expect(invalid.signals).toEqual(expect.arrayContaining([
-            expect.objectContaining({id: "index-duplicate-support-metrics", detail: expect.stringContaining("$alpha")}),
-            expect.objectContaining({id: "index-orphan-skill", detail: expect.stringContaining("$support-orphan")}),
-        ]));
     });
 
     it.each([
@@ -496,7 +456,6 @@ function writeFixture(root) {
     write(root, "docs/README.md", "# Docs\n");
     write(root, "AGENTS.md", AGENTS_SOURCE);
     write(root, "README.md", README_SOURCE);
-    write(root, "tests/example.test.mjs", TEST_SOURCE);
 }
 
 function write(root, relativePath, content) {

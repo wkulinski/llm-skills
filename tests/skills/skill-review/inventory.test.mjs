@@ -14,8 +14,8 @@ const SHARED_PRESENT = "example/present-shared.md";
 const SHARED_MISSING = "example/missing-shared.md";
 const SKILL_DESCRIPTION = "Użyj, gdy potrzebujesz przykładu do testu.";
 const AGENT_DESCRIPTION = "Agent przykładowy do zadań testowych.";
-const SKILL_CHECKS = ["description", "frontmatter", "root-sections", "shared-files", "test-pins", "duplicate-blocks"];
-const AGENT_CHECKS = ["frontmatter", "body-sections", "config-entry", "delegating-skills", "test-pins"];
+const SKILL_CHECKS = ["description", "frontmatter", "root-sections", "shared-files", "duplicate-blocks"];
+const AGENT_CHECKS = ["frontmatter", "body-sections", "config-entry", "delegating-skills"];
 const DUPLICATE_BLOCKS = Array.from({length: 24}, (_, block) =>
     Array.from({length: 4 + block % 3}, (_element, line) => `Shared instruction ${block}, line ${line}.`));
 
@@ -81,16 +81,6 @@ const CONFIG_SOURCE = [
     "",
 ].join("\n");
 
-const TEST_SOURCE = [
-    "import path from \"node:path\";",
-    "",
-    `export const SKILL_PATH = "${SKILL_FILE}";`,
-    `export const AGENT_PATH = "${AGENT_FILE}";`,
-    "export const OTHER_SKILL_PATH = \".agents/skills/other/SKILL.md\";",
-    "export const GENERIC_SKILL_NAME = \"SKILL.md\";",
-    "",
-].join("\n");
-
 let fixtureRoot;
 
 beforeEach(() => {
@@ -135,9 +125,6 @@ describe("skill-review inventory collector", () => {
 
         expect(inventory.metrics.shared_files.declared).toEqual([SHARED_PRESENT, SHARED_MISSING]);
         expect(inventory.metrics.shared_files.missing).toEqual([SHARED_MISSING]);
-        expect(inventory.metrics.test_pins).toEqual([
-            {file: "tests/example.test.mjs", lines: [lineOf(TEST_SOURCE, SKILL_FILE)]},
-        ]);
 
         expect(inventory.metrics.duplicate_blocks).toEqual(DUPLICATE_BLOCKS.map((block) => ({
             lines: block.length,
@@ -203,9 +190,6 @@ describe("skill-review inventory collector", () => {
         expect(inventory.metrics.delegating_skills).toEqual([
             {file: SKILL_FILE, lines: [lineOf(SKILL_SOURCE, AGENT_FILE), lineOf(SKILL_SOURCE, "Wywołuje agenta")]},
         ]);
-        expect(inventory.metrics.test_pins).toEqual([
-            {file: "tests/example.test.mjs", lines: [lineOf(TEST_SOURCE, AGENT_FILE)]},
-        ]);
 
         const signalIds = inventory.signals.map((signal) => signal.id);
         expect(signalIds).toContain("frontmatter-model-pin");
@@ -251,9 +235,6 @@ function writeFixture(root) {
     fs.mkdirSync(path.join(root, ".opencode/agents"), {recursive: true});
     fs.writeFileSync(path.join(root, ".opencode/agents/example-agent.md"), AGENT_SOURCE);
     fs.writeFileSync(path.join(root, "opencode.jsonc"), CONFIG_SOURCE);
-    fs.mkdirSync(path.join(root, "tests"), {recursive: true});
-    fs.writeFileSync(path.join(root, "tests/example.test.mjs"), TEST_SOURCE);
-    fs.writeFileSync(path.join(root, "tests/other.test.mjs"), 'const file = ".agents/skills/other/SKILL.md";\n');
 }
 
 function runInventory(mode, file) {

@@ -146,5 +146,5 @@ diffów do logów.
 
 ```bash
 node <skill_dir>/scripts/review-job.mjs --help
-npm run test:unit -- tests/skills/claude-review/review-job.test.mjs tests/skills/claude-review/skill-contract.test.mjs
+npm run test:unit -- tests/skills/claude-review/review-job.test.mjs
 ```

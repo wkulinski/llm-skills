@@ -282,9 +282,7 @@ change or plan, or **omitted**, with a concrete fact about the change that rules
 it out. A generic “not applicable” is insufficient. For a trivial change, one
 line may combine the selection and the reasons for all omissions.
 
-The following are example signals, not exhaustive triggers or the sole selection
-rule. A change matching none of them still goes through triage of every checklist
-section; several axes may be selected.
+Example signals (a change may select several axes):
 
 | Example signal in the change or plan | Sections to consider |
 |---|---|
@@ -341,15 +339,9 @@ calls and contracts to its effect, beyond edited lines as far as needed to
 evaluate behavior. Use the selected sections of
 `<skill_dir>/references/review-checklists.md` (see "Reference routing"). Record
 either a candidate with its location or a concrete checked scenario with no
-defect found. An initial lead need not already meet the high-confidence
-publication requirement.
+defect found.
 
-Rejecting a candidate or obtaining a green test does not end investigation of
-the other selected axes. Finish only when every checklist section has a recorded
-selection or omission reason, and every selected axis has its key question
-resolved with evidence or a named gap. This bounds the accepted review scope;
-it does not require reviewing the whole repository or prove the absence of all
-defects.
+Use Section 8 for completion and coverage.
 
 When Section 1 loaded `<skill_dir>/references/active-plan.md`, also assess the
 change against the mapped work package as that reference describes.
@@ -357,8 +349,6 @@ change against the mapped work package as that reference describes.
 For a `plan` target, also apply "Plan integrity and execution readiness" in `<skill_dir>/references/plan-review.md`.
 
 ## 6. Verify candidate findings
-
-This gate evaluates the candidates collected in Section 5.
 
 A candidate becomes a finding only if it has:
 
@@ -462,10 +452,8 @@ limits the verdict.
 
 ## 7. Review the review
 
-Before publishing findings, check the review's coverage and publication readiness.
-
-Confirm that every selected axis has evidence or a named gap and every omitted
-axis has its concrete triage reason. For findings that passed Section 6, ask:
+Before publishing, apply Section 8's coverage gate. For findings that passed
+Section 6, ask:
 
 1. Is this the same underlying failure mode as another finding? Deduplicate by failure mode, not by file.
 2. Is the severity proportional to actual impact?
@@ -507,12 +495,12 @@ When your interpretation of a rule or a finding is challenged, read the specific
 
 Discard compliments, generic advice, speculative refactors, and style-only comments from the findings list.
 
-After this pass, ensure that each inventory entry has an explicit
-review outcome before publishing the verdict.
-
 ## 8. Coverage
 
-Before final verdict, account for every meaningful changed area.
+Before final verdict, require the Section 4 selection or omission reason for
+every checklist axis, an evidence-backed answer or named gap for every selected
+axis, and the coverage entries below for the accepted scope. A rejected candidate
+or green test does not settle other axes.
 
 Use one of the following outcomes for every inventory entry:
 
@@ -622,8 +610,7 @@ For `QUESTION`, replace **Fix direction** with **Needs decision**.
 
 When rejecting or reclassifying a material candidate affects the safety
 assessment, scope, or verdict, include a brief disposition in the review details:
-observation, decision, concrete reason, and evidence. This is not a log of every
-suspicion or hidden reasoning and requires no new report heading or JSON.
+observation, decision, concrete reason, and evidence.
 
 Then provide:
 
@@ -635,16 +622,10 @@ with the requested inputs.
 
 ### Coverage
 
-A compact table/list with one concise entry per selected area: scope or paths,
-risk question, checked scenario and evidence, coverage outcome from Section 8,
-and remaining gap (or explicitly none). Related files may be grouped if the
-groups account for the entire accepted scope, including any `NOT_COVERED`
-surfaces. For every high-risk area identified in Section 4, explicitly name the
-risks and paths checked and the remaining gap. Account for omitted axes in one
-line with their concrete triage reasons, not full area entries. Neither a file
-read nor a green test alone earns `REVIEWED`; distinguish sufficient source
-analysis from an unrun mechanical check and apply Section 10's verdict limits.
-Include the applicable-rules results for the reviewed scope when a register was
+A compact table/list of the Section 8 coverage entries and the one-line account
+of omitted axes, including any `NOT_COVERED` surfaces. For every high-risk area
+identified in Section 4, explicitly name the risks and paths checked and the
+remaining gap. Include the applicable-rules results for the reviewed scope when a register was
 produced, and the `Complexity/value gate` outcome when the gate was relevant.
 
 ### Finding resolutions

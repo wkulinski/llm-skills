@@ -15,19 +15,18 @@ Ten dokument rozszerza baseline `php-symfony-postgres-standards.md` o reguły mo
 ### Siła reguł i ochrona przed pozorną zgodnością
 
 - Sformułowania „musi”, „wyłącznie”, „nie wolno” i „nie używaj” opisują wymagania; „preferuj”, „zalecane” i „domyślnie” opisują kierunek z dopuszczalnym, uzasadnionym odstępstwem.
-- Odstępstwo od wymagania ustanawia wyłącznie polecenie użytkownika w bieżącym zadaniu, zmiana tego profilu albo jawne nadpisanie w lokalnych zasadach repo w rozumieniu `runtime-collaboration-guidelines.md` §8. Dla reguł zależności odstępstwem jest też zatwierdzony wyjątek w konfiguracji narzędzia egzekwującego te reguły (pkt 7).
+- Odstępstwo od wymagania ustanawia wyłącznie polecenie użytkownika w bieżącym zadaniu, zmiana tego profilu albo jawne nadpisanie w lokalnych zasadach repo w rozumieniu `./skill-structure-contract.md` („Priorytet zasad”). Dla reguł zależności odstępstwem jest też zatwierdzony wyjątek w konfiguracji narzędzia egzekwującego te reguły (pkt 7).
 - Wyjątek przewidziany w profilu lub odstępstwo od kierunku ma konkretny zakres i uzasadnienie w kontrakcie/README; nie rozszerza automatycznie innych wyjątków. Decyzja o joinie nie uprawnia do zapisu cudzych danych, a dopuszczenie własnego `Api` w domenie nie dopuszcza własnego `Application`.
 - Lokalizacja klasy nie dowodzi jej roli. Nie przenoś logiki między warstwami ani nie kopiuj DTO wyłącznie dla zazielenienia analizy zależności.
 - Rozbudowę uzasadnia rzeczywisty invariant lub potrzeba integracji. Nie dodawaj nowych szyn, wspólnych wrapperów wyniku, mapperów, zdarzeń czy stanów procesu bez konkretnej korzyści.
 - Typy i importy są tylko częścią kontraktu. Osobno oceń publiczność, semantykę, uprawnienia, spójność, błędy i obserwowalność wykonania.
 
 ## 1. Aktywacja i pierwszeństwo
-Stosuj ten dokument wyłącznie po aktywacji według `./project-profiles.md`.
-Ta referencja określa również relację override do baseline; hierarchię źródeł
-instrukcji określa `./skill-structure-contract.md`.
+Stosuj ten dokument wyłącznie po aktywacji według `./project-profiles.md`, który
+określa też jego pierwszeństwo przed baseline. Kolejność względem poleceń
+użytkownika, zasad repo i `SKILL.md` określa `./skill-structure-contract.md`.
 
-- Konflikty rozstrzygaj według tych kontraktów, bez tworzenia drugiej hierarchii.
-- Jeśli aktywny dokument jest sprzeczny z instrukcją skilla w sprawie architektonicznej, której ta kolejność nie rozstrzyga, zgłoś rozbieżność użytkownikowi i nie zgaduj rozwiązania.
+- Jeśli konfliktu w sprawie architektonicznej nie rozstrzyga żadna z tych kolejności, zgłoś rozbieżność użytkownikowi i nie zgaduj rozwiązania.
 
 ## 2. Architektura modułowa i warstwy
 

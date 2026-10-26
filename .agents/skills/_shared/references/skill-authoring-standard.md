@@ -8,7 +8,9 @@ reguł wykonywalnych.
 ## Właściciele reguł MUST
 
 Reguły strukturalno-wykonawcze mają jednego właściciela: `skill-structure-contract.md`.
-Reguły MUST egzekwują testy repozytorium (`tests/skills/**`). Ten standard:
+Testy repozytorium (`tests/skills/**`) sprawdzają reguły strukturalne (frontmatter,
+`shared_files`, konfigurację agentów, linki) i zachowanie skryptów, a nie
+brzmienie instrukcji. Ten standard:
 
 - nie powtarza notacji ścieżek, priorytetu zasad, semantyki `shared_files`,
   rozwiązywania entrypointów ani żadnej innej reguły strukturalnej;
@@ -28,8 +30,7 @@ i planu, nie do audytu.
 - Opis nie zawiera polityki wewnętrznej (np. warunków uruchamiania QA) ani
   duplikacji tabeli routingu.
 - Semantykę opisu ocenia się jakościowo: czy da się wybrać skill po intencji,
-  bez otwierania treści. Twarde reguły opisu (język, limit, fraza użycia) należą
-  do testów kontraktowych.
+  bez otwierania treści. Test sprawdza tylko obecność opisu i limit długości.
 
 ### 2. Progressive disclosure
 
@@ -38,7 +39,7 @@ i planu, nie do audytu.
   warunkowo, zgodnie z aktywnym krokiem.
 - Tabela routingu wiąże warunek użycia z plikiem; brak warunku oznacza, że plik
   jest zbędny albo korzeń go nie potrzebuje.
-- Przeniesienie treści nie może osłabić bramki bezpieczeństwa ani pinu testu.
+- Przeniesienie treści nie może osłabić bramki bezpieczeństwa.
 
 Reguły wydzielania do referencji:
 
@@ -52,8 +53,8 @@ Reguły wydzielania do referencji:
 - Wiersz routingu nazywa warunek rozpoznawalny bez otwierania pliku.
 - Referencja zaczyna się od zdania, kiedy jest ładowana, i nie wymaga kolejnej
   referencji do zrozumienia.
-- W miejscu bloku korzeń zostawia jedno zdanie odsyłające; odwołania,
-  `shared_files` i piny testów wskazują nowy plik.
+- W miejscu bloku korzeń zostawia jedno zdanie odsyłające; odwołania
+  i `shared_files` wskazują nowy plik.
 - Treść przenosi się bez zmian merytorycznych i po przeniesieniu ma jedno
   miejsce.
 
@@ -82,15 +83,14 @@ Reguły wydzielania do referencji:
 - Jedna reguła ma jedno kanoniczne miejsce; pozostałe dokumenty odsyłają do
   właściciela zamiast kopiować treść.
 - Powielony blok to dług: przy dotknięciu obszaru scala się go do właściciela.
-- Sprzeczność między korzeniem, referencją a testem rozstrzyga się na korzyść
-  właściciela reguły i testu, nie lokalnej interpretacji.
+- Sprzeczność między korzeniem a referencją rozstrzyga się na korzyść
+  właściciela reguły, nie lokalnej interpretacji.
 
 ### 6. Evidence i kontrakty testowe
 
-- Każde twierdzenie o zachowaniu ma pokrycie w teście, helperze albo konkretnym
-  pliku; deklaracje bez pokrycia są findingiem.
-- Artefakt deklaruje, które testy pinują jego kontrakt, i nie obiecuje
-  zachowania, którego nic nie egzekwuje.
+- Każde twierdzenie o zachowaniu helpera ma pokrycie w jego kodzie albo teście;
+  deklaracje bez pokrycia są findingiem.
+- Artefakt nie obiecuje zachowania, którego nic nie egzekwuje.
 - Luka evidence jest raportowana jawnie, nigdy maskowana.
 
 ### 7. Język
@@ -140,8 +140,7 @@ pozostają poza oceną.
 - Body zawiera kontrakt delegacji (co agent dostaje) i format zwrotu (status i
   pola wyniku), spójny z delegującym skillem.
 - Relacje są kompletne: adapter wskazuje właściciela procedury — skill albo
-  wspólny kontrakt. Plik agenta ma wpis w `opencode.jsonc`, a kontrakt jest pinowany testem
-  agentowym. Jeśli workflow wymaga delegacji, wskazuje również rolę wykonawcy;
+  wspólny kontrakt. Plik agenta ma wpis w `opencode.jsonc`. Jeśli workflow wymaga delegacji, wskazuje również rolę wykonawcy;
   opcjonalny adapter nie wymaga obowiązkowego kierowania do niego pracy.
   Osierocony plik, wpis konfiguracji albo brak właściciela procedury to finding.
 - Długość i język opisu agenta są metryką monitorowaną, bez twardego progu
@@ -168,5 +167,5 @@ dokumentacja domenowa (np. `docs/**`) pozostaje w `$docs-sync`.
 - Reguły strukturalne MUST: `skill-structure-contract.md`.
 - Routing nadrzędnego workflow: `skill-routing-policy.md`.
 - Kontrakt oceny i format findings: `<skills_root>/skill-review/SKILL.md`.
-- Testy egzekwujące kontrakty: `tests/skills/**`, w tym testy opisów,
-  `shared_files`, routingu Playwright i kontraktów agentowych.
+- Testy reguł strukturalnych: `tests/skills/**` (opisy, `shared_files`,
+  konfiguracja agentów).

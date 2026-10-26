@@ -798,9 +798,6 @@ it("smoke-checks CLI admission sources and the three-option user question contra
     assert.equal(JSON.parse(attested.stdout).source, "user-attested");
     const unknown = spawnSync(process.execPath, base, {env: {...env, OPENCODE_SESSION_VARIANT: ""}, encoding: "utf8"});
     assert.deepEqual(JSON.parse(unknown.stdout).options, DECISION_OPTIONS);
-    const instructions = fs.readFileSync(new URL("../../../.agents/skills/plan-execute/SKILL.md", import.meta.url), "utf8");
-    assert.match(instructions, /Czy zmieniasz profil, potwierdzasz wystarczalność obecnego/);
-    assert.match(instructions, /czy zatrzymujemy wykonanie/);
     const malformed = spawnSync(process.execPath, [...base, "--current-model", "", "--current-reasoning", "medium"], {env, encoding: "utf8"});
     assert.equal(malformed.status, 2);
     assert.equal(JSON.parse(malformed.stderr).error, "INVALID_ARGUMENT");
