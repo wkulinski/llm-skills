@@ -1,7 +1,7 @@
 {
     "display_information": {
         "name": "Agent Slack CLI",
-        "description": "Odczyt i publikacja wiadomości wyłącznie na polecenie użytkownika."
+        "description": "Odczyt, wyszukiwanie osób, DM-y i pliki wyłącznie na polecenie użytkownika."
     },
     "oauth_config": {
         "scopes": {
@@ -11,6 +11,10 @@
                 "channels:history",
                 "groups:read",
                 "groups:history",
+                "im:read",
+                "im:history",
+                "im:write",
+                "files:read",
                 "users:read"
             ]
         }
