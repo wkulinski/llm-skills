@@ -36,10 +36,12 @@ Match the language and tone of the existing skill when extending it.
 When adding a skill, include at least one concrete command example in `SKILL.md`.
 
 ## Commit & Pull Request Guidelines
-Keep each commit scoped to one change and use clear, conventional messages:
+Keep each commit scoped to one change and use clear, conventional messages in English:
 
 - `docs(skills): add contributor notes for qa-run`
 - `fix(code-implement): guard missing state file`
+
+PR titles and descriptions must be written in English.
 
 PRs should include:
 - a short problem/solution summary,
