@@ -155,17 +155,20 @@ Ten punkt jest jedynym źródłem reguł, w którym katalogu leży klasa i jaki 
 |---|---|
 | Komunikat command/query i jego handler | `Application/UseCase/Command/**` lub `Application/UseCase/Query/**` |
 | Dane wejściowe i wynik komunikatu | Obok komunikatu; typ wspólny kilku komunikatów — w najbliższym wspólnym katalogu `UseCase` |
-| Interfejs portu wyjściowego | `Application/Port/Out/**` |
-| Dane wejściowe i wynik portu wyjściowego | Obok portu w `Application/Port/Out/**` |
+| Interfejs portu wyjściowego | `Application/Port/Out/**`; katalog portów przyjmuje wyłącznie interfejsy portów i ich czyste typy danych: enumy, finalne klasy danych `readonly` i wyjątki |
+| Dane wejściowe, wynik i wyjątek portu wyjściowego | Obok portu: port z własnymi typami ma własny katalog `Application/Port/Out/**/<Port>/` z interfejsem i tymi typami; typ wspólny kilku portów — w ich najbliższym wspólnym katalogu `Port/Out`. Port bez własnych typów może leżeć bezpośrednio w katalogu `Port/Out` lub jego kontekstu |
 | Interfejs pluginu | `Application/Port/Out/Plugin/**` właściciela mechanizmu |
 | Implementacja pluginu, realizacja lokalnego `Port/Out` przez cudzy kontrakt, translacja między kontraktami | `Application/Adapter/<Context>/**`; katalog nie przyjmuje modeli danych bez funkcji integracyjnej |
 | Typ danych mechanizmu rozszerzeń, enum źródła danych pluginu, wyjątek kontraktu rozszerzenia | `Api` (pkt 2.1) |
 | Model domeny: encja, value object, enum, zdarzenie domenowe | `Domain/**` |
 | Port służący potrzebom samej domeny | `Domain/Port/**` |
 | Implementacja `Port/Out` lub `Domain/Port` | `Infrastructure/**`; implementacja przez cudzy kontrakt — `Application/Adapter/**` |
+| Wewnętrzny model `Application`, który nie występuje w sygnaturze żadnego komunikatu ani portu | Preferuj katalog serwisu, który go tworzy lub używa (`Application/Service/<Serwis>/`); model wspólny kilku serwisów — `Application/DTO`. `Application/DTO` nie przyjmuje danych komunikatów ani portów |
 | Model prezentacji, DTO i typ formularza | `UI/**` modułu |
 | `ReadFacade` | `UI/ReadFacade/` |
 | Uzgodniony kontrakt wspólny | `Shared`; techniczne kontrakty kontekstu wykonania i transakcji — `Shared/Application/Port/**` |
+
+O miejscu typu danych decyduje kontrakt, w którego sygnaturze typ występuje: pole lub wynik komunikatu — obok komunikatu w `UseCase`; parametr, wynik lub wyjątek portu — obok portu. Właściciel typu ma własny katalog, gdy posiada własne typy (komunikat w `UseCase/Command|Query/<Komunikat>/`, port w `Port/Out/**/<Port>/`, serwis w `Service/<Serwis>/`), a typ wspólny kilku właścicieli leży w ich najbliższym wspólnym katalogu. Typ nie należy jednocześnie do komunikatu i portu: dane portu są prywatne (pkt 5.1), więc handler mapuje je na wynik komunikatu (pkt 4.1). Typ bez żadnego kontraktu jest wewnętrznym modelem `Application` i podlega wierszowi tabeli dla takich modeli.
 
 Umiejscowienie integracji frameworka i walidatorów określa pkt 3, rejestru providerów i publicznego UI mechanizmu rozszerzeń — pkt 5.2, kontraktu zdarzenia integracyjnego — pkt 4.5, read modelu SQL — pkt 7.2, a komponentów UI — pkt 11.
 
