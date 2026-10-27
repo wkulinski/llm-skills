@@ -77,7 +77,7 @@ before installing. The alphabetical skill list is at the end.
 
 | Intent | Skill | Next step |
 | --- | --- | --- |
-| Read a Slack channel/thread or explicitly send, edit or delete your own message | `$slack` | bounded Slack CLI operation with consumer-project configuration |
+| Read Slack channels/DMs, find/manage channels and people, download files or explicitly send, edit or delete your own message | `$slack` | bounded Slack CLI operation with dynamic lookup and consumer-project configuration |
 
 ## Starter set and dependency closure
 
