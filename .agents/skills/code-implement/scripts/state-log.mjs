@@ -13,7 +13,7 @@ function usage() {
     ].join("\n");
 }
 
-export function runStateLog(argv, {cachePath, now = new Date()} = {}) {
+export function runStateLog(argv, {repoRoot, now = new Date()} = {}) {
     if (argv[0] === "--help" || argv[0] === "-h") {
         return {code: 0, stdout: `${usage()}\n`};
     }
@@ -21,7 +21,7 @@ export function runStateLog(argv, {cachePath, now = new Date()} = {}) {
         return {code: 2, stderr: `ERROR: unknown option: ${argv[0]}\n${usage()}\n`};
     }
 
-    const {absolute: statePath} = resolveStatePath(cachePath);
+    const {absolute: statePath} = resolveStatePath(repoRoot);
 
     if (!existsSync(statePath)) {
         return {code: 1, stderr: `ERROR: missing state file: ${statePath}\n`};

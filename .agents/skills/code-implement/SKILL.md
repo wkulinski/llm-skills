@@ -242,6 +242,12 @@ Dziennika odczytów; etykieta jest telemetrią, nie dowodem aktualności treści
 ## Kroki
 
 ### 0) Inicjalizacja stanu zadania (obowiązkowo)
+Stan i zdarzenia są trwałe: `./var/agent/code-implement/state.md` oraz
+`./var/agent/code-implement/read-events.jsonl` względem repozytorium konsumenta,
+niezależnie od `CACHE_PATH`. Skrypty stanu wyznaczają korzeń jako najbliższy
+katalog nadrzędny z `.git`, więc działają także z podkatalogu. Nie usuwa ich
+commit ani pełny cleaner cache.
+
 1. Jeśli `STATE_PATH` nie istnieje: utwórz go z sekcją “Aktywne zadanie”.
 2. Zapisz cel użytkownika, wstępny Rejestr wymagań (R1..Rn), założenia oraz
    “ryzykowne obszary” (jeśli dotyczy: security/migracje/zależności).

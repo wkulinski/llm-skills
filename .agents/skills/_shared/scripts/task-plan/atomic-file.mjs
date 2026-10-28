@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import {randomUUID} from "node:crypto";
 
 export class AtomicWriteError extends Error {
     constructor(code, message, details = {}) {
@@ -18,11 +19,17 @@ export function writeFileAtomic(filePath, contents, options = {}) {
     if (options.rootDir) {
         assertInsideRoot(target, options.rootDir);
     }
-    const temporary = `${target}.tmp-${process.pid}`;
+    const temporary = `${target}.tmp-${process.pid}-${randomUUID()}`;
     try {
         fsOps.mkdirSync(path.dirname(target), {recursive: true});
-        fsOps.writeFileSync(temporary, contents, "utf8");
-        fsOps.renameSync(temporary, target);
+        fsOps.writeFileSync(temporary, contents, {encoding: "utf8", flag: "wx"});
+        if (options.exclusive) {
+            // Hard-link publication is atomic and never replaces an existing copy.
+            fsOps.linkSync(temporary, target);
+            fsOps.unlinkSync(temporary);
+        } else {
+            fsOps.renameSync(temporary, target);
+        }
         return {path: target, written: true};
     } catch (error) {
         try {

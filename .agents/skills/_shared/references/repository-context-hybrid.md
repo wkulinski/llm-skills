@@ -47,6 +47,14 @@ The manifest is the only source of repository, branch, HEAD and already-read
 paths. The handoff contains only mode, normalized task brief, decisions and
 constraints. The criteria file is the only source of acceptance criteria.
 
+Task-plan may pass the original `final.reportPath` (or `final.partialReportPath`)
+and criteria to its ordinary save operation. That operation preserves identical
+bytes under repository-local `var/agent/task-plan/<plan-id>/evidence/<set-id>/`
+and publishes the durable copy paths and hashes in the plan. The helper's final
+path still names the original cache artifact, not the copy. This promotion does
+not expand scout input/output roots: all scout artifacts remain under CACHE_PATH.
+Only the directly referenced report and criteria are retained, not the whole run.
+
 The fallback must not receive the primary's partial report, failure explanation,
 hypotheses or unverified evidence. These remain orchestration metadata.
 

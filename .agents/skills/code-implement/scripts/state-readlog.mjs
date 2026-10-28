@@ -23,12 +23,12 @@ function usage() {
     ].join("\n");
 }
 
-export function runStateReadLog(argv, {cachePath, now = new Date()} = {}) {
+export function runStateReadLog(argv, {repoRoot, now = new Date()} = {}) {
     if (argv[0] === "--help" || argv[0] === "-h") {
         return {code: 0, stdout: `${usage()}\n`};
     }
 
-    const {absolute: statePath} = resolveStatePath(cachePath);
+    const {absolute: statePath} = resolveStatePath(repoRoot);
 
     if (!existsSync(statePath)) {
         return {code: 1, stderr: `ERROR: missing state file: ${statePath}\n`};
@@ -50,7 +50,7 @@ export function runStateReadLog(argv, {cachePath, now = new Date()} = {}) {
     const logLine = `- [${timestamp}] ${logMessage}`;
     const content = readFileSync(statePath, "utf-8");
     if (parsed.structured) {
-        appendJsonLine(resolveReadEventsPath(cachePath).absolute, {
+        appendJsonLine(resolveReadEventsPath(repoRoot).absolute, {
             version: 1,
             observed_at: timestamp,
             ...parsed.observation,

@@ -14,8 +14,8 @@ not need to be a PHP application: this example uses the generic core.
 1. Follow [installation](INSTALLATION.md) steps 1–2 to deliver the starter files.
 2. In the consumer, merge the [minimal AGENTS/docs_map block](CONFIGURATION.md#ownership-and-skill-paths).
    The example points `MAIN_DOC` to the consumer's root `README.md`; create a
-   short project description there if needed. Add `var/agent/cache/` to the
-   consumer's `.gitignore`.
+   short project description there if needed. Add `var/agent/` to the
+   consumer's `.gitignore` so cache and durable work state stay local.
 3. Complete the [OpenCode role/MCP configuration](CONFIGURATION.md#opencode-agent-runtime-model--thinking),
    replacing all template placeholders with local values. Restart OpenCode.
 4. Run the [context preflight](INSTALLATION.md#context-preflight).

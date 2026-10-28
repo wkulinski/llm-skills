@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
+import {assertPersistentAgentPath, resolvePersistentAgentRoot} from "../../_shared/scripts/artifact-path.mjs";
 import {compareFreshProfiles} from "../../_shared/scripts/model-leaderboard.mjs";
 import {compareModelProfiles, loadModelHierarchy} from "../../_shared/scripts/model-hierarchy.mjs";
 import {completeWorkPackage as completeTaskPlanWorkPackage, loadPlanFile} from "../../_shared/scripts/task-plan/store.mjs";
@@ -30,11 +31,10 @@ export class PlanExecuteError extends Error {
 export function resolvePlanPath({
     repoRoot = process.cwd(),
     explicitPath,
-    cachePath = process.env.CACHE_PATH || "var/agent/cache",
     fsOps = fs,
 } = {}) {
     const root = path.resolve(repoRoot);
-    const pointerPath = resolvePointerPath(root, cachePath);
+    const pointerPath = resolvePointerPath(root);
     const source = explicitPath ? "explicit" : "last-plan";
     const candidate = explicitPath ?? readPointer(pointerPath, fsOps);
     const absolute = path.resolve(root, candidate);
@@ -354,11 +354,10 @@ function packageField(packageBody, label) {
 export function writeLastPlanPointer({
     planPath,
     repoRoot = process.cwd(),
-    cachePath = process.env.CACHE_PATH || "var/agent/cache",
     fsOps = fs,
 } = {}) {
-    const resolved = resolvePlanPath({repoRoot, explicitPath: planPath, cachePath, fsOps});
-    const pointerPath = resolvePointerPath(path.resolve(repoRoot), cachePath);
+    const resolved = resolvePlanPath({repoRoot, explicitPath: planPath, fsOps});
+    const pointerPath = resolvePointerPath(path.resolve(repoRoot));
     writeFileAtomic(pointerPath, `${resolved.relative}\n`, {fsOps});
     return {path: pointerPath, value: resolved.relative};
 }
@@ -368,12 +367,11 @@ export function completeExecutionWorkPackage({
     wpId,
     evidence,
     repoRoot = process.cwd(),
-    cachePath = process.env.CACHE_PATH || "var/agent/cache",
     fsOps = fs,
 } = {}, options = {}) {
     try {
-        const resolved = resolvePlanPath({repoRoot, explicitPath: planPath, cachePath, fsOps});
-        const pointer = writeLastPlanPointer({planPath: resolved.absolute, repoRoot, cachePath, fsOps});
+        const resolved = resolvePlanPath({repoRoot, explicitPath: planPath, fsOps});
+        const pointer = writeLastPlanPointer({planPath: resolved.absolute, repoRoot, fsOps});
         const completed = completeTaskPlanWorkPackage({repoRoot, planPath: resolved.absolute, wpId, evidence, fsOps}, options);
         return {...completed, pointer};
     } catch (error) {
@@ -381,10 +379,10 @@ export function completeExecutionWorkPackage({
     }
 }
 
-function resolvePointerPath(repoRoot, cachePath) {
+function resolvePointerPath(repoRoot) {
     const root = path.resolve(repoRoot);
-    const cacheRoot = path.isAbsolute(cachePath) ? cachePath : path.resolve(root, cachePath);
-    return path.resolve(cacheRoot, "plan-execute", "last-plan.txt");
+    return assertPersistentAgentPath("plan-execute",
+        path.join(resolvePersistentAgentRoot("plan-execute", root), "last-plan.txt"), root);
 }
 
 function readPointer(pointerPath, fsOps) {
@@ -432,10 +430,10 @@ function parseArgs(argv) {
 function usage() {
     return [
         "Usage:",
-        "  execute.mjs resolve [--path <plan>] [--root <repo>] [--cache-path <dir>]",
-        "  execute.mjs next [--path <plan>] [--root <repo>] [--cache-path <dir>]",
-        "  execute.mjs check-environment [--current-model <model> --current-reasoning <level>] [--required-label <ranking label> --current-label <ranking label>] [--user-attested --attested-wp <WPn> [--attested-model <model> --attested-reasoning <level>]] [--path <plan>] [--root <repo>] [--cache-path <dir>]",
-        "  execute.mjs complete --path <plan> --wp <WPn> --evidence <text> [--root <repo>] [--cache-path <dir>]",
+        "  execute.mjs resolve [--path <plan>] [--root <repo>]",
+        "  execute.mjs next [--path <plan>] [--root <repo>]",
+        "  execute.mjs check-environment [--current-model <model> --current-reasoning <level>] [--required-label <ranking label> --current-label <ranking label>] [--user-attested --attested-wp <WPn> [--attested-model <model> --attested-reasoning <level>]] [--path <plan>] [--root <repo>]",
+        "  execute.mjs complete --path <plan> --wp <WPn> --evidence <text> [--root <repo>]",
     ].join("\n");
 }
 
@@ -470,7 +468,6 @@ async function main(argv) {
     }
 
     const repoRoot = path.resolve(args.root ?? process.cwd());
-    const cachePath = args.cache_path ?? process.env.CACHE_PATH ?? "var/agent/cache";
 
     let result;
     if (command === "complete") {
@@ -485,11 +482,10 @@ async function main(argv) {
             repoRoot,
             wpId: args.wp,
             evidence: args.evidence,
-            cachePath,
         });
     } else {
-        const resolved = resolvePlanPath({repoRoot, explicitPath: args.path, cachePath});
-        writeLastPlanPointer({planPath: resolved.absolute, repoRoot, cachePath});
+        const resolved = resolvePlanPath({repoRoot, explicitPath: args.path});
+        writeLastPlanPointer({planPath: resolved.absolute, repoRoot});
         if (command === "resolve") {
             result = {path: resolved.relative, source: resolved.source};
         } else if (command === "next") {

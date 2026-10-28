@@ -59,7 +59,7 @@ Task-plan:
 
 Task-plan nie:
 
-- zmienia plików w repozytorium poza planem i jego cache: ani kodu, ani
+- zmienia plików w repozytorium poza planem, jego trwałymi artefaktami i cache: ani kodu, ani
   konfiguracji, ani dokumentacji;
 - tworzy lub modyfikuje issue, branchy i PR-ów;
 - uruchamia `$code-implement`, `$qa-run` ani workerów;
@@ -264,9 +264,13 @@ Niepusta lista uruchamia dokładnie jeden canonical lifecycle zgodnie z
 deleguje scoutów poza decyzją helpera i po udanym `prepare` zawsze kończy run
 przez `settle` albo `abort`.
 
-`COMPLETE` oznacza, że wszystkie criteria zostały pokryte. W finalnym
-frontmatterze planu zapisz jego `final.reportPath` oraz referencje i hashe raportu
-i kryteriów. Nie odwzorowuj prób, fallbacków ani faz helpera we własnym workflow.
+`COMPLETE` oznacza, że wszystkie criteria zostały pokryte. Przekaż oryginalny
+`final.reportPath` z cache oraz ścieżkę kryteriów i ich hashe jako jawny `context`
+do zwykłego zapisu `store.mjs`. Magazyn utrwala identyczne bajty w niemutowalnym
+zestawie `./var/agent/task-plan/<plan-id>/evidence/<set-id>/` i dopiero wtedy
+publikuje referencje oraz hashe trwałych kopii we frontmatterze. Źródło pozostaje
+w `./var/agent/task-plan/<plan-id>/source.json`; te ścieżki są niezależne od
+`CACHE_PATH`. Nie odwzorowuj prób, fallbacków ani faz helpera we własnym workflow.
 
 `INCOMPLETE` albo `BLOCKED` nie uruchamia automatycznego retry i zawsze blokuje
 plan, ponieważ każde criterion dotyczy decyzji mogącej zmienić plan. Przed
@@ -274,7 +278,8 @@ powstaniem kompletnego planu zachowaj partial report wyłącznie w canonical sta
 helpera i nie twórz pustego Markdowna. Jeśli context dotyczył materialnej rewizji
 istniejącego planu `ready`, zachowaj jego dotychczasową treść, ale zapisz pełny
 Markdown przez `store.mjs` z `context_status: INCOMPLETE/BLOCKED`, canonical
-`final.partialReportPath` oraz referencją do kryteriów. Taka rewizja waliduje się jako
+`final.partialReportPath` oraz referencją do kryteriów jako jawny `context`.
+Magazyn zachowuje status i utrwala wszystkie dostarczone referencje. Taka rewizja waliduje się jako
 `blocked` i nie może trafić do wykonania. Poinformuj użytkownika o blockerze.
 Szczegóły wykonawcze niezmieniające planu nie powinny być criteria; trafiają do
 `Discovery required` w WP.

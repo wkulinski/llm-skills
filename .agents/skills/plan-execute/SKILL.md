@@ -10,6 +10,7 @@ shared_files:
   - _shared/scripts/model-hierarchy.mjs
   - _shared/scripts/model-leaderboard.mjs
   - _shared/scripts/is-main-module.mjs
+  - _shared/scripts/artifact-path.mjs
   - _shared/scripts/task-plan/atomic-file.mjs
   - _shared/scripts/task-plan/difficulty.mjs
   - _shared/scripts/task-plan/source.mjs
@@ -68,7 +69,8 @@ stan `$code-implement` służą do wznowienia implementacji, ale nie są drugim
 
 1. Jeśli użytkownik podał ścieżkę, użyj jej.
 2. W przeciwnym razie odczytaj
-   `${CACHE_PATH:-var/agent/cache}/plan-execute/last-plan.txt`.
+   `./var/agent/plan-execute/last-plan.txt` względem repozytorium konsumenta,
+   niezależnie od `CACHE_PATH`.
 3. Pointer musi zawierać dokładnie jedną repo-relative ścieżkę do
    `docs/plans/*.md`.
 4. Każde rozwiązanie planu — jawne (z podanej ścieżki) lub pośrednie (z

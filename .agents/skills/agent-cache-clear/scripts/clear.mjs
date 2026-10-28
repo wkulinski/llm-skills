@@ -1,22 +1,20 @@
 #!/usr/bin/env node
 import {existsSync, mkdirSync, readdirSync, rmSync} from "node:fs";
-import {isAbsolute, join} from "node:path";
-import {fileURLToPath} from "node:url";
+import {join} from "node:path";
 
+import {assertStorageLayout, resolveRepositoryRoot} from "../../_shared/scripts/artifact-path.mjs";
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 
-const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-
-export function resolveCacheRoot(cachePath = process.env.CACHE_PATH || "var/agent/cache") {
-    const normalized = String(cachePath).replace(/\/+$/, "");
+export function resolveCacheRoot(cachePath = process.env.CACHE_PATH || "var/agent/cache", cwd = resolveRepositoryRoot()) {
+    const normalized = String(cachePath).replace(/\/+$/, "") || "/";
     return {
-        display: normalized || "var/agent/cache",
-        absolute: isAbsolute(normalized) ? normalized : join(repoRoot, normalized || "var/agent/cache"),
+        display: normalized,
+        absolute: assertStorageLayout({cwd, cachePath}).cacheRoot,
     };
 }
 
-export function runAgentCacheClear({cachePath} = {}) {
-    const {absolute, display} = resolveCacheRoot(cachePath);
+export function runAgentCacheClear({cachePath, cwd = resolveRepositoryRoot()} = {}) {
+    const {absolute, display} = resolveCacheRoot(cachePath, cwd);
 
     if (!existsSync(absolute)) {
         mkdirSync(absolute, {recursive: true});
@@ -31,6 +29,11 @@ export function runAgentCacheClear({cachePath} = {}) {
 }
 
 async function main() {
+    if (process.argv.includes("--help") || process.argv.includes("-h")) {
+        process.stdout.write("Usage: clear.mjs [--help]\nExplicitly empty repository-local CACHE_PATH with workflows stopped; preserve durable storage.\n");
+        return;
+    }
+    if (process.argv.length > 2) { throw new Error("Usage: clear.mjs [--help]"); }
     const result = runAgentCacheClear();
     if (result.stdout) { process.stdout.write(result.stdout); }
     if (result.stderr) { process.stderr.write(result.stderr); }

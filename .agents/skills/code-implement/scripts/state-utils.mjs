@@ -1,33 +1,20 @@
 import {appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
-import {dirname, isAbsolute, join} from "node:path";
-import {fileURLToPath} from "node:url";
+import {dirname, join} from "node:path";
+import {assertPersistentAgentPath, resolvePersistentAgentRoot, resolveRepositoryRoot} from "../../_shared/scripts/artifact-path.mjs";
 
-export const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-
-export function resolveCacheRoot(cachePath = process.env.CACHE_PATH || "var/agent/cache") {
-    const trimmed = String(cachePath ?? "").replace(/\/+$/, "");
-    const display = trimmed || "var/agent/cache";
+export function resolveStatePath(repoRoot = resolveRepositoryRoot()) {
     return {
-        absolute: isAbsolute(display) ? display : join(repoRoot, display),
-        display,
+        absolute: assertPersistentAgentPath("code-implement",
+            join(resolvePersistentAgentRoot("code-implement", repoRoot), "state.md"), repoRoot),
+        display: "var/agent/code-implement/state.md",
     };
 }
 
-export function resolveStatePath(cachePath) {
-    const cacheRoot = resolveCacheRoot(cachePath);
+export function resolveReadEventsPath(repoRoot = resolveRepositoryRoot()) {
     return {
-        ...cacheRoot,
-        absolute: join(cacheRoot.absolute, "code-implement/state.md"),
-        display: `${cacheRoot.display}/code-implement/state.md`,
-    };
-}
-
-export function resolveReadEventsPath(cachePath) {
-    const cacheRoot = resolveCacheRoot(cachePath);
-    return {
-        ...cacheRoot,
-        absolute: join(cacheRoot.absolute, "code-implement/read-events.jsonl"),
-        display: `${cacheRoot.display}/code-implement/read-events.jsonl`,
+        absolute: assertPersistentAgentPath("code-implement",
+            join(resolvePersistentAgentRoot("code-implement", repoRoot), "read-events.jsonl"), repoRoot),
+        display: "var/agent/code-implement/read-events.jsonl",
     };
 }
 

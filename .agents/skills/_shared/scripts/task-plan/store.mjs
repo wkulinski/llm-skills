@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {isMainModule} from "../is-main-module.mjs";
+import {assertPersistentAgentPath, assertRepositoryFilePath} from "../artifact-path.mjs";
 import {writeFileAtomic} from "./atomic-file.mjs";
 import {buildPlanId, loadPersistedSource, resolveSourceArtifactPath} from "./source.mjs";
 import {
@@ -298,7 +299,7 @@ export function savePlan(input = {}, options = {}) {
         }
         const context = typeof input.context === "undefined"
             ? contextFromMetadata(existing?.metadata)
-            : normalizeContext(input.context, repoRoot, fsOps);
+            : promoteContext(input.context, paths, fsOps);
         const updatedAt = validTimestamp(options.now ?? input.updated_at ?? new Date().toISOString(), "updated_at");
         const body = normalizeMarkdownBody(input.markdown_body ?? input.markdown);
         const previousSha256 = existing ? sha256(existing.markdown) : null;
@@ -474,7 +475,7 @@ export function renderPlanDocument(body, metadata) {
     return `${lines.join("\n")}${body.trim()}\n`;
 }
 
-function normalizeContext(value, repoRoot, fsOps) {
+function promoteContext(value, paths, fsOps) {
     if (value === null || typeof value === "undefined") {
         return emptyContext("NOT_REQUIRED");
     }
@@ -485,10 +486,29 @@ function normalizeContext(value, repoRoot, fsOps) {
     if (!["NOT_REQUIRED", "COMPLETE", "INCOMPLETE", "BLOCKED"].includes(status)) {
         throw new StoreError("INVALID_CONTEXT", "context.status is invalid.");
     }
+    const repoRoot = paths.repoRoot;
     const report = artifactReference(value.report_path, value.report_sha256, repoRoot, fsOps, "context report");
     const criteria = artifactReference(value.criteria_path, value.criteria_sha256, repoRoot, fsOps, "context criteria");
     if (status === "COMPLETE" && (!report.path || !criteria.path)) {
         throw new StoreError("INVALID_CONTEXT", "COMPLETE context requires report_path and criteria_path.");
+    }
+    if (status === "NOT_REQUIRED" && (report.path || criteria.path)) {
+        throw new StoreError("INVALID_CONTEXT", "NOT_REQUIRED context must not reference artifacts.");
+    }
+    // Full hashes and explicit absence markers distinguish every supplied pair.
+    const setId = sha256(JSON.stringify([report.sha256 ?? "absent", criteria.sha256 ?? "absent"]));
+    for (const [name, artifact] of [["report", report], ["criteria", criteria]]) {
+        if (!artifact.path) { continue; }
+        const target = assertPersistentAgentPath("task-plan",
+            path.join(path.dirname(paths.sourcePath), "evidence", setId, `${name}.json`), repoRoot);
+        if (!fsOps.existsSync(target)) {
+            writeFileAtomic(target, artifact.bytes, {rootDir: repoRoot, fsOps, exclusive: true});
+        }
+        const persisted = fsOps.readFileSync(target);
+        if (!persisted.equals(artifact.bytes) || sha256(persisted) !== artifact.sha256) {
+            throw new StoreError("CONTEXT_COPY_CONFLICT", `Durable context ${name} differs from supplied bytes.`);
+        }
+        artifact.path = relativePath(repoRoot, target);
     }
     return {
         context_status: status,
@@ -524,17 +544,21 @@ function emptyContext(status) {
 
 function artifactReference(filePath, expectedHash, repoRoot, fsOps, label) {
     if (filePath === null || typeof filePath === "undefined" || filePath === "") {
+        if (expectedHash !== null && typeof expectedHash !== "undefined") {
+            throw new StoreError("INVALID_CONTEXT", `${label} hash requires a path.`);
+        }
         return {path: null, sha256: null};
     }
-    const absolute = resolveInside(repoRoot, requiredString(filePath, `${label} path`), `${label} path`);
+    const absolute = assertRepositoryFilePath(resolveInside(repoRoot, requiredString(filePath, `${label} path`), `${label} path`), repoRoot);
     if (!fsOps.existsSync(absolute)) {
         throw new StoreError("CONTEXT_ARTIFACT_MISSING", `${label} does not exist: ${filePath}.`);
     }
-    const actualHash = sha256(fsOps.readFileSync(absolute));
-    if (expectedHash && expectedHash !== actualHash) {
+    const bytes = fsOps.readFileSync(absolute);
+    const actualHash = sha256(bytes);
+    if (expectedHash !== null && typeof expectedHash !== "undefined" && expectedHash !== actualHash) {
         throw new StoreError("CONTEXT_HASH_MISMATCH", `${label} hash does not match.`, {expected: expectedHash, actual: actualHash});
     }
-    return {path: relativePath(repoRoot, absolute), sha256: actualHash};
+    return {path: relativePath(repoRoot, absolute), sha256: actualHash, bytes};
 }
 
 function splitSectionBodies(markdown) {
