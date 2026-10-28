@@ -1,6 +1,7 @@
 import {writeFileSync} from "node:fs";
 
 import {getActiveSectionNames} from "../patterns/section-activation.mjs";
+import {formatCommandName} from "./console-reporter.mjs";
 import {hashJson} from "../shared/hashing.mjs";
 
 export function buildRunSummary({
@@ -10,6 +11,7 @@ export function buildRunSummary({
     commands,
     config,
     configNotices,
+    evidence = null,
     failures,
     files,
     mode,
@@ -27,12 +29,22 @@ export function buildRunSummary({
         commands,
         completedAt: new Date().toISOString(),
         configNotices,
+        evidence: evidence
+            ? {
+                current: evidence.evidenceCurrent,
+                inputSnapshotHash: evidence.snapshotHash,
+                inputsMutated: evidence.inputsMutated,
+                postRunSnapshotHash: evidence.postRunSnapshotHash,
+            }
+            : null,
         failures,
         matrixHash: hashJson(config.raw),
         mode,
         pendingFinalFullPass: session.pendingFinalFullPass,
         pendingFinalFullPassReasons: session.pendingReasons ?? [],
         rerunReason: cli.rerunReason,
+        scope: cli.scope ?? "full",
+        selection: evidence?.selection ?? null,
         riskAssessment: riskAssessment
             ? {
                 changedSections: riskAssessment.changedSections,
@@ -47,8 +59,8 @@ export function buildRunSummary({
 }
 
 export function writeRunSummary(artifacts, summary) {
-    writeFileSync(artifacts.summaryJsonAbs, `${JSON.stringify(summary, null, 2)}\n`, "utf-8");
-    writeFileSync(artifacts.summaryTxtAbs, renderSummaryText(summary), "utf-8");
+    writeFileSync(artifacts.summaryJsonAbs, `${JSON.stringify(summary, null, 2)}\n`, {encoding: "utf-8", mode: 0o600});
+    writeFileSync(artifacts.summaryTxtAbs, renderSummaryText(summary), {encoding: "utf-8", mode: 0o600});
 }
 
 export function renderSummaryText(summary) {
@@ -56,6 +68,7 @@ export function renderSummaryText(summary) {
     const executedCommands = summary.commands.length - cachedCommands;
     const lines = [
         `QA: ${summary.status}`,
+        `Scope: ${summary.scope ?? "full"}${(summary.scope ?? "full") === "full" ? "" : " (not full QA)"}`,
         `Mode: ${summary.mode}`,
         `Rerun reason: ${summary.rerunReason}`,
         `Commands: ${summary.commands.length} total / ${executedCommands} executed / ${cachedCommands} cached`,
@@ -63,6 +76,12 @@ export function renderSummaryText(summary) {
         `Artifacts: ${summary.artifactsDir}`,
         `Pending final full pass: ${summary.pendingFinalFullPass ? "yes" : "no"}`,
     ];
+
+    if (summary.evidence) {
+        lines.push(summary.evidence.current
+            ? "Evidence: current"
+            : "Evidence: stale (working tree changed during QA)");
+    }
 
     if (summary.failures.length === 0) {
         lines.push("Failures: none");
@@ -85,6 +104,10 @@ export function renderSummaryText(summary) {
 }
 
 function appendFailureLines(lines, failure) {
-    lines.push(`- [${failure.section}] ${failure.command} exit=${failure.exitCode}`);
+    const name = failure.label === void 0 ? `[${failure.section}] ${failure.command}` : formatCommandName(failure);
+    lines.push(`- ${name} exit=${failure.exitCode}`);
+    if (failure.stdoutLog || failure.stderrLog) {
+        lines.push(`  logs: stdout=${failure.stdoutLog} stderr=${failure.stderrLog}`);
+    }
     lines.push(...failure.summary.map((detail) => `  - ${detail}`));
 }

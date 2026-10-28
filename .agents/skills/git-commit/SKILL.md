@@ -85,6 +85,7 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
    - Zmiany ograniczone do dokumentacji oraz indeksu skilli, powstałe w krokach 6-7, nie uruchamiają ponownie `$qa-run`; przejdź z nimi bezpośrednio do kroku akceptacji delty.
    - Nie interpretuj każdej zmiany po QA jako automatycznego powodu do kolejnego przebiegu. Powrót do kroku 3 i ponowne QA jest dozwolone tylko wtedy, gdy kroki 6-7 ujawniły konieczność zmiany kodu, konfiguracji lub toolingu poza dokumentacją albo inna procedura wymaga tego jawnie.
    - Jeśli taki wyjątkowy powrót jest konieczny po zakończonym `PASS`, rozpocznij nową sesję `$qa-run`; nie uruchamiaj ponownie `initial` w zakończonej sesji.
+   - Bramkę spełnia wyłącznie `PASS` pełnej procedury `$qa-run` (jej ostatni przebieg ma `evidence=current`). Wynik `point`, `partial` albo nieaktualny jej nie spełnia. Aktualnego pełnego PASS tej samej sesji i snapshotu nie powtarzaj ani nie uruchamiaj osobno lintów i `$review-quick`, które już obejmuje.
 8. Krok akceptacji: jeśli od momentu snapshotu (krok 2) zaszły jakiekolwiek zmiany w repo, zaraportuj je do akceptacji (wyłącznie „delta od snapshotu”, niepełna lista wszystkich zmian w repo):
    - Preferowane obliczenie delty: `node <skill_dir>/scripts/snapshot-tools.mjs list --current` (generuje `delta-all.txt`, wypisuje `DELTA_EMPTY` przy pustej delcie albo `DELTA_PRESENT` z listą ścieżek przy niepustej; wrapper zwraca kod 0 w obu przypadkach).
    - Jeśli “delta od snapshotu” jest pusta: napisz wprost “Brak zmian delta od snapshotu (krok 2)” i przejdź do kroku 9.

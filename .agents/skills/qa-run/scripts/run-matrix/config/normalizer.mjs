@@ -15,6 +15,9 @@ const DEFAULT_OUTPUT_CONFIG = {
 };
 const OUTPUT_MODES = new Set(["quiet-on-pass", "silent"]);
 const PARSERS = new Set(["generic-tail", "phpstan-json", "eslint-json", "codeception-junit"]);
+const INLINE_OUTPUT_KEYS = ["failTailLines", "maxOutputBytes", "outputMode", "parser", "parserInputBytes", "stripAnsi"];
+const TARGETED_TEST_KEYS = new Set(["tool", "args", "output", ...INLINE_OUTPUT_KEYS]);
+const TARGETED_TEST_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 function parseConfig(raw, configAbsPath) {
     const parsed = parseJsonConfig(raw, configAbsPath);
@@ -38,6 +41,7 @@ function normalizeConfig(config) {
     const patternSets = normalizePatternSets(config.patternSets ?? {});
     const sections = normalizeSections(config, outputDefaults, patternSets);
     const sectionOrder = normalizeSectionOrder(config, sections);
+    const targetedTests = normalizeTargetedTests(config.targetedTests, outputDefaults);
 
     return {
         outputDefaults,
@@ -45,6 +49,7 @@ function normalizeConfig(config) {
         raw: config,
         sectionOrder,
         sections,
+        targetedTests,
     };
 }
 
@@ -257,24 +262,30 @@ function normalizeSectionCommandList(sectionName, value, sectionOutput) {
     }
 
     const commands = [];
-    for (const entry of value) {
+    for (const [sourceIndex, entry] of value.entries()) {
         if (typeof entry === "string") {
             const trimmed = entry.trim();
-            pushNonEmptyCommand(commands, sectionName, trimmed, sectionOutput);
+            pushNonEmptyCommand(commands, sectionName, trimmed, sectionOutput, sourceIndex);
             continue;
         }
 
-        commands.push(normalizeCommandObject(sectionName, entry, sectionOutput));
+        commands.push({
+            ...normalizeCommandObject(sectionName, entry, sectionOutput),
+            sourceIndex,
+        });
     }
     return commands;
 }
 
-function pushNonEmptyCommand(commands, sectionName, command, sectionOutput) {
+function pushNonEmptyCommand(commands, sectionName, command, sectionOutput, sourceIndex) {
     if (command.length === 0) {
         return;
     }
 
-    commands.push(normalizeCommandObject(sectionName, {cmd: command}, sectionOutput));
+    commands.push({
+        ...normalizeCommandObject(sectionName, {cmd: command}, sectionOutput),
+        sourceIndex,
+    });
 }
 
 function normalizeCommandObject(sectionName, entry, sectionOutput) {
@@ -288,27 +299,79 @@ function normalizeCommandObject(sectionName, entry, sectionOutput) {
         throw new Error(`Config section "${sectionName}" command object requires non-empty "cmd".`);
     }
 
-    const commandOutput = normalizeOutputConfig(`section "${sectionName}" command output`, entry.output ?? {});
-    const inlineOutput = normalizeOutputConfig(`section "${sectionName}" command inline output`, {
-        failTailLines: entry.failTailLines,
-        maxOutputBytes: entry.maxOutputBytes,
-        outputMode: entry.outputMode,
-        parser: entry.parser,
-        parserInputBytes: entry.parserInputBytes,
-        stripAnsi: entry.stripAnsi,
-    });
-
     if (entry.cache !== void 0) {
         throw new Error(`Config section "${sectionName}" command cache is not supported. Configure cache at section level.`);
     }
 
     return {
         cmd: command,
-        output: {
-            ...sectionOutput,
-            ...commandOutput,
-            ...inlineOutput,
-        },
+        output: normalizeEntryOutput(`section "${sectionName}" command`, entry, sectionOutput),
+    };
+}
+
+function normalizeEntryOutput(context, entry, baseOutput) {
+    const entryOutput = normalizeOutputConfig(`${context} output`, entry.output ?? {});
+    const inlineOutput = normalizeOutputConfig(
+        `${context} inline output`,
+        Object.fromEntries(INLINE_OUTPUT_KEYS.map((key) => [key, entry[key]]))
+    );
+
+    return {
+        ...baseOutput,
+        ...entryOutput,
+        ...inlineOutput,
+    };
+}
+
+function normalizeTargetedTests(value, outputDefaults) {
+    if (value === void 0) {
+        return {};
+    }
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error('Config field "targetedTests" must be an object.');
+    }
+
+    const targetedTests = {};
+    for (const [name, entry] of Object.entries(value)) {
+        if (!TARGETED_TEST_NAME_PATTERN.test(name)) {
+            throw new Error(`Config targetedTests name "${name}" may contain only letters, digits, ".", "_" and "-".`);
+        }
+        targetedTests[name] = normalizeTargetedTest(name, entry, outputDefaults);
+    }
+
+    return targetedTests;
+}
+
+function normalizeTargetedTest(name, entry, outputDefaults) {
+    const context = `targetedTests.${name}`;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        throw new Error(`Config ${context} must be an object.`);
+    }
+
+    const unknownKeys = Object.keys(entry).filter((key) => !TARGETED_TEST_KEYS.has(key));
+    if (unknownKeys.length > 0) {
+        throw new Error(`Config ${context} has unknown keys: ${unknownKeys.join(", ")}.`);
+    }
+
+    const tool = typeof entry.tool === "string" ? entry.tool.trim() : "";
+    if (tool.length === 0 || /\s/.test(tool)) {
+        throw new Error(`Config ${context} requires "tool" as a non-empty tool name without whitespace.`);
+    }
+
+    const args = entry.args ?? [];
+    if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string" || arg.length === 0)) {
+        throw new Error(`Config ${context} "args" must be an array of non-empty strings.`);
+    }
+
+    return {
+        args: [...args],
+        name,
+        output: normalizeEntryOutput(`${context}`, entry, {
+            ...DEFAULT_OUTPUT_CONFIG,
+            ...outputDefaults,
+        }),
+        tool,
     };
 }
 

@@ -42,7 +42,7 @@ before installing. The alphabetical skill list is at the end.
 
 | Intent | Skill | Next step |
 | --- | --- | --- |
-| Run deterministic matrix QA: linters, tests and review | `$qa-run` | QA report and session ledger |
+| Run deterministic matrix QA: linters, tests and review | `$qa-run` | QA report and session ledger; `point`/`partial` runs report a limited scope, never full QA |
 | Commit changes using the repository workflow | `$git-commit` | full testing, validation and commit procedure |
 | Prepare only the commit message | `$commit-message-write` | write `COMMIT_MESSAGE_DIR/commit-message.txt` |
 

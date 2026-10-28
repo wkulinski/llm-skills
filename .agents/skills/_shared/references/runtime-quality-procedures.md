@@ -26,13 +26,9 @@ Jeśli krok odwołuje się do skilla (`$...`), to skill jest źródłem prawdy d
 ## 3. W trakcie implementacji
 1. Implementuj zgodnie z `./runtime-collaboration-guidelines.md` oraz aktywnym baseline/override.
 2. Utrzymuj zasadę evidence-based: decyzje i raportowanie opieraj na realnych odczytach/komendach.
-3. Domyślna weryfikacja po implementacji jest punktowa i dotyczy ostatniego przyrostu; pełne QA uruchamiaj wyłącznie z jawnego polecenia użytkownika albo przez skill, który explicite to definiuje.
+3. Rytm i dopuszczalność kontroli (rozpoznanie konsumentów, odbiór nazwanego przyrostu, ponowienia, pełna bramka) określa wyłącznie `./runtime-collaboration-guidelines.md` §5; wykonanie i raport — `$qa-run`.
 4. Nie rozszerzaj zakresu bez decyzji użytkownika, zwłaszcza dla zmian high-risk. Operacje usuwające wolumeny lub dane wymagają jawnej zgody użytkownika, chyba że zostały wprost zlecone.
-5. Przed wyborem końcowego testu/lintu uruchom `node .agents/skills/_shared/scripts/targeted-check-decision.mjs` z parametrami wynikającymi z kryteriów, feedbacku i matrixa:
-   - `RUN_TARGETED_TEST`: jeden wskazany plik testowy albo 1–3 metody, przez entrypoint z `resolve_tool_cmd`,
-   - `RUN_MATRIX_CHECK`: punktowa komenda 1:1 z `.agents/qa-run.matrix.json`,
-   - `REVIEW_ONLY`: raportuj `verification_gap`; nie używaj pełnego suite jako fallbacku,
-   - `ENV_BLOCKER`: wyłącznie po rzeczywistej próbie wykonania dozwolonej komendy zakończonej błędem środowiska.
+5. Przed wyborem końcowego testu/lintu uruchom `node .agents/skills/_shared/scripts/targeted-check-decision.mjs` z parametrami wynikającymi z kryteriów, feedbacku i matrixa. Znaczenie wyników `RUN_TARGETED_TEST`, `RUN_MATRIX_CHECK`, `REVIEW_ONLY` i `ENV_BLOCKER` oraz ich limity określa `./runtime-collaboration-guidelines.md` §5.
    - niepowodzenie narzędzia raportuj na etapie, na którym wystąpiło (np. brak CLI, uruchomienie, połączenie, wykonanie komendy), i nie uogólniaj pojedynczego błędu do niedostępności środowiska.
 
 ## 4. Przed zakończeniem zadania

@@ -57,6 +57,30 @@ test("does not promote a full suite to a point fallback", () => {
     }).action, TargetedCheckAction.REVIEW_ONLY);
 });
 
+test("never widens any input combination to a full or unbounded check", () => {
+    const targets = [
+        [null, null, 0],
+        ...["acceptance_criteria", "feedback"].flatMap((origin) => [
+            [origin, "file", 1], [origin, "file", 2], [origin, "method", 3], [origin, "method", 4], [origin, "suite", 1],
+        ]),
+    ];
+    const attempts = [[false, null], [true, "test"], [true, "environment"]];
+
+    for (const [targetOrigin, targetScope, targetCount] of targets) {
+        for (const matrixScope of [null, "point", "full"]) {
+            for (const [executionAttempted, failureKind] of attempts) {
+                const {action} = decideTargetedCheck({executionAttempted, failureKind, matrixScope, targetCount, targetOrigin, targetScope});
+                const bounded = (targetScope === "file" && targetCount === 1) || (targetScope === "method" && targetCount <= 3);
+
+                assert.ok(Object.values(TargetedCheckAction).includes(action));
+                if (action === TargetedCheckAction.RUN_TARGETED_TEST) { assert.ok(bounded); }
+                if (action === TargetedCheckAction.RUN_MATRIX_CHECK) { assert.equal(matrixScope, "point"); }
+                if (action === TargetedCheckAction.ENV_BLOCKER) { assert.equal(failureKind, "environment"); }
+            }
+        }
+    }
+});
+
 test("returns review-only instead of env blocker when no check exists", () => {
     assert.deepEqual(decideTargetedCheck({}), {
         action: TargetedCheckAction.REVIEW_ONLY,

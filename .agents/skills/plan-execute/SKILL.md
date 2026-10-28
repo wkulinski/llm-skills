@@ -254,7 +254,9 @@ wymaganie, razem z `decisions` i `risks` jako ograniczeniami. Zachowaj wszystkie
 pola WP, w tym `Goal`, `Scope`, `Out of scope`, `Acceptance criteria` i
 `Verification`; nie zastępuj ich tytułem ani streszczeniem z
 `Work package summaries`. Nie przekazuj całego planu ani planowej sekcji
-`Acceptance and verification`. `$code-implement`
+`Acceptance and verification`. Odebranie części przyrostu, np. PASS zakresu
+`point` lub `partial`, nie kończy WP. Kontrole wykonuje `$code-implement`;
+`$plan-execute` nie dodaje drugiej rundy QA. `$code-implement`
 jest źródłem prawdy dla:
 
 - intake i read-before-write;

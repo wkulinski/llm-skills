@@ -107,6 +107,36 @@ describe("run-matrix summary writer", () => {
         expect(text).toContain("- [JS_CHANGED] ESLint command uses parser=generic-tail");
         expect(text.endsWith("\n\n")).toBe(true);
     });
+
+    it("renders limited scopes and failures by label with local log paths", () => {
+        const text = renderSummaryText({
+            activeSections: [],
+            artifactsDir: "var/agent/cache/qa-run/run-id",
+            commands: [passedCommand()],
+            configNotices: [],
+            evidence: {current: false},
+            failures: [{
+                command: "npm run test:unit -- secret-free.test.mjs",
+                exitCode: 3,
+                label: "secret-free.test.mjs",
+                section: "targeted:unit",
+                stderrLog: "var/run/001.stderr.log",
+                stdoutLog: "var/run/001.stdout.log",
+                summary: ["1 diagnostic line(s) omitted: possible secret; see local stdout/stderr logs."],
+            }],
+            mode: "full",
+            pendingFinalFullPass: false,
+            rerunReason: "initial",
+            scope: "point",
+            status: "FAIL",
+        });
+
+        expect(text).toContain("Scope: point (not full QA)");
+        expect(text).toContain("Evidence: stale (working tree changed during QA)");
+        expect(text).toContain("- [targeted:unit] secret-free.test.mjs exit=3");
+        expect(text).toContain("  logs: stdout=var/run/001.stdout.log stderr=var/run/001.stderr.log");
+        expect(text).not.toContain("npm run test:unit");
+    });
 });
 
 function passedCommand() {

@@ -27,7 +27,20 @@ This catalog uses Vitest; `npm test` runs the unit and integration projects,
 `npm run test:unit -- <file>` selects a focused unit file, and
 `npm run test:integration -- <file>` selects an integration file. The catalog's
 `.agents/qa-run.matrix.json` selects its checks for
-[qa-run](../.agents/skills/qa-run/SKILL.md).
+[qa-run](../.agents/skills/qa-run/SKILL.md). Its `unit` targeted runner maps a
+focused file to `npm run test:unit -- <file>`, so a limited run selects, for example:
+
+```json
+{"matrixHash": "<sha256 of the matrix>", "checks": [
+    {"runner": "unit", "selectors": ["tests/skills/qa-run/scoped-run.test.mjs"]},
+    {"section": "QA_CONFIG_CHANGED", "commandIndex": 0}
+]}
+```
+
+Save it under `var/agent/cache/` and run
+`node .agents/skills/qa-run/scripts/run-matrix.mjs --scope partial --selection var/agent/cache/qa-selection.json`.
+Such a result reports `scope=partial` and does not replace the full QA required
+before a commit.
 
 Instruction-only changes to skill roots, shared references or native role
 adapters select `INSTRUCTIONS_CHANGED` in the catalog matrix, which runs the

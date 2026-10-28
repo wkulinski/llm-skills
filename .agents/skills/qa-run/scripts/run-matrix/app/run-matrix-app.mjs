@@ -15,19 +15,27 @@ import {
 import {ensureConfig, loadConfig} from "../config/loader.mjs";
 import {collectConfigNotices} from "../config/notices.mjs";
 import {normalizeCommands} from "../config/normalizer.mjs";
-import {runSectionCommands} from "../execution/command-executor.mjs";
+import {CommandExecutor, runSectionCommands} from "../execution/command-executor.mjs";
+import {resolveToolExecutable} from "../execution/tool-resolver.mjs";
+import {contextSafeText} from "../reporting/context-safety.mjs";
 import {detectActiveSections} from "../patterns/section-activation.mjs";
 import {
     printConfigNotices,
     printDetectedChanges,
     printRiskSummary,
+    printRunResult,
     printSessionSummary,
-    printSummary,
 } from "../reporting/console-reporter.mjs";
 import {
     buildRunSummary,
     writeRunSummary,
 } from "../reporting/summary-writer.mjs";
+import {
+    assertSelectionInsideCache,
+    buildScopedPlan,
+    loadSelection,
+    RUN_SCOPES,
+} from "../selection/scoped-selection.mjs";
 import {
     assessRiskForFullFinalPass,
     includeSessionRiskForFullFinalPass,
@@ -83,99 +91,171 @@ export class RunMatrixApp {
         const session = loadSessionOrExit(sessionAbsPath);
         enforceSessionLifecycleOrExit(cli, session, sessionAbsPath);
 
-        const artifacts = createArtifacts(repoRoot, cli.rerunReason);
         const activeSections = detectActiveSections(files, config, mode);
-        printDetectedChanges(mode, cli.rerunReason, files, activeSections, config, snapshotPaths.deltaFromSnapshotAbsPath, artifacts);
-        const configNotices = collectConfigNotices(config, activeSections);
-        printConfigNotices(configNotices);
-
-        const executed = [];
-        const skippedNoCommands = [];
-        const skippedNoChanges = [];
-        const commandCounter = createCommandCounter();
         const riskAssessment = includeSessionRiskForFullFinalPass(
             assessRiskForFullFinalPass(activeSections, config),
             session,
             config,
             mode
         );
+        const runResult = cli.scope === "full"
+            ? await runFullMatrix({activeSections, cli, config, files, mode, repoRoot})
+            : await runScopedSelectionOrExit({cli, config, repoRoot});
 
-        for (const sectionName of config.sectionOrder) {
-            if (!activeSections[sectionName]) {
-                skippedNoChanges.push(sectionName);
-                continue;
-            }
-
-            let commands;
-            try {
-                commands = normalizeCommands(config, sectionName);
-            } catch (error) {
-                console.error(`ERROR: ${error.message}`);
-                process.exit(2);
-            }
-
-            if (commands.length === 0) {
-                skippedNoCommands.push(sectionName);
-                console.log(
-                    `INFO: section ${sectionName} skipped (no commands configured / section missing).`
-                );
-                continue;
-            }
-
-            const sectionResult = await runSectionCommands(repoRoot, config.sections[sectionName], commands, artifacts, commandCounter, config, cli);
-            sectionResult.executed.forEach((entry) => executed.push(entry));
-            if (!sectionResult.ok) {
-                const failureSession = updateSession(session, cli, mode, currentState, config, riskAssessment);
-                const failureSummary = buildRunSummary({
-                    activeSections,
-                    artifacts,
-                    cli,
-                    commands: executed,
-                    config,
-                    configNotices,
-                    failures: [sectionResult.failure],
-                    files,
-                    mode,
-                    riskAssessment,
-                    session: failureSession,
-                    skippedNoChanges,
-                    skippedNoCommands,
-                    status: "FAIL",
-                });
-                writeRunSummary(artifacts, failureSummary);
-                console.error(`INFO: QA summary written: ${artifacts.summaryJson}`);
-                process.exit(sectionResult.exitCode);
-            }
-        }
-
-        printSummary(executed, skippedNoChanges, skippedNoCommands, artifacts);
-
-        if (mode === "delta") {
-            printRiskSummary(riskAssessment);
-        }
-
-        const nextSession = updateSession(session, cli, mode, currentState, config, riskAssessment);
-        printSessionSummary(nextSession);
-        saveSession(sessionAbsPath, nextSession);
-        const passSummary = buildRunSummary({
-            activeSections,
-            artifacts,
+        const outcome = {
+            postRunState: collectWorkingTreeStateOrExit(repoRoot),
+            selection: runResult.selection,
+            status: runResult.failure ? "FAIL" : "PASS",
+        };
+        const nextSession = updateSession(session, cli, mode, currentState, config, riskAssessment, outcome);
+        const summary = buildRunSummary({
+            activeSections: runResult.activeSections,
+            artifacts: runResult.artifacts,
             cli,
-            commands: executed,
+            commands: runResult.executed,
             config,
-            configNotices,
-            failures: [],
+            configNotices: runResult.configNotices,
+            evidence: nextSession.lastRun,
+            failures: runResult.failure ? [runResult.failure] : [],
             files,
             mode,
             riskAssessment,
             session: nextSession,
-            skippedNoChanges,
-            skippedNoCommands,
-            status: "PASS",
+            skippedNoChanges: runResult.skippedNoChanges,
+            skippedNoCommands: runResult.skippedNoCommands,
+            status: outcome.status,
         });
-        writeRunSummary(artifacts, passSummary);
-        console.log(`INFO: QA summary written: ${artifacts.summaryJson}`);
+
+        if (!nextSession.lastRun.evidenceCurrent) {
+            console.error("WARN: working tree changed during QA; this result does not verify the current version.");
+        }
+
+        if (runResult.failure) {
+            persistRunOrExit(sessionAbsPath, nextSession, runResult.artifacts, summary);
+            printRunResult(summary, runResult.artifacts);
+            console.error(`INFO: QA summary written: ${runResult.artifacts.summaryJson}`);
+            process.exit(runResult.exitCode);
+        }
+
+        persistRunOrExit(sessionAbsPath, nextSession, runResult.artifacts, summary);
+        if (mode === "delta") {
+            printRiskSummary(riskAssessment);
+        }
+        if (sessionAbsPath) {
+            printSessionSummary(nextSession);
+        }
+        printRunResult(summary, runResult.artifacts);
+        console.log(`INFO: QA summary written: ${runResult.artifacts.summaryJson}`);
     }
+}
+
+// A runner I/O failure must never look like a passing QA run.
+function persistRunOrExit(sessionAbsPath, session, artifacts, summary) {
+    try {
+        saveSession(sessionAbsPath, session);
+        writeRunSummary(artifacts, summary);
+    } catch (error) {
+        console.error(`ERROR: QA ${summary.status} result could not be persisted: ${contextSafeText(error.message)}`);
+        console.error(`ERROR: artifacts=${artifacts.relativeDir}`);
+        process.exit(summary.status === "PASS" ? 1 : summary.failures[0]?.exitCode || 1);
+    }
+}
+
+async function runFullMatrix({activeSections, cli, config, files, mode, repoRoot}) {
+    const artifacts = createArtifactsOrExit(repoRoot, cli.rerunReason);
+    printDetectedChanges(mode, cli.rerunReason, files, activeSections);
+    const configNotices = collectConfigNotices(config, activeSections);
+    printConfigNotices(configNotices);
+
+    const executed = [];
+    const skippedNoCommands = [];
+    const skippedNoChanges = [];
+    const commandCounter = createCommandCounter();
+    const result = {
+        activeSections,
+        artifacts,
+        configNotices,
+        executed,
+        exitCode: 0,
+        failure: null,
+        selection: null,
+        skippedNoChanges,
+        skippedNoCommands,
+    };
+
+    for (const sectionName of config.sectionOrder) {
+        if (!activeSections[sectionName]) {
+            skippedNoChanges.push(sectionName);
+            continue;
+        }
+
+        let commands;
+        try {
+            commands = normalizeCommands(config, sectionName);
+        } catch (error) {
+            console.error(`ERROR: ${error.message}`);
+            process.exit(2);
+        }
+
+        if (commands.length === 0) {
+            skippedNoCommands.push(sectionName);
+            console.log(
+                `INFO: section ${sectionName} skipped (no commands configured / section missing).`
+            );
+            continue;
+        }
+
+        const sectionResult = await runSectionCommands(repoRoot, config.sections[sectionName], commands, artifacts, commandCounter, config, cli);
+        sectionResult.executed.forEach((entry) => executed.push(entry));
+        if (!sectionResult.ok) {
+            result.exitCode = sectionResult.exitCode;
+            result.failure = sectionResult.failure;
+            return result;
+        }
+    }
+
+    return result;
+}
+
+async function runScopedSelectionOrExit({cli, config, repoRoot}) {
+    let entries;
+    try {
+        const selectionAbsPath = resolveRepoPath(repoRoot, cli.selectionPath);
+        assertSelectionInsideCache(selectionAbsPath, getCacheRoot(repoRoot));
+        entries = buildScopedPlan({
+            config,
+            resolveTool: (tool) => resolveToolExecutable(repoRoot, tool),
+            scope: cli.scope,
+            selection: loadSelection(selectionAbsPath),
+        });
+    } catch (error) {
+        console.error(`ERROR: ${error.message}`);
+        process.exit(2);
+        throw error;
+    }
+
+    const artifacts = createArtifactsOrExit(repoRoot, `${cli.scope}-${cli.rerunReason}`);
+    console.log(`Scoped run: scope=${cli.scope} checks=${entries.length}`);
+    const executor = new CommandExecutor({
+        artifacts,
+        cli,
+        commandCounter: createCommandCounter(),
+        config,
+        repoRoot,
+    });
+    const result = await executor.runEntries(entries);
+
+    return {
+        activeSections: {},
+        artifacts,
+        configNotices: [],
+        executed: result.executed,
+        exitCode: result.exitCode,
+        failure: result.ok ? null : result.failure,
+        selection: entries.map((entry) => entry.check),
+        skippedNoChanges: [],
+        skippedNoCommands: [],
+    };
 }
 
 function parseCliOrExit(argv) {
@@ -316,7 +396,7 @@ function enforceSessionLifecycleOrExit(cli, session, sessionAbsPath) {
 }
 
 export function enforceSessionLifecycle(cli, session, sessionAbsPath) {
-    if (cli.rerunReason !== "initial" || !session.lastFullPass) {
+    if ((cli.scope ?? "full") !== "full" || cli.rerunReason !== "initial" || !session.lastFullPass) {
         return;
     }
 
@@ -333,6 +413,8 @@ function parseArgs(argv) {
         help: false,
         noCache: false,
         rerunReason: "initial",
+        scope: "full",
+        selectionPath: null,
         sessionPath: null,
         snapshotOnly: false,
         snapshotWritePath: null,
@@ -370,6 +452,16 @@ function parseArgs(argv) {
             continue;
         }
 
+        if (arg === "--scope") {
+            result.scope = readRequiredArgValue(args, "--scope");
+            continue;
+        }
+
+        if (arg === "--selection") {
+            result.selectionPath = readRequiredArgValue(args, "--selection");
+            continue;
+        }
+
         if (arg === "--session") {
             result.sessionPath = readRequiredArgValue(args, "--session");
             continue;
@@ -393,7 +485,33 @@ function parseArgs(argv) {
         );
     }
 
+    validateScopeArgs(result);
     return result;
+}
+
+function validateScopeArgs(cli) {
+    if (!RUN_SCOPES.has(cli.scope)) {
+        throw new Error(`Invalid value for --scope: ${cli.scope}. Expected one of: ${[...RUN_SCOPES].join(", ")}.`);
+    }
+
+    if (cli.scope === "full") {
+        if (cli.selectionPath) {
+            throw new Error("--selection requires --scope point or --scope partial.");
+        }
+        return;
+    }
+
+    if (!cli.selectionPath) {
+        throw new Error(`--scope ${cli.scope} requires --selection <path>.`);
+    }
+
+    if (cli.rerunReason === "full-final-pass") {
+        throw new Error("--rerun-reason full-final-pass requires --scope full.");
+    }
+
+    if (cli.snapshotOnly) {
+        throw new Error(`--scope ${cli.scope} cannot be combined with --snapshot-only.`);
+    }
 }
 
 function readRequiredArgValue(args, flagName) {
@@ -416,6 +534,8 @@ Options:
   --snapshot-only                Write snapshot and exit without running commands.
   --delta-from-snapshot <path>   Run only sections affected by changes since snapshot.
   --no-cache                     Ignore configured cache and execute commands normally.
+  --scope <scope>                Execution scope: full (default) | point | partial.
+  --selection <path>             Selection JSON under CACHE_PATH; required for point/partial.
   --help, -h                     Show this help.
 
 Deterministic QA runner for $qa-run:
@@ -425,7 +545,9 @@ Deterministic QA runner for $qa-run:
 - runs commands section by section (fail-fast on first command error),
 - supports snapshot-based delta reruns after repair iterations,
 - can persist a session ledger for deferred final full pass decisions,
-- copies config from the bundled dist template when missing.
+- copies config from the bundled dist template when missing,
+- point/partial scopes run only the selected matrix commands and targeted tests,
+  without cache or session updates; they never count as a full QA gate.
 
 Default config path: ${DEFAULT_CONFIG_REL_PATH}`);
 }
@@ -462,12 +584,22 @@ function enforceRerunReasonConsistency(cli) {
     }
 }
 
+function createArtifactsOrExit(repoRoot, runLabel) {
+    try {
+        return createArtifacts(repoRoot, runLabel);
+    } catch (error) {
+        console.error(`ERROR: cannot create QA artifacts: ${contextSafeText(error.message)}`);
+        process.exit(1);
+        throw error;
+    }
+}
+
 function createArtifacts(repoRoot, rerunReason) {
     const cacheRoot = getCacheRoot(repoRoot);
     const runId = `${formatDateForPath(new Date())}-${process.pid}-${sanitizePathPart(rerunReason)}`;
     const artifactsDir = path.join(cacheRoot, "qa-run", runId);
     const commandsDir = path.join(artifactsDir, "commands");
-    mkdirSync(commandsDir, {recursive: true});
+    mkdirSync(commandsDir, {mode: 0o700, recursive: true});
 
     return {
         commandsDir,

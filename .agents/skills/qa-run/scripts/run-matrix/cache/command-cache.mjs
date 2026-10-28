@@ -9,7 +9,11 @@ import {getCacheRoot} from "../shared/paths.mjs";
 export const CACHE_VERSION = 1;
 
 export function prepareCommandCache(repoRoot, section, command, config, cli) {
-    if (cli.noCache || cli.rerunReason !== "post-fix-delta" && cli.rerunReason !== "review-fix-delta") {
+    if (cli.noCache || (cli.scope ?? "full") !== "full") {
+        return {enabled: false};
+    }
+
+    if (cli.rerunReason !== "post-fix-delta" && cli.rerunReason !== "review-fix-delta") {
         return {enabled: false};
     }
 
@@ -137,12 +141,12 @@ export function writeCachedCommandLogs(logs, cacheHit) {
         `cache_key=${cacheHit.fingerprint.cacheKey}`,
         `mutated_inputs=${cacheHit.mutatedInputs === true ? "1" : "0"}`,
     ];
-    writeFileSync(logs.stdoutAbsPath, `${lines.join("\n")}\n`, "utf-8");
-    writeFileSync(logs.stderrAbsPath, "", "utf-8");
+    writeFileSync(logs.stdoutAbsPath, `${lines.join("\n")}\n`, {encoding: "utf-8", mode: 0o600});
+    writeFileSync(logs.stderrAbsPath, "", {encoding: "utf-8", mode: 0o600});
 }
 
 export function writeCommandCache(commandCache, commandResult, artifacts) {
-    mkdirSync(path.dirname(commandCache.path), {recursive: true});
+    mkdirSync(path.dirname(commandCache.path), {mode: 0o700, recursive: true});
     const entry = {
         artifactsDir: artifacts.relativeDir,
         command: commandResult.command,
@@ -160,5 +164,5 @@ export function writeCommandCache(commandCache, commandResult, artifacts) {
         stdoutLog: commandResult.stdoutLog,
         version: CACHE_VERSION,
     };
-    writeFileSync(commandCache.path, `${JSON.stringify(entry, null, 2)}\n`, "utf-8");
+    writeFileSync(commandCache.path, `${JSON.stringify(entry, null, 2)}\n`, {encoding: "utf-8", mode: 0o600});
 }

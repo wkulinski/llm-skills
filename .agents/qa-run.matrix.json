@@ -12,6 +12,16 @@
             "@js-ts-safe"
         ]
     },
+    "targetedTests": {
+        "unit": {
+            "tool": "npm",
+            "args": [
+                "run",
+                "test:unit",
+                "--"
+            ]
+        }
+    },
     "sectionOrder": [
         "ALWAYS_FULL",
         "ALWAYS_ON_RERUN",

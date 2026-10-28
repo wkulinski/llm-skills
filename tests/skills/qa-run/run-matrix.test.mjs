@@ -611,8 +611,8 @@ describe("run-matrix output contract", () => {
         ]);
 
         expect(result.status).toBe(0);
-        expect(result.stdout).toContain("- MARKDOWN_CHANGED=1");
-        expect(result.stdout).toContain("- JS_CHANGED=0");
+        expect(result.stdout).toContain("active=MARKDOWN_CHANGED\n");
+        expect(result.stdout).not.toContain("JS_CHANGED=");
         expect(result.stdout).toContain("PASS [MARKDOWN_CHANGED]");
         expect(result.stdout).not.toContain("PASS [JS_CHANGED]");
         expect(result.stdout).not.toContain("js command ran");
@@ -690,7 +690,7 @@ describe("run-matrix output contract", () => {
         ]);
 
         expect(delta.status).toBe(0);
-        expect(delta.stdout).toContain("- pending_final_full_pass=1");
+        expect(delta.stdout).toContain("Session: pending_final_full_pass=1");
 
         const deltaSummary = readSummary(delta);
         expect(deltaSummary.pendingFinalFullPass).toBe(true);
@@ -713,7 +713,7 @@ describe("run-matrix output contract", () => {
 
         expect(finalFull.status).toBe(0);
         expect(finalFull.stdout).toContain("PASS [RISK_CHANGED]");
-        expect(finalFull.stdout).toContain("- pending_final_full_pass=0");
+        expect(finalFull.stdout).toContain("Session: pending_final_full_pass=0");
 
         const finalSummary = readSummary(finalFull);
         expect(finalSummary.mode).toBe("full");
@@ -752,7 +752,7 @@ describe("run-matrix output contract", () => {
         const result = runMatrixConfig(configPath, tempRoot, deltaArgs(snapshotPath));
 
         expect(result.status).toBe(0);
-        expect(result.stdout).toContain("- ANY_CHANGED=1");
+        expect(result.stdout).toMatch(/active=(?:[^\n]*,)?ANY_CHANGED(?:,|\n)/);
         expect(result.stdout).toContain("PASS [ANY_CHANGED]");
 
         const summary = readSummary(result);

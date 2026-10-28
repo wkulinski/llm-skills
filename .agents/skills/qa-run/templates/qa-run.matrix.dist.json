@@ -15,6 +15,17 @@
             "@js-ts-safe"
         ]
     },
+    "targetedTests": {
+        "codeception": {
+            "tool": "composer",
+            "args": [
+                "--proxy-quiet",
+                "test",
+                "--"
+            ],
+            "parser": "codeception-junit"
+        }
+    },
     "sectionOrder": [
         "ALWAYS_FULL",
         "ALWAYS_ON_RERUN",
