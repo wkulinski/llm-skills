@@ -710,8 +710,18 @@ it("stores and verifies canonical context references in plan front matter", () =
     const context = {status: "COMPLETE", report_path: reportPath, criteria_path: criteriaPath};
     const saved = savePlan(saveInput(root, {context}), {now: NOW, verbose: true});
     assert.equal(saved.metadata.context_status, "COMPLETE");
+    assert.match(saved.metadata.context_report, /\/evidence\/[a-f0-9]{64}\/report.json$/);
+    const durableReport = path.join(root, saved.metadata.context_report);
+    assert.deepEqual(fs.readFileSync(durableReport), fs.readFileSync(reportPath));
+    assert.deepEqual(fs.readFileSync(path.join(root, saved.metadata.context_criteria)), fs.readFileSync(criteriaPath));
+    const repeated = savePlan(saveInput(root, {context, ...updateToken(saved)}), {now: NOW, verbose: true});
+    assert.equal(repeated.changed, false);
+    assert.equal(repeated.revision, saved.revision);
 
     fs.writeFileSync(reportPath, "{\"status\":\"tampered\"}\n", "utf8");
+    fs.rmSync(criteriaPath);
+    assert.equal(loadPlan({repoRoot: root, sourceIdentity: source().identity}).validation.valid, true);
+    fs.writeFileSync(durableReport, "{\"status\":\"tampered\"}\n", "utf8");
     const loaded = loadPlan({repoRoot: root, sourceIdentity: source().identity});
     assert.equal(loaded.status, "invalid");
     assert.ok(loaded.validation.errors.some((message) => message.includes("context report hash")));
@@ -736,10 +746,10 @@ it("withdraws ready while a material revision references an incomplete canonical
     assert.equal(saved.status, "blocked");
     assert.equal(saved.metadata.revision, 2);
     assert.equal(saved.metadata.context_status, "INCOMPLETE");
-    assert.equal(saved.metadata.context_criteria, "var/agent/incomplete-context.criteria.json");
+    assert.match(saved.metadata.context_criteria, /\/evidence\/[a-f0-9]{64}\/criteria.json$/);
     assert.equal(parsePlanDocument(saved.markdown).body, parsePlanDocument(ready.markdown).body);
 
-    fs.writeFileSync(reportPath, "{\"status\":\"tampered\"}\n", "utf8");
+    fs.writeFileSync(path.join(root, saved.metadata.context_report), "{\"status\":\"tampered\"}\n", "utf8");
     const loaded = loadPlan({repoRoot: root, sourceIdentity: source().identity});
     assert.equal(loaded.status, "invalid");
     assert.ok(loaded.validation.errors.some((message) => message.includes("context report hash")));
@@ -753,6 +763,115 @@ it("derives blocked from a blocked repository-context without requiring a synthe
     assert.equal(saved.validation.valid, true);
     assert.equal(saved.metadata.context_status, "BLOCKED");
     assert.equal(saved.status, "blocked");
+});
+
+function contextFixture(root, report = "{  \"status\": \"COMPLETE\" }\r\n", status = "COMPLETE") {
+    const directory = path.join(root, "var/agent/cache/run");
+    fs.mkdirSync(directory, {recursive: true});
+    fs.writeFileSync(path.join(directory, "report.json"), report);
+    fs.writeFileSync(path.join(directory, "criteria.json"), "{\"version\":2}\n");
+    return {status, report_path: path.join(directory, "report.json"), criteria_path: path.join(directory, "criteria.json")};
+}
+
+it("keeps older evidence sets and preserves byte identity without JSON reserialization", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const context = contextFixture(root);
+    const first = savePlan(saveInput(root, {context}), {now: NOW, verbose: true});
+    const firstBytes = fs.readFileSync(path.join(root, first.metadata.context_report));
+    assert.equal(firstBytes.toString(), "{  \"status\": \"COMPLETE\" }\r\n");
+    const secondContext = contextFixture(root, "{\"status\":\"COMPLETE\",\"new\":true}\n");
+    const second = savePlan(saveInput(root, {context: secondContext, ...updateToken(first)}), {now: NOW, verbose: true});
+    assert.notEqual(first.metadata.context_report, second.metadata.context_report);
+    assert.deepEqual(fs.readFileSync(path.join(root, first.metadata.context_report)), firstBytes);
+    fs.rmSync(path.join(root, "var/agent/cache"), {recursive: true});
+    const input = saveInput(root, {...updateToken(second)});
+    delete input.context;
+    const unchanged = savePlan(input, {now: NOW, verbose: true});
+    assert.equal(unchanged.changed, false);
+    assert.equal(unchanged.metadata.context_report, second.metadata.context_report);
+});
+
+it.each(["INCOMPLETE", "BLOCKED"])("retains every supplied reference with %s and explicit absence", (status) => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const context = contextFixture(root, "{}\n", status);
+    const first = savePlan(saveInput(root, {context: {...context, report_path: null}}), {now: NOW, verbose: true});
+    assert.equal(first.metadata.context_report, null);
+    assert.ok(first.metadata.context_criteria);
+    assert.equal(first.status, "blocked");
+    const second = savePlan(saveInput(root, {context, ...updateToken(first)}), {now: NOW, verbose: true});
+    assert.notEqual(first.metadata.context_criteria, second.metadata.context_criteria);
+    assert.equal(second.metadata.context_status, status);
+    assert.equal(second.status, "blocked");
+});
+
+it.each(["copy", "publication", "corruption"])("preserves the previous document on %s failure and safely retries", (failure) => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const first = savePlan(saveInput(root), {now: NOW, verbose: true});
+    const context = contextFixture(root);
+    const failingFs = {
+        ...fs,
+        linkSync(from, to) {
+            if (failure === "copy" && to.endsWith("criteria.json")) { throw new Error("copy failed"); }
+            fs.linkSync(from, to);
+            if (failure === "corruption" && to.endsWith("criteria.json")) { fs.writeFileSync(to, "corrupt"); }
+        },
+        renameSync(from, to) {
+            if (failure === "publication" && to.endsWith(".md")) { throw new Error("publication failed"); }
+            fs.renameSync(from, to);
+        },
+    };
+    assert.throws(() => savePlan(saveInput(root, {context, ...updateToken(first)}), {now: NOW, fsOps: failingFs}));
+    assert.equal(fs.readFileSync(path.join(root, first.plan_path), "utf8"), first.markdown);
+    if (failure === "corruption") {
+        assert.throws(() => savePlan(saveInput(root, {context, ...updateToken(first)})), {code: "CONTEXT_COPY_CONFLICT"});
+    } else {
+        const retried = savePlan(saveInput(root, {context, ...updateToken(first)}), {now: NOW, verbose: true});
+        assert.equal(retried.validation.valid, true);
+        assert.deepEqual(fs.readFileSync(path.join(root, retried.metadata.context_report)), fs.readFileSync(context.report_path));
+    }
+});
+
+it("rejects bad hashes and incomplete COMPLETE evidence before copying", () => {
+    const root = temporaryRepository();
+    const sourceRef = prepareSource(root);
+    const context = contextFixture(root);
+    for (const invalid of [
+        {...context, report_sha256: "0".repeat(64)},
+        {...context, criteria_path: null},
+        {...context, status: "NOT_REQUIRED"},
+        {status: "BLOCKED", report_sha256: "0".repeat(64)},
+    ]) {
+        assert.throws(() => savePlan(saveInput(root, {context: invalid})));
+    }
+    assert.equal(fs.existsSync(path.join(root, path.dirname(sourceRef.source_artifact), "evidence")), false);
+});
+
+it("does not repair inherited references when context is omitted", () => {
+    const root = temporaryRepository();
+    prepareSource(root);
+    const saved = savePlan(saveInput(root, {context: contextFixture(root)}), {now: NOW, verbose: true});
+    fs.rmSync(path.join(root, saved.metadata.context_report));
+    const input = saveInput(root, {...updateToken(saved)});
+    delete input.context;
+    assert.throws(() => savePlan(input), {code: "INVALID_PLAN"});
+    assert.equal(fs.existsSync(path.join(root, saved.metadata.context_report)), false);
+    assert.equal(fs.readFileSync(path.join(root, saved.plan_path), "utf8"), saved.markdown);
+});
+
+it("refuses symlinked evidence input and durable output directories", () => {
+    const root = temporaryRepository();
+    const sourceRef = prepareSource(root);
+    const context = contextFixture(root);
+    fs.symlinkSync(context.report_path, path.join(root, "link.json"));
+    assert.throws(() => savePlan(saveInput(root, {context: {...context, report_path: "link.json"}})), /symlinks/);
+    const target = path.join(root, "target");
+    fs.mkdirSync(target);
+    fs.symlinkSync(target, path.join(root, path.dirname(sourceRef.source_artifact), "evidence"));
+    assert.throws(() => savePlan(saveInput(root, {context})), /symlinks/);
+    assert.deepEqual(fs.readdirSync(target), []);
 });
 
 it("detects source artifact tampering during resume", () => {

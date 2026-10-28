@@ -786,6 +786,23 @@ Otwarcie nowego cyklu po pytaniu, odpowiedzi użytkownika i zmianie planu
 
 ### Front matter planu i potwierdzenie review
 
+Źródło jest przechowywane pod `var/agent/task-plan/<plan-id>/source.json` względem
+repozytorium konsumenta. Jawny `context` zwykłego zapisu promuje raport i kryteria
+do `var/agent/task-plan/<plan-id>/evidence/<set-id>/report.json` oraz `criteria.json`.
+`set-id` jest SHA-256 pary pełnych hashy plików z jawnym znacznikiem nieobecności.
+Magazyn sprawdza ścieżki i oczekiwane hashe, zapisuje identyczne bajty atomowo bez
+nadpisywania istniejących kopii i weryfikuje komplet przed publikacją dokumentu
+pod istniejącą blokadą i tokenem bazy. Identyczna kopia jest używana ponownie;
+sprzeczna kończy zapis błędem. Wszystkie te katalogi są niezależne od `CACHE_PATH`.
+
+`COMPLETE` wymaga obu plików. `INCOMPLETE` i `BLOCKED` zachowują status i wszystkie
+dostarczone referencje. `NOT_REQUIRED` nie ma referencji i nie tworzy zestawu.
+Bez nowego `context` zapis zachowuje dotychczasowe referencje i ich walidację;
+nie wyszukuje ani nie naprawia artefaktów. Istnienie oraz hashe referencjonowanych
+kopii pozostają obowiązkowe. Starszych zestawów nie usuwa commit ani ukończenie WP.
+Błąd kopiowania lub publikacji pozostawia poprzedni dokument; nieprzywołana kopia
+może pozostać i jest sprawdzana przy ponowieniu. Trwałość lokalna nie jest backupem.
+
 `store.mjs` jest właścicielem front matter. Poza polami źródła i kontekstu zapisuje:
 
 | Pole | Wartość |

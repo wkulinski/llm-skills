@@ -88,7 +88,7 @@ Read only the files required by the active step. Declared references are availab
 | the code or plan changes navigation, interaction, object selection, messages, or consequential actions for the user | `<skills_root>/_shared/references/user-facing-behavior-assessment.md` |
 | plan target contract owned by `$task-plan` | `<skills_root>/task-plan/SKILL.md` |
 | the target is `plan`: plan expected behavior, plan context, plan integrity, plan coverage and plan verdicts | `<skill_dir>/references/plan-review.md` |
-| the target is `code` and the caller supplied a plan, or automatic lookup is allowed and `${CACHE_PATH:-var/agent/cache}/plan-execute/last-plan.txt` exists (see "Active-plan context for code") | `<skill_dir>/references/active-plan.md` |
+| the target is `code` and the caller supplied a plan, or automatic lookup is allowed and `./var/agent/plan-execute/last-plan.txt` exists (see "Active-plan context for code") | `<skill_dir>/references/active-plan.md` |
 | explicitly asked to re-review fixes | `<skill_dir>/references/re-review.md` |
 
 ## 1. Resolve review target and scope
@@ -168,7 +168,8 @@ For a `code` target, decide whether to load `<skill_dir>/references/active-plan.
 - when the caller supplied a plan, load the reference; a caller's ban on
   automatic lookup does not exclude a supplied plan;
 - otherwise, unless the caller's constraints forbid it, check whether
-  `${CACHE_PATH:-var/agent/cache}/plan-execute/last-plan.txt` exists.
+  `./var/agent/plan-execute/last-plan.txt` exists in the consumer repository,
+  independently of `CACHE_PATH`.
   This is the only automatic plan lookup: do not search every plan in the
   repository. When the pointer exists, load the reference;
 - when no plan was supplied and the pointer is missing or lookup is forbidden,

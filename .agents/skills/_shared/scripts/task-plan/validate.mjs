@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {isMainModule} from "../is-main-module.mjs";
+import {assertRepositoryFilePath} from "../artifact-path.mjs";
 import {hasModelProfile, loadModelHierarchy} from "../model-hierarchy.mjs";
 import {parsePackageDifficulty} from "./difficulty.mjs";
 
@@ -870,6 +871,11 @@ function verifyFile(relativePath, expectedHash, repoRoot, fsOps, label) {
     const absolute = resolveInside(repoRoot, relativePath);
     if (!absolute) {
         return [`${label} path escapes repository root.`];
+    }
+    try {
+        assertRepositoryFilePath(absolute, repoRoot);
+    } catch (error) {
+        return [`${label} path is unsafe: ${error.message}`];
     }
     if (!fsOps.existsSync(absolute)) {
         return [`${label} does not exist: ${relativePath}.`];

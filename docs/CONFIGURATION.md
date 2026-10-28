@@ -33,8 +33,9 @@ docs_map:
 ```
 
 `MAIN_DOC` must identify an existing document describing **your project**, not
-this catalog's README. Ignore `var/agent/cache/` in your project's `.gitignore`;
-context workflows write local state there.
+this catalog's README. Ignore `var/agent/` in your project's `.gitignore`;
+context windows write local state there, while plan and work state live under
+`var/agent/task-plan/`, `var/agent/plan-execute/` and `var/agent/code-implement/`.
 
 The [skill structure contract](../.agents/skills/_shared/references/skill-structure-contract.md)
 defines the path notation (`./`, `<skill_dir>`, `<skills_root>`), instruction
@@ -67,7 +68,7 @@ skills index is created by `$skills-index-refresh`.
 | `SKILLS_INDEX_DOC` | Index destination required by skills-index-refresh |
 | `HANDOFF_DOC` | Optional local handoff path; required by handoff-refresh |
 | `TESTS_README`, `QUALITY_PROCEDURES_DOC` | Optional existing project documents |
-| `CACHE_PATH` | Repository-local cache/state directory; default `var/agent/cache/` |
+| `CACHE_PATH` | Repository-local cache directory; default `var/agent/cache/`. Durable plan and work state is stored outside it under `var/agent/` |
 
 Other paths are repository-relative to the consumer root. A missing required key
 blocks only the workflow that needs it; each `SKILL.md` lists its required keys.

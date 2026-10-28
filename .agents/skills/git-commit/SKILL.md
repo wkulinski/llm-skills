@@ -114,7 +114,7 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
 14. Jeśli zdefiniowano klucz `HANDOFF_DOC`: usuń plik handoffu wskazany przez ten klucz (jeżeli istnieje). Plik jest lokalny i nie powinien trafiać do commita.
 15. Usuń katalog snapshotu z kroku 2 (sprzątanie obowiązkowe; snapshot jest tymczasowy i nie powinien zostawać po procedurze).
     - Preferowane sprzątanie bezpieczne: `<skill_dir>/scripts/snapshot-clean.mjs --current` (usuwa też `/tmp/agent-git-commit-snapshot-pointer.txt`).
-16. Po udanym commicie uruchom `$agent-cache-clear` (czyszczenie `CACHE_PATH`, domyślnie `var/agent/cache/`).
+16. Commit nie kończy innych workflow: nie czyść wspólnego cache ani trwałych danych pracy.
 17. Po wykonaniu procedury nie uruchamiaj jej ponownie ani `git commit` bez nowej, wyraźnej intencji commita od użytkownika.
 
 ## Zakres

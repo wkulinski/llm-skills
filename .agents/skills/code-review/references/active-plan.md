@@ -9,6 +9,8 @@ and the `plan-execute` pointer exists.
 When the plan comes from the pointer, resolve its single repository-relative
 canonical plan path; never treat the pointer as a copy of the plan or as a
 source of work-package status.
+The pointer is `var/agent/plan-execute/last-plan.txt` relative to the consumer
+repository, independently of `CACHE_PATH`.
 
 For a supplied or pointer-resolved plan:
 

@@ -20,17 +20,21 @@ Mechanizmy:
 
 ## Definicje
 
-### Stałe ścieżek (z env)
+### Stałe ścieżek
 - `CACHE_PATH`:
   - wartość z aktywnych plików env repo ładowanych przez `<skills_root>/_shared/scripts/env-load.sh`,
   - domyślnie `var/agent/cache`.
 - `STATE_PATH`:
-  - `${CACHE_PATH:-var/agent/cache}/code-implement/state.md`
+  - `var/agent/code-implement/state.md` względem repozytorium konsumenta,
+    niezależnie od `CACHE_PATH`.
   - to jest jedyna ścieżka stanu używana przez ten skill.
+- Plik pomocniczy zdarzeń: `var/agent/code-implement/read-events.jsonl`, w tym
+  samym trwałym katalogu. Cleaner i commit nie usuwają tych danych; jawny
+  `state-clear` usuwa oba pliki na dotychczasowych zasadach.
 
 ### Plik stanu (wymagany)
 Utrzymuj trwały stan zadania w pliku:
-- `STATE_PATH` (`${CACHE_PATH:-var/agent/cache}/code-implement/state.md`) — **lokalny** i **ignorowany przez git**; nie commitujemy go.
+- `STATE_PATH` (`var/agent/code-implement/state.md`) — **lokalny** i **ignorowany przez git**; nie commitujemy go.
 
 Plik ma umożliwić “powrót do sedna” między iteracjami bez zasypywania użytkownika:
 - Rejestr wymagań (wymagania R1..Rn + status),

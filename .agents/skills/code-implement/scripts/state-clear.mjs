@@ -4,9 +4,9 @@ import {rmSync} from "node:fs";
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {resolveReadEventsPath, resolveStatePath, stateExists} from "./state-utils.mjs";
 
-export function runStateClear({cachePath} = {}) {
-    const {absolute: statePath, display} = resolveStatePath(cachePath);
-    const {absolute: readEventsPath, display: readEventsDisplay} = resolveReadEventsPath(cachePath);
+export function runStateClear({repoRoot} = {}) {
+    const {absolute: statePath, display} = resolveStatePath(repoRoot);
+    const {absolute: readEventsPath, display: readEventsDisplay} = resolveReadEventsPath(repoRoot);
     const statePresent = stateExists(statePath);
     const readEventsPresent = stateExists(readEventsPath);
 

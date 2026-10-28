@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {isMainModule} from "../is-main-module.mjs";
+import {assertPersistentAgentPath, resolvePersistentAgentRoot} from "../artifact-path.mjs";
 import {writeFileAtomic} from "./atomic-file.mjs";
 
 export class SourceError extends Error {
@@ -145,7 +146,8 @@ export function buildPlanId(sourceIdentity) {
 export function resolveSourceArtifactPath({repoRoot = process.cwd(), sourceIdentity} = {}) {
     const root = path.resolve(requiredString(repoRoot, "repo_root"));
     const planId = buildPlanId(sourceIdentity);
-    const artifactPath = path.resolve(root, "var", "agent", "task-plan", planId, "source.json");
+    const artifactPath = assertPersistentAgentPath("task-plan",
+        path.join(resolvePersistentAgentRoot("task-plan", root), planId, "source.json"), root);
     return {repoRoot: root, planId, artifactPath};
 }
 

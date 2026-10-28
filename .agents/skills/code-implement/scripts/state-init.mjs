@@ -3,8 +3,8 @@
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {buildStateTemplate, formatLocalDate, formatLocalTime, resolveStatePath, stateExists, writeText} from "./state-utils.mjs";
 
-export function runStateInit({cachePath, now = new Date()} = {}) {
-    const {absolute: statePath, display} = resolveStatePath(cachePath);
+export function runStateInit({repoRoot, now = new Date()} = {}) {
+    const {absolute: statePath, display} = resolveStatePath(repoRoot);
 
     if (stateExists(statePath)) {
         return {code: 0, stdout: `${display} (exists)\n`};

@@ -71,7 +71,7 @@ before installing. The alphabetical skill list is at the end.
 | Analyze costs and duplicated work in OpenCode sessions | `$opencode-workflow-economics` | subagent and fallback economics report |
 | Load or refresh project context | `$context-refresh` | context manifest and repository state |
 | Hand context over to another agent | `$handoff-refresh` | state snapshot for the next session |
-| Clear the local agent cache | `$agent-cache-clear` | remove state from `CACHE_PATH` |
+| Clear the local agent cache | `$agent-cache-clear` | explicitly empty `CACHE_PATH`; durable work data is preserved |
 
 ### Communication
 
@@ -92,14 +92,17 @@ Required calls, including transitive helpers:
 - **Implementation:** `$code-implement` → `$review-quick`, with
   `$context-refresh` when context is not current.
 - **QA:** `$qa-run` → `$review-quick`.
-- **Commit:** `$git-commit` → `$qa-run` + `$commit-message-write` +
-  `$agent-cache-clear`, plus `$docs-sync` and `$skills-index-refresh` when the
-  consumer maps their documents in `docs_map` (otherwise the step is skipped and
-  reported). `$docs-sync` can also call `$skills-index-refresh`.
+- **Commit:** `$git-commit` → `$qa-run` + `$commit-message-write`, plus
+  `$docs-sync` and `$skills-index-refresh` when the consumer maps their documents
+  in `docs_map` (otherwise the step is skipped and reported). `$docs-sync` can
+  also call `$skills-index-refresh`. A commit does not clear `CACHE_PATH` or
+  durable work data.
+- **Cache maintenance:** `$agent-cache-clear` runs only on an explicit user
+  request with workflows stopped.
 
 The **unconditional starter closure is 12 skills**: the seven entrypoints plus
 `$review-quick`, `$docs-sync`, `$skills-index-refresh`, `$commit-message-write` and
-`$agent-cache-clear`. Keep every skill's own scripts/references/assets and all
+the explicit maintenance skill `$agent-cache-clear`. Keep every skill's own scripts/references/assets and all
 declared `shared_files`, including their shared module dependencies. Native scout
 agents and harness/MCP configuration are configured separately.
 
