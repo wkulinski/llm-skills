@@ -5,7 +5,7 @@ import path from "node:path";
 import {sanitizePathPart, toRepoRelativePath} from "../shared/paths.mjs";
 
 export function createCommandLogs(repoRoot, commandsDir, commandIndex, section, command) {
-    mkdirSync(commandsDir, {recursive: true});
+    mkdirSync(commandsDir, {mode: 0o700, recursive: true});
     const commandHash = createHash("sha256").update(command).digest("hex").slice(0, 12);
     const prefix = `${String(commandIndex).padStart(3, "0")}-${sanitizePathPart(section)}-${commandHash}`;
     const stdoutPath = path.join(commandsDir, `${prefix}.stdout.log`);

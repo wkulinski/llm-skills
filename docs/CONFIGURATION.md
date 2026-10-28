@@ -146,3 +146,25 @@ requesting QA or a commit; the catalog's own npm/Vitest matrix does not apply to
 other projects. [qa-run](../.agents/skills/qa-run/SKILL.md) defines the schema and
 execution; [git-commit](../.agents/skills/git-commit/SKILL.md) defines the commit
 sequence.
+
+To let workflows run a single test or a few checks instead of the whole matrix,
+add named test runners to the matrix. A runner is never part of full QA; its
+`tool` is resolved through `resolve_tool_cmd` and selectors are passed as
+separate arguments:
+
+```json
+"targetedTests": {
+    "codeception": {"tool": "composer", "args": ["--proxy-quiet", "test", "--"], "parser": "codeception-junit"}
+}
+```
+
+A `point` or `partial` run reads a selection file stored under `CACHE_PATH`; its
+result is never a full QA gate:
+
+```bash
+node .agents/skills/qa-run/scripts/run-matrix.mjs --scope point --selection var/agent/cache/qa-selection.json
+```
+
+The selection format, ordering and session rules are owned by
+[qa-run](../.agents/skills/qa-run/SKILL.md); when to run which check is owned by
+[runtime guidelines §5](../.agents/skills/_shared/references/runtime-collaboration-guidelines.md#5-qa-command-policy-single-source-of-truth).

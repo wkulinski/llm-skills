@@ -187,6 +187,51 @@ describe("qa-run config normalizer", () => {
         ]);
         expect(notices.map((notice) => notice.section)).toEqual(["ACTIVE", "ACTIVE"]);
     });
+
+    it("normalizes optional targeted tests with inherited output settings", () => {
+        const withoutTests = parseTestConfig({
+            sectionOrder: ["FILES_CHANGED"],
+            sections: {FILES_CHANGED: minimalSection()},
+        });
+        expect(withoutTests.targetedTests).toEqual({});
+        expect(withoutTests.sections.FILES_CHANGED.commands[0].sourceIndex).toBe(0);
+
+        const config = parseTestConfig({
+            outputDefaults: {failTailLines: 30},
+            sectionOrder: ["FILES_CHANGED"],
+            sections: {FILES_CHANGED: minimalSection()},
+            targetedTests: {
+                unit: {
+                    args: ["run", "test:unit", "--"],
+                    parser: "eslint-json",
+                    tool: "npm",
+                },
+            },
+        });
+
+        expect(config.targetedTests.unit).toMatchObject({
+            args: ["run", "test:unit", "--"],
+            name: "unit",
+            output: {failTailLines: 30, parser: "eslint-json"},
+            tool: "npm",
+        });
+    });
+
+    it.each([
+        [{unit: {args: []}}, 'requires "tool"'],
+        [{unit: {args: [], tool: "npm run"}}, 'requires "tool"'],
+        [{unit: {args: "run", tool: "npm"}}, '"args" must be an array'],
+        [{unit: {args: [""], tool: "npm"}}, '"args" must be an array'],
+        [{unit: {cmd: "npm test", tool: "npm"}}, "unknown keys: cmd"],
+        [{"unit tests": {tool: "npm"}}, "may contain only letters"],
+        [[], 'Config field "targetedTests" must be an object.'],
+    ])("rejects invalid targeted test config %#", (targetedTests, message) => {
+        expect(() => parseTestConfig({
+            sectionOrder: ["FILES_CHANGED"],
+            sections: {FILES_CHANGED: minimalSection()},
+            targetedTests,
+        })).toThrow(message);
+    });
 });
 
 function parseTestConfig(config) {

@@ -285,7 +285,8 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
    primary bezpośrednim wywołaniem scouta.
 4. Ustal obszar zmian:
    - znajdź docelowe moduły/pliki (np. przez `rg` po symbolach),
-   - doczytaj README dokumentacji dla dotkniętych modułów (zgodnie z `docs_map` z `AGENTS.md`).
+   - doczytaj README dokumentacji dla dotkniętych modułów (zgodnie z `docs_map` z `AGENTS.md`),
+   - przed zmianą kontraktu (publicznego wyniku, sygnatury, komunikatu, konfiguracji DI) rozpoznaj jego rzeczywistych konsumentów; to odczyt, nie runda QA (`<skills_root>/_shared/references/runtime-collaboration-guidelines.md` §5.1).
    - rozstrzygnij profil według `<skills_root>/_shared/references/project-profiles.md` i doczytaj wyłącznie aktywowane standardy przed decyzjami implementacyjnymi; błąd konfiguracji zatrzymuje pracę przed zmianami.
 5. Zrób preflight entrypointów narzędzi:
    - załaduj helper `env-load.sh` wskazany w `shared_files`,
@@ -351,7 +352,7 @@ Gdy użytkownik zgłasza błąd/uwagę po Twojej implementacji:
    - “Cel iteracji: …” (1 zdanie),
    - “Kryterium gotowe: …” (1 zdanie).
 3. Poprawiaj tylko to, co wynika z celu iteracji + Rejestru wymagań; nie “uciekaj” w poboczne zmiany.
-4. Jeśli po poprawce trzeba ponownie sprawdzić wynik, wywołaj `<skills_root>/_shared/scripts/targeted-check-decision.mjs` z `--target-origin feedback`; gdy helper zwróci `RUN_TARGETED_TEST`, wolno powtórzyć wyłącznie pojedynczy plik testowy albo 1–3 wskazane metody. Ponowne uruchamianie lintów w ramach `$code-implement` jest zabronione.
+4. Jeśli po poprawce trzeba ponownie sprawdzić wynik, wywołaj `<skills_root>/_shared/scripts/targeted-check-decision.mjs` z `--target-origin feedback`; gdy helper zwróci `RUN_TARGETED_TEST`, wolno powtórzyć wyłącznie pojedynczy plik testowy albo 1–3 wskazane metody, przez `$qa-run` w zakresie `point`. Powtarzaj tylko dowody, które poprawka unieważniła. Ponowne uruchamianie lintów w ramach `$code-implement` jest zabronione.
 5. Jeśli nie zgadzasz się z feedbackiem: nie “upieraj się” — zweryfikuj w kodzie/komendą i dopiero wtedy argumentuj wynikiem.
 6. Na koniec iteracji zaktualizuj statusy R# + Dowody, dopisz wpis do Dziennika odczytów (jeśli coś czytałeś/uruchamiałeś) oraz wpis do Dziennika iteracji używając odpowiednich skryptów.
 7. Szybka checklista zamknięcia iteracji:
@@ -368,17 +369,18 @@ Gdy użytkownik zgłasza błąd/uwagę po Twojej implementacji:
    - sprawdzaj ostatni przyrost, nie cały narosły dirty diff,
    - zawężaj punktowe checki do plików, funkcji, sekcji matrixa albo błędu zmienionych w ostatnim kroku,
    - nie rozszerzaj automatycznie zakresu na całe rozwiązanie tylko dlatego, że repo ma wiele niecommitowanych zmian.
-3. Jeśli zmiany obejmują którekolwiek z typów:
+3. Przed oddaniem nazwij spójny przyrost (pliki i zachowanie objęte odbiorem). Jeśli obejmuje którekolwiek z typów:
    - PHP (`.php`), Twig (`.twig`), JS/TS (`.js/.jsx/.ts/.tsx`), CSS/SCSS (`.css/.scss`), YAML (`.yml/.yaml`), tłumaczenia (`translations/**` lub `src/*/UI/Translation/**`)
-   to wykonaj `$review-quick`.
+   to wykonaj jedno `$review-quick` tego przyrostu.
    Niezależnie od typów plików rozlicz zgodność istotnych reguł dla ostatniego przyrostu i jego bezpośrednich zależności zgodnie z `<skills_root>/_shared/references/rule-conformance-policy.md`; dokumentacja i mała zmiana nie zwalniają z tej oceny.
 4. Jeśli trzeba wykonać test/lint, najpierw uruchom `node <skills_root>/_shared/scripts/targeted-check-decision.mjs` z jawnymi danymi o źródle celu, zakresie i dostępnej komendzie matrixa. Zastosuj wynik bez reinterpretacji:
-   - `RUN_TARGETED_TEST`: uruchom bezpośrednio test wskazany przez kryterium akceptacji albo feedback, ograniczony do jednego pliku lub 1–3 metod; entrypoint (`codecept`, `phpunit`, `yarn` itp.) zawsze wyznacz przez `resolve_tool_cmd`,
-   - `RUN_MATRIX_CHECK`: uruchom punktową komendę 1:1 z matrixa, bezpośrednio powiązaną z ostatnim przyrostem,
+   - `RUN_TARGETED_TEST`: uruchom test wskazany przez kryterium akceptacji albo feedback, ograniczony do jednego pliku lub 1–3 metod, przez `$qa-run` w zakresie `point` z runnerem `targetedTests`; brak runnera raportuj jako `verification_gap`,
+   - `RUN_MATRIX_CHECK`: uruchom punktową komendę 1:1 z matrixa, bezpośrednio powiązaną z ostatnim przyrostem, przez `$qa-run` w zakresie `point`,
    - `REVIEW_ONLY`: zakończ na `$review-quick` i zaraportuj `verification_gap`, nie blocker,
    - `ENV_BLOCKER`: użyj STOP_CODE dopiero po rzeczywistej próbie wykonania dozwolonej komendy i potwierdzonym błędzie środowiska.
+   Wykonuj według procedury `$qa-run` (`<skills_root>/qa-run/SKILL.md`, sekcja „Zakresy `point` i `partial`”); nie kopiuj runnera do tego skilla ani nie odwołuj się do plików `qa-run` z pominięciem tej procedury. `partial` szerszy niż zakres helpera wymaga jawnego żądania użytkownika albo uprawnienia nadrzędnego workflow.
    Ograniczenia:
-   - bezpośredni wyjątek dotyczy testów, nie lintów,
+   - wyjątek testowy dotyczy testów, nie lintów,
    - nie uruchamiaj pełnego `$qa-run` ani jako kroku końcowego, ani jako fallbacku,
    - nie zastępuj punktowego checka szerszym runem "na wszelki wypadek",
    - pełny suite w matrixie nie jest punktowym fallbackiem i wymaga jawnego workflow użytkownika.
@@ -386,7 +388,7 @@ Gdy użytkownik zgłasza błąd/uwagę po Twojej implementacji:
    - wolno powtórzyć test tylko przy decyzji `RUN_TARGETED_TEST`,
    - nie wolno ponownie uruchamiać lintów w ramach `$code-implement`.
 6. Pełne `$qa-run` uruchamiaj tylko wtedy, gdy użytkownik wyraźnie i jednoznacznie o to poprosi.
-7. Jeśli użytkownik nie zażądał pełnego QA, finalne sprawdzenie kończy się na `review-quick` i punktowym checku albo na samym `review-quick`, jeśli checku punktowego nie ma.
+7. Jeśli użytkownik nie zażądał pełnego QA, finalne sprawdzenie kończy się na `review-quick` i punktowym checku albo na samym `review-quick`, jeśli checku punktowego nie ma. Wynik `point`/`partial` raportuj jako ograniczony, nie jako pełne QA; aktualnego dowodu tego samego zakresu i snapshotu nie powtarzaj.
 8. Jeśli Rejestr wymagań lub Dziennik odczytów nie odzwierciedlają aktualnych zmian, uzupełnij je przed zakończeniem.
 
 Opcjonalnie (zalecane): do szybkiej klasyfikacji zmian użyj

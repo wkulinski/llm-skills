@@ -6,6 +6,7 @@ import {afterEach, describe, expect, it} from "vitest";
 import {
     buildCachedCommandResult,
     buildCommandCacheFingerprint,
+    prepareCommandCache,
     readCommandCache,
     writeCachedCommandLogs,
 } from "../../../.agents/skills/qa-run/scripts/run-matrix/cache/command-cache.mjs";
@@ -22,6 +23,22 @@ afterEach(() => {
 });
 
 describe("run-matrix command cache", () => {
+    it("keeps cache disabled for point and partial scopes and enabled for full delta reruns", () => {
+        const section = {
+            cache: {enabled: true, envKeys: []},
+            name: "CACHE_CHANGED",
+            resolvedPatterns: {includeGitVisible: false, patternSets: [], patterns: ["qa-run-no-such-dir/**"]},
+        };
+        const command = {cmd: "node -e \"console.log('ok')\""};
+        const config = {raw: {sectionOrder: ["CACHE_CHANGED"]}};
+
+        for (const scope of ["point", "partial"]) {
+            expect(prepareCommandCache(repoRoot, section, command, config, {rerunReason: "post-fix-delta", scope})).toEqual({enabled: false});
+        }
+        expect(prepareCommandCache(repoRoot, section, command, config, {rerunReason: "post-fix-delta", scope: "full"}).enabled).toBe(true);
+        expect(prepareCommandCache(repoRoot, section, command, config, {rerunReason: "post-fix-delta"}).enabled).toBe(true);
+    });
+
     it("fingerprints command, env, patterns, matrix, and input files", () => {
         const repoTempRoot = mkdtempSync(path.join(repoRoot, "qa-run-cache-unit-"));
         tempRoots.push(repoTempRoot);

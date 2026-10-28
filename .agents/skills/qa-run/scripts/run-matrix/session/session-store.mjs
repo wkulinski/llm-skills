@@ -1,4 +1,4 @@
-import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
+import {closeSync, existsSync, fchmodSync, mkdirSync, openSync, readFileSync, writeFileSync} from "node:fs";
 import path from "node:path";
 
 import {hashJson} from "../shared/hashing.mjs";
@@ -52,13 +52,33 @@ export function saveSession(sessionAbsPath, session) {
         return;
     }
 
-    mkdirSync(path.dirname(sessionAbsPath), {recursive: true});
-    writeFileSync(sessionAbsPath, `${JSON.stringify(session, null, 2)}\n`, "utf-8");
+    mkdirSync(path.dirname(sessionAbsPath), {mode: 0o700, recursive: true});
+    const content = `${JSON.stringify(session, null, 2)}\n`;
+    const fd = openSync(sessionAbsPath, "w", 0o600);
+    try {
+        // Creation mode does not restrict an existing session's permissions.
+        fchmodSync(fd, 0o600);
+        writeFileSync(fd, content, "utf-8");
+    } finally {
+        closeSync(fd);
+    }
     console.log(`INFO: Session written: ${sessionAbsPath}`);
 }
 
-export function updateSession(session, cli, mode, currentState, config, riskAssessment) {
+/**
+ * `outcome.status` is the process result; `lastRun.evidenceCurrent` says whether
+ * the checked input state still matches the working tree after the run.
+ * Only a passing, current, full-scope full-mode run is recorded as a full pass.
+ */
+export function updateSession(session, cli, mode, currentState, config, riskAssessment, outcome = {}) {
     const matrixHash = hashJson(config.raw);
+    const scope = cli.scope ?? "full";
+    const snapshotHash = hashJson(currentState.files);
+    const postRunSnapshotHash = outcome.postRunState
+        ? hashJson(outcome.postRunState.files)
+        : snapshotHash;
+    const inputsMutated = postRunSnapshotHash !== snapshotHash;
+    const status = outcome.status ?? "UNKNOWN";
     const matrixChangedSinceLastFullPass = mode === "delta"
         && session.lastFullPass?.matrixHash
         && session.lastFullPass.matrixHash !== matrixHash;
@@ -68,13 +88,21 @@ export function updateSession(session, cli, mode, currentState, config, riskAsse
         matrixHash,
         lastRun: {
             completedAt: new Date().toISOString(),
+            evidenceCurrent: !inputsMutated,
+            inputsMutated,
+            matrixHash,
             mode,
+            postRunSnapshotHash,
             rerunReason: cli.rerunReason,
-            snapshotHash: hashJson(currentState.files),
+            scope,
+            selection: outcome.selection ?? null,
+            snapshotHash,
+            status,
         },
     };
+    const isCurrentFullPass = scope === "full" && mode === "full" && status === "PASS" && !inputsMutated;
 
-    if (cli.rerunReason === "full-final-pass") {
+    if (cli.rerunReason === "full-final-pass" && isCurrentFullPass) {
         nextSession.pendingFinalFullPass = false;
         nextSession.pendingReasons = [];
     } else if (mode === "delta" && (riskAssessment.shouldRunFullFinalPass || matrixChangedSinceLastFullPass)) {
@@ -88,7 +116,7 @@ export function updateSession(session, cli, mode, currentState, config, riskAsse
         ];
     }
 
-    if (mode === "full") {
+    if (isCurrentFullPass) {
         nextSession.lastFullPass = {
             completedAt: nextSession.lastRun.completedAt,
             matrixHash: nextSession.matrixHash,

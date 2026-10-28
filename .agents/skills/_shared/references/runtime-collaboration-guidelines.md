@@ -128,7 +128,7 @@ Ta lista nie luzuje żadnej bramki:
 - Źródłem prawdy dla komend QA jest wyłącznie repozytorium: `.agents/qa-run.matrix.json`.
 - Decyzję o końcowym checku punktowym wyznaczaj deterministycznie przez `.agents/skills/_shared/scripts/targeted-check-decision.mjs`. Helper zwraca wyłącznie `RUN_TARGETED_TEST`, `RUN_MATRIX_CHECK`, `REVIEW_ONLY` albo `ENV_BLOCKER`.
 - Agent nie uruchamia komend QA „z sufitu” (np. bezpośrednio `stylelint`, `eslint`, `phpstan`, `codecept`), jeśli nie występują one 1:1 w macierzy QA, z jednym kontrolowanym wyjątkiem `RUN_TARGETED_TEST`.
-- `RUN_TARGETED_TEST` pozwala uruchomić bezpośrednio test wskazany przez kryterium akceptacji albo konkretny feedback użytkownika, jeżeli zakres obejmuje dokładnie jeden plik testowy lub 1–3 wskazane metody. Komenda musi używać entrypointu z `resolve_tool_cmd`.
+- `RUN_TARGETED_TEST` pozwala uruchomić test wskazany przez kryterium akceptacji albo konkretny feedback użytkownika, jeżeli zakres obejmuje dokładnie jeden plik testowy lub 1–3 wskazane metody. Wykonaj go przez `$qa-run` w zakresie `point` z runnerem `targetedTests` z macierzy; runner rozwiązuje entrypoint przez `resolve_tool_cmd`. Brak takiego runnera jest `verification_gap` z zaleceniem konfiguracji, nie zgodą na ręczną komendę ani pełne QA.
 - Wyjątek `RUN_TARGETED_TEST` dotyczy testów, nie lintów. Nie pozwala uruchamiać całego suite ani pełnego QA.
 - Dopuszczalny jest ad-hoc quick-check, ale tylko:
   - komendami obecnymi 1:1 w `.agents/qa-run.matrix.json`,
@@ -142,8 +142,17 @@ Ta lista nie luzuje żadnej bramki:
   - na wyraźne polecenie użytkownika, albo
   - w ramach pełnej procedury `$qa-run`.
 - Pełne QA (pełna sekwencja komend i iteracje naprawcze) uruchamiaj wyłącznie przez `$qa-run`.
-- W zwykłej pętli implementacyjnej pełne QA uruchamiaj tylko dla zmian rozległych/high-risk albo na wyraźne polecenie. Dla małych zmian preferuj `$review-quick` i ewentualnie zawężony quick-check zgodny z matrixem.
-- `RUN_MATRIX_CHECK` oznacza lekki check 1:1 z macierzy. `REVIEW_ONLY` oznacza jawny `verification_gap`, a nie blocker techniczny; pełny suite nie jest fallbackiem. `ENV_BLOCKER` wolno zgłosić wyłącznie po rzeczywistej próbie wykonania dozwolonej komendy zakończonej błędem środowiska.
+- Pełne QA wymaga wyraźnego polecenia użytkownika albo workflow, który sam go wymaga (np. `$git-commit`). Rozległa lub high-risk zmiana uzasadnia rekomendację pełnego QA, nie jego samoczynne uruchomienie.
+- `RUN_MATRIX_CHECK` oznacza lekki check 1:1 z macierzy, wykonywany przez `$qa-run` w zakresie `point` (albo `partial` dla 1–2 komend tej samej decyzji). `REVIEW_ONLY` oznacza jawny `verification_gap`, a nie blocker techniczny; pełny suite nie jest fallbackiem. `ENV_BLOCKER` wolno zgłosić wyłącznie po rzeczywistej próbie wykonania dozwolonej komendy zakończonej błędem środowiska.
+
+### 5.1 Rytm sprawdzeń
+
+- Rozpoznanie i read-before-write są odczytami, nie kontrolą QA. Przed zmianą kontraktu (publicznego wyniku, sygnatury, komunikatu, konfiguracji DI) rozpoznaj jego rzeczywistych konsumentów; nie zastępuj tego późniejszym szerokim testem.
+- Testy w toku pracy służą diagnozie lub postępowi bieżącego kroku i podlegają tej samej bramce. Odbiór dotyczy gotowego przyrostu: przed oddaniem nazwij spójny przyrost, wykonaj dla niego jedno `$review-quick` i kontrole wybrane bramką.
+- Kontrole wykonuj przez `$qa-run` w zakresie `point` lub `partial`. Wynik ograniczonego zakresu nigdy nie jest pełnym QA. `partial` szerszy niż lekki zakres powyżej wymaga jawnego żądania użytkownika albo uprawnienia nadrzędnego workflow.
+- Ponowienie wymaga konkretnej przyczyny. Poprawka unieważnia tylko dowody obejmujące zmienione pliki lub kontrolę; nie powtarzaj bezwarunkowo kontroli, których poprawka nie dotyczy (np. lintu kontenera DI po zmianie bez wpływu na usługi i konfigurację).
+- Aktualny dowód (ten sam zakres, snapshot i `evidence=current`) można wykorzystać ponownie w obecnej sesji; nie uruchamiaj niezależnej rundy, która go powtarza. Wynik `evidence=stale` nie potwierdza bieżącej wersji.
+- Bramka pełnego QA (np. przed commitem) wymaga pełnego `$qa-run`; PASS `point`, `partial` albo nieaktualny jej nie spełnia.
 
 ## 6. Dokumentacja i spójność
 - Aktualizuj dokumentację tylko tam, gdzie zmiana faktycznie wpływa na opis działania.

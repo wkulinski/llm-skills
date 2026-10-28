@@ -91,6 +91,8 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
    - fallbacków, wartości domyślnych, nullable/optional rozszerzeń albo `catch`/guardów, które ukrywają naruszenie inwariantu domenowego,
    - równoległej obsługi starego i nowego formatu/modelu bez jasnej decyzji o migracji, okresie przejściowym lub usunięciu starej ścieżki.
 
+   Przy nowych typach, DTO i mapowaniach pytaj o semantykę, różnicę zakresu lub ochrony danych albo chroniony invariant, a nie o samo miejsce użycia. Gdy aktywny jest profil CQRS, lokalizację i własność ocenia wyłącznie `<skills_root>/_shared/references/cqrs-monolith-standard-overrides.md` §6.1 i §7 (także jego przykłady i kontrprzykłady). Legalny typ wspólny, np. model query zwracany przez własny port odczytu, nie jest findingiem z powodu lokalizacji. Strukturalnie czysta klasa nie jest danymi kontraktu bez dowodu jej roli w sygnaturze, a kopia z mapperem bez różnicy danych jest findingiem.
+
    Jeśli zmiana trafia na niespójne dane, brak wymaganej relacji, niepoprawny stan domenowy albo stary format danych, nie zakładaj automatycznie potrzeby kompatybilności wstecznej. Oceń, czy prompt lub istniejący kontrakt wymaga tolerowania takiego stanu. Jeśli nie, preferuj wykrycie błędu i jawne zgłoszenie ryzyka zamiast cichego fallbacku, naprawy w locie lub rozszerzania kontraktu.
 
    Raportuj tylko ustalenia, dla których da się wskazać konkretny koszt utrzymaniowy, ryzyko błędu, niejasność kontraktu albo istniejący wzorzec w repo, z którym zmiana powinna być spójna.
@@ -113,7 +115,7 @@ Celem jest szybka weryfikacja bieżących zmian pod kątem zgodności z promptem
 9. Każde istotne ustalenie musi mieć dowód:
    - referencję do pliku/sekcji, albo
    - wynik komendy użytej w tej sesji.
-10. Nie uruchamiaj pełnego QA z automatu.
+10. Nie uruchamiaj pełnego QA z automatu. Punktowa kontrola potrzebna do oceny ustalenia jest dozwolona według `<skills_root>/_shared/references/runtime-collaboration-guidelines.md` §5 i wykonywana przez `$qa-run` w zakresie `point`. Nie uruchamiaj niezależnej rundy, która powtarza aktualne dowody tego samego zakresu i snapshotu.
 11. Jeśli quick-check ujawnia problemy przekraczające zakres szybkiej weryfikacji, zwróć rekomendację uruchomienia `$qa-run`.
 
 ## Zakres

@@ -10,6 +10,7 @@ shared_files:
   - _shared/references/project-profiles.md
   - _shared/scripts/env-load.sh
   - _shared/scripts/is-main-module.mjs
+  - _shared/scripts/secret-detector.mjs
 ---
 
 # $qa-run
@@ -53,12 +54,15 @@ Podstawowy runner:
 - `node <skill_dir>/scripts/run-matrix.mjs --rerun-reason post-fix-delta --delta-from-snapshot <ścieżka> --no-cache`
 
 Opcjonalnie przekazuj sesję:
-- `--session <ścieżka>` zapisuje ledger QA: hash matrixa, ostatni przebieg, ostatni full pass i `pendingFinalFullPass`.
+- `--session <ścieżka>` zapisuje ledger QA: hash matrixa, ostatni przebieg (zakres, wybór, status, hashe stanu przed i po wykonaniu, `evidenceCurrent`), ostatni full pass i `pendingFinalFullPass`.
+- `lastFullPass` powstaje tylko po udanym przebiegu `scope=full` i `mode=full`, gdy working tree nie zmienił się w trakcie kontroli. Tylko taki przebieg `full-final-pass` czyści `pendingFinalFullPass`.
 
 Każdy przebieg zapisuje artefakty w `CACHE_PATH/qa-run/<run-id>/` (domyślnie `var/agent/cache/qa-run/<run-id>/`):
 - `summary.json`: maszynowy wynik przebiegu, status komend, ścieżki logów i skróty błędów,
 - `summary.txt`: zwięzłe streszczenie dla człowieka,
 - `commands/*.stdout.log` i `commands/*.stderr.log`: pełne logi komend.
+
+Nowo tworzone katalogi artefaktów mają prawa `0700`, a pliki `0600`. Artefakty są lokalnymi, ignorowanymi przez Git danymi wrażliwymi: nie wklejaj ich w całości do kontekstu.
 
 Pełne stdout/stderr komend QA jest artefaktem diagnostycznym, nie treścią raportu dla użytkownika. Agent otwiera pełny log tylko wtedy, gdy `summary.json` lub skrót błędu nie wystarcza do diagnozy.
 
@@ -77,6 +81,33 @@ Dozwolone `--rerun-reason`:
   - bez `--delta-from-snapshot`.
 
 Niepoprawna kombinacja flag jest błędem procedury.
+
+## Zakresy `point` i `partial`
+Jawne wywołanie `$qa-run` bez zakresu oznacza pełne QA opisane niżej. Zakres ograniczony wybiera workflow albo użytkownik zgodnie z `<skills_root>/_shared/references/runtime-collaboration-guidelines.md` §5; ten skill go wykonuje, nie dobiera.
+
+```bash
+node <skill_dir>/scripts/run-matrix.mjs --scope point --selection var/agent/cache/qa-selection.json
+node <skill_dir>/scripts/run-matrix.mjs --scope partial --selection var/agent/cache/qa-selection.json --session <session>
+```
+
+Plik wyboru leży pod `CACHE_PATH`. `matrixHash` to SHA-256 z `JSON.stringify` aktualnej macierzy (to samo pole w `summary.json`):
+
+```json
+{
+    "matrixHash": "<sha256>",
+    "checks": [
+        {"section": "PHP_CHANGED", "commandIndex": 3},
+        {"runner": "codeception", "selectors": ["tests/Unit/FooTest.php"]}
+    ]
+}
+```
+
+- `point` przyjmuje dokładnie jedną kontrolę, `partial` co najmniej jedną. `commandIndex` liczy od zera pozycje `commands` sekcji i musi wskazywać niepustą komendę.
+- Komendy macierzy wykonują się w kolejności macierzy, potem testy w kolejności wyboru. Runner nie dodaje sekcji specjalnych ani aktywowanych zmianami i niczego nie rekomponuje przy ponowieniu.
+- `runner` wskazuje wpis `targetedTests`. Selektory są przekazywane narzędziu jako osobne argumenty, bez powłoki; nie łącz ich z `cmd`.
+- Przed pierwszą kontrolą runner sprawdza cały wybór i rozwiązuje narzędzia. Nieznany zakres, niezgodny hash, zły indeks, brak runnera lub pusty selektor kończą się kodem `2` bez wykonania czegokolwiek; to nie jest zgoda na pełne QA.
+- Zakres ograniczony nie używa cache, nie tworzy `lastFullPass`, nie czyści zaległej bramki i nie łączy się z `full-final-pass` ani `--snapshot-only`. Wynik nigdy nie spełnia bramki pełnego QA.
+- Wywołanie punktowe wykonuje wskazaną kontrolę i kończy się raportem; nie uruchamia pętli naprawczej, `$review-quick` ani pozostałej macierzy.
 
 ## Konfiguracja repo (JSON)
 Domyślna ścieżka: `./.agents/qa-run.matrix.json`.
@@ -154,15 +185,23 @@ Znaczenie pól:
 - `output`: opcjonalne ustawienia outputu dla sekcji.
 - `patternSets`: opcjonalne projektowe aliasy patternów; wartości mogą zawierać globy oraz referencje do innych setów przez `@nazwa`.
 - `cache`: opcjonalne ustawienia cache sekcji; cache działa tylko przy `cache.enabled: true` i niepustych resolved `patterns`.
+- `targetedTests`: opcjonalne nazwane runnery testów dla zakresów `point`/`partial`. Wpis ma `tool` (nazwa dla `resolve_tool_cmd`), stałe `args` i opcjonalne ustawienia outputu; nigdy nie wykonuje się w pełnym QA. Przykład: `"unit": {"tool": "npm", "args": ["run", "test:unit", "--"]}`.
 
 Każda sekcja musi jawnie deklarować `patterns`, `commands`, `runOn` i `requiresFinalFullPass`.
 
 ### Kontrakt outputu komend
 Domyślny tryb outputu to `quiet-on-pass`:
-- pełny stdout/stderr zawsze trafia do plików logów w artefaktach QA,
-- udana komenda wypisuje tylko status, czas trwania i ścieżki logów,
-- błędna komenda wypisuje status, exit code, ścieżki logów i ograniczony skrót błędu,
+- pełny stdout/stderr i pełne komendy zawsze trafiają do artefaktów QA (`summary.json`, logi),
+- konsola identyfikuje kontrolę krótką etykietą: `[SEKCJA] #indeks` albo `[targeted:<runner>] <selektory>`,
+- udana komenda wypisuje tylko status, etykietę i czas trwania,
+- błędna komenda wypisuje `FAIL` (narzędzie zwróciło kod niezerowy) albo `ERROR` (runner nie uruchomił procesu lub nie zapisał logu), exit code, ścieżki logów i ograniczony skrót błędu,
+- przebieg kończy jedna linia `QA: <status> scope=… evidence=current|stale … artifacts=…`; dla `point` i `partial` dodatkowo `NOTE: scope=… is not full QA.`,
+- błąd zapisu artefaktów lub podsumowania kończy przebieg kodem niezerowym, nigdy jako `PASS`,
 - pełnego outputu udanych komend nie wklejaj do odpowiedzi użytkownikowi.
+
+Tekst trafiający do kontekstu (skrót błędu, etykieta, komunikat błędu runnera) przechodzi przez heurystyczny `<skills_root>/_shared/scripts/secret-detector.mjs`. Podejrzaną linię pomija i zastępuje informacją o pominięciu z odesłaniem do lokalnych logów; pełny log pozostaje bez zmian. Detektor nie gwarantuje wykrycia każdego sekretu, więc nie przekazuj całych logów do modelu automatycznie.
+
+`silent` ukrywa tylko skrót błędu: status, exit code i ścieżki logów pozostają widoczne.
 
 Priorytet ustawień outputu:
 1. ustawienia bezpośrednio przy komendzie,
@@ -305,9 +344,10 @@ Profil nie zmienia wyboru sekcji ani komend macierzy.
 Algorytm:
 1. Utwórz ścieżkę sesji, np. `/tmp/qa-run-session-<timestamp>.json`.
 2. Uruchom pełny przebieg:
-   - `node <skill_dir>/scripts/run-matrix.mjs --session <session> --rerun-reason initial`
+   - `node <skill_dir>/scripts/run-matrix.mjs --session <session> --rerun-reason initial --snapshot-write <snapshot>`
    - `initial` może zakończyć się sukcesem najwyżej raz w danej sesji. Jeśli sesja ma już `lastFullPass`, runner odrzuca kolejne `initial`; niezależny pełny przebieg wymaga nowej ścieżki `--session`.
    - Przerwany lub nieudany pierwszy przebieg, który nie zapisał `lastFullPass`, można ponowić z tym samym `initial` i tą samą sesją.
+   - Jeśli przebieg zakończy się `PASS` z `evidence=stale` (komenda, np. autofix, zmieniła pliki), potraktuj zmianę jak naprawę: uruchom `post-fix-delta` od snapshotu zapisanego przed tym przebiegiem.
 3. Jeśli matrix zwróci `FAIL`:
    - zapisz snapshot,
    - wykonaj dozwoloną naprawę,
@@ -322,7 +362,7 @@ Algorytm:
    - wróć do oceny, czy `$review-quick` trzeba ponowić dla poprawionego zakresu.
 8. Jeśli sesja albo ostatni rerun raportuje `pending_final_full_pass=1`, uruchom raz:
    - `node <skill_dir>/scripts/run-matrix.mjs --session <session> --rerun-reason full-final-pass`
-9. Zakończ `PASS` albo `BLOCKED`.
+9. Zakończ `PASS` albo `BLOCKED`. `PASS` procedury wymaga, aby ostatni przebieg miał `evidence=current`. Gdy `full-final-pass` kończy się `evidence=stale`, wykonaj `post-fix-delta` dla zmian, ale nie powtarzaj finalnego przebiegu bez decyzji użytkownika; zgłoś zaległą bramkę jako `BLOCKED`.
 
 ## Zakres automatycznych poprawek
 Dozwolone bez dodatkowej zgody:
