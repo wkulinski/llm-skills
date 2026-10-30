@@ -1365,6 +1365,8 @@ function dispatch(args, context) {
     if (args.action === "people") { return peopleResult(args, context); }
     if (args.action === "find") { return findResult(args, context); }
     const target = resolveTarget(args, context);
+    // fetchMessage() czyta args.channel; przy --to kanał jest znany dopiero po rozwiązaniu DM.
+    args.channel = target.channel;
     if (args.action === "info") {
         return withDmAudit(infoResult(args, target, context), target, context, "read_info");
     }

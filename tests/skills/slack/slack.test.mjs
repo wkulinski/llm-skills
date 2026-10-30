@@ -542,6 +542,27 @@ test("history and files expose only file metadata, never private URLs", t => {
     assert.equal(Object.hasOwn(listed.files[0], "url_private"), false);
 });
 
+test("files and download accept --to and resolve the DM channel", async t => {
+    const fetchImpl = async () => new Response(new Uint8Array([1, 2, 3]), {status: 200,
+        headers: {"content-length": "3"}});
+    const f = dmFixture(t, {
+        message: {ts, user: identity.user_id, text: "plik", files: [{id: "F1", name: "raport.pdf"}]},
+        files: {F1: {id: "F1", name: "raport.pdf", mimetype: "application/pdf", size: 3,
+            url_private_download: "https://files.slack.com/files-pri/T-F/raport.pdf"}},
+        fetchImpl,
+    });
+
+    const listed = f.execute(["files", "--to", "Jan Kowalski", ts]);
+    assert.equal(listed.channel, "D00000002");
+    assert.equal(listed.files[0].id, "F1");
+
+    const downloaded = await f.execute(["download", "--to", "Jan Kowalski", ts, "F1"]);
+    assert.equal(downloaded.bytes, 3);
+
+    const historyCalls = f.calls.filter(call => call.method === "conversations.history");
+    assert.deepEqual(historyCalls.map(call => call.payload.channel), ["D00000002", "D00000002"]);
+});
+
 test("download verifies the message attachment and writes a private file", async t => {
     const fetchCalls = [];
     const fetchImpl = async (url, init) => {
