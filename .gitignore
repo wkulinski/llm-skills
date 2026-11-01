@@ -19,7 +19,8 @@ default-reviewers.txt
 .agents/project_path.txt
 
 /docs/drafts/
-/docs/plans/
+/docs/plans/*
+!/docs/plans/issue-*/
 
 /var/
 /.owe/
