@@ -18,6 +18,8 @@ function gitOutput(args, {cwd, execFile} = {}) {
             cwd: cwd ?? process.cwd(),
             encoding: "utf8",
             stdio: ["ignore", "pipe", "ignore"],
+            // Canonical binary diffs from large refactors can exceed Node's 1 MiB default.
+            maxBuffer: 64 * 1024 * 1024,
         }));
     } catch (error) {
         const command = ["git", ...args].join(" ");

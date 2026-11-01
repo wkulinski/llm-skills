@@ -37,7 +37,8 @@ function gitValue(args, execFile = execFileSync, cwd = process.cwd()) {
 }
 
 function gitOutput(args, {cwd, execFile}) {
-    return String(execFile("git", args, {cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]}));
+    // Canonical binary diffs from large refactors can exceed Node's 1 MiB default.
+    return String(execFile("git", args, {cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024}));
 }
 
 function sha256(value) {
