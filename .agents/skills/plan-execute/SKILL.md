@@ -294,6 +294,24 @@ Operacja task-plan:
 Jeśli implementacja lub weryfikacja nie zakończyła się powodzeniem, nie wykonuj
 `complete-wp`. Pozostaw plan bez zmian i przekaż użytkownikowi konkretny powód.
 
+### Ocena publikacji po odbiorze
+
+Jeśli plan ma zapisane jawne powiązanie publikacji, po udanym `complete`
+przekaż właścicielowi `<skills_root>/task-plan/SKILL.md` ocenę dla ostatecznych
+bajtów planu i raportów. `complete` zmienia hash całego planu: ocena sprzed
+odbioru jest nieaktualna także wtedy, gdy zmieniło się tylko `Execution`.
+Właściciel utrwala gotowe teksty i selekcję (również jawny pusty wybór), po
+ewentualnym review wymaganym przez zmianę treści. Przy ponownym otwarciu WP
+ocenia dawny wynik jako historyczny; ponowne zamknięcie wymaga potwierdzenia
+lub korekty ustaleń dla nowych kryteriów. Zmiana raportu przy zaznaczonym WP
+również unieważnia ocenę. Dla niezmienionych wejść nie ponawiaj selekcji.
+
+Błąd oceny nie cofa poprawnego ukończenia WP. Zgłoś blokadę odświeżenia i
+następny krok: osobne `assess` właściciela. Nie dodawaj publish do `next` ani
+do bramki ukończenia; publikacja nie jest wejściem wykonawczym i nadal podlega
+odrzuceniu przez `NON_CANONICAL_PLAN_PATH`/`PLAN_NOT_READY`. Bez jawnego
+powiązania nie zgaduj issue ani nie inicjuj publikowania.
+
 ### 4. Kontynuacja
 
 Po ukończeniu WP możesz ponownie wybrać pierwszy wpis `[ ]`, jeśli kontynuacja w

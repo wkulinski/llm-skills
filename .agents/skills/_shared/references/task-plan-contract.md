@@ -630,6 +630,115 @@ magazyn nie porównuje treści WP i nie dodaje automatycznej bramki zapisu.
   - WP2: model=provider/model; reasoning=concrete-level; justification=why this WP needs it
 ```
 
+## Publikacja do czytania
+
+Kanoniczny plik `docs/plans/<plan-id>.md` pozostaje lokalnym wejściem wykonania.
+`docs/plans/issue-<number>/plan.md` jest jednokierunkową kopią merytoryczną,
+oznaczoną stabilnym nagłówkiem z pełnym URL issue i ID oryginału. Nie jest nowym
+review, potwierdzeniem świeżo wykonanych testów ani wejściem `plan-execute`.
+Daty i Execution pochodzą z oryginału; kolejne wersje przechowuje Git.
+
+Task-plan udostępnia cienką fasadę `publish.mjs`; jedyna implementacja jest w
+`_shared/scripts/task-plan/publication.mjs`. Przykład dla syntetycznego issue,
+uruchamiany z root repo (zastąp `<plan-id>` ID istniejącego kanonicznego planu):
+
+```bash
+node .agents/skills/task-plan/scripts/publish.mjs bind --path docs/plans/<plan-id>.md --issue https://github.com/owner/repo/issues/123
+node .agents/skills/task-plan/scripts/publish.mjs assess --path docs/plans/<plan-id>.md --input - <<'JSON'
+{"confirm_current_inputs":true,"sources":[],"summaries":[],"replacements":[],"materials":[]}
+JSON
+node .agents/skills/task-plan/scripts/publish.mjs check --path docs/plans/<plan-id>.md
+node .agents/skills/task-plan/scripts/publish.mjs publish --path docs/plans/<plan-id>.md
+```
+
+Wszystkie operacje przyjmują opcjonalne `--root <repo>`; `--input -` to JSON na
+stdin, a `--input <file>` odczytuje plik. `check` sprawdza komplet wejść,
+renderowanie i rzeczywiste wyniki bez zapisu. Pusta ocena powyżej jest właściwa
+tylko wtedy, gdy plan nie ma raportów wymagających oceny ani nierozstrzygniętych
+lokalnych odniesień. Nie uruchamia modelu ani nie fabrykuje treści z hashy.
+`bind` jest jawne także dla GitHub; inne repo/issue niż źródło GitHub to konflikt.
+Źródła file/user zachowują `source_identity` przy jawnym wyborze issue.
+
+### Wejście oceny
+
+Owner ocenia wyłącznie bezpośrednie raporty odbioru i lokalne referencje planu,
+bez rekurencyjnego zbierania ich zależności. Wynik jest gotowym tekstem, a nie
+poleceniem dla kolejnego modelu. Wszystkie cztery tablice są wymagane:
+
+- `sources`: `{path, disposition, status, reason}`. `disposition` to `omitted`,
+  `summary` albo `material`; nawet pominięty duplikat ma hash aktualnych bajtów.
+- `summaries`: `{text, status, source_paths, wp_id?}`. Gotowe unikalne ustalenia
+  trafiają do odpowiedniego WP, a ustalenia ogólne do planu; nie powielaj ADR.
+- `replacements`: `{reference, text, status, source_paths, wp_id?}`. `reference`
+  wskazuje dosłowny lokalny odnośnik lub jego repo-relative ścieżkę, `text`
+  zawiera gotowy wynik lub znany odnośnik do wersjonowanego upstreamu. Nie
+  zgaduj upstreamu ignorowanych synchronizowanych profili. Nierozstrzygnięte
+  odnośniki blokują renderowanie zamiast usuwać zdanie z uzasadnieniem.
+- `materials`: `{name, source_path, kind:"report", text, status, source_paths,
+  wp_id?, duplicate:false, available_in_project:false, technical:false,
+  justification:{essential, unique, summary_insufficient}}`. Wszystkie trzy
+  uzasadnienia są niepustym tekstem: istotność dla rozumienia, brak duplikacji w
+  planie/projekcie/upstreamie oraz niewystarczalność krótkiego streszczenia.
+  Materiał źródłowy musi występować w `sources` jako `material`.
+
+`status` każdego ustalenia i źródła to `current`, `historical` albo
+`requires-reassessment`. `source_paths` wskazują wpisy z `sources`. Dokumenty
+dodatkowe mają płaskie nazwy Markdown inne niż `plan.md`, `README.md` i
+`plan.original.md`; zduplikowane nazwy są błędem. Normy, skille, kod, techniczne
+manifesty, stan sesji i surowe QA nie są materiałami do kopiowania. Istotne
+uzasadnienie raportu można streścić bez kopiowania raportu. Przykłady fenced
+code są zachowywane jako przykłady, nie jako zamówienie pobrania plików.
+
+### Jeden lokalny rekord i aktualność
+
+`var/agent/task-plan/<plan-id>/publication.json` jest jedynym lokalnym stanem
+publikacji (nie w cache). Zawiera `schema_version`, `rules_version`, `plan`,
+`issue`, `assessment` (hash całego planu, reguł, selekcję/gotowe teksty i hashe
+ocenionych źródeł), `outputs` (ostatnie hashe zarządzanych wyników) i `intent`
+(stare/oczekiwane hashe przerwanego zapisu albo `null`). Nie zawiera kopii planu,
+raportów, historii rund ani inwentarza cache. `bind`/`assess` zachowują wyniki i
+zamiar publishera; ponowna ocena nie legalizuje ręcznej edycji publikacji.
+
+`confirm_current_inputs:true` jawnie potwierdza aktualny plan, reguły, wybór i
+źródła. Każda zmiana tych wejść unieważnia ocenę, również zmiana front matter,
+wspólnej decyzji i raportu przy nadal zaznaczonym WP. Owner może zachować ten
+sam tekst, potwierdzając nowe hashe. Oceniaj końcowe bajty po review i
+`complete-wp`; błąd oceny nie cofa poprawnego odbioru. Przy otwarciu WP dawne
+ustalenia oznacz historycznie, a po ponownym zamknięciu potwierdź/skoryguj je dla
+nowych kryteriów. Niezmienione wejścia nie wymagają ponownej selekcji.
+
+### Odświeżanie i konflikty
+
+Publish nie zmienia oryginału, pointerów, issue ani brancha, niczego nie usuwa,
+nie stage'uje i nie commituje. Nie wymaga `ready` i dostępności technicznych
+artefaktów walidatora, ale wymaga merytorycznych źródeł objętych oceną. Brak
+źródeł po checkoutcie pozostawia snapshot czytelny i nietknięty. Brak rekordu
+przy istniejącej publikacji, inne issue/plan lub ręczna zmiana zarządzanych
+bajtów wymaga jawnego uzgodnienia użytkownika — bez automatycznej adopcji,
+rekonstrukcji i `force`. Publikacja nie staje się drugim planem do edycji.
+
+Kontrola obejmuje rzeczywiste bajty, ścieżki bez symlinków/traversal, reguły Git
+i wspólny heurystyczny detektor sekretów (nie jest on dowodem braku wszystkich
+sekretów). Identyczne pliki nie są zapisywane. Materiały powstają przed atomową
+podmianą `plan.md`. Po błędzie ponowienie kończy tylko zapis zgodny ze starymi
+lub oczekiwanymi hashami `intent`; obce bajty blokują wznowienie. Po twardym
+przerwaniu pozostawiona blokada wymaga potwierdzenia, że writer już nie działa,
+i osobnego uzgodnienia — nie jest automatycznie przejmowana. Materiały, które
+wypadły z selekcji, pozostają na dysku, ale nowy plan ich nie linkuje.
+
+Git konsumenta powinien ignorować `/docs/plans/*` z wyjątkiem
+`!/docs/plans/issue-*/`, zachowując lokalne drafty i `var/agent/`. Ignorowany
+wynik kończy publish błędem z poleceniem korekty `.gitignore`, nie `git add -f`.
+
+Przygotowanie commita używa `refresh-for-commit [--path <plan>]`: jawna ścieżka
+z bieżącego zlecenia ma pierwszeństwo, inaczej odczytywany jest istniejący
+pointer plan-execute. Bez pointera lub jego jawnego powiązania publikacja jest
+pomijana; inne plany nie są szukane. Błędy zatrzymują commit przed stagingiem,
+a nieaktualna ocena wraca do ownera, bez streszczania przez commit. Wygenerowane
+zmiany obejmuje istniejąca akceptacja delty. Kolejność i staging pozostają
+własnością [git-commit](../../git-commit/SKILL.md), a odbiór WP —
+[plan-execute](../../plan-execute/SKILL.md).
+
 ## Kontrakt narzędzi planu
 
 Kontrakt danych wejściowych `store.mjs`, tokenu aktualizacji, paczki operacji

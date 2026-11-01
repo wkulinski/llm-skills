@@ -13,6 +13,15 @@ shared_files:
   - _shared/scripts/env-load.sh
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/scripts/is-main-module.mjs
+  - _shared/scripts/artifact-path.mjs
+  - _shared/scripts/secret-detector.mjs
+  - _shared/scripts/task-plan/publication.mjs
+  - _shared/scripts/task-plan/atomic-file.mjs
+  - _shared/scripts/task-plan/source.mjs
+  - _shared/scripts/task-plan/store.mjs
+  - _shared/scripts/task-plan/validate.mjs
+  - _shared/scripts/task-plan/difficulty.mjs
+  - _shared/scripts/model-hierarchy.mjs
 ---
 
 # $git-commit
@@ -86,6 +95,20 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
    - Nie interpretuj każdej zmiany po QA jako automatycznego powodu do kolejnego przebiegu. Powrót do kroku 3 i ponowne QA jest dozwolone tylko wtedy, gdy kroki 6-7 ujawniły konieczność zmiany kodu, konfiguracji lub toolingu poza dokumentacją albo inna procedura wymaga tego jawnie.
    - Jeśli taki wyjątkowy powrót jest konieczny po zakończonym `PASS`, rozpocznij nową sesję `$qa-run`; nie uruchamiaj ponownie `initial` w zakończonej sesji.
    - Bramkę spełnia wyłącznie `PASS` pełnej procedury `$qa-run` (jej ostatni przebieg ma `evidence=current`). Wynik `point`, `partial` albo nieaktualny jej nie spełnia. Aktualnego pełnego PASS tej samej sesji i snapshotu nie powtarzaj ani nie uruchamiaj osobno lintów i `$review-quick`, które już obejmuje.
+   - Po dokumentacji, lecz przed krokiem akceptacji delty i generowaniem commit message,
+     odśwież najwyżej jedną jawnie powiązaną publikację przez wspólną implementację task-plan:
+     `node <skills_root>/_shared/scripts/task-plan/publication.mjs refresh-for-commit --root "$PWD"`.
+     Jeśli bieżące zlecenie commita wskazuje konkretny kanoniczny plan, dodaj `--path <plan>`;
+     w przeciwnym razie helper tylko odczyta istniejący pointer plan-execute, bez jego aktualizacji.
+     Brak pointera lub powiązania oznacza pominięcie bez skanowania innych planów i bez
+     wywodzenia issue z nazwy/brancha. Jawne wskazanie bez powiązania, uszkodzony pointer,
+     sprzeczna tożsamość lub błąd publish zatrzymują workflow przed stagingiem.
+     Przy nieaktualnej ocenie wróć do osobnej oceny właściciela
+     `<skills_root>/task-plan/SKILL.md`; commit nie streszcza raportów i nie potwierdza
+     nowych hashy za właściciela. Konflikt wyniku wymaga jawnego uzgodnienia użytkownika,
+     bez force/adopcji. Wygenerowany snapshot nie uruchamia nowego review planu ani
+     osobnej sesji QA, tak jak zmiany dokumentacji po QA. Nie usuwa innych publikacji
+     ze stagingu i nie generuje innych lokalnych planów.
 8. Krok akceptacji: jeśli od momentu snapshotu (krok 2) zaszły jakiekolwiek zmiany w repo, zaraportuj je do akceptacji (wyłącznie „delta od snapshotu”, niepełna lista wszystkich zmian w repo):
    - Preferowane obliczenie delty: `node <skill_dir>/scripts/snapshot-tools.mjs list --current` (generuje `delta-all.txt`, wypisuje `DELTA_EMPTY` przy pustej delcie albo `DELTA_PRESENT` z listą ścieżek przy niepustej; wrapper zwraca kod 0 w obu przypadkach).
    - Jeśli “delta od snapshotu” jest pusta: napisz wprost “Brak zmian delta od snapshotu (krok 2)” i przejdź do kroku 9.
@@ -99,7 +122,10 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
      - dla plików binarnych lub nieczytelnych diffem (np. `.gz`) pokaż metadane: rozmiar i hash (bez próby prezentowania pełnego diffu).
       - STOP: kontynuuj dopiero po zatwierdzeniu przez użytkownika; w razie poprawek wróć do kroku 3.
     - W domyślnym zakresie akceptacja delty nie zmienia późniejszego `git add .`; pokazuje wyłącznie poprawki wykonane po snapshotcie.
-    - Przy jednoznacznie zleconym commicie selektywnym przed stagingiem pokaż użytkownikowi i uzyskaj akceptację dokładnej listy plików. Stage’uj wyłącznie tę listę.
+     - Przy jednoznacznie zleconym commicie selektywnym przed stagingiem pokaż użytkownikowi i uzyskaj akceptację dokładnej listy plików. Stage’uj wyłącznie tę listę.
+     - Zmiany wybranej publikacji obejmuje ta sama akceptacja delty i zwykły staging.
+       Przy commicie selektywnym pokaż dokładną listę z wybraną publikacją albo
+       jawnie pozostaw ją poza zaakceptowanym zakresem; nie poszerzaj go automatycznie.
 9. Wykonaj skill `$commit-message-write` i odczytaj plik `<COMMIT_MESSAGE_DIR>/commit-message.txt` (gdzie `COMMIT_MESSAGE_DIR` pochodzi z `docs_map`).
     - Jeśli plik nie istnieje, nie jest czytelny albo jest pusty: przerwij i wróć do kroku 9.
 10. W domyślnym zakresie uruchom `git add .` (wszystkie pliki widoczne dla Git, w tym nowe/nieśledzone oraz zmiany z fixerów). Przy commicie selektywnym stage’uj wyłącznie listę zaakceptowaną w kroku 8.

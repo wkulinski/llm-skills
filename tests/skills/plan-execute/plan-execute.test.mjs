@@ -11,6 +11,7 @@ import {persistSource, normalizeUserInput} from "../../../.agents/skills/task-pl
 import {completeWorkPackage, recordReview, savePlan, StoreError} from "../../../.agents/skills/task-plan/scripts/store.mjs";
 import {parsePlanDocument} from "../../../.agents/skills/task-plan/scripts/validate.mjs";
 import {LEADERBOARD_URL} from "../../../.agents/skills/_shared/scripts/model-leaderboard.mjs";
+import {assessPublication, bindPublication, checkAssessment, loadPublication, selectCommitPublication} from "../../../.agents/skills/task-plan/scripts/publish.mjs";
 import {
     completeExecutionWorkPackage,
     loadExecutionPlan,
@@ -28,6 +29,31 @@ const DEFAULT_PROFILES = [
     {model: "deepseek/deepseek-v4", reasoning: "high"},
     {model: "openai/gpt-5.6-sol", reasoning: "medium"},
 ];
+
+it("publication assessment follows final completion bytes without changing the pointer or execution gates", () => {
+    const root = temporaryRepository();
+    const {planPath} = makePlan(root, [{id: "WP1", title: "First"}]);
+    writeLastPlanPointer({repoRoot: root, planPath});
+    const options = {repoRoot: root, planPath: path.relative(root, planPath)};
+    const pointer = path.join(root, "var/agent/plan-execute/last-plan.txt");
+    const pointerBefore = fs.readFileSync(pointer);
+    bindPublication({...options, issueUrl: "https://github.com/owner/repo/issues/456"});
+    const input = {confirm_current_inputs: true, sources: [], summaries: [], replacements: [], materials: []};
+    assessPublication({...options, input});
+    completeExecutionWorkPackage({repoRoot: root, planPath, wpId: "WP1", evidence: "Focused check passed"});
+    let loaded = loadPublication(options);
+    assert.equal(checkAssessment(loaded.context, loaded.record).current, false);
+    assessPublication({...options, input});
+    loaded = loadPublication(options);
+    assert.equal(checkAssessment(loaded.context, loaded.record).current, true);
+    assert.deepEqual(selectNextWorkPackage(loadExecutionPlan({repoRoot: root, planPath})), {action: "complete", selected: null});
+    assert.equal(selectCommitPublication({repoRoot: root}).planPath, options.planPath);
+    assert.deepEqual(fs.readFileSync(pointer), pointerBefore);
+    const snapshot = path.join(root, "docs/plans/issue-456/plan.md");
+    fs.mkdirSync(path.dirname(snapshot), {recursive: true});
+    fs.copyFileSync(planPath, snapshot);
+    assert.throws(() => loadExecutionPlan({repoRoot: root, planPath: snapshot}), {code: "NON_CANONICAL_PLAN_PATH"});
+});
 
 function leaderboardResponse(rows) {
     const body = `<table><thead><tr><th>#</th><th>Model</th><th>Total points (max 70)</th><th>Cost</th><th>Time</th><th>Video</th><th>Tested with</th></tr>
