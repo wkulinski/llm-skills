@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import {spawnSync} from "node:child_process";
+import {spawnSync} from "../../helpers/bounded-spawn-sync.mjs";
 import {test} from "vitest";
 import {auditBenchmarkAgents, installBenchmarkAgents} from "../../../.agents/skills/opencode-workflow-economics/benchmarks/run-context-scout-fast.mjs";
 import {claimAttempt, prepareHybrid, settleAttempt, abortHybrid} from "../../../.agents/skills/_shared/scripts/context-scout-hybrid-run.mjs";

@@ -39,6 +39,10 @@ Uruchomić QA w sposób deterministyczny:
 - Agent nie dobiera komend "na wyczucie"; wykonuje komendy z matrixa i fazy opisane w tym skillu.
 
 ## Tryb domyślny
+- Środowisko wykonania wybierz według
+  `<skills_root>/_shared/references/runtime-collaboration-guidelines.md` §5:
+  domyślnie poza sandboxem narzędzi agenta, przez dostępny mechanizm uprawnień,
+  także dla `point`/`partial` i rerunów.
 - Domyślnie `$qa-run` działa w trybie `repair`.
 - `repair` oznacza: matrix QA -> naprawa po FAIL -> delta rerun -> `$review-quick` -> naprawa po review -> delta rerun -> ewentualny final full pass.
 - Tryb `report-only` uruchamiaj tylko, gdy użytkownik wyraźnie zaznaczy brak napraw (np. "tylko sprawdź", "bez poprawek", "check-only").

@@ -125,6 +125,20 @@ Ta lista nie luzuje żadnej bramki:
 - Unikaj lokalnych supresji lintów/testów jako sposobu „naprawy” problemu jakości.
 
 ## 5. QA Command Policy (single source of truth)
+- Domyślnie wykonuj komendy QA poza sandboxem narzędzi agenta, jeśli środowisko
+  udostępnia taki tryb i pozwala na niego aktywna polityka uprawnień. W Codex
+  uruchamiaj runner `$qa-run` od razu z `sandbox_permissions=require_escalated`
+  oraz uzasadnieniem odnoszącym się do zleconej weryfikacji; dotyczy to również
+  zakresów `point`/`partial` i rerunów. Nie poprzedzaj tego próbą w sandboxie.
+  Decyzję o dopuszczeniu wykonania nadal podejmuje mechanizm uprawnień środowiska;
+  ta reguła nie przyznaje uprawnień ani nie omija odmowy.
+- Jeśli narzędzia już działają bez sandboxa, użyj zwykłego wykonania. Gdy
+  wykonanie poza sandboxem jest niedostępne lub odrzucone, zgłoś ograniczenie
+  przed uruchomieniem QA w innym trybie. Nie zmieniaj samodzielnie globalnych
+  uprawnień sesji, konfiguracji launchera ani konfiguracji Codexa.
+- Zmiana środowiska wykonania nie zmienia zakresu QA, komend macierzy, resolvera
+  narzędzi, sesji, artefaktów ani reguł ponawiania. Ta sama zasada obowiązuje
+  niezależnie od występowania konkretnego błędu sandboxa.
 - Źródłem prawdy dla komend QA jest wyłącznie repozytorium: `.agents/qa-run.matrix.json`.
 - Decyzję o końcowym checku punktowym wyznaczaj deterministycznie przez `.agents/skills/_shared/scripts/targeted-check-decision.mjs`. Helper zwraca wyłącznie `RUN_TARGETED_TEST`, `RUN_MATRIX_CHECK`, `REVIEW_ONLY` albo `ENV_BLOCKER`.
 - Agent nie uruchamia komend QA „z sufitu” (np. bezpośrednio `stylelint`, `eslint`, `phpstan`, `codecept`), jeśli nie występują one 1:1 w macierzy QA, z jednym kontrolowanym wyjątkiem `RUN_TARGETED_TEST`.

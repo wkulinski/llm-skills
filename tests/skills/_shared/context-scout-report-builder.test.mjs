@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {spawnSync} from "node:child_process";
+import {spawnSync} from "../../helpers/bounded-spawn-sync.mjs";
 import {describe, expect, it} from "vitest";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../");

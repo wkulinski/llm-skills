@@ -24,6 +24,26 @@ skill) rather than working around a validator.
 
 ## What to include in a support report
 
+### Context scout tests stop at a subprocess
+
+The scout CLI tests use a [bounded subprocess helper](../tests/helpers/bounded-spawn-sync.mjs).
+It reports launch/pipe errors such as `EPERM` immediately and kills a blocked
+child after 10 seconds. Vitest's test timeout cannot interrupt `spawnSync`
+because the worker's event loop is blocked during that call.
+
+A sandbox can break subprocess pipe transport even for a minimal Node child.
+Compare a minimal stdin roundtrip inside and outside the sandbox before
+attributing the failure to the report builder. A passing run outside the
+sandbox does not identify the particular sandbox rule responsible for it.
+
+The default QA execution environment is owned by
+[QA Command Policy](../.agents/skills/_shared/references/runtime-collaboration-guidelines.md#5-qa-command-policy-single-source-of-truth).
+Launchers can override the user's Codex configuration: Paseo's `auto-review`
+mode explicitly selects `workspace-write`, while its `full-access` mode selects
+`danger-full-access`. Check the active session mode when it differs from
+`~/.codex/config.toml`.
+
+
 The catalog revision, Linux/Node and OpenCode versions, stack profile, selected
 skill, the exact error and the failed stage (delivery, configuration or skill
 execution). Attach only sanitized output, never env files or credentials.
