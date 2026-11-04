@@ -11,6 +11,7 @@ import {
 import {
     collectWorkingTreeState,
     getRepoRoot,
+    run,
 } from "../change-detection/working-tree.mjs";
 import {ensureConfig, loadConfig} from "../config/loader.mjs";
 import {collectConfigNotices} from "../config/notices.mjs";
@@ -53,9 +54,12 @@ import {
     toRepoRelativePath,
 } from "../shared/paths.mjs";
 
+import {buildRecoveryPlan, createRecoveryCheckpoint, matrixPlan} from "../session/test-recovery.mjs";
+
 const DEFAULT_CONFIG_REL_PATH = ".agents/qa-run.matrix.json";
 const RERUN_REASONS = new Set([
     "initial",
+    "failed-tests",
     "post-fix-delta",
     "review-fix-delta",
     "full-final-pass",
@@ -82,7 +86,9 @@ export class RunMatrixApp {
             process.exit(0);
         }
 
-        const {files, mode} = resolveRunScopeOrExit(repoRoot, currentState, snapshotPaths.deltaFromSnapshotAbsPath);
+        const resolvedScope = resolveRunScopeOrExit(repoRoot, currentState, snapshotPaths.deltaFromSnapshotAbsPath);
+        const {files} = resolvedScope;
+        const mode = cli.rerunReason === "failed-tests" ? "failed-tests" : resolvedScope.mode;
         const config = loadConfigOrExit(resolveConfigPath(repoRoot, cli.configPath));
 
         const sessionAbsPath = cli.sessionPath
@@ -98,14 +104,26 @@ export class RunMatrixApp {
             config,
             mode
         );
-        const runResult = cli.scope === "full"
-            ? await runFullMatrix({activeSections, cli, config, files, mode, repoRoot})
-            : await runScopedSelectionOrExit({cli, config, repoRoot});
+        const binding = run("git", ["rev-parse", "HEAD"], {cwd: repoRoot}).stdout.trim();
+        const runResult = cli.rerunReason === "failed-tests"
+            ? await runFailedTests({cli, config, repoRoot, session, binding})
+            : cli.scope === "full"
+                ? await runFullMatrix({activeSections, cli, config, files, mode, repoRoot})
+                : await runScopedSelectionOrExit({cli, config, repoRoot});
 
         const outcome = {
             postRunState: collectWorkingTreeStateOrExit(repoRoot),
             selection: runResult.selection,
             status: runResult.failure ? "FAIL" : "PASS",
+            ...(cli.scope === "full" ? {
+                testRecovery: createRecoveryCheckpoint({
+                    config, plan: runResult.plan ?? matrixPlan(config, activeSections),
+                    executed: runResult.executed, repoRoot, binding, originReason: cli.rerunReason,
+                    previous: cli.rerunReason === "failed-tests" ? session.testRecovery : null,
+                }),
+                recovered: cli.rerunReason === "failed-tests",
+                recoveredFinalPass: session.testRecovery?.originReason === "full-final-pass",
+            } : {}),
         };
         const nextSession = updateSession(session, cli, mode, currentState, config, riskAssessment, outcome);
         const summary = buildRunSummary({
@@ -119,6 +137,7 @@ export class RunMatrixApp {
             failures: runResult.failure ? [runResult.failure] : [],
             files,
             mode,
+            recovery: cli.rerunReason === "failed-tests" ? {reusedCommands: session.testRecovery.reusedCommands} : null,
             riskAssessment,
             session: nextSession,
             skippedNoChanges: runResult.skippedNoChanges,
@@ -215,6 +234,21 @@ async function runFullMatrix({activeSections, cli, config, files, mode, repoRoot
     }
 
     return result;
+}
+
+async function runFailedTests({cli, config, repoRoot, session, binding}) {
+    const {entries, plan} = buildRecoveryPlan({
+        checkpoint: session.testRecovery, config, repoRoot, binding,
+        resolveTool: (tool) => resolveToolExecutable(repoRoot, tool),
+    });
+    const artifacts = createArtifactsOrExit(repoRoot, "failed-tests");
+    console.log(`Retry failed tests: reused=${session.testRecovery.reusedCommands} pending=${entries.length}`);
+    const executor = new CommandExecutor({artifacts, cli: {...cli, noCache: true},
+        commandCounter: createCommandCounter(), config, repoRoot});
+    const result = await executor.runEntries(entries);
+    return {activeSections: {}, artifacts, configNotices: [], executed: result.executed,
+        exitCode: result.exitCode, failure: result.failure, selection: entries.map((entry) => entry.check),
+        plan, skippedNoChanges: [], skippedNoCommands: []};
 }
 
 async function runScopedSelectionOrExit({cli, config, repoRoot}) {
@@ -396,7 +430,10 @@ function enforceSessionLifecycleOrExit(cli, session, sessionAbsPath) {
 }
 
 export function enforceSessionLifecycle(cli, session, sessionAbsPath) {
-    if ((cli.scope ?? "full") !== "full" || cli.rerunReason !== "initial" || !session.lastFullPass) {
+    if ((cli.scope ?? "full") === "full" && session.testRecovery && cli.rerunReason !== "failed-tests") {
+        throw new Error("QA session has identifiable failed tests. Use --rerun-reason failed-tests; do not repeat the full suite or section for these repairs.");
+    }
+    if ((cli.scope ?? "full") !== "full" || cli.rerunReason !== "initial" || !session.lastFullPass && !session.lastCompletedQa) {
         return;
     }
 
@@ -528,8 +565,9 @@ function printHelp() {
 
 Options:
   --config <path>                Use custom matrix JSON config.
-  --rerun-reason <reason>        Rerun intent: initial | post-fix-delta | review-fix-delta | full-final-pass.
+  --rerun-reason <reason>        Rerun intent: initial | post-fix-delta | review-fix-delta | failed-tests | full-final-pass.
   --session <path>               Persist deterministic QA session ledger.
+  --rerun-reason failed-tests     Retry recorded failed tests, then resume skipped checks (--session required).
   --snapshot-write <path>        Write current dirty working-tree snapshot to JSON.
   --snapshot-only                Write snapshot and exit without running commands.
   --delta-from-snapshot <path>   Run only sections affected by changes since snapshot.
@@ -554,6 +592,13 @@ Default config path: ${DEFAULT_CONFIG_REL_PATH}`);
 
 function enforceRerunReasonConsistency(cli) {
     if (cli.snapshotOnly) {
+        return;
+    }
+
+    if (cli.rerunReason === "failed-tests") {
+        if (!cli.sessionPath || cli.scope !== "full" || cli.deltaFromSnapshotPath || cli.selectionPath) {
+            throw new Error("failed-tests requires --session, scope full and no selection/delta snapshot.");
+        }
         return;
     }
 

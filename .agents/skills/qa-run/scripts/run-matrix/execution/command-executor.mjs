@@ -1,3 +1,5 @@
+import {reportStamp, readFailedTests, verifyCodeceptionRetry} from "../session/test-recovery.mjs";
+
 import {spawn} from "node:child_process";
 import {createWriteStream} from "node:fs";
 import {performance} from "node:perf_hooks";
@@ -84,13 +86,16 @@ export class CommandExecutor {
         const logs = createCommandLogs(this.repoRoot, this.artifacts.commandsDir, commandIndex, section.name, command.cmd);
         const stdoutCollector = createOutputCollector(command.output.maxOutputBytes, command.output.parserInputBytes);
         const stderrCollector = createOutputCollector(command.output.maxOutputBytes, command.output.parserInputBytes);
+        const beforeReport = reportStamp(this.repoRoot, command.testRetry ?? command.testVerification);
         const result = await spawnCommandToLogs(this.repoRoot, command.argv ?? command.cmd, logs, stdoutCollector, stderrCollector);
         const durationMs = Math.max(0, Math.round(this.now() - startedAt));
         const stdoutTail = stdoutCollector.tailContent();
         const stderrTail = stderrCollector.tailContent();
         const stdoutParserInput = stdoutCollector.parserContent();
         const stderrParserInput = stderrCollector.parserContent();
-        const exitCode = result.error ? 1 : result.exitCode;
+        const unverifiedRetry = !result.error && result.exitCode === 0 && command.testVerification
+            && !verifyCodeceptionRetry(this.repoRoot, command.testVerification, beforeReport);
+        const exitCode = result.error || unverifiedRetry ? 1 : result.exitCode;
         const status = result.error ? "ERROR" : exitCode === 0 ? "PASS" : "FAIL";
         const failureSummary = status === "PASS"
             ? []
@@ -102,6 +107,9 @@ export class CommandExecutor {
                 stdoutParserInput,
                 stderrParserInput
             ));
+        if (unverifiedRetry) {
+            failureSummary.unshift("Test retry not verified: require a fresh complete JUnit report with the selected method executed and no skipped or failed variants.");
+        }
 
         const commandResult = {
             command: command.cmd,
@@ -116,6 +124,13 @@ export class CommandExecutor {
             stdoutLog: logs.stdoutLog,
             summary: failureSummary,
         };
+
+        if (status === "FAIL" && command.testRetry) {
+            commandResult.failedTests = readFailedTests(this.repoRoot, command.testRetry, beforeReport);
+            if (!commandResult.failedTests) {
+                commandResult.summary.push("Test retry unavailable: no fresh complete report with identifiable failed tests; no full-suite fallback selected.");
+            }
+        }
 
         if (result.error) {
             commandResult.error = contextSafeText(result.error.message);

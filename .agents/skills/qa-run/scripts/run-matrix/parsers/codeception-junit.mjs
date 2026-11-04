@@ -92,7 +92,7 @@ function candidateReportPaths(path) {
     return [...new Set(paths)];
 }
 
-function parseJunitTestCases(text) {
+export function parseJunitTestCases(text) {
     const testcases = [];
     // This intentionally parses only the JUnit subset emitted by Codeception.
     // The skill must stay dependency-free across repositories.
@@ -102,22 +102,21 @@ function parseJunitTestCases(text) {
         const openStart = match.index ?? -1;
         const openEnd = openStart + match[0].length;
         const selfClosing = (match[2] ?? "") === "/" || match[0].trimEnd().endsWith("/>");
-        if (openStart < 0 || selfClosing) {
+        if (openStart < 0) {
             continue;
         }
 
-        const closeStart = text.indexOf("</testcase>", openEnd);
+        const closeStart = selfClosing ? openEnd : text.indexOf("</testcase>", openEnd);
         if (closeStart < 0) {
             continue;
         }
 
-        const testcase = {
+        const body = text.slice(openEnd, closeStart);
+        testcases.push({
             attrs: parseXmlAttributes(match[1] ?? ""),
-            failures: extractFailures(text.slice(openEnd, closeStart)),
-        };
-        if (testcase.failures.length > 0) {
-            testcases.push(testcase);
-        }
+            failures: extractFailures(body),
+            skipped: /<skipped\b/.test(body),
+        });
     }
 
     return testcases;
