@@ -152,7 +152,10 @@ Ta lista nie luzuje żadnej bramki:
 - Kontrole wykonuj przez `$qa-run` w zakresie `point` lub `partial`. Wynik ograniczonego zakresu nigdy nie jest pełnym QA. `partial` szerszy niż lekki zakres powyżej wymaga jawnego żądania użytkownika albo uprawnienia nadrzędnego workflow.
 - Ponowienie wymaga konkretnej przyczyny. Poprawka unieważnia tylko dowody obejmujące zmienione pliki lub kontrolę; nie powtarzaj bezwarunkowo kontroli, których poprawka nie dotyczy (np. lintu kontenera DI po zmianie bez wpływu na usługi i konfigurację).
 - Aktualny dowód (ten sam zakres, snapshot i `evidence=current`) można wykorzystać ponownie w obecnej sesji; nie uruchamiaj niezależnej rundy, która go powtarza. Wynik `evidence=stale` nie potwierdza bieżącej wersji.
-- Bramka pełnego QA (np. przed commitem) wymaga pełnego `$qa-run`; PASS `point`, `partial` albo nieaktualny jej nie spełnia.
+- Bramka pełnego QA (np. przed commitem) wymaga zakończonej procedury `$qa-run`;
+  PASS `point`, `partial` albo nieaktualny jej nie spełnia. Zakończenie wcześniejszego
+  pełnego przebiegu przez ponowienie wyłącznie nieudanych testów jest opisane przez
+  `$qa-run` i nie wymaga ponownego uruchomienia poprawnych testów ani całej sekcji.
 
 ## 6. Dokumentacja i spójność
 - Aktualizuj dokumentację tylko tam, gdzie zmiana faktycznie wpływa na opis działania.

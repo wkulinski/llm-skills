@@ -86,7 +86,10 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
    - Dopuszczalne wyjątki: zmiany w lockfile (`composer.lock`, `yarn.lock`) wynikające z uruchomionych narzędzi QA są akceptowalne, ale muszą zostać pokazane jako “delta od snapshotu” w kroku akceptacji.
    - Zasada “ostatniego słowa użytkownika”: wszystkie zmiany z tego kroku muszą trafić do raportu w kroku akceptacji jako „delta od snapshotu” (krok 2).
 5. Wykonaj skill `$qa-run`. `$qa-run` obejmuje matrix QA, reruny delta oraz fazę `$review-quick`; nie uruchamiaj `$review-quick` osobno z poziomu `$git-commit`.
-   - Po ukończeniu skilla, jeżeli w trakcie jego wykonania dokonywałeś poprawek, wróć do kroku 3 i kontynuuj od tego punktu włącznie.
+   - Naprawy i ponowienia domyka `$qa-run` w tej samej sesji, w tym ponowienie
+     wyłącznie nieudanych testów. Po jego ukończeniu nie wracaj automatycznie
+     do kroku 3 tylko dlatego, że podczas QA poprawiono testy; wykorzystaj
+     aktualny wynik zakończonej procedury.
    - Zasada: nie uruchamiaj „na boku” pojedynczych lintów/testów poza `$qa-run` tylko po to, aby „coś się uruchomiło”.
    - Jeśli `$qa-run` zdecyduje, że nie ma relewantnych zmian (wszystkie kategorie pominięte), to jest poprawny wynik — przejdź dalej w procedurze.
 6. Jeśli `docs_map` definiuje `MODULE_INDEX_DOC` i `MODULE_DOCS_GLOB`, wykonaj skill `$docs-sync`. W przeciwnym razie pomiń ten krok bez pytania i odnotuj pominięcie w podsumowaniu.
@@ -94,7 +97,10 @@ Każdy następny commit wymaga ponownego spełnienia kryteriów aktywacji z sekc
    - Zmiany ograniczone do dokumentacji oraz indeksu skilli, powstałe w krokach 6-7, nie uruchamiają ponownie `$qa-run`; przejdź z nimi bezpośrednio do kroku akceptacji delty.
    - Nie interpretuj każdej zmiany po QA jako automatycznego powodu do kolejnego przebiegu. Powrót do kroku 3 i ponowne QA jest dozwolone tylko wtedy, gdy kroki 6-7 ujawniły konieczność zmiany kodu, konfiguracji lub toolingu poza dokumentacją albo inna procedura wymaga tego jawnie.
    - Jeśli taki wyjątkowy powrót jest konieczny po zakończonym `PASS`, rozpocznij nową sesję `$qa-run`; nie uruchamiaj ponownie `initial` w zakończonej sesji.
-   - Bramkę spełnia wyłącznie `PASS` pełnej procedury `$qa-run` (jej ostatni przebieg ma `evidence=current`). Wynik `point`, `partial` albo nieaktualny jej nie spełnia. Aktualnego pełnego PASS tej samej sesji i snapshotu nie powtarzaj ani nie uruchamiaj osobno lintów i `$review-quick`, które już obejmuje.
+   - Bramkę spełnia `PASS` pełnej procedury `$qa-run` (jej ostatni przebieg ma
+     `evidence=current` i nie ma zaległego pełnego sprawdzenia). Obejmuje to
+     zakończenie sesji przez `failed-tests` z `qaCompletion=full-with-failed-test-retry`;
+     nie wymaga ponownego pełnego suite ani nowego `lastFullPass`. Wynik `point`, `partial` albo nieaktualny jej nie spełnia. Aktualnego pełnego PASS tej samej sesji i snapshotu nie powtarzaj ani nie uruchamiaj osobno lintów i `$review-quick`, które już obejmuje.
    - Po dokumentacji, lecz przed krokiem akceptacji delty i generowaniem commit message,
      odśwież najwyżej jedną jawnie powiązaną publikację przez wspólną implementację task-plan:
      `node <skills_root>/_shared/scripts/task-plan/publication.mjs refresh-for-commit --root "$PWD"`.
@@ -181,7 +187,7 @@ Pytanie: Akceptujesz te zmiany? Jeśli tak, kontynuuję kolejne kroki. Jeśli ni
 ## Warunki przerwania
 - Brak intencji wykonania commita (komenda `$git-commit` lub równoważne polecenie językowe).
 - Brak akceptacji zmian w kroku 8 — wstrzymaj procedurę przed `$commit-message-write` i `git commit`.
-- Błędy w lintach lub testach — napraw i wróć do kroku 3.
+- Błędy w lintach lub testach — napraw i dokończ bieżącą sesję według `$qa-run`, z zakresem ponowienia określonym przez ten skill.
 
 ## Przykłady wejścia
 - "$git-commit"

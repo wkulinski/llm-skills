@@ -100,6 +100,19 @@ export function updateSession(session, cli, mode, currentState, config, riskAsse
             status,
         },
     };
+    if (Object.hasOwn(outcome, "testRecovery")) {
+        nextSession.testRecovery = outcome.testRecovery;
+    }
+    if (scope === "full" && status === "PASS" && !inputsMutated && outcome.recovered) {
+        if (outcome.recoveredFinalPass) {
+            nextSession.pendingFinalFullPass = false;
+            nextSession.pendingReasons = [];
+        }
+        nextSession.lastCompletedQa = {
+            completedAt: nextSession.lastRun.completedAt, matrixHash, snapshotHash,
+            verification: "full-with-failed-test-retry",
+        };
+    }
     const isCurrentFullPass = scope === "full" && mode === "full" && status === "PASS" && !inputsMutated;
 
     if (cli.rerunReason === "full-final-pass" && isCurrentFullPass) {

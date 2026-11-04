@@ -5,6 +5,8 @@ import {
     resolvePatternEntries,
 } from "../patterns/pattern-sets.mjs";
 
+import {normalizeTestRetry} from "../session/test-recovery.mjs";
+
 const DEFAULT_OUTPUT_CONFIG = {
     failTailLines: 120,
     maxOutputBytes: 20000,
@@ -42,6 +44,14 @@ function normalizeConfig(config) {
     const sections = normalizeSections(config, outputDefaults, patternSets);
     const sectionOrder = normalizeSectionOrder(config, sections);
     const targetedTests = normalizeTargetedTests(config.targetedTests, outputDefaults);
+
+    for (const section of Object.values(sections)) {
+        for (const command of section.commands) {
+            if (command.testRetry && !targetedTests[command.testRetry.runner]) {
+                throw new Error(`testRetry references unknown targetedTests runner: ${command.testRetry.runner}`);
+            }
+        }
+    }
 
     return {
         outputDefaults,
@@ -305,6 +315,7 @@ function normalizeCommandObject(sectionName, entry, sectionOutput) {
 
     return {
         cmd: command,
+        ...(entry.testRetry === void 0 ? {} : {testRetry: normalizeTestRetry(entry.testRetry)}),
         output: normalizeEntryOutput(`section "${sectionName}" command`, entry, sectionOutput),
     };
 }

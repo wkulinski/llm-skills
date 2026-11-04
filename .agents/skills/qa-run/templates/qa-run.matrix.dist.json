@@ -17,11 +17,15 @@
     },
     "targetedTests": {
         "codeception": {
-            "tool": "composer",
+            "tool": "codecept",
             "args": [
                 "--proxy-quiet",
+                "run",
+                "--no-interaction",
+                "--env",
                 "test",
-                "--"
+                "--no-ansi",
+                "--xml=codeception-qa.xml"
             ],
             "parser": "codeception-junit"
         }
@@ -101,8 +105,13 @@
                 },
                 "./bin/proxy/composer --proxy-quiet lint:php:fix",
                 {
-                    "cmd": "./bin/proxy/composer --proxy-quiet test",
-                    "parser": "codeception-junit"
+                    "cmd": "./bin/proxy/composer --proxy-quiet test -- --xml=codeception-qa.xml",
+                    "parser": "codeception-junit",
+                    "testRetry": {
+                        "runner": "codeception",
+                        "report": "tests/_output/codeception-qa.xml",
+                        "format": "codeception-junit"
+                    }
                 }
             ],
             "runOn": [

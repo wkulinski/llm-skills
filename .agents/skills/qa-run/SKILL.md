@@ -55,7 +55,7 @@ Podstawowy runner:
 
 Opcjonalnie przekazuj sesję:
 - `--session <ścieżka>` zapisuje ledger QA: hash matrixa, ostatni przebieg (zakres, wybór, status, hashe stanu przed i po wykonaniu, `evidenceCurrent`), ostatni full pass i `pendingFinalFullPass`.
-- `lastFullPass` powstaje tylko po udanym przebiegu `scope=full` i `mode=full`, gdy working tree nie zmienił się w trakcie kontroli. Tylko taki przebieg `full-final-pass` czyści `pendingFinalFullPass`.
+- `lastFullPass` powstaje tylko po udanym przebiegu `scope=full` i `mode=full`, gdy working tree nie zmienił się w trakcie kontroli. Zaległość `pendingFinalFullPass` czyści taki przebieg `full-final-pass` albo jego zakończenie przez `failed-tests` po błędach testów.
 
 Każdy przebieg zapisuje artefakty w `CACHE_PATH/qa-run/<run-id>/` (domyślnie `var/agent/cache/qa-run/<run-id>/`):
 - `summary.json`: maszynowy wynik przebiegu, status komend, ścieżki logów i skróty błędów,
@@ -76,6 +76,7 @@ Dozwolone `--rerun-reason`:
 - `review-fix-delta`:
   - rerun po poprawce wynikającej z `$review-quick`,
   - wymaga `--delta-from-snapshot`.
+- `failed-tests`: kontynuacja istniejącej sesji po naprawie konkretnych błędów testów; wymaga `--session`, nie przyjmuje `--selection` ani `--delta-from-snapshot`.
 - `full-final-pass`:
   - pełny finalny przebieg uruchamiany na końcu sesji QA, jeśli ledger albo wynik delta ma `pending_final_full_pass=1`,
   - bez `--delta-from-snapshot`.
@@ -314,6 +315,17 @@ Rekomendowane sekcje zmianowe:
 
 Stary format z płaskimi tablicami nie jest obsługiwany. Runner ma przerwać wykonanie na niezgodnym formacie zamiast stosować fallbacki.
 
+## Ponowienie nieudanych testów
+
+Gdy pełna komenda testowa zgłosi konkretne błędy, stosuj
+`<skill_dir>/references/failed-test-retry.md`. Konfiguracja `testRetry` wiąże ją
+z istniejącym `targetedTests` i raportem maszynowym. Po naprawie wykonaj
+`node <skill_dir>/scripts/run-matrix.mjs --session <session> --rerun-reason failed-tests`.
+Nie powtarzaj całej sekcji ani pełnego zestawu testów wyłącznie z powodu tych
+napraw. To kontynuacja sesji: wyniki poprawnych testów pozostają wykorzystane,
+a kontrole pominięte po błędzie muszą zostać wykonane przed zakończeniem QA.
+Zmiana dotyczy testów; linty i inne kontrole zachowują zasady rerunów delta.
+
 ## Snapshoty i reruny delta
 - Snapshot jest lekkim JSON-em opisującym aktualny stan dirty files:
   - ścieżka pliku,
@@ -338,20 +350,26 @@ Przed komendami macierzy i naprawami rozstrzygnij profil według
 `<skills_root>/_shared/references/project-profiles.md`; po błędzie przerwij.
 Profil nie zmienia wyboru sekcji ani komend macierzy.
 
-- `MAX_ITERATIONS=20`.
+- `MAX_ITERATIONS=20`; kontynuacja `failed-tests` również liczy się jako iteracja.
 - Iteracja = jedno uruchomienie matrix runnera (`full` albo `delta`) albo faza `$review-quick` zakończona poprawką wymagającą rerunu.
 
 Algorytm:
 1. Utwórz ścieżkę sesji, np. `/tmp/qa-run-session-<timestamp>.json`.
 2. Uruchom pełny przebieg:
    - `node <skill_dir>/scripts/run-matrix.mjs --session <session> --rerun-reason initial --snapshot-write <snapshot>`
-   - `initial` może zakończyć się sukcesem najwyżej raz w danej sesji. Jeśli sesja ma już `lastFullPass`, runner odrzuca kolejne `initial`; niezależny pełny przebieg wymaga nowej ścieżki `--session`.
-   - Przerwany lub nieudany pierwszy przebieg, który nie zapisał `lastFullPass`, można ponowić z tym samym `initial` i tą samą sesją.
+   - `initial` może zakończyć się sukcesem najwyżej raz w danej sesji. Także zakończenie przez `lastCompletedQa` zamyka sesję dla kolejnego `initial`. Jeśli sesja ma już `lastFullPass`, runner odrzuca kolejne `initial`; niezależny pełny przebieg wymaga nowej ścieżki `--session`.
+   - Przerwany lub nieudany pierwszy przebieg bez checkpointu nieudanych testów i bez ukończonego QA można ponowić z tym samym `initial` i tą samą sesją. Checkpoint testów wymaga `failed-tests`.
    - Jeśli przebieg zakończy się `PASS` z `evidence=stale` (komenda, np. autofix, zmieniła pliki), potraktuj zmianę jak naprawę: uruchom `post-fix-delta` od snapshotu zapisanego przed tym przebiegiem.
 3. Jeśli matrix zwróci `FAIL`:
    - zapisz snapshot,
    - wykonaj dozwoloną naprawę,
-   - uruchom `post-fix-delta` z tym snapshotem i tą samą sesją.
+   - jeśli raport ma `testRecoveryAvailable=true`, po naprawie uruchom
+     `failed-tests` z tą samą sesją zamiast `post-fix-delta`; runner wybierze
+     nieudane testy i wznowi pominięte kontrole,
+   - dla pozostałych błędów uruchom `post-fix-delta` z tym snapshotem i tą samą sesją.
+   - brak wiarygodnych selektorów jest luką weryfikacji: popraw konfigurację
+     raportu lub uzgodnij dalszy zakres; nie uruchamiaj automatycznie całego
+     suite jako zastępstwa dla wąskiego ponowienia.
 4. Powtarzaj snapshot -> naprawa -> delta do `PASS`, hard blockera albo limitu.
 5. Po udanym matrix QA uruchom `$review-quick`.
 6. Jeśli `$review-quick` nie ma uwag: przejdź do finalizacji.
