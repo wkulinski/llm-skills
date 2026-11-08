@@ -19,6 +19,22 @@ and `cross-layer`. There is no direct scout route: targeted work also starts in
 the primary and the fallback is always decided by validation, not by the task
 name.
 
+Helpers and shared instructions come from installation A (the active skill/module
+location). Run those helpers with the consumer project B as their working
+directory, using absolute installation paths when A differs from B. B is resolved
+from that directory, including a Git worktree's own root, not the common Git
+directory. Read B's `AGENTS.md` for document paths. Resolve cache using
+`node <skills_root>/_shared/scripts/artifact-path.mjs cache-root` in B: project
+env files win, inherited `CACHE_PATH` is discarded by the resolver child, and an
+unset/empty project value defaults to B's `var/agent/cache`.
+
+Parallel projects may share A but not their workflow inputs, cache, state or
+report data. No shared active-project registry, cross-project deduplication or
+cross-project lock is required. Neither B nor shared instructions must be under
+the session root; client permissions must allow the required operations, and an
+actual denial must be reported literally rather than converted into a directory
+hierarchy requirement.
+
 ## Inputs
 
 Both agents receive exactly the same:
@@ -33,7 +49,7 @@ Both agents receive exactly the same:
 Before `prepare`, the main agent MUST put every newly created immutable input
 under repository-local `CACHE_PATH` (default: `./var/agent/cache`). New prompt,
 handoff and criteria files should use a dedicated
-`${CACHE_PATH}/repository-context/<task-slug>/` directory; a valid manifest
+`<CACHE_PATH>/repository-context/<task-slug>/` directory; a valid manifest
 already stored under `CACHE_PATH` may be reused. The exact paths passed through
 `--prompt-file`, `--manifest`, `--handoff`, `--criteria` and `--output-dir` must
 remain under repository-local `CACHE_PATH`.
@@ -92,15 +108,20 @@ requires a fresh manifest and a new run.
    tool. `dispatch.prompt` MUST be passed verbatim: never summarize, wrap,
    paraphrase or replace it with a reference such as "use the supplied prompt".
    The helper never starts OpenCode or an agent. A duplicate claim is rejected.
-   Both scout adapters must read
-   `./.agents/skills/_shared/references/repository-context-scout-playbook.md`
+   Both scout adapters must read the absolute installation playbook path supplied
+   in the prompt (`<skills_root>/_shared/references/repository-context-scout-playbook.md`)
    before discovery; their local prompts contain only role-specific strategy and
    duplicated safety guards.
-3. Call helper `settle --attempt primary --token <dispatch-token>`; its internal
-   evaluation validates the report with:
+3. The scout writes complete report JSON with its native file tool (`write` or
+   `apply_patch`, as exposed by the profile) to its own `.scout.json`
+   path; it runs no shell, helper or builder. Call helper
+   `settle --attempt primary --token <dispatch-token>`; when the report is absent,
+   evaluation builds it from that attempt's scout file through the installation
+   builder (`init`, then `batch-render` with the scout bytes on stdin) in B.
+   Its internal evaluation then validates the report with:
 
    ```text
-   node .agents/skills/_shared/scripts/context-scout-report.mjs validate \
+   node <skills_root>/_shared/scripts/context-scout-report.mjs validate \
      <report.json> --head <manifest.head> --criteria <criteria.json>
    ```
 
@@ -164,7 +185,8 @@ requires a fresh manifest and a new run.
 - `context-scout` is delegated directly by the main agent only after the helper
   returns `CLAIM_FALLBACK` and the main agent claims that attempt.
 - Neither scout may edit files, run QA/review, create commits, read issues or
-  comments, or execute `$context-refresh`.
+  comments, or execute `$context-refresh`; the sole allowed write is its own
+  scout JSON file. Scout acknowledgements never substitute for that file.
 - The main agent owns orchestration, validation and metrics.
 - The fallback is an independent retry, not a continuation of primary context.
 - Schema-invalid, mode-mismatched or unreadable reports are moved to a run-scoped
@@ -273,20 +295,20 @@ Do not describe `hybrid_final: 8/8` as `primary: 8/8`.
 The main agent uses the state and `runId` returned by each step:
 
 ```text
-node .agents/skills/_shared/scripts/context-scout-hybrid-run.mjs prepare \
+node <skills_root>/_shared/scripts/context-scout-hybrid-run.mjs prepare \
   --prompt-file <prompt> --manifest <manifest> --handoff <handoff> \
   --criteria <criteria> --output-dir <output> --title <title>
 
 # Every placeholder above resolves under repository-local CACHE_PATH.
 
 # Claim the next attempt to obtain a one-time token and native task dispatch.
-node .agents/skills/_shared/scripts/context-scout-hybrid-run.mjs claim \
+node <skills_root>/_shared/scripts/context-scout-hybrid-run.mjs claim \
   --state <statePath> --run-id <runId> --attempt primary
 
 # Call native task with claim.dispatch.subagent_type, description and prompt.
 # Pass claim.dispatch.prompt verbatim; do not summarize or replace it.
 
-node .agents/skills/_shared/scripts/context-scout-hybrid-run.mjs settle \
+node <skills_root>/_shared/scripts/context-scout-hybrid-run.mjs settle \
   --state <statePath> --run-id <runId> --attempt primary --token <dispatch-token>
 
 # Delegate fallback only when next.action is CLAIM_FALLBACK, then claim it.
@@ -299,9 +321,11 @@ prompt fields. `settle` requires the matching token and a running phase. The
 low-level `evaluate` and `finalize` commands exist for diagnostics and
 state-machine tests.
 
-The scout writes the complete report artifact to the path returned by `claim` and
+The scout writes complete report JSON to `scoutPath` returned by `claim` and
 returns only a compact acknowledgement. The acknowledgement is diagnostic
-metadata; the helper always validates the report file itself.
+metadata; the helper builds and validates the report file itself. It never
+recovers a missing scout file from another attempt or environment. Missing files,
+invalid content and I/O failures retain their distinct retry classes.
 
 If orchestration must stop before `settle`, call `abort` with the same state
 and `runId` so the run is marked `ABORTED`.

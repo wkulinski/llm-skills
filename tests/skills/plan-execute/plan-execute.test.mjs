@@ -76,6 +76,7 @@ function updateToken(saved) {
 
 function temporaryRepository(profiles = DEFAULT_PROFILES) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "plan-execute-"));
+    fs.mkdirSync(path.join(root, ".git"));
     const configDir = path.join(root, ".agents", "config");
     fs.mkdirSync(configDir, {recursive: true});
     fs.writeFileSync(path.join(configDir, "model-hierarchy.json"), `${JSON.stringify({

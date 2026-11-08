@@ -12,6 +12,11 @@ function writeExecutable(filePath, content) {
     chmodSync(filePath, 0o755);
 }
 
+function initializeRepository(cwd) {
+    const result = spawnSync("git", ["init", "-q"], {cwd, encoding: "utf8", timeout: 10_000});
+    expect(result.status).toBe(0, result.stderr);
+}
+
 describe("phpactor CLI wrapper", () => {
     it("prints local help before repository or Phpactor resolution", () => {
         const tempRoot = mkdtempSync(path.join(os.tmpdir(), "phpactor-cli-help-test-"));
@@ -52,6 +57,7 @@ describe("phpactor CLI wrapper", () => {
     it("passes help command through to backend Phpactor", () => {
         const tempRoot = mkdtempSync(path.join(os.tmpdir(), "phpactor-cli-pass-through-test-"));
         try {
+            initializeRepository(tempRoot);
             const binDir = path.join(tempRoot, "bin");
             const marker = path.join(tempRoot, "phpactor-args.json");
             mkdirSync(binDir);
@@ -82,6 +88,60 @@ process.stdout.write("BACKEND_HELP\\n");
                 "--no-interaction",
                 "--no-ansi",
             ]);
+        } finally {
+            rmSync(tempRoot, {force: true, recursive: true});
+        }
+    });
+
+    it("uses the consumer Git root and env to move only the consumer file", () => {
+        const tempRoot = mkdtempSync(path.join(os.tmpdir(), "phpactor consumer-"));
+        const installationScript = readFileSync(SCRIPT, "utf8");
+        try {
+            initializeRepository(tempRoot);
+            const binDir = path.join(tempRoot, "tools");
+            const sourceDir = path.join(tempRoot, "src");
+            const cwd = path.join(tempRoot, "workspace");
+            const marker = path.join(tempRoot, "backend.json");
+            for (const directory of [binDir, sourceDir, cwd]) { mkdirSync(directory); }
+            writeFileSync(path.join(tempRoot, ".env"), "BIN_PATH=tools\n");
+            writeFileSync(path.join(sourceDir, "Old.php"), "<?php class Original {}\n");
+            writeExecutable(path.join(binDir, "phpactor"), `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+if (args[0] === "status") {
+    console.log("Working directory: " + process.cwd());
+    process.exit(0);
+}
+fs.writeFileSync(process.env.PHP_ACTOR_RECORD, JSON.stringify({cwd: process.cwd(), args}));
+fs.renameSync(args[1], args[2]);
+console.log(JSON.stringify({moved: true}));
+`);
+
+            const result = spawnSync(process.execPath, [SCRIPT, "class:move", "src/Old.php", "src/New.php"], {
+                cwd,
+                env: {
+                    ...process.env,
+                    APP_ENV: "test",
+                    BIN_PATH: path.join(ROOT, "missing-installation-tools"),
+                    PHP_STRUCTURE_TOOL_REPO_ROOT: "",
+                    PHP_ACTOR_RECORD: marker,
+                },
+                encoding: "utf8",
+                timeout: 10_000,
+            });
+
+            expect(result.status).toBe(0, result.stderr);
+            expect(JSON.parse(result.stdout).ok).toBe(true);
+            const backend = JSON.parse(readFileSync(marker, "utf8"));
+            expect(backend.cwd).toBe(tempRoot);
+            expect(backend.args).toEqual([
+                "class:move", path.join(sourceDir, "Old.php"), path.join(sourceDir, "New.php"),
+                "--no-interaction", "--no-ansi",
+            ]);
+            expect(existsSync(path.join(sourceDir, "Old.php"))).toBe(false);
+            expect(readFileSync(path.join(sourceDir, "New.php"), "utf8")).toBe("<?php class Original {}\n");
+            expect(existsSync(path.join(tempRoot, ".agents"))).toBe(false);
+            expect(readFileSync(SCRIPT, "utf8")).toBe(installationScript);
         } finally {
             rmSync(tempRoot, {force: true, recursive: true});
         }

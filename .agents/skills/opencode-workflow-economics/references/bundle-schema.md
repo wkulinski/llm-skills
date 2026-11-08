@@ -6,11 +6,12 @@ CLI; no persisted index or detail files are required.
 
 ## Standard report directory
 
-The default output root is `$OWC_PATH`, then `$CACHE_PATH/owc`, or
-`./var/agent/cache/owc`. The directory can be overridden with `--analysis-dir`.
+The default output root is `<CACHE_PATH>/owc`, using the consumer project's
+resolved cache (default: `./var/agent/cache`). `OWC_PATH` overrides that default;
+an explicit `--analysis-dir` takes precedence over both.
 
 ```text
-$OWC_PATH/
+<analysis-dir>/
 └── report.json
 ```
 

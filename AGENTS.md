@@ -67,13 +67,14 @@ docs_map:
     COMMIT_MESSAGE_DIR: /tmp/
     HANDOFF_DOC: var/agent/HANDOFF.md
     SKILLS_INDEX_DOC: docs/SKILLS.md
-    CACHE_PATH: var/agent/cache/
 ```
 
 Notes:
 - This is a minimal map, not a full matrix for every skill.
 - In target projects define only keys required by skills you plan to run.
 - Missing required key should block only that skill and trigger a question for the missing path.
+- Resolve documentation paths from the consumer project B, including when it differs from the session directory. `COMMIT_MESSAGE_DIR` may remain absolute.
+- Configure `CACHE_PATH` in B's active env, not in `docs_map`; a legacy map entry is ignored. Obtain its absolute path through the shared `artifact-path.mjs cache-root` helper running in B.
 
 ## Role agentów i lifecycle kontekstu
 

@@ -6,7 +6,7 @@ import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {isMainModule} from "./is-main-module.mjs";
-import {assertArtifactPath, resolveArtifactCacheRoot} from "./artifact-path.mjs";
+import {assertArtifactPath, resolveArtifactCacheRoot, resolveRepositoryRoot} from "./artifact-path.mjs";
 import {preflightCriteriaFile} from "./context-criteria.mjs";
 import {
     FAILURE_CLASSES,
@@ -22,7 +22,7 @@ const VALIDATOR = path.join(SCRIPT_DIR, "context-scout-report.mjs");
 const REPORT_BUILDER = path.join(SCRIPT_DIR, "context-scout-report-builder.mjs");
 const MANIFEST_TOOL = path.join(SCRIPT_DIR, "context-manifest.mjs");
 const HANDOFF_TOOL = path.join(SCRIPT_DIR, "context-handoff.mjs");
-export const HYBRID_PROTOCOL_VERSION = 4;
+export const HYBRID_PROTOCOL_VERSION = 5;
 const PRIMARY_AGENT = "context-scout-fast";
 const FALLBACK_AGENT = "context-scout";
 export const DISCOVERY_BUDGETS = Object.freeze({
@@ -358,7 +358,7 @@ function assertRun(state, runId, statePath = null, attempt = null) {
     assertWorktreeUnchanged(state, statePath, attempt);
 }
 
-function buildTaskPrompt({agent, inputs, reportPath, ledgerPath, mode, budget}) {
+function buildTaskPrompt({agent, inputs, scoutPath, cwd, branch, mode, budget}) {
     const primary = agent === PRIMARY_AGENT;
     const finalizationDeadline = primary ? 24 : 22;
     const discoveryBudget = primary && mode === "targeted"
@@ -367,14 +367,17 @@ function buildTaskPrompt({agent, inputs, reportPath, ledgerPath, mode, budget}) 
     return [
         `Act strictly as ${agent} for one read-only repository-context attempt.`,
         "Do not delegate, invoke another agent, run context-scout-hybrid-run.mjs, or perform QA/review/implementation.",
-        "Before discovery, read and follow ./.agents/skills/_shared/references/repository-context-scout-playbook.md.",
+        `Before discovery, read and follow the shared installation playbook: ${path.resolve(SCRIPT_DIR, "../references/repository-context-scout-playbook.md")}`,
+        `Consumer project root: ${cwd}`,
+        `Consumer branch: ${branch}`,
+        "The installation supplies instructions only; immutable inputs, source code and attempt data belong to the consumer project, not the session directory or installation.",
+        "Use absolute consumer-project paths in read tools. For every filesystem search supply the path parameter explicitly, scoped to the consumer project.",
         "Read these exact, immutable inputs:",
         `- original prompt: ${inputs.prompt}`,
         `- context manifest: ${inputs.manifest}`,
         `- handoff: ${inputs.handoff}`,
         `- acceptance criteria: ${inputs.criteria}`,
-        "Use context-scout-report-builder.mjs and the repository contract to produce the report.",
-        `Initialize the report ledger exactly at: ${ledgerPath}`,
+        "Inputs have already been validated by the controller. Do not run helpers or shell commands; inspect the supplied inputs using read tools.",
         discoveryBudget,
         `Budget contract: minimum_file_budget=${budget.minimum_file_budget}; verification_margin=${budget.verification_margin}; effective_file_budget=${budget.effective_file_budget}; hard_file_budget=${budget.hard_file_budget}; effective_symbol_budget=${budget.effective_symbol_budget}; effective_test_budget=${budget.effective_test_budget}. Do not exceed these limits or broaden the criteria.`,
         "Record read_coverage.covered for exact paths read and read_coverage.follow_up for at most 8 parent follow-ups with concrete reasons. When a covered path has a meaningful declared purpose, include purpose/source/read_mode from the shared read-purpose enum; these fields are context metadata, not freshness proof.",
@@ -386,59 +389,55 @@ function buildTaskPrompt({agent, inputs, reportPath, ledgerPath, mode, budget}) 
         "Treat every criteria[].required_evidence entry as a hard validator gate. Satisfy its exact path or path_prefix, optional relation, and all literal anchors with finding evidence for the same criterion; substitute documentation or tests do not satisfy a defining-source requirement. When forbid_negative_claims is true, avoid absolute absence or exclusivity claims in COMPLETE.",
         primary ? "A COMPLETE report must not claim that an artifact does not exist, is missing, is the only one, or that no test covers it. If a named target is not directly located, leave that criterion uncovered and return INCOMPLETE with the bounded statement that it was not located; never recommend creating an allegedly missing file unless the user explicitly requested it." : "",
         primary ? "Add risks, omitted paths, next_step, and read_coverage.follow_up only when they change the parent's decision. Never direct the parent to reread a path already present in read_coverage.covered." : "",
-        "After input validation, initialize the ledger exactly once. Do not call add-evidence, add-finding, set-coverage, check, batch, or render separately. Build the complete report JSON in memory and send it directly to batch-render as the second and final builder operation.",
+        "Build the complete report JSON in memory. Save it with the native file tool (write or apply_patch, whichever the profile exposes) to the exact scout output path below; the controller builds and validates the report.",
         "Keep every evidence range at or below 80 lines and use the smallest range that proves the claim.",
-        `Before any optional enrichment, complete the minimum-report checkpoint: choose exactly one final status and reserve the remaining steps for batch-render and the compact acknowledgement. Do not spend more than ${finalizationDeadline} steps on discovery and verification; optional enrichment must never delay batch-render.`,
+        `Before any optional enrichment, complete the minimum-report checkpoint: choose exactly one final status and reserve the remaining steps for write and the compact acknowledgement. Do not spend more than ${finalizationDeadline} steps on discovery and verification; optional enrichment must never delay the write.`,
         "Use exactly one finalization branch:",
         "- COMPLETE: every criterion has direct evidence and valid coverage; include findings for the covered criteria.",
         "- INCOMPLETE: discovery or verification ran out of bounded time/budget; include only validated findings, mark uncovered criteria blocked with concrete reasons, and do not claim COMPLETE.",
         "- BLOCKED: a hard input, permission, or safety boundary prevents discovery; write no findings and mark every criterion blocked or not_applicable with a concrete reason.",
-        "The report payload status and the --status value must be the same selected status. A claimed attempt must still write INCOMPLETE or BLOCKED when COMPLETE is not honest; never finish silently without an artifact.",
-        "Finalize with one mandatory batch-render command for the selected status. Replace <STATUS> with COMPLETE, INCOMPLETE, or BLOCKED and <STATUS_REPORT_JSON> with the matching complete JSON object; run the opening command, payload, and closing marker as one bash call:",
-        `node ./.agents/skills/_shared/scripts/context-scout-report-builder.mjs batch-render ${ledgerPath} --status <STATUS> --output ${reportPath} <<'REPORT_JSON'`,
-        "<STATUS_REPORT_JSON>",
-        "REPORT_JSON",
-        "The builder reads the complete report JSON from this heredoc, validates it against the ledger, stores it, and renders the artifact in one step. Do not run batch-render with empty stdin. Do not create a separate input file or use cat, touch, printf, echo, process substitution, separate batch, or separate render.",
-        `Write the full report artifact to exactly: ${reportPath}`,
-        "After writing the report artifact, return ONLY a compact JSON acknowledgement whose status matches the report (no other text):",
-        '  {"status":"<STATUS>","report_path":"' + reportPath + '","findings_count":<n>,"covered_criteria":<COVERED_CRITERIA_JSON>}',
-        "The helper remains authoritative, computes the report hash, and validates the report file; the acknowledgement is metadata only. Do not include or inspect another attempt's output.",
+        "The payload status must be COMPLETE, INCOMPLETE or BLOCKED. A claimed attempt must still write INCOMPLETE or BLOCKED when COMPLETE is not honest; never finish silently without an artifact.",
+        `Write the full scout JSON to exactly: ${scoutPath}`,
+        "If a tool denies a required read or write, report the exact denial literally. Do not substitute the acknowledgement for the file or include the report body in your response.",
+        "After writing the scout file, return ONLY a compact JSON acknowledgement whose status matches the report (no other text):",
+        '  {"status":"<STATUS>","scout_path":"' + scoutPath + '","findings_count":<n>,"covered_criteria":<COVERED_CRITERIA_JSON>}',
+        "The controller remains authoritative, computes the report hash, and validates the file; the acknowledgement is metadata only. Do not include or inspect another attempt's output.",
     ].filter(Boolean).join("\n");
 }
 
-function recoverReportFromLedger(state, attempt) {
+function buildReportFromScout(state, attempt) {
     const attemptState = state[attempt];
-    if (fs.existsSync(attemptState.reportPath) || !attemptState.ledgerPath || !fs.existsSync(attemptState.ledgerPath)) {
-        return {attempted: false, recovered: false};
-    }
-    const check = spawnSync(process.execPath, [REPORT_BUILDER, "check", attemptState.ledgerPath], {
-        cwd: state.cwd,
-        encoding: "utf8",
-    });
-    if (check.status !== 0) { return {attempted: true, recovered: false, writeFailed: false}; }
-    let status = "COMPLETE";
+    if (fs.existsSync(attemptState.reportPath)) { return {}; }
+    let input;
     try {
-        const ledger = readJson(attemptState.ledgerPath);
-        if (["COMPLETE", "INCOMPLETE", "BLOCKED"].includes(ledger.batch_report?.status)) {
-            status = ledger.batch_report.status;
-        }
-    } catch {
-        return {attempted: true, recovered: false, writeFailed: false};
+        input = fs.readFileSync(attemptState.scoutPath, "utf8");
+    } catch (error) {
+        return {failure_class: error.code === "ENOENT" ? FAILURE_CLASSES.REPORT_MISSING : FAILURE_CLASSES.REPORT_WRITE_FAILED};
     }
-    const render = spawnSync(process.execPath, [
-        REPORT_BUILDER,
-        "render",
-        attemptState.ledgerPath,
-        "--status",
-        status,
-        "--output",
-        attemptState.reportPath,
-    ], {cwd: state.cwd, encoding: "utf8"});
-    const recovered = render.status === 0 && fs.existsSync(attemptState.reportPath);
-    const writeFailed = render.error !== undefined
-        || render.status === null
-        || /\b(?:EACCES|EISDIR|EIO|ENOTDIR|EPERM)\b/.test(render.stderr ?? "");
-    return {attempted: true, recovered, writeFailed};
+    let status;
+    try {
+        status = JSON.parse(input)?.status;
+    } catch {
+        return {failure_class: FAILURE_CLASSES.REPORT_INVALID};
+    }
+    if (!["COMPLETE", "INCOMPLETE", "BLOCKED"].includes(status)) {
+        return {failure_class: FAILURE_CLASSES.REPORT_INVALID};
+    }
+    const commands = [
+        ["init", attemptState.ledgerPath, "--head", state.manifestHead, "--criteria", state.inputs.criteria, "--mode", state.mode],
+        ["batch-render", attemptState.ledgerPath, "--status", status, "--output", attemptState.reportPath],
+    ];
+    for (const args of commands) {
+        const result = spawnSync(process.execPath, [REPORT_BUILDER, ...args], {
+            cwd: state.cwd, encoding: "utf8", ...(args[0] === "batch-render" ? {input} : {}),
+        });
+        if (result.error || result.status !== 0) {
+            const ioFailure = result.error !== undefined || result.status === null
+                || /^(?:EACCES|EISDIR|EIO|ENOTDIR|EPERM|ENOENT|ENOSPC|EROFS|EMFILE|ENFILE):/.test(result.stderr ?? "");
+            return {failure_class: ioFailure ? FAILURE_CLASSES.REPORT_WRITE_FAILED : FAILURE_CLASSES.REPORT_INVALID};
+        }
+    }
+    return {};
 }
 
 export function validateReport({reportPath, manifestHead, criteriaPath, expectedMode, cwd}) {
@@ -499,7 +498,7 @@ export function validateReport({reportPath, manifestHead, criteriaPath, expected
 }
 
 export function prepareHybrid(args, cwd = process.cwd()) {
-    return prepareHybridUnchecked(args, cwd);
+    return prepareHybridUnchecked(args, resolveRepositoryRoot(cwd));
 }
 
 function prepareHybridUnchecked(args, cwd) {
@@ -620,6 +619,8 @@ function prepareHybridUnchecked(args, cwd) {
         const fallbackReportPath = path.join(outputDir, `${artifactPrefix}-fallback.report.json`);
         const primaryLedgerPath = path.join(outputDir, `${artifactPrefix}-primary.ledger.json`);
         const fallbackLedgerPath = path.join(outputDir, `${artifactPrefix}-fallback.ledger.json`);
+        const primaryScoutPath = path.join(outputDir, `${artifactPrefix}-primary.scout.json`);
+        const fallbackScoutPath = path.join(outputDir, `${artifactPrefix}-fallback.scout.json`);
 
         const state = {
             protocolVersion: HYBRID_PROTOCOL_VERSION,
@@ -648,8 +649,8 @@ function prepareHybridUnchecked(args, cwd) {
             failure_class: null,
             snapshot_changed: false,
             report_written: false,
-            primary: {agent: PRIMARY_AGENT, reportPath: primaryReportPath, ledgerPath: primaryLedgerPath, claimed: false, dispatchToken: null, evaluated: false, startedAtMs: null, failure_class: null, partialReportPath: null},
-            fallback: {agent: FALLBACK_AGENT, reportPath: fallbackReportPath, ledgerPath: fallbackLedgerPath, used: false, claimed: false, dispatchToken: null, evaluated: false, failure_class: null, partialReportPath: null},
+            primary: {agent: PRIMARY_AGENT, scoutPath: primaryScoutPath, reportPath: primaryReportPath, ledgerPath: primaryLedgerPath, claimed: false, dispatchToken: null, evaluated: false, startedAtMs: null, failure_class: null, partialReportPath: null},
+            fallback: {agent: FALLBACK_AGENT, scoutPath: fallbackScoutPath, reportPath: fallbackReportPath, ledgerPath: fallbackLedgerPath, used: false, claimed: false, dispatchToken: null, evaluated: false, failure_class: null, partialReportPath: null},
         };
         writeJson(statePath, state);
         return {
@@ -664,7 +665,8 @@ function prepareHybridUnchecked(args, cwd) {
                 action: "CLAIM_PRIMARY",
                 reportPath: primaryReportPath,
                 ledgerPath: primaryLedgerPath,
-                claim: `node ${path.relative(state.cwd, SCRIPT_PATH)} claim --state ${statePath} --run-id ${runId} --attempt primary`,
+                scoutPath: primaryScoutPath,
+                claim: `node ${JSON.stringify(SCRIPT_PATH)} claim --state ${JSON.stringify(statePath)} --run-id ${runId} --attempt primary`,
             },
         };
     });
@@ -735,8 +737,9 @@ export function claimAttempt(args) {
         const prompt = buildTaskPrompt({
             agent: state[attempt].agent,
             inputs: state.inputs,
-            reportPath: state[attempt].reportPath,
-            ledgerPath: state[attempt].ledgerPath,
+            scoutPath: state[attempt].scoutPath,
+            cwd: state.cwd,
+            branch: state.manifestSnapshot.branch,
             mode: state.mode,
             budget: state.budget,
         });
@@ -749,6 +752,7 @@ export function claimAttempt(args) {
             dispatchToken,
             reportPath: state[attempt].reportPath,
             ledgerPath: state[attempt].ledgerPath,
+            scoutPath: state[attempt].scoutPath,
             dispatch: {
                 subagent_type: state[attempt].agent,
                 description: attempt === "primary" ? "Scout repository context" : "Retry repository context",
@@ -774,7 +778,7 @@ export function evaluateAttempt(args) {
         throw new Error(`evaluate requires the matching dispatch token for ${attempt}`);
     }
 
-    const recovery = recoverReportFromLedger(state, attempt);
+    const built = buildReportFromScout(state, attempt);
     const validation = validateReport({
         reportPath: state[attempt].reportPath,
         manifestHead: state.manifestHead,
@@ -801,8 +805,10 @@ export function evaluateAttempt(args) {
     let failureClass;
     if (timedOut) {
         failureClass = FAILURE_CLASSES.AGENT_TIMEOUT;
+    } else if (built.failure_class) {
+        failureClass = built.failure_class;
     } else if (!validation.reportExists) {
-        failureClass = recovery.writeFailed ? FAILURE_CLASSES.REPORT_WRITE_FAILED : FAILURE_CLASSES.REPORT_MISSING;
+        failureClass = FAILURE_CLASSES.REPORT_MISSING;
     } else {
         failureClass = classifyReportValidation({
             valid: validation.valid,
@@ -814,7 +820,7 @@ export function evaluateAttempt(args) {
         });
     }
 
-    const accepted = validation.valid && !timedOut;
+    const accepted = validation.valid && !timedOut && !built.failure_class;
     const reportWritten = validation.reportExists && !validation.ioFailure;
     validation.failure_class = failureClass;
     validation.next_action = nextActionForFailureClass(failureClass, attempt);
@@ -867,7 +873,8 @@ export function evaluateAttempt(args) {
                 failure_class: failureClass,
                 reportPath: state.fallback.reportPath,
                 ledgerPath: state.fallback.ledgerPath,
-                claim: `node ${path.relative(state.cwd, SCRIPT_PATH)} claim --state ${statePath} --run-id ${runId} --attempt fallback`,
+                scoutPath: state.fallback.scoutPath,
+                claim: `node ${JSON.stringify(SCRIPT_PATH)} claim --state ${JSON.stringify(statePath)} --run-id ${runId} --attempt fallback`,
             };
         } else {
             state.phase = "PRIMARY_FAILED";

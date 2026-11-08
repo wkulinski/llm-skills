@@ -29,7 +29,6 @@ Append the following YAML as a fenced `yaml` block in the same `AGENTS.md`:
 docs_map:
     MAIN_DOC: README.md
     AGENT_RULES_DOC: AGENTS.md
-    CACHE_PATH: var/agent/cache/
 ```
 
 `MAIN_DOC` must identify an existing document describing **your project**, not
@@ -40,6 +39,12 @@ context windows write local state there, while plan and work state live under
 The [skill structure contract](../.agents/skills/_shared/references/skill-structure-contract.md)
 defines the path notation (`./`, `<skill_dir>`, `<skills_root>`), instruction
 priority and `shared_files` semantics.
+
+When A supplies shared skills and B is the consumer, read **B's** `AGENTS.md`
+and resolve its document paths from B, even if the session is open elsewhere.
+B can be a main checkout or worktree outside A. Configure client discovery and
+role registration for A's actual paths; no copy into B or parent/child directory
+layout is required. See the [shared-installation example](INSTALLATION.md#shared-installation-and-private-project-data).
 
 ## Expand docs_map only for the workflows you use
 
@@ -53,7 +58,6 @@ docs_map:
     MODULE_DOCS_GLOB: docs/modules/*/README.md
     COMMIT_MESSAGE_DIR: /tmp/
     SKILLS_INDEX_DOC: docs/SKILLS.md
-    CACHE_PATH: var/agent/cache/
 ```
 
 Create a module index (it may state that there are no modules yet). A missing
@@ -68,10 +72,30 @@ skills index is created by `$skills-index-refresh`.
 | `SKILLS_INDEX_DOC` | Index destination required by skills-index-refresh |
 | `HANDOFF_DOC` | Optional local handoff path; required by handoff-refresh |
 | `TESTS_README`, `QUALITY_PROCEDURES_DOC` | Optional existing project documents |
-| `CACHE_PATH` | Repository-local cache directory; default `var/agent/cache/`. Durable plan and work state is stored outside it under `var/agent/` |
 
 Other paths are repository-relative to the consumer root. A missing required key
 blocks only the workflow that needs it; each `SKILL.md` lists its required keys.
+
+## Cache and durable state
+
+`CACHE_PATH` is an **active env setting in B**, not a `docs_map` key. A legacy
+entry in the map is ignored. Configure it in B's env files loaded through
+`env-load.sh`; the [project-profile contract](../.agents/skills/_shared/references/project-profiles.md#resolve-before-work)
+defines their precedence. An unset or empty project value defaults to B's
+`var/agent/cache`. The resolver discards inherited `CACHE_PATH`, so another
+process's absolute path does not select B's store.
+
+Run `node <skills_root>/_shared/scripts/artifact-path.mjs cache-root` with B as
+the actual working directory. `<CACHE_PATH>` in instructions means the absolute
+result, not shell expansion of a possibly inherited variable. Keep it strictly
+inside B, ignored by Git and separate from protected durable storage; existing
+symlink and path-boundary checks still apply.
+
+Durable state remains under B's `var/agent/task-plan/`, `var/agent/plan-execute/`
+and `var/agent/code-implement/`, independently of cache configuration. These
+directories must not point to A's or another environment's data. The process
+creating an environment copies **configuration values**, then assigns its own
+paths and resources; it must not inherit a pointer or symlink to another store.
 
 ## Stack profile and tool entrypoints
 
@@ -87,16 +111,16 @@ not have. Without wrappers, leave `BIN_PATH` empty and use native tools. Tools
 are resolved through `resolve_tool_cmd`; PHP tools, Playwright, AI Mate and
 Phpactor/Rector are needed only by the skills that declare them.
 
-`CACHE_PATH` in active env controls helper state; keep a nondefault location
-consistent with the documentation map and ignored by Git. `OWC_PATH` is an
-optional economics-report destination.
+Cache configuration belongs to [cache and durable state](#cache-and-durable-state).
+Economics reports default to `<CACHE_PATH>/owc`; `OWC_PATH` is an optional
+override, and explicit `--analysis-dir` takes precedence.
 
 ## OpenCode agent runtime (model + thinking)
 
 The [delivered template](../distribution/linux-opencode/opencode.json.dist) is a
 merge example, **not ready-to-run config**. In the consumer's `opencode.jsonc`:
 
-- register `.agents/skills` under `skills.paths`;
+- register the actual local or shared skills path under `skills.paths`;
 - configure the three delivered roles under `agent`, using the adapter filename
   without `.md` as the key;
 - choose available provider/model IDs and reasoning settings. Keep the primary
@@ -104,19 +128,64 @@ merge example, **not ready-to-run config**. In the consumer's `opencode.jsonc`:
 - use `variant` for ordinary role reasoning; the fast-role
   `options.thinking.type` setting in the template is provider-specific;
 - allow the main agent to delegate the context roles and keep the scout
-  adapters' read-only permissions.
+  adapters' read-only code permissions. Each scout may write its complete JSON
+  only to the exact attempt path supplied by the controller, through the native
+  `write` or `apply_patch` tool exposed by its profile; shell access stays denied.
 
 Role definitions belong in `.opencode/agents/`; model/thinking overrides belong
 in consumer config, not `.env` or the adapter Markdown.
 
-Configure the required MCP servers (`codebase-memory`, `serena`, `context7`) with
-your own commands, credentials and tool permissions. Local MCP commands are arrays
+Configure MCP servers with your own commands, credentials and tool permissions.
+Codebase Memory and Serena are optional layers with a file fallback; Context7
+and other services are needed only by workflows that use them. Local MCP commands are arrays
 in OpenCode config; see the [OpenCode configuration documentation](https://opencode.ai/docs/config/).
 GitHub authentication is needed only for GitHub workflows.
 
 Restart the whole OpenCode process, including a running web/server process, after
 config, adapter, skill or plugin changes; a new session in the old process does
 not reload them.
+
+### Private tool contexts
+
+The environment creator owns each B's data directories, MCP configuration and
+connection lifecycle. Share executables and skill instructions, while assigning
+separate stores and runtime processes/endpoints to parallel environments. A
+different project record in a shared database or one switchable active project
+is not an independent context. These requirements do not require B under A.
+
+For Codebase Memory, provide a private store (for the checked local binary,
+`CBM_CACHE_DIR`), an allowed root covering B (`CBM_ALLOWED_ROOT`) and a dedicated
+runtime for B. When sharing a wrapper anchored in A, explicitly configure B's
+absolute resource paths rather than inheriting the wrapper's defaults. Preparing
+and updating B's index belongs to the environment creator; scouts do not index
+or repair the server. Pass its ready index names and preparation result through
+the handoff's existing `constraints`, with store/runtime ownership. Without all
+of these confirmations the scout uses files without querying that connection.
+
+With confirmed readiness, `list_projects` verifies the name, `root_path` and
+branch. It is not a readiness or isolation certificate, and a `status: ready`
+field is not required. The live fixture used a local build identifying as `dev`:
+explicit indexing returned `status: indexed`, and `list_projects` returned the
+correct root and branch without `status`. The scout then used that index and
+verified evidence directly in B. A missing matching ready index or another
+branch requires file fallback and a concrete diagnostic in `risks`.
+
+The checked scope establishes explicit preparation and lookup, not a guarantee
+that a watcher will keep every later source edit or branch current. Validate
+automatic refresh for the deployed version in the environment's preparation
+mechanism; enabling a watcher alone is not proof of readiness. Local `dev`
+observations must not be advertised as a guarantee for other builds.
+
+For Serena, confirm private state and B's absolute active root before symbol
+operations. The live fixture used separate `SERENA_HOME` directories and
+processes, with the project bound at startup. Symbol lookup and editing worked
+without an exposed `activate_project`; another environment stayed unchanged.
+Startup binding is sufficient. Activate only on an owned connection that needs
+and exposes it. With unconfirmed ownership, a wrong root or unavailable symbols,
+use files; never switch another environment's active project. The
+[symbolic-tool policy](../.agents/skills/_shared/references/symbolic-navigation-and-editing-policy.md#2a-preflight-sereny)
+and [hybrid contract](../.agents/skills/_shared/references/repository-context-hybrid.md)
+remain the procedural owners.
 
 ### Session model environment
 
@@ -162,7 +231,7 @@ A `point` or `partial` run reads a selection file stored under `CACHE_PATH`; its
 result is never a full QA gate:
 
 ```bash
-node .agents/skills/qa-run/scripts/run-matrix.mjs --scope point --selection var/agent/cache/qa-selection.json
+node <skills_root>/qa-run/scripts/run-matrix.mjs --scope point --selection <CACHE_PATH>/qa-selection.json
 ```
 
 The selection format, ordering and session rules are owned by

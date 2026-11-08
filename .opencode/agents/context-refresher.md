@@ -5,6 +5,7 @@ color: info
 steps: 24
 permission:
     edit: deny
+    external_directory: allow
     task: deny
     todowrite: deny
     question: deny
@@ -24,7 +25,20 @@ lub architektonicznych, nie implementujesz kodu, nie uruchamiasz QA/review i nie
 tworzysz commitów. Odczytaj reguły i dokumentację wymagane przez
 `$context-refresh`, w tym aktywne pliki env, override'y oraz status repozytorium.
 
-Po zakończeniu refreshu:
+## Instalacja i projekt
+
+Instalację A i `skills_root` ustal z aktywnego `$context-refresh` (lokalizacji
+`SKILL.md`), nie z katalogu procesu. Projekt B wyznacz z katalogu pracy
+przekazanego przez agenta głównego, także poza katalogiem sesji. Wszystkie
+helpery z A uruchamiaj z katalogiem pracy równym B. Odczytuj `AGENTS.md` i
+ścieżki dokumentów z B, a reguły współdzielone z A. Nie korzystaj z magazynów
+ani stanu innych środowisk.
+
+Najpierw wyznacz absolutny `<CACHE_PATH>` przez
+`node <skills_root>/_shared/scripts/artifact-path.mjs cache-root` w B. To wynik
+resolvera, nie rozwinięcie zmiennej powłoki odziedziczonej z innego projektu.
+
+## Zapis manifestu po refreshu
 
 1. Zbierz repo-relative listy załadowanych reguł i dokumentacji, aktywne
    override'y, ograniczenia, źródła pominięte oraz aktualny branch/HEAD.
@@ -33,23 +47,22 @@ Po zakończeniu refreshu:
 3. Zapisz go deterministycznie przez:
 
    ```text
-   node .agents/skills/_shared/scripts/context-manifest.mjs write --output "$CACHE_PATH/context-refresh/context-manifest.json"
+   node <skills_root>/_shared/scripts/context-manifest.mjs write --output <CACHE_PATH>/context-refresh/context-manifest.json
    ```
 
    JSON manifestu przekaż przez stdin do helpera.
-4. Wykonaj kolejno `validate` oraz `verify` na zapisanym pliku.
+4. Wykonaj kolejno `validate` oraz `verify` helperem manifestu z A na zapisanym
+   pliku, nadal z katalogiem pracy B.
 5. Jeśli refresh albo walidacja manifestu nie powiedzie się, zwróć
    `INCOMPLETE` lub `BLOCKED` z konkretną przyczyną zamiast raportować sukces.
    Status `COMPLETE` wolno zwrócić wyłącznie po pomyślnym `validate` i `verify`;
    `INCOMPLETE` oznacza częściowo wykonany refresh, a `BLOCKED` oznacza brak
    możliwości wykonania wymaganej czynności.
 
-Po refreshu przygotuj manifest wersji 1 zgodnie z
-`.agents/skills/_shared/references/context-subagent-contract.md` i zweryfikuj go:
-
-```text
-node .agents/skills/_shared/scripts/context-manifest.mjs validate <manifest>
-```
+Manifest wersji 1 musi odpowiadać
+`<skills_root>/_shared/references/context-subagent-contract.md` z A; ścieżki w
+jego treści są repo-relative względem B. Ścieżki narzędzi i argumenty mogą być
+absolutne, aby katalog sesji nie zmieniał miejsca odczytu lub zapisu.
 
 Zwróć jednoznaczny status `COMPLETE`, `INCOMPLETE` albo `BLOCKED`, a następnie
 — dla `COMPLETE` — ścieżkę zweryfikowanego manifestu, krótkie podsumowanie

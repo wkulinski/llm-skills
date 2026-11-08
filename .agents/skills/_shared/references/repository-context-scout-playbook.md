@@ -17,6 +17,9 @@ nawigacji; ten dokument określa niezmienną procedurę rekonesansu i raportowan
 - Trzymaj twardy budżet: najwyżej 10 istotnych plików, 5 symboli i 3 testy/komendy;
   wykonaj najwyżej jeden przebieg discovery oraz jeden przebieg weryfikacji źródłowej.
 - Nie czytaj raportu, błędów ani metadanych innej próby.
+- Nie używaj powłoki ani helperów. Jedyny zapis to kompletny plik JSON własnej
+  próby przez natywne narzędzie `write` albo `apply_patch`, udostępnione w profilu,
+  pod dokładną ścieżką przekazaną przez kontroler.
 
 Naruszenie którejkolwiek granicy kończy próbę statusem `BLOCKED`; nie próbuj
 naprawiać orkiestracji ani uruchamiać kolejnej próby.
@@ -24,20 +27,17 @@ naprawiać orkiestracji ani uruchamiać kolejnej próby.
 ## Walidacja wejścia
 
 Oczekuj dokładnych ścieżek do oryginalnego prompta, manifestu, handoffu,
-criteria oraz docelowego raportu. Handoff zawiera wyłącznie `mode`, `task_brief`,
+criteria oraz pliku scouta tej próby. Handoff zawiera wyłącznie `mode`, `task_brief`,
 `decisions` i `constraints`. Repozytorium, branch, HEAD i `already_read` pochodzą
 z manifestu, a kryteria wyłącznie z `criteria.json`.
 
-Przed rekonesansem uruchom:
-
-```text
-node ./.agents/skills/_shared/scripts/context-handoff.mjs validate <handoff>
-node ./.agents/skills/_shared/scripts/context-criteria.mjs validate <criteria>
-node ./.agents/skills/_shared/scripts/context-manifest.mjs validate <manifest>
-node ./.agents/skills/_shared/scripts/context-manifest.mjs verify <manifest>
-```
-
-Brak pliku, pola albo nieaktualny manifest oznacza `BLOCKED`, nie zgadywanie.
+Kontroler waliduje handoff, criteria i manifest oraz sprawdza snapshot przed
+delegacją. Scout odczytuje dokładne wejścia narzędziami plikowymi; brak pliku lub
+pola oznacza `BLOCKED`, nie zgadywanie ani samodzielne uruchamianie walidatorów.
+Wspólny playbook pochodzi z absolutnej ścieżki instalacji A. Root i branch B
+podaje kontroler, metadane potwierdza manifest. Instrukcje A nie są kodem B.
+Używaj absolutnych ścieżek B w odczytach i jawnego parametru `path` w każdym
+wyszukiwaniu; katalog sesji nie wyznacza repozytorium do rozpoznania.
 Nie czytaj ponownie źródeł z `already_read` bez konkretnego uzasadnienia
 powiązanego z kryterium lub ryzykiem.
 
@@ -69,7 +69,8 @@ powiązanego z kryterium lub ryzykiem.
    luki w raporcie albo jawnego wymagania użytkownika.
    Jeśli zapisujesz cel odczytu, użyj jednej z etykiet `discovery`,
    `read-before-write`, `verification`, `snapshot-refresh` albo `report-gap`;
-   jest to deklarowany kontekst, nie dowód aktualności pliku.
+   uzupełnij wtedy cały zestaw `event: "read"`, `purpose`, `source: "scout"`
+   i `read_mode`. Jest to deklarowany kontekst, nie dowód aktualności pliku.
 
 8. Nie wnioskuj o zawartości pliku z jego nazwy. Claim musi być bezpośrednio
    potwierdzony minimalnym zakresem linii; nie cytuj całego pliku, jeśli kilka
@@ -88,53 +89,32 @@ głównego i nie powtarzaj ukończonego rekonesansu.
 
 ## Budowanie raportu
 
-Przed tworzeniem raportu przeczytaj:
+Stosuj `context-scout-report-protocol.md` z tego samego katalogu instalacji co
+playbook. Zarezerwuj co najmniej 40% kroków na preflight evidence, coverage i
+zapis. Zbuduj kompletny JSON w pamięci i zapisz go przez `write` albo `apply_patch`
+(narzędziem dostępnym w profilu) dokładnie do
+pliku `.scout.json` własnej próby wskazanego w promptcie. Nie inicjalizuj ledgeru,
+nie wykonuj buildera ani walidatorów i nie zapisuj końcowego `.report.json`.
+Kontroler wykonuje builder i walidację w projekcie B.
 
-```text
-./.agents/skills/_shared/references/context-scout-report-protocol.md
-```
-
-Użyj wyłącznie buildera:
-
-```text
-node ./.agents/skills/_shared/scripts/context-scout-report-builder.mjs
-```
-
-Nie składaj końcowego JSON ręcznie jako artefaktu poza builderem. Zarezerwuj co
-najmniej 40% kroków na ledger, preflight i coverage. Po walidacji wejść
-zainicjalizuj ledger dokładnie raz, zbuduj kompletny raport JSON w pamięci i
-przekaż go bezpośrednio do `batch-render` jako drugiej i ostatniej operacji
-buildera. Rezerwacja finalizacji obowiązuje niezależnie od tego, czy discovery
-zakończy się sukcesem, częściowo czy blokadą:
-
-```text
-node ./.agents/skills/_shared/scripts/context-scout-report-builder.mjs batch-render <ledger> --status <STATUS> --output <report> <<'REPORT_JSON'
-<STATUS_REPORT_JSON>
-REPORT_JSON
-```
-
-`<STATUS>` musi być dokładnie jednym z `COMPLETE`, `INCOMPLETE` albo `BLOCKED` i
-ma być identyczny ze statusem payloadu. `COMPLETE` wymaga bezpośredniego evidence
+`status` musi być dokładnie jednym z `COMPLETE`, `INCOMPLETE` albo `BLOCKED`.
+`COMPLETE` wymaga bezpośredniego evidence
 oraz poprawnego coverage każdego criterion. `INCOMPLETE` zapisuje tylko
 zweryfikowane findings i oznacza niepokryte criteria statusem `blocked` z powodem.
 `BLOCKED` nie zawiera findings i oznacza każde criterion jako `blocked` albo
 `not_applicable` z konkretnym powodem. Brak pełnego coverage albo wyczerpanie
 budżetu nie zwalnia z zapisu minimalnego raportu; nie kończ próby bez artefaktu.
 
-Nie uruchamiaj osobno `add-evidence`, `add-finding`, `set-coverage`, `check`,
-`batch` ani `render`. Nie twórz osobnego pliku wejściowego ani nie używaj
-`cat`, `touch`, `printf`, `echo`, process substitution lub osobnego renderu.
-Wynik `batch-render` zapisz dokładnie pod ścieżką raportu przekazaną przez
-agenta głównego.
-
-Jeśli builder, preflight albo walidacja odrzuci dowód, popraw punktowy odczyt lub
-zwróć `INCOMPLETE`; nie obchodź walidatora. Raport `COMPLETE` wymaga coverage
+Jeżeli odczyt lub zapis zostanie odrzucony przez klienta, zgłoś dosłowną odmowę.
+Nie próbuj zastępować pliku treścią odpowiedzi ani zapisywać go w innym projekcie.
+Nie obchodź walidatora. Raport `COMPLETE` wymaga coverage
 każdego criterion jako `covered` albo uzasadnione `not_applicable`. Status
 `blocked` nie może wystąpić w raporcie `COMPLETE`, a `BLOCKED` nie może zawierać findings.
 
 ## Odpowiedź
 
-Po zapisaniu raportu zwróć dokładnie ten sam JSON jako jedyną odpowiedź, bez
-markdownu i komentarza. Obowiązuje koperta oraz limity z
-`./.agents/skills/_shared/references/context-subagent-contract.md`, w tym
-maksymalnie 12 findings i około 1500 tokenów.
+Po zapisaniu pliku zwróć wyłącznie krótkie potwierdzenie z `status`,
+`scout_path`, `findings_count` i `covered_criteria`. JSON raportu nie przechodzi
+przez kontekst agenta głównego. Potwierdzenie jest metadanymi, nie zamiennikiem
+pliku. Obowiązuje koperta z `context-subagent-contract.md` z tego samego katalogu
+instalacji, w tym maksymalnie 12 findings i około 1500 tokenów.

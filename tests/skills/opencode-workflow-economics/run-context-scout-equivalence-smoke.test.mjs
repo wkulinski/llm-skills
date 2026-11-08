@@ -26,7 +26,7 @@ describe("canonical equivalence smoke runner", () => {
     });
 
     it("publishes the protocol version owned by the production helper", () => {
-        expect(HYBRID_PROTOCOL_VERSION).toBe(4);
+        expect(HYBRID_PROTOCOL_VERSION).toBe(5);
         expect(SOURCE).toMatch(/protocol_version:\s*HYBRID_PROTOCOL_VERSION/);
         expect(SOURCE).not.toMatch(/protocol_version:\s*\d/);
     });

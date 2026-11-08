@@ -152,7 +152,7 @@ describe("run-matrix scoped execution", () => {
     it("fails with a non-zero exit when the summary cannot be written", () => {
         const breakSummary = [
             "const fs = require('node:fs'); const path = require('node:path')",
-            "const root = path.join(process.env.CACHE_PATH, 'qa-run')",
+            "const root = path.join('cache', 'qa-run')",
             "for (const dir of fs.readdirSync(root)) fs.mkdirSync(path.join(root, dir, 'summary.json'), {recursive: true})",
         ].join("; ");
         const fixture = createFixture({extraSections: {BREAK_SUMMARY: section([`node -e ${JSON.stringify(breakSummary)}`], ["rerun"])}});
@@ -212,12 +212,14 @@ function createFixture({extraSections = {}, mutateDuringEarly = false, targetedT
     const root = mkdtempSync(path.join(os.tmpdir(), "qa-run-scoped-"));
     tempRoots.push(root);
     const workRepo = path.join(root, "repo");
-    const cacheRoot = path.join(root, "cache");
+    const cacheRoot = path.join(workRepo, "cache");
     const tracePath = path.join(root, "trace.jsonl");
     const pwnedPath = path.join(root, "pwned");
     mkdirSync(path.join(workRepo, "bin"), {recursive: true});
     mkdirSync(cacheRoot, {recursive: true});
     spawnSync("git", ["init", "-q"], {cwd: workRepo});
+    writeFileSync(path.join(workRepo, ".env"), "CACHE_PATH=cache\n");
+    writeFileSync(path.join(workRepo, ".gitignore"), "cache/\n");
 
     const toolPath = path.join(workRepo, "bin", "fake-test");
     writeFileSync(toolPath, [
@@ -259,7 +261,6 @@ function createFixture({extraSections = {}, mutateDuringEarly = false, targetedT
         env: {
             ...process.env,
             BIN_PATH: "bin",
-            CACHE_PATH: cacheRoot,
             QA_TRACE: tracePath,
         },
     });

@@ -85,6 +85,7 @@ const EDIT_SCRIPT = path.join(process.cwd(), ".agents/skills/task-plan/scripts/e
 
 function createFixture(body = buildPlan()) {
     const root = fs.mkdtempSync(path.join(process.cwd(), "var/agent/cache/task-plan-edit-test-"));
+    fs.mkdirSync(path.join(root, ".git"));
     const configDir = path.join(root, ".agents", "config");
     fs.mkdirSync(configDir, {recursive: true});
     fs.writeFileSync(path.join(configDir, "model-hierarchy.json"), `${JSON.stringify({

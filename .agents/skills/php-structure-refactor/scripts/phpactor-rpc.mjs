@@ -387,7 +387,8 @@ function resolveTool(tool) {
 }
 
 function findRepoRoot() {
-    const gitResult = spawnSync("git", ["-C", skillDir, "rev-parse", "--show-toplevel"], {
+    const gitResult = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+        cwd: process.cwd(),
         encoding: "utf8",
     });
     if (gitResult.status !== 0) {

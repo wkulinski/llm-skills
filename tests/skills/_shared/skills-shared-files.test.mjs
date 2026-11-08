@@ -63,6 +63,15 @@ describe("skill shared_files contract", () => {
         expect(failures, ["Undeclared local shared file dependencies:", ...failures].join("\n")).toEqual([]);
     });
 
+    it("declares the Bash env loader for every shared cache resolver consumer", () => {
+        for (const skillFile of skillFiles()) {
+            const declared = parseSharedFiles(fs.readFileSync(skillFile, "utf8"), skillFile);
+            if (declared.includes("_shared/scripts/artifact-path.mjs")) {
+                expect(declared, skillFile).toContain("_shared/scripts/env-load.sh");
+            }
+        }
+    });
+
     it("rejects shared file paths that escape the skills root", () => {
         const skillFile = path.join(SKILLS_ROOT, "example", "SKILL.md");
 

@@ -50,6 +50,7 @@ it("parses legacy and folded section content without leaking wrappers into the f
 
 function temporaryRepository() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-plan-v2-"));
+    fs.mkdirSync(path.join(root, ".git"));
     fs.mkdirSync(path.join(root, "docs", "plans"), {recursive: true});
     writeModelHierarchy(root);
     return root;

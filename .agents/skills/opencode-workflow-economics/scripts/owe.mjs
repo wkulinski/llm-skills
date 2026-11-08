@@ -2,6 +2,8 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {resolveArtifactCacheRoot} from "../../_shared/scripts/artifact-path.mjs";
+import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import { collectBundle } from "./lib/collector.mjs";
 import { loadConfig, loadPricing } from "./lib/config.mjs";
 import { OpenCodeReader } from "./lib/opencode.mjs";
@@ -206,13 +208,13 @@ async function loadRuntimeConfig(configPath) {
     });
 }
 
-function defaultAnalysisDir(cwd) {
-    const configured = process.env.OWC_PATH || resolve(cwd, process.env.CACHE_PATH || "var/agent/cache", "owc");
+export function defaultAnalysisDir(cwd) {
+    const configured = process.env.OWC_PATH || resolve(resolveArtifactCacheRoot(cwd), "owc");
     return resolve(cwd, configured);
 }
 
 async function loadEnvironment(cwd) {
-    const externallySet = new Set(["OWC_PATH", "CACHE_PATH"].filter((key) => typeof process.env[key] !== "undefined"));
+    const externallySet = new Set(["OWC_PATH"].filter((key) => typeof process.env[key] !== "undefined"));
     for (const filename of [".env", ".env.local"]) {
         let content;
         try {
@@ -222,7 +224,7 @@ async function loadEnvironment(cwd) {
             throw error;
         }
         for (const line of content.split(/\r?\n/)) {
-            const match = /^\s*(OWC_PATH|CACHE_PATH)\s*=\s*(.*?)\s*$/.exec(line);
+            const match = /^\s*(OWC_PATH)\s*=\s*(.*?)\s*$/.exec(line);
             if (!match || externallySet.has(match[1])) { continue; }
             const rawValue = match[2];
             process.env[match[1]] = rawValue.replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, (_, doubleQuoted, singleQuoted) => doubleQuoted ?? singleQuoted);
@@ -318,7 +320,7 @@ Commands:
   node .agents/skills/opencode-workflow-economics/scripts/owe.mjs show pattern|overlap|root <id> [--json]
 
 Reporting:
-  --analysis-dir PATH  Canonical report directory (default: $OWC_PATH, $CACHE_PATH/owc, or ./var/agent/cache/owc)
+  --analysis-dir PATH  Canonical report directory; takes precedence over OWC_PATH and the default below
 
 Navigation options:
   --sort total-cost|frequency|median-cost|cost|created
@@ -338,11 +340,15 @@ Navigation options:
   --server MODE      Server lifecycle: auto (default) or existing
 
   Default analysis directory:
-  $OWC_PATH, or $CACHE_PATH/owc, or ./var/agent/cache/owc
+  <CACHE_PATH>/owc, where <CACHE_PATH> is the consumer project's cache resolved
+  from its env files (default: var/agent/cache; an inherited CACHE_PATH is ignored).
+  OWC_PATH overrides this default; --analysis-dir overrides both.
 `);
 }
 
-main().catch((error) => {
-    console.error(`owe: ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = 1;
-});
+if (isMainModule(import.meta.url)) {
+    main().catch((error) => {
+        console.error(`owe: ${error instanceof Error ? error.message : String(error)}`);
+        process.exitCode = 1;
+    });
+}

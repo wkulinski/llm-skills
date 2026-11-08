@@ -16,6 +16,8 @@ shared_files:
   - _shared/references/skill-structure-contract.md
   - _shared/references/skill-routing-policy.md
   - _shared/scripts/is-main-module.mjs
+  - _shared/scripts/artifact-path.mjs
+  - _shared/scripts/env-load.sh
 ---
 
 # $skill-review
@@ -122,11 +124,14 @@ i `signals`. Sygnały heurystyczne nie są findings — potwierdź je w kroku 4.
 Dla targetu `rules` kolektor nie jest wymagany; odczytaj wskazany plik i jego
 bloki instrukcji.
 
-Dla targetu `catalog` uruchom kolektor i zapisz raport w `CACHE_PATH`:
+Dla targetu `catalog` uruchom kolektor i zapisz raport w cache projektu B.
+Najpierw wyznacz absolutne `<CACHE_PATH>` przez
+`node <skills_root>/_shared/scripts/artifact-path.mjs cache-root` uruchomione w B;
+w przykładzie podstaw wynik resolvera, nie odziedziczoną zmienną powłoki:
 
 ```bash
 node <skill_dir>/scripts/inventory.mjs --mode catalog --root . \
-  --report-dir "${CACHE_PATH:-var/agent/cache}/skill-review" --run-mode full
+  --report-dir "<CACHE_PATH>/skill-review" --run-mode full
 ```
 
 Raport `catalog-report.json` i `catalog-report.md` powstaje wyłącznie w

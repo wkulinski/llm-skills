@@ -7,8 +7,9 @@ checklisty pojedynczych targetów: każdy obszar raportu oceniaj właściwą sek
 
 ## Dane wejściowe
 
-- Raport kolektora: `${CACHE_PATH:-var/agent/cache}/skill-review/catalog-report.json`
-  oraz czytelniczy `catalog-report.md`.
+- Raport kolektora: `<CACHE_PATH>/skill-review/catalog-report.json`
+  oraz czytelniczy `catalog-report.md`. `<CACHE_PATH>` jest absolutnym wynikiem
+  projektowego resolvera uruchomionego w B.
 - Tryb uruchomienia zapisany w polu `run_mode`:
   - `collector-only` — raport deterministyczny bez findings; nie publikuj
     werdyktu i nie interpretuj sygnałów jako ustaleń;
