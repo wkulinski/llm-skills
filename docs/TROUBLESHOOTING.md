@@ -21,6 +21,19 @@ skill) rather than working around a validator.
 | Plan is not ready or current profile is insufficient | Inspect the validator result, the model hierarchy and the selected WP. | [task-plan](../.agents/skills/task-plan/SKILL.md), [plan-execute](../.agents/skills/plan-execute/SKILL.md) |
 | QA matrix is absent or names the catalog's npm commands | Author the consumer matrix for your application. | [qa-run](../.agents/skills/qa-run/SKILL.md) |
 | A UI/PHP/runtime branch needs additional tools | Install the tools declared by that skill before using the branch. | [Starter set](SKILLS.md#starter-set-and-dependency-closure) |
+| Manifest shows another branch/root, or a PHP wrapper targets A instead of B | Run the absolute helper from A with actual cwd inside B; Git selects B's own root, including worktrees. Check B's env/tool configuration. | [Shared installation](INSTALLATION.md#shared-installation-and-private-project-data) |
+| `MODULE_NOT_FOUND` for a helper absent from a worktree | Resolve the helper from installation A instead of assuming `.agents/skills` exists in B. | [Shared path contract](../.agents/skills/_shared/references/skill-structure-contract.md) |
+| Cache/ledger is rejected as outside `CACHE_PATH` | Run `cache-root` in B and use that result for B's inputs/output. Check B's active env; a legacy `docs_map` entry and inherited process value do not configure B. Preserve the validator boundary. | [Cache ownership](CONFIGURATION.md#cache-and-durable-state) |
+| `external_directory` denies A's playbook or B's attempt file | Inspect the literal denial and consumer permissions for the required operations, then restart the client after changes. B need not be nested under A. | [Runtime configuration](CONFIGURATION.md#opencode-agent-runtime-model--thinking) |
+| Scout acknowledges success but no valid report exists | Check the exact attempt `.scout.json` and controller failure class. The scout's native writer must be available; the controller builds and validates in B. An acknowledgement cannot replace the file. | [Report protocol](../.agents/skills/_shared/references/context-scout-report-protocol.md) |
+| `REPORT_INVALID` after a scout file was written | Use the validator diagnostic to check literal anchors, field types and coverage. Keep tool-fallback diagnostics in `risks`; do not weaken validation or silently fix a model's artifact. | [Scout contract](../.agents/skills/_shared/references/context-subagent-contract.md#raport-scouta) |
+| CMM lacks `status`, has another branch, or has no confirmed private store/runtime/readiness | `status` is not required. Match the prepared ready index's root/branch only after ownership and readiness were confirmed; otherwise use files and report the reason. Do not query an unconfirmed connection or index from a scout. | [Private tool contexts](CONFIGURATION.md#private-tool-contexts) |
+| Serena has no `activate_project`, or shows an unexpected root | A private startup-bound B connection is valid without activation. Confirm its root; use files on a foreign/unconfirmed connection instead of switching it. | [Serena preflight](../.agents/skills/_shared/references/symbolic-navigation-and-editing-policy.md#2a-preflight-sereny) |
+| Provider quota or unavailable model blocks native `task` | Record the provider error and missing live verification, terminate retries and settle/abort through the controller. Change the test profile only with an explicit decision; static permissions are not a positive live test. | [Hybrid lifecycle](../.agents/skills/_shared/references/repository-context-hybrid.md#decision-algorithm) |
+
+Consumer synchronization is a separate rollout. Resume affected consumer work,
+including Collecta #627, after its own installation/configuration is updated
+and verified; the upstream change does not perform that synchronization.
 
 ## What to include in a support report
 

@@ -33,6 +33,47 @@ OpenCode/MCP/provider config, permissions and secrets) are never copied. On firs
 installation even an existing byte-identical payload file is a conflict, because
 its ownership cannot be inferred; this includes an existing role adapter or plugin.
 
+## Shared installation and private project data
+
+A is the installation supplying `<skills_root>`, helpers and role instructions;
+B is the consumer project, either a main checkout or a Git worktree. Installing
+inside B gives the colocated case A=B. B may also use a complete shared
+installation A outside its directory, without copying skills into every worktree.
+The reference-copy steps below deliver the colocated set; sharing an existing
+installation does not change its dependency or integrity requirements.
+
+Run a helper from A with its actual working directory in B:
+
+```bash
+SKILLS_ROOT=/absolute/path/to/shared/skills
+PROJECT_B=/absolute/path/to/project-or-worktree
+cd "$PROJECT_B"
+node "$SKILLS_ROOT/_shared/scripts/artifact-path.mjs" cache-root
+```
+
+Git root/branch, active env, documentation and workflow data come from B,
+including a worktree whose `.git` is a file. Read B's `AGENTS.md`; resolve
+documentation paths there and use the returned absolute cache path. The
+[shared path contract](../.agents/skills/_shared/references/skill-structure-contract.md)
+defines these rules. Shared binaries and instructions are allowed; each
+environment owns its data, tool state and connections as described in
+[consumer configuration](CONFIGURATION.md#private-tool-contexts).
+
+The client must discover the shared skills, register the context roles and
+permit reading A's instructions plus writing B's attempt file. OpenCode 1.19.5
+was exercised with shared adapters loaded through `OPENCODE_CONFIG_DIR`, with A
+outside the session opened in B, and with B accessed from a session in A.
+An actual permission denial belongs to client configuration; moving B under A
+is not an isolation requirement. After config changes, restart the process.
+
+Live native `task` primary/fallback and the canonical controller were checked
+for the local checkout, independent B and worktree. The successful fallback
+checks used an explicitly approved DeepSeek test override; they do not certify
+every configured provider/model pair. Codex shell tools were also used to run
+absolute A helpers with `workdir` B. For Claude Code, apply the same helper/cwd
+contract through its working-directory control. Native scout delegation in
+Claude Code and Codex was not tested; discovering a skill does not establish it.
+
 ## 1. Select and inspect an immutable source
 
 Prerequisites: Linux, Git, Bash, Node.js 22+ and an existing consumer repository.
@@ -117,13 +158,17 @@ requiring the plan/execution or QA configuration checked by `verify`.
 
 ### Context preflight
 
-- In a fresh Bash shell at its root, source
-  `.agents/skills/_shared/scripts/env-load.sh`, run `ensure_repo_env_loaded`, then
+- In a fresh Bash shell at B's root, source
+  `<skills_root>/_shared/scripts/env-load.sh` from A, run `ensure_repo_env_loaded`, then
   `resolve_stack_profile`; require the intended result and no error.
 - Inspect `opencode debug agent context-refresher`, `context-scout-fast` and
   `context-scout`: all roles must load, with the intended profiles and read-only
-  scout permissions. Check MCP connectivity with the harness and a real initial
-  codebase-memory `list_projects` call, plus Serena/Context7 availability.
+  scout permissions, including the profile's native `write` or `apply_patch`
+  tool and denied scout shell access. Only query Codebase Memory after the
+  environment owner confirms its private store, runtime and index readiness;
+  otherwise use the documented file fallback. Check Serena's private context
+  before code operations. See [private tool contexts](CONFIGURATION.md#private-tool-contexts);
+  other MCP tools are required only by the workflows that use them.
 
 ### Additional workflow checks
 

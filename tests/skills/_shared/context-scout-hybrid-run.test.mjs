@@ -7,7 +7,7 @@ import {spawnSync} from "../../helpers/bounded-spawn-sync.mjs";
 import {test} from "vitest";
 import {FAILURE_CLASSES} from "../../../.agents/skills/_shared/scripts/context-scout-report.mjs";
 import {abortHybrid, claimAttempt, evaluateAttempt, finalizeHybrid, prepareHybrid, settleAttempt} from "../../../.agents/skills/_shared/scripts/context-scout-hybrid-run.mjs";
-import {enrichContextManifest} from "../../../.agents/skills/_shared/scripts/context-manifest.mjs";
+import {enrichContextManifest, getWorktreeFingerprint} from "../../../.agents/skills/_shared/scripts/context-manifest.mjs";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../");
 const HELPER = path.join(ROOT, ".agents/skills/_shared/scripts/context-scout-hybrid-run.mjs");
@@ -19,7 +19,7 @@ function makeFixtureDir() {
     return fs.mkdtempSync(path.join(cacheRoot, "context-scout-hybrid-test-"));
 }
 
-function writeFixtures(dir, mode = "targeted") {
+function writeFixtures(dir, mode = "targeted", cwd = ROOT) {
     const prompt = path.join(dir, "prompt.txt");
     const manifest = path.join(dir, "manifest.json");
     const handoff = path.join(dir, "handoff.json");
@@ -38,7 +38,7 @@ function writeFixtures(dir, mode = "targeted") {
         constraints: [],
         "already_read": ["AGENTS.md"],
         omitted: [],
-    });
+    }, {cwd});
     fs.writeFileSync(manifest, JSON.stringify(sourceManifest));
     fs.writeFileSync(handoff, JSON.stringify({
         mode,
@@ -108,7 +108,7 @@ function assertEvaluateRejectsWorktreeDrift(prepared, mutate, cleanup, expectedF
 test("prepare returns native task instructions and never starts OpenCode", () => {
     const dir = makeFixtureDir();
     const result = prepare(dir);
-    assert.equal(result.protocolVersion, 4);
+    assert.equal(result.protocolVersion, 5);
     assert.equal(result.next.action, "CLAIM_PRIMARY");
     assert.equal(Object.hasOwn(result.next, "agent"), false);
     const claimed = claim(result);
@@ -118,7 +118,11 @@ test("prepare returns native task instructions and never starts OpenCode", () =>
     assert.equal(Object.hasOwn(claimed, "agent"), false);
     assert.equal(Object.hasOwn(claimed, "taskPrompt"), false);
     assert.match(claimed.dispatch.prompt, /Do not delegate/);
-    assert.match(claimed.dispatch.prompt, /batch-render/);
+    assert.match(claimed.dispatch.prompt, /native file tool \(write or apply_patch/);
+    assert.match(claimed.dispatch.prompt, /Use absolute consumer-project paths/);
+    assert.match(claimed.dispatch.prompt, /path parameter explicitly/);
+    assert.equal(claimed.dispatch.prompt.includes(path.join(ROOT, ".agents/skills/_shared/references/repository-context-scout-playbook.md")), true);
+    assert.equal(claimed.dispatch.prompt.includes(claimed.scoutPath), true);
     assert.match(claimed.dispatch.prompt, /at most 6 relevant files, 3 symbols, and 2 tests\/commands/);
     assert.match(claimed.dispatch.prompt, /exactly one compact, parent-ready finding per criterion/);
     assert.match(claimed.dispatch.prompt, /at most three minimal evidence ranges per finding/);
@@ -128,18 +132,11 @@ test("prepare returns native task instructions and never starts OpenCode", () =>
     assert.match(claimed.dispatch.prompt, /anchor_mode=required-literal/);
     assert.match(claimed.dispatch.prompt, /A COMPLETE report must not claim that an artifact does not exist/);
     assert.match(claimed.dispatch.prompt, /return INCOMPLETE/);
-    assert.match(claimed.dispatch.prompt, /initialize the ledger exactly once/);
-    assert.match(claimed.dispatch.prompt, /send it directly to batch-render as the second and final builder operation/);
-    assert.match(claimed.dispatch.prompt, /node \.\/\.agents\/skills\/_shared\/scripts\/context-scout-report-builder\.mjs batch-render/);
     assert.match(claimed.dispatch.prompt, /COMPLETE: every criterion has direct evidence/);
     assert.match(claimed.dispatch.prompt, /INCOMPLETE: discovery or verification ran out/);
     assert.match(claimed.dispatch.prompt, /BLOCKED: a hard input/);
-    assert.match(claimed.dispatch.prompt, /<<'REPORT_JSON'\n<STATUS_REPORT_JSON>\nREPORT_JSON/);
-    assert.match(claimed.dispatch.prompt, /run the opening command, payload, and closing marker as one bash call/);
-    assert.match(claimed.dispatch.prompt, /Do not run batch-render with empty stdin/);
-    assert.match(claimed.dispatch.prompt, /Do not create a separate input file/);
-    assert.match(claimed.dispatch.prompt, /process substitution/);
-    assert.doesNotMatch(claimed.dispatch.prompt, /node \.agents\/skills\/_shared\/scripts\/context-scout-report-builder\.mjs/);
+    assert.doesNotMatch(claimed.dispatch.prompt, /batch-render|init\b|<<|node \.|bash call/);
+    assert.match(claimed.dispatch.prompt, /report the exact denial literally/);
     assert.match(claimed.dispatch.prompt, /Do not spend more than 24 steps/);
     assert.doesNotMatch(claimed.dispatch.prompt, /report_sha256/);
     assert.doesNotMatch(claimed.dispatch.prompt, /opencode run/);
@@ -439,8 +436,8 @@ test("fallback task prompt retains deterministic semantic criteria gates", () =>
     assert.match(fallback.dispatch.prompt, /effective_file_budget=6/);
     assert.equal(fallback.dispatch.prompt.includes(primaryBudgetLine), true);
     assert.match(fallback.dispatch.prompt, /COMPLETE: every criterion has direct evidence/);
-    assert.match(fallback.dispatch.prompt, /<<'REPORT_JSON'\n<STATUS_REPORT_JSON>\nREPORT_JSON/);
-    assert.match(fallback.dispatch.prompt, /Do not create a separate input file/);
+    assert.match(fallback.dispatch.prompt, /native file tool \(write or apply_patch/);
+    assert.doesNotMatch(fallback.dispatch.prompt, /batch-render|<<|node \./);
     abortHybrid({state: result.statePath, "run-id": result.runId});
 });
 
@@ -458,7 +455,7 @@ test("missing report is retryable and requests exactly one fallback", () => {
 test("valid incomplete report is classified as retryable agent incompleteness", () => {
     const prepared = prepare(makeFixtureDir(), "agent-incomplete");
     const primary = claim(prepared);
-    fs.writeFileSync(primary.reportPath, JSON.stringify({...validReport(), status: "INCOMPLETE"}));
+    fs.writeFileSync(primary.scoutPath, JSON.stringify({...validReport(), status: "INCOMPLETE"}));
 
     const evaluation = evaluateAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: primary.dispatchToken});
     assert.equal(evaluation.failure_class, FAILURE_CLASSES.AGENT_INCOMPLETE);
@@ -469,7 +466,7 @@ test("valid incomplete report is classified as retryable agent incompleteness", 
 test("valid blocked report is classified as retryable agent incompleteness through the helper", () => {
     const prepared = prepare(makeFixtureDir(), "agent-blocked");
     const primary = claim(prepared);
-    fs.writeFileSync(primary.reportPath, JSON.stringify({
+    fs.writeFileSync(primary.scoutPath, JSON.stringify({
         ...validReport(),
         status: "BLOCKED",
         findings: [],
@@ -548,7 +545,7 @@ test("valid primary finalizes without fallback and records required metrics", ()
     const dir = makeFixtureDir();
     const prepared = prepare(dir);
     const primary = claim(prepared);
-    fs.writeFileSync(primary.reportPath, JSON.stringify(validReport()));
+    fs.writeFileSync(primary.scoutPath, JSON.stringify(validReport()));
     const settled = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: primary.dispatchToken, "duration-ms": "123", ack: {session_ids: ["session-test"], task_tools: 1}});
     assert.equal(settled.evaluate.validation.valid, true);
     assert.equal(settled.evaluate.next.action, "FINALIZE");
@@ -574,56 +571,29 @@ test("valid primary finalizes without fallback and records required metrics", ()
     assert.equal(typeof final.primary.durationMs, "number");
     assert.match(final.primary.reportSha256, /^[a-f0-9]{64}$/);
     assert.equal(final.dispatch_audit.primary.ack.task_tools, 1);
+    assert.equal(fs.existsSync(primary.ledgerPath), true);
 });
 
-test("recovers a valid report from the primary ledger when render was interrupted", () => {
+test("builds the report from the primary scout file using its saved head, criteria and mode", () => {
     const dir = makeFixtureDir();
-    const prepared = prepare(dir, "ledger-recovery");
-    const state = JSON.parse(fs.readFileSync(prepared.statePath, "utf8"));
-    const init = spawnSync(process.execPath, [
-        path.join(ROOT, ".agents/skills/_shared/scripts/context-scout-report-builder.mjs"),
-        "init",
-        state.primary.ledgerPath,
-        "--head",
-        state.manifestHead,
-        "--criteria",
-        prepared.files.criteria,
-        "--mode",
-        "targeted",
-    ], {cwd: ROOT, encoding: "utf8"});
-    assert.equal(init.status, 0, init.stderr);
-    const batch = spawnSync(process.execPath, [
-        path.join(ROOT, ".agents/skills/_shared/scripts/context-scout-report-builder.mjs"),
-        "batch",
-        state.primary.ledgerPath,
-    ], {cwd: ROOT, encoding: "utf8", input: `${JSON.stringify(validReport())}\n`});
-    assert.equal(batch.status, 0, batch.stderr);
-
+    const prepared = prepare(dir, "scout-report");
     const primary = claim(prepared);
+    fs.writeFileSync(primary.scoutPath, JSON.stringify(validReport()));
     const evaluated = evaluateAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: primary.dispatchToken, "duration-ms": "123"});
 
     assert.equal(evaluated.validation.valid, true);
     assert.equal(fs.existsSync(primary.reportPath), true);
+    const ledger = JSON.parse(fs.readFileSync(primary.ledgerPath, "utf8"));
+    assert.equal(ledger.head, JSON.parse(fs.readFileSync(prepared.files.manifest, "utf8")).head);
+    assert.equal(ledger.mode, "targeted");
+    assert.deepEqual(ledger.criteria, ["C1"]);
     assert.equal(evaluated.next.action, "FINALIZE");
     finalizeHybrid({state: prepared.statePath, "run-id": prepared.runId});
 });
 
-test("recovers an incomplete report from the ledger without coercing it to COMPLETE", () => {
+test("builds an incomplete report from the scout file without coercing it to COMPLETE", () => {
     const dir = makeFixtureDir();
-    const prepared = prepare(dir, "ledger-incomplete-recovery");
-    const state = JSON.parse(fs.readFileSync(prepared.statePath, "utf8"));
-    const init = spawnSync(process.execPath, [
-        REPORT_BUILDER,
-        "init",
-        state.primary.ledgerPath,
-        "--head",
-        state.manifestHead,
-        "--criteria",
-        prepared.files.criteria,
-        "--mode",
-        "targeted",
-    ], {cwd: ROOT, encoding: "utf8"});
-    assert.equal(init.status, 0, init.stderr);
+    const prepared = prepare(dir, "scout-incomplete");
     const incomplete = {
         version: 1,
         status: "INCOMPLETE",
@@ -635,14 +605,8 @@ test("recovers an incomplete report from the ledger without coercing it to COMPL
         omitted: [],
         next_step: "retry the bounded discovery",
     };
-    const batch = spawnSync(process.execPath, [REPORT_BUILDER, "batch", state.primary.ledgerPath], {
-        cwd: ROOT,
-        encoding: "utf8",
-        input: `${JSON.stringify(incomplete)}\n`,
-    });
-    assert.equal(batch.status, 0, batch.stderr);
-
     const primary = claim(prepared);
+    fs.writeFileSync(primary.scoutPath, JSON.stringify(incomplete));
     const evaluated = evaluateAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: primary.dispatchToken, "duration-ms": "123"});
 
     assert.equal(evaluated.validation.reportExists, true);
@@ -653,6 +617,104 @@ test("recovers an incomplete report from the ledger without coercing it to COMPL
     assert.equal(stateAfterEvaluation.primary.reportDiscardedPath, null);
     assert.equal(JSON.parse(fs.readFileSync(stateAfterEvaluation.primary.partialReportPath, "utf8")).status, "INCOMPLETE");
     abortHybrid({state: prepared.statePath, "run-id": prepared.runId});
+});
+
+for (const [label, payload] of [
+    ["invalid JSON", "not-json"],
+    ["invalid status", JSON.stringify({...validReport(), status: "DONE"})],
+    ["builder-rejected evidence mentioning an IO code", JSON.stringify({...validReport(), findings: [{...validReport().findings[0], anchors: ["ENOENT"]}]})],
+]) {
+    test(`scout file with ${label} is REPORT_INVALID and fallback can finalize`, () => {
+        const prepared = prepare(makeFixtureDir(), "invalid-scout");
+        try {
+            const primary = claim(prepared);
+            fs.writeFileSync(primary.scoutPath, payload);
+            const rejected = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: primary.dispatchToken, "duration-ms": "0"});
+            assert.equal(rejected.evaluate.validation.failure_class, FAILURE_CLASSES.REPORT_INVALID);
+            assert.equal(rejected.evaluate.next.action, "CLAIM_FALLBACK");
+            assert.equal(fs.existsSync(primary.reportPath), false);
+            const fallback = claim(prepared, "fallback");
+            fs.writeFileSync(fallback.scoutPath, JSON.stringify(validReport()));
+            const accepted = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "fallback", token: fallback.dispatchToken, "duration-ms": "0"});
+            assert.equal(accepted.finalized.hybrid_final, true);
+            assert.equal(accepted.finalized.fallback_count, 1);
+        } finally {
+            if (JSON.parse(fs.readFileSync(prepared.statePath, "utf8")).phase !== "FINALIZED") {
+                abortHybrid({state: prepared.statePath, "run-id": prepared.runId});
+            }
+        }
+    });
+}
+
+test("an unreadable scout or unwritable ledger is REPORT_WRITE_FAILED", () => {
+    for (const blockedPath of ["scoutPath", "ledgerPath"]) {
+        const prepared = prepare(makeFixtureDir(), "scout-io");
+        const primary = claim(prepared);
+        if (blockedPath === "ledgerPath") { fs.writeFileSync(primary.scoutPath, JSON.stringify(validReport())); }
+        fs.mkdirSync(primary[blockedPath]);
+        const rejected = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: primary.dispatchToken, "duration-ms": "0"});
+        assert.equal(rejected.evaluate.validation.failure_class, FAILURE_CLASSES.REPORT_WRITE_FAILED);
+        assert.equal(fs.existsSync(primary.reportPath), false);
+        const fallback = claim(prepared, "fallback");
+        const final = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "fallback", token: fallback.dispatchToken, "duration-ms": "0"});
+        assert.equal(final.finalized.hybrid_final, false);
+        assert.equal(final.finalized.fallback.failure_class, FAILURE_CLASSES.REPORT_MISSING);
+    }
+});
+
+test("another attempt's scout file or a ledger cannot substitute for a missing scout", () => {
+    const prepared = prepare(makeFixtureDir(), "own-scout-only");
+    const primary = claim(prepared);
+    const state = JSON.parse(fs.readFileSync(prepared.statePath, "utf8"));
+    fs.writeFileSync(state.fallback.scoutPath, JSON.stringify(validReport()));
+    fs.writeFileSync(primary.ledgerPath, JSON.stringify({batch_report: validReport()}));
+    const rejected = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: primary.dispatchToken, ack: validReport(), "duration-ms": "0"});
+    assert.equal(rejected.evaluate.validation.failure_class, FAILURE_CLASSES.REPORT_MISSING);
+    assert.equal(fs.existsSync(primary.reportPath), false);
+    const fallback = claim(prepared, "fallback");
+    const accepted = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "fallback", token: fallback.dispatchToken, "duration-ms": "0"});
+    assert.equal(accepted.finalized.hybrid_final, true);
+    assert.equal(accepted.finalized.final.agent, "context-scout");
+    assert.equal(accepted.finalized.fast_first_pass, false);
+});
+
+test("installation helpers build in an external consumer project and its configured cache", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hybrid consumer project-"));
+    let prepared;
+    try {
+        fs.writeFileSync(path.join(cwd, "AGENTS.md"), "# Repository Guidelines\n");
+        fs.writeFileSync(path.join(cwd, ".env"), "CACHE_PATH='consumer cache'\n");
+        fs.writeFileSync(path.join(cwd, ".gitignore"), "consumer cache/\n");
+        fs.mkdirSync(path.join(cwd, "src"));
+        const git = (args) => {
+            const result = spawnSync("git", args, {cwd, encoding: "utf8"});
+            assert.equal(result.status, 0, result.stderr);
+        };
+        git(["init", "-q", "-b", "consumer-branch"]);
+        git(["add", "."]);
+        git(["-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "fixture"]);
+        const outputDir = path.join(cwd, "consumer cache/arbitrary-output-name");
+        fs.mkdirSync(outputDir, {recursive: true});
+        const files = writeFixtures(outputDir, "targeted", cwd);
+        prepared = prepareHybrid({"prompt-file": files.prompt, manifest: files.manifest, handoff: files.handoff, criteria: files.criteria, "output-dir": outputDir}, path.join(cwd, "src"));
+        const primary = claim(prepared);
+        assert.equal(primary.dispatch.prompt.includes(`Consumer project root: ${cwd}`), true);
+        assert.match(primary.dispatch.prompt, /Consumer branch: consumer-branch/);
+        assert.equal(primary.dispatch.prompt.includes(path.join(ROOT, ".agents/skills/_shared/references/repository-context-scout-playbook.md")), true);
+        assert.equal(primary.dispatch.prompt.includes(primary.scoutPath), true);
+        assert.equal(primary.scoutPath.startsWith(outputDir + path.sep), true);
+        assert.doesNotMatch(primary.dispatch.prompt, /batch-render|<<|node \./);
+        fs.writeFileSync(primary.scoutPath, JSON.stringify(validReport()));
+        const accepted = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: primary.dispatchToken, "duration-ms": "0"});
+        assert.equal(accepted.finalized.hybrid_final, true);
+        assert.equal(fs.existsSync(primary.ledgerPath), true);
+        assert.equal(fs.existsSync(primary.reportPath), true);
+    } finally {
+        if (prepared && JSON.parse(fs.readFileSync(prepared.statePath, "utf8")).phase !== "FINALIZED") {
+            abortHybrid({state: prepared.statePath, "run-id": prepared.runId});
+        }
+        fs.rmSync(cwd, {recursive: true, force: true});
+    }
 });
 
 test("invalid primary requests exactly one isolated fallback", () => {
@@ -1066,3 +1128,203 @@ test("abort after an interrupted primary is idempotent", () => {
     const second = abortHybrid({state: prepared.statePath, "run-id": prepared.runId});
     assert.equal(second.phase, "ABORTED");
 });
+
+function fixtureGit(cwd, args) {
+    const result = spawnSync("git", args, {cwd, encoding: "utf8"});
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+}
+
+function initializeConsumer(cwd, branch, configured = true) {
+    fs.mkdirSync(cwd, {recursive: true});
+    fs.writeFileSync(path.join(cwd, "AGENTS.md"), "# Repository Guidelines\n");
+    fs.writeFileSync(path.join(cwd, ".gitignore"), "var/\ncache-data/\n.agents/\n.worktrees/\n");
+    if (configured) { fs.writeFileSync(path.join(cwd, ".env"), "CACHE_PATH=cache-data\n"); }
+    fixtureGit(cwd, ["init", "-q", "-b", branch]);
+    fixtureGit(cwd, ["add", "."]);
+    fixtureGit(cwd, ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "fixture"]);
+}
+
+function isolatedInstallation(configured = true) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "scout-topologies-"));
+    const installation = path.join(root, "installation-a");
+    initializeConsumer(installation, "installation", configured);
+    fs.cpSync(path.join(ROOT, ".agents/skills/_shared"), path.join(installation, ".agents/skills/_shared"), {recursive: true});
+    const dataDirectories = ["cache-data", "var/agent/cache", "var/agent/task-plan", "var/agent/plan-execute", "var/agent/code-implement"];
+    for (const directory of dataDirectories) {
+        fs.mkdirSync(path.join(installation, directory), {recursive: true});
+        fs.writeFileSync(path.join(installation, directory, "sentinel"), directory);
+    }
+    return {root, installation, dataDirectories, helper: path.join(installation, ".agents/skills/_shared/scripts/context-scout-hybrid-run.mjs")};
+}
+
+function workflowContents({installation, dataDirectories}) {
+    const result = {};
+    const visit = (directory) => {
+        for (const entry of fs.readdirSync(directory, {withFileTypes: true})) {
+            const target = path.join(directory, entry.name);
+            if (entry.isDirectory()) { visit(target); } else {
+                result[path.relative(installation, target)] = fs.readFileSync(target, "utf8");
+            }
+        }
+    };
+    for (const directory of dataDirectories) { visit(path.join(installation, directory)); }
+    return result;
+}
+
+function consumerInputs(cwd, configured = true) {
+    const cache = path.join(cwd, configured ? "cache-data" : "var/agent/cache");
+    const output = path.join(cache, "same-task");
+    fs.mkdirSync(output, {recursive: true});
+    return {output, ...writeFixtures(output, "targeted", cwd)};
+}
+
+function helperCommand(fixture, cwd, command, args) {
+    const result = spawnSync(process.execPath, [fixture.helper, command, ...args], {
+        cwd, encoding: "utf8", env: {...process.env, CACHE_PATH: path.join(fixture.installation, "cache-data")},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+}
+
+for (const topology of ["local", "independent", "worktree"]) {
+    for (const configured of [true, false]) {
+        test(`full scout-file lifecycle in ${topology} with ${configured ? "project" : "default"} cache`, {timeout: 30_000}, () => {
+            const fixture = isolatedInstallation(configured);
+            let prepared;
+            let cwd = fixture.installation;
+            try {
+                if (topology === "independent") {
+                    cwd = path.join(fixture.root, "consumer-b");
+                    initializeConsumer(cwd, "consumer-b", configured);
+                    assert.equal(fs.existsSync(path.join(cwd, ".agents")), false);
+                } else if (topology === "worktree") {
+                    cwd = path.join(fixture.installation, ".worktrees/consumer-b");
+                    fixtureGit(fixture.installation, ["worktree", "add", "-q", "-b", "consumer-b", cwd, "HEAD"]);
+                    assert.equal(fs.statSync(path.join(cwd, ".git")).isFile(), true);
+                    assert.equal(fixtureGit(fixture.installation, ["check-ignore", ".worktrees/consumer-b"]), ".worktrees/consumer-b");
+                }
+                const inputs = consumerInputs(cwd, configured);
+                const beforeA = workflowContents(fixture);
+                const beforeB = getWorktreeFingerprint({cwd});
+                prepared = helperCommand(fixture, cwd, "prepare", ["--prompt-file", inputs.prompt, "--manifest", inputs.manifest,
+                    "--handoff", inputs.handoff, "--criteria", inputs.criteria, "--output-dir", inputs.output, "--title", "same-task"]);
+                const claimed = helperCommand(fixture, cwd, "claim", ["--state", prepared.statePath, "--run-id", prepared.runId, "--attempt", "primary"]);
+                assert.equal(claimed.dispatch.prompt.includes(`Consumer project root: ${cwd}`), true);
+                assert.equal(claimed.dispatch.prompt.includes(path.join(fixture.installation, ".agents/skills/_shared/references/repository-context-scout-playbook.md")), true);
+                assert.equal(claimed.scoutPath.startsWith(inputs.output + path.sep), true);
+                fs.writeFileSync(claimed.scoutPath, JSON.stringify(validReport()));
+                const settled = helperCommand(fixture, cwd, "settle", ["--state", prepared.statePath, "--run-id", prepared.runId,
+                    "--attempt", "primary", "--token", claimed.dispatchToken, "--duration-ms", "0"]);
+                assert.equal(settled.finalized.hybrid_final, true);
+                assert.equal(settled.finalized.final.reportPath, claimed.reportPath);
+                assert.deepEqual(getWorktreeFingerprint({cwd}), beforeB);
+                if (topology !== "local") { assert.deepEqual(workflowContents(fixture), beforeA); }
+                for (const directory of fixture.dataDirectories) {
+                    assert.equal(fs.readFileSync(path.join(fixture.installation, directory, "sentinel"), "utf8"), directory);
+                }
+                assert.equal(fs.existsSync(claimed.ledgerPath), true);
+                assert.equal(fs.existsSync(claimed.reportPath), true);
+            } finally {
+                if (prepared && JSON.parse(fs.readFileSync(prepared.statePath, "utf8")).phase !== "FINALIZED") {
+                    helperCommand(fixture, cwd, "abort", ["--state", prepared.statePath, "--run-id", prepared.runId]);
+                }
+                fs.rmSync(fixture.root, {recursive: true, force: true});
+            }
+        });
+    }
+}
+
+// A controller process stays alive between claim and settlement so the parent
+// controls a real overlap, rather than inferring concurrency from timestamps.
+function concurrentController(fixture, cwd, inputs) {
+    const moduleUrl = new URL(`file://${fixture.helper}`).href;
+    const script = `import fs from "node:fs";
+import {prepareHybrid, claimAttempt, settleAttempt, abortHybrid} from ${JSON.stringify(moduleUrl)};
+const inputs = JSON.parse(process.env.FIXTURE_INPUTS);
+const prepared = prepareHybrid({"prompt-file":inputs.prompt, manifest:inputs.manifest, handoff:inputs.handoff, criteria:inputs.criteria, "output-dir":inputs.output, title:"same-task"});
+const claimed = claimAttempt({state:prepared.statePath,"run-id":prepared.runId,attempt:"primary"});
+process.send({event:"claimed",prepared,claimed});
+process.on("message", () => {
+ try {
+  fs.writeFileSync(claimed.scoutPath, process.env.FIXTURE_REPORT);
+  const result = settleAttempt({state:prepared.statePath,"run-id":prepared.runId,attempt:"primary",token:claimed.dispatchToken,"duration-ms":"0"});
+  process.send({event:"settled",result}, () => process.disconnect());
+ } catch (error) {
+  abortHybrid({state:prepared.statePath,"run-id":prepared.runId});
+  process.send({event:"failed",message:error.message}, () => process.disconnect());
+  process.exitCode=1;
+ }
+});`;
+    const child = spawn(process.execPath, ["--input-type=module", "-e", script], {cwd,
+        env: {...process.env, CACHE_PATH: path.join(fixture.installation, "cache-data"), FIXTURE_INPUTS: JSON.stringify(inputs), FIXTURE_REPORT: JSON.stringify(validReport())},
+        stdio: ["ignore", "ignore", "pipe", "ipc"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    const messages = new Map();
+    const waiters = new Map();
+    child.on("message", (message) => {
+        messages.set(message.event, message);
+        waiters.get(message.event)?.resolve(message);
+    });
+    const exited = new Promise((resolve) => child.on("close", (code, signal) => {
+        for (const [event, waiter] of waiters) {
+            if (!messages.has(event)) { waiter.reject(new Error(`controller exited (${code}, ${signal}): ${stderr}`)); }
+        }
+        resolve({code, signal});
+    }));
+    return {child, exited, wait(event) {
+        if (messages.has(event)) { return Promise.resolve(messages.get(event)); }
+        return new Promise((resolve, reject) => waiters.set(event, {resolve, reject}));
+    }};
+}
+
+for (const interruptFirst of [false, true]) {
+    test(`independent concurrent controllers ${interruptFirst ? "survive interruption of one environment" : "both finalize"}`, {timeout: 30_000}, async () => {
+        const fixture = isolatedInstallation();
+        const processes = [];
+        const claimed = [];
+        const consumers = ["consumer-b", "consumer-c"].map((name) => path.join(fixture.root, name));
+        const beforeA = workflowContents(fixture);
+        try {
+            for (const cwd of consumers) {
+                initializeConsumer(cwd, path.basename(cwd));
+                processes.push(concurrentController(fixture, cwd, consumerInputs(cwd)));
+            }
+            claimed.push(...await Promise.all(processes.map((controller) => controller.wait("claimed"))));
+            assert.notEqual(processes[0].child.pid, processes[1].child.pid);
+            assert.notEqual(claimed[0].prepared.statePath, claimed[1].prepared.statePath);
+            assert.notEqual(claimed[0].claimed.scoutPath, claimed[1].claimed.scoutPath);
+            for (const [index, message] of claimed.entries()) {
+                assert.equal(message.claimed.scoutPath.startsWith(path.join(consumers[index], "cache-data") + path.sep), true);
+            }
+            if (interruptFirst) {
+                processes[0].child.kill("SIGTERM");
+                await processes[0].exited;
+            } else { processes[0].child.send("finish"); }
+            processes[1].child.send("finish");
+            const survivors = interruptFirst ? [processes[1]] : processes;
+            for (const controller of survivors) {
+                const settled = await controller.wait("settled");
+                assert.equal(settled.result.finalized.hybrid_final, true);
+                assert.equal((await controller.exited).code, 0);
+            }
+            if (interruptFirst) {
+                const {prepared} = claimed[0];
+                assert.equal(JSON.parse(fs.readFileSync(prepared.statePath, "utf8")).phase, "PRIMARY_RUNNING");
+                assert.equal(helperCommand(fixture, consumers[0], "abort", ["--state", prepared.statePath, "--run-id", prepared.runId]).phase, "ABORTED");
+            }
+            assert.deepEqual(workflowContents(fixture), beforeA);
+        } finally {
+            for (const controller of processes) { if (controller.child.exitCode === null) { controller.child.kill("SIGTERM"); } }
+            await Promise.all(processes.map((controller) => controller.exited));
+            for (const [index, message] of claimed.entries()) {
+                if (JSON.parse(fs.readFileSync(message.prepared.statePath, "utf8")).phase !== "FINALIZED") {
+                    helperCommand(fixture, consumers[index], "abort", ["--state", message.prepared.statePath, "--run-id", message.prepared.runId]);
+                }
+            }
+            fs.rmSync(fixture.root, {recursive: true, force: true});
+        }
+    });
+}

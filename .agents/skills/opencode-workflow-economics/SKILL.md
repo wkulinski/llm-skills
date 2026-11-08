@@ -4,6 +4,11 @@ description: >-
   Diagnozuje historię sesji OpenCode: wykrywa powtarzalną kosztowną pracę agenta
   głównego, ocenia ekonomię subagentów i fallbacków oraz duplikację pracy.
   Użyj, gdy analizujesz koszty workflow OpenCode. Tylko diagnostyka.
+shared_files:
+  - _shared/scripts/artifact-path.mjs
+  - _shared/scripts/env-load.sh
+  - _shared/scripts/is-main-module.mjs
+  - _shared/scripts/read-purpose.mjs
 ---
 
 # OWE — OpenCode Workflow Economics
@@ -21,7 +26,11 @@ OWE is a **diagnostic skill**. It analyzes existing OpenCode history. It does no
 
 ## Runtime
 
-The bundled scripts are dependency-free `.mjs` files using standard Node-compatible APIs. No build or package installation is required.
+Runtime requires Node.js and Bash, this skill directory, and all files declared
+in `shared_files` (including their local transitive dependencies). The shared
+cache resolver invokes the installation's `env-load.sh` in the consumer project.
+No build, package installation, full catalog checkout or copy of the skills into
+the consumer project is required.
 
 ```bash
 node <skill_dir>/scripts/owe.mjs
@@ -63,7 +72,7 @@ node <skill_dir>/scripts/owe.mjs doctor --server existing --base-url http://127.
 The standard output is one canonical report:
 
 ```text
-$OWC_PATH/ (or the documented default when unset)
+<analysis-dir>/ (default: <CACHE_PATH>/owc)
 └── report.json
 ```
 
@@ -78,7 +87,9 @@ are not migrated; the CLI asks the user to run `owe prepare` again.
 
 Reports are local diagnostic artifacts and may contain user prompts, task prompts, paths,
 queries and assistant responses when enabled in the privacy configuration. By default they
-are written under `$OWC_PATH`, then `$CACHE_PATH/owc`, or `./var/agent/cache/owc`.
+are written under `<CACHE_PATH>/owc`, where `<CACHE_PATH>` is resolved for the
+consumer project through the shared resolver. `OWC_PATH` overrides this default,
+and an explicit `--analysis-dir` takes precedence over both.
 The generated files are disposable and should be removed when their source sessions are no
 longer needed.
 

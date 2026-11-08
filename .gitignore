@@ -25,3 +25,4 @@ default-reviewers.txt
 /var/
 /.owe/
 /.playwright-cli/
+/docs/reports/

@@ -12,6 +12,33 @@ Agent główny odpowiada za rozmowę z użytkownikiem oraz:
 - rozpoczęcie lifecycle kontekstu projektu,
 - weryfikację plików przed edycją.
 
+Wspólna instalacja A określa narzędzia i instrukcje, a katalog pracy projektu B
+określa źródła oraz prywatne dane workflow. Agent główny przekazuje absolutne
+ścieżki wejść i wyjścia B oraz playbooka A. Położenie B wobec katalogu sesji nie
+zastępuje izolacji danych i nie jest samodzielnym powodem blokady.
+
+Przed udostępnieniem scoutowi Codebase Memory agent główny ustala z konfiguracji
+klienta lub handoffu mechanizmu tworzącego środowisko:
+
+- lokalizację własnego magazynu B, niewspółdzielonego z A/C;
+- własność odrębnego runtime/demona B (nie tylko nazwę projektu w bazie);
+- potwierdzenie gotowości konkretnych indeksów i jego źródło, np. zakończone
+  przygotowanie indeksu albo istniejące metadane środowiska.
+
+Wynik wraz z lokalizacją magazynu, własnością runtime i źródłem gotowości zapisz
+w istniejących `constraints` handoffu, bez sekretów. Nie twórz rejestru ani
+obowiązkowego narzędzia zarządzającego. Brak dowodu izolacji lub gotowości oznacza
+jawną informację o pracy plikowej: scout nie odpytuje niepotwierdzonego połączenia.
+Samo `list_projects` nie potwierdza prywatności magazynu ani runtime.
+
+Primary przy potwierdzonym połączeniu wywołuje `list_projects` i wybiera pierwszy
+alfabetycznie po nazwie gotowy projekt zgodny z absolutnym `root_path` i branchem
+B z manifestu. Gotowość wynika z mechanizmu przygotowującego indeks, nie z pola
+`status: ready` w tej odpowiedzi (sprawdzona wersja CMM 0.12.1 go nie zwraca).
+Brak zgodnego gotowego indeksu lub błąd serwera oznacza narzędzia plikowe i
+konkretną przyczynę w ryzykach. Scouci nie indeksują ani nie mutują CMM; każde
+wykorzystane twierdzenie i tak wymaga odczytu źródła w B.
+
 ### `context-refresher`
 
 `context-refresher` jest jedyną delegowaną rolą, która może wykonać pełną
@@ -25,7 +52,8 @@ dokumentacji.
 
 - nie pobierać ani nie interpretować issue/komentarzy GitHub,
 - nie uruchamiać `$context-refresh`,
-- nie edytować plików, nie uruchamiać QA/review, nie commitować i nie diagnozować runtime,
+- nie edytować kodu ani innych danych poza JSON własnej próby; nie uruchamiać
+  QA/review, nie commitować i nie diagnozować runtime,
 - otrzymać znormalizowany brief oraz manifest od agenta głównego,
 - analizować tylko pliki repozytorium potrzebne do zmapowania implementacji.
 
@@ -53,8 +81,8 @@ albo `cross-layer`. Nie ma trybu standalone.
 
 ### Reguły wspólne
 
-- Oba scouty przed rekonesansem czytają wspólny playbook
-  `./.agents/skills/_shared/references/repository-context-scout-playbook.md`;
+- Oba scouty przed rekonesansem czytają wspólny playbook z absolutnej ścieżki
+  instalacji A przekazanej przez dispatch;
   adaptery zachowują lokalnie role, strategię narzędziową i krytyczne zakazy.
 - Nie deleguj scouta do QA, review, commita, runtime diagnostics ani obsługi
   pliku stanu.
@@ -120,8 +148,8 @@ pozostałe evidence scout dobiera sam w stałym budżecie.
 Scout waliduje wejście w tej kolejności:
 
 1. sprawdza obecność pól handoffu,
-2. waliduje osobny plik criteria,
-3. uruchamia `context-manifest.mjs validate` i `verify` na manifeście,
+2. odczytuje osobny plik criteria zwalidowany przez kontroler,
+3. odczytuje manifest zwalidowany i sprawdzony przez kontroler przed delegacją,
 4. sprawdza, czy brief i kryteria są spójne z trybem,
 5. dopiero wtedy wykonuje odczyty repozytorium.
 
@@ -224,7 +252,7 @@ Opcjonalne `read_coverage` opisuje read-set przekazywany rodzicowi:
 {
   "read_coverage": {
     "covered": [
-      {"path": "repo/file", "line_start": 1, "line_end": 2, "locator": "Symbol", "relation": "defines", "purpose": "discovery", "source": "scout", "read_mode": "range"}
+      {"path": "repo/file", "line_start": 1, "line_end": 2, "locator": "Symbol", "relation": "defines", "event": "read", "purpose": "discovery", "source": "scout", "read_mode": "range"}
     ],
     "follow_up": [
       {"path": "repo/other-file", "reason": "konkretny powód punktowego odczytu przez rodzica"}
@@ -274,12 +302,13 @@ się w aktualnym snapshotcie. Nie wolno konstruować ścieżek przez zgadywanie,
 skracanie ani zmianę prefiksu. Niepotwierdzony dowód oznacza `INCOMPLETE`, a
 nie `COMPLETE`.
 
-Mechaniczne składanie raportu, dozwolone ścieżki artefaktów i dokładną składnię
-ledger buildera definiuje wyłącznie
+Zapis JSON scouta i mechaniczne budowanie raportu po stronie kontrolera definiuje
+wyłącznie
 `<skills_root>/_shared/references/context-scout-report-protocol.md`. Scout nie
-składa końcowego JSON ręcznie. Jeśli agent nie zdąży wykonać `render`, helper
-może odzyskać raport z poprawnego ledgeru wskazanego w promptcie; brak końcowego
-renderu nie powinien sam w sobie uruchamiać fallbacku.
+uruchamia powłoki ani buildera. Zapisuje kompletny JSON natywnym narzędziem
+`write` albo `apply_patch`, dostępnym w profilu, do pliku
+własnej próby i zwraca krótkie potwierdzenie bez treści raportu. Kontroler buduje
+i waliduje raport wyłącznie z tego pliku w projekcie konsumenta.
 
 `risks` może zawierać krótkie teksty albo obiekty z `claim` i `evidence`; obiekty
 ryzyka podlegają tym samym regułom dowodowym co `findings`. `omitted` pozostaje
@@ -289,7 +318,7 @@ Każdy dowód musi zawierać ścieżkę repo-relative bez `...` i bez ścieżki
 absolutnej. Agent główny waliduje raport względem `manifest.head` przez:
 
 ```text
-node .agents/skills/_shared/scripts/context-scout-report.mjs validate <report.json> --head <manifest.head> [--criteria <criteria.json>]
+node <skills_root>/_shared/scripts/context-scout-report.mjs validate <report.json> --head <manifest.head> [--criteria <criteria.json>]
 ```
 
 Plik `criteria.json` jest obowiązkowy. Walidator sprawdza referencje

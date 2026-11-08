@@ -10,7 +10,6 @@ import {enrichContextManifest} from "../../../.agents/skills/_shared/scripts/con
 import {FAILURE_CLASSES} from "../../../.agents/skills/_shared/scripts/context-scout-report.mjs";
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../");
-const REPORT_BUILDER = path.join(ROOT, ".agents/skills/_shared/scripts/context-scout-report-builder.mjs");
 const AGENTS_DIR = path.join(ROOT, ".opencode/agents");
 
 function debugAgent(name) {
@@ -28,6 +27,15 @@ function agentNames() {
 
 function hasRule(agent, permission, pattern, action) {
     return agent.permission.some((rule) => rule.permission === permission && rule.pattern === pattern && rule.action === action);
+}
+
+// These checks exercise the resolved ordered rules, not just rule presence.
+function matches(value, pattern) {
+    return new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`).test(value);
+}
+
+function actionFor(agent, permission, resource = "*") {
+    return agent.permission.findLast((rule) => matches(permission, rule.permission) && matches(resource, rule.pattern))?.action;
 }
 
 function writeLifecycleFixtures(dir) {
@@ -77,32 +85,7 @@ function reportFor(status) {
     };
 }
 
-function initializeAndRender(ledgerPath, reportPath, state, criteriaPath, report) {
-    const init = spawnSync(process.execPath, [
-        REPORT_BUILDER,
-        "init",
-        ledgerPath,
-        "--head",
-        state.manifestHead,
-        "--criteria",
-        criteriaPath,
-        "--mode",
-        "targeted",
-    ], {cwd: ROOT, encoding: "utf8"});
-    assert.equal(init.status, 0, init.stderr);
-    const render = spawnSync(process.execPath, [
-        REPORT_BUILDER,
-        "batch-render",
-        ledgerPath,
-        "--status",
-        report.status,
-        "--output",
-        reportPath,
-    ], {cwd: ROOT, encoding: "utf8", input: `${JSON.stringify(report)}\n`});
-    assert.equal(render.status, 0, render.stderr);
-}
-
-test("OpenCode resolves fast scout to CMM-only MCP and restricted Bash", () => {
+test("OpenCode resolves fast scout to read-only CMM and shell-free scout file writes", () => {
     const agent = debugAgent("context-scout-fast");
     assert.match(agent.description, /CMM-first/);
     assert.equal(hasRule(agent, "codebase-memory*", "*", "allow"), true);
@@ -110,9 +93,28 @@ test("OpenCode resolves fast scout to CMM-only MCP and restricted Bash", () => {
         assert.equal(hasRule(agent, permission, "*", "deny"), true);
     }
     assert.equal(hasRule(agent, "bash", "*", "deny"), true);
-    assert.equal(hasRule(agent, "bash", "node ./.agents/skills/_shared/scripts/context-scout-report-builder.mjs *", "allow"), true);
+    assert.equal(actionFor(agent, "bash", "node /installation/_shared/scripts/context-scout-report-builder.mjs init x"), "deny");
+    assert.equal(actionFor(agent, "codebase-memory_search_graph"), "allow");
+    for (const tool of ["index_repository", "delete_project", "manage_adr", "ingest_traces"]) {
+        assert.equal(actionFor(agent, `codebase-memory_${tool}`), "deny");
+    }
+    assert.equal(agent.tools.write === true || agent.tools.apply_patch === true, true);
+    assert.equal(agent.tools.bash, false);
+    assert.equal(actionFor(agent, "edit", "/external/project-b/cache/arbitrary/run-primary.scout.json"), "allow");
+    assert.equal(actionFor(agent, "edit", "/external/project-b/source.mjs"), "deny");
+    assert.equal(actionFor(agent, "edit", "/external/project-b/run-fallback.scout.json"), "deny");
+    assert.equal(actionFor(agent, "external_directory", "/external/installation-a/*"), "allow");
+    assert.equal(actionFor(agent, "read", "/external/installation-a/_shared/references/repository-context-scout-playbook.md"), "allow");
     assert.equal(hasRule(agent, "read", "**/*primary*.report.json", "deny"), true);
     assert.equal(hasRule(agent, "read", "**/*primary*.ledger.json", "deny"), true);
+});
+
+test("OpenCode refresher permits shared installation reads and an external consumer cwd", () => {
+    const agent = debugAgent("context-refresher");
+    assert.equal(actionFor(agent, "external_directory", "/outside/project-b/*"), "allow");
+    assert.equal(actionFor(agent, "read", "/outside/installation-a/context-refresh/SKILL.md"), "allow");
+    assert.equal(actionFor(agent, "bash", "node /outside/installation-a/_shared/scripts/context-manifest.mjs write --output /outside/project-b/cache/context-refresh/context-manifest.json"), "allow");
+    assert.equal(actionFor(agent, "edit", "/outside/project-b/source.mjs"), "deny");
 });
 
 test("OpenCode resolves fallback without CMM and unrelated MCP tools", () => {
@@ -124,6 +126,13 @@ test("OpenCode resolves fallback without CMM and unrelated MCP tools", () => {
     assert.equal(hasRule(agent, "bash", "*", "deny"), true);
     assert.equal(hasRule(agent, "read", "**/*primary*.report.json", "deny"), true);
     assert.equal(hasRule(agent, "read", "**/*primary*.ledger.json", "deny"), true);
+    assert.equal(actionFor(agent, "edit", "/outside/project-b/output/run-fallback.scout.json"), "allow");
+    assert.equal(actionFor(agent, "edit", "/outside/project-b/output/run-primary.scout.json"), "deny");
+    assert.equal(actionFor(agent, "read", "/outside/project-b/output/run-primary.scout.json"), "deny");
+    assert.equal(actionFor(agent, "external_directory", "/outside/project-b/*"), "allow");
+    assert.equal(actionFor(agent, "read", "/outside/installation-a/_shared/references/repository-context-scout-playbook.md"), "allow");
+    assert.equal(agent.tools.write === true || agent.tools.apply_patch === true, true);
+    assert.equal(agent.tools.bash, false);
 });
 
 // Spawns `opencode debug agent` once per project subagent, so its runtime scales
@@ -167,9 +176,8 @@ test("controlled lifecycle preserves INCOMPLETE and BLOCKED reports through one 
         "output-dir": dir,
         title: "controlled-statuses",
     }, ROOT);
-    const state = JSON.parse(fs.readFileSync(prepared.statePath, "utf8"));
     const primary = claimAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary"});
-    initializeAndRender(primary.ledgerPath, primary.reportPath, state, files.criteria, reportFor("INCOMPLETE"));
+    fs.writeFileSync(primary.scoutPath, JSON.stringify(reportFor("INCOMPLETE")));
     const primarySettlement = settleAttempt({
         state: prepared.statePath,
         "run-id": prepared.runId,
@@ -183,7 +191,7 @@ test("controlled lifecycle preserves INCOMPLETE and BLOCKED reports through one 
     assert.equal(primarySettlement.finalized, null);
 
     const fallback = claimAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "fallback"});
-    initializeAndRender(fallback.ledgerPath, fallback.reportPath, state, files.criteria, reportFor("BLOCKED"));
+    fs.writeFileSync(fallback.scoutPath, JSON.stringify(reportFor("BLOCKED")));
     const fallbackSettlement = settleAttempt({
         state: prepared.statePath,
         "run-id": prepared.runId,
@@ -202,7 +210,7 @@ test("controlled lifecycle preserves INCOMPLETE and BLOCKED reports through one 
     assert.equal(final.hybrid_final, false);
 });
 
-test("controlled lifecycle classifies empty stdin as a missing report", () => {
+test("controlled lifecycle classifies an empty scout file as invalid report content", () => {
     const dir = fs.mkdtempSync(path.join(ROOT, "var", "agent", "cache", "context-scout-controlled-empty-report-"));
     const files = writeLifecycleFixtures(dir);
     const prepared = prepareHybrid({
@@ -213,30 +221,8 @@ test("controlled lifecycle classifies empty stdin as a missing report", () => {
         "output-dir": dir,
         title: "controlled-empty-report",
     }, ROOT);
-    const state = JSON.parse(fs.readFileSync(prepared.statePath, "utf8"));
     const primary = claimAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary"});
-    const init = spawnSync(process.execPath, [
-        REPORT_BUILDER,
-        "init",
-        primary.ledgerPath,
-        "--head",
-        state.manifestHead,
-        "--criteria",
-        files.criteria,
-        "--mode",
-        "targeted",
-    ], {cwd: ROOT, encoding: "utf8"});
-    assert.equal(init.status, 0, init.stderr);
-    const empty = spawnSync(process.execPath, [
-        REPORT_BUILDER,
-        "batch-render",
-        primary.ledgerPath,
-        "--status",
-        "INCOMPLETE",
-        "--output",
-        primary.reportPath,
-    ], {cwd: ROOT, encoding: "utf8", input: ""});
-    assert.notEqual(empty.status, 0);
+    fs.writeFileSync(primary.scoutPath, "");
     assert.equal(fs.existsSync(primary.reportPath), false);
 
     const settlement = settleAttempt({
@@ -246,7 +232,7 @@ test("controlled lifecycle classifies empty stdin as a missing report", () => {
         token: primary.dispatchToken,
         "duration-ms": "123",
     });
-    assert.equal(settlement.evaluate.validation.failure_class, FAILURE_CLASSES.REPORT_MISSING);
+    assert.equal(settlement.evaluate.validation.failure_class, FAILURE_CLASSES.REPORT_INVALID);
     assert.equal(settlement.evaluate.next.action, "CLAIM_FALLBACK");
     assert.equal(abortHybrid({state: prepared.statePath, "run-id": prepared.runId}).phase, "ABORTED");
 });

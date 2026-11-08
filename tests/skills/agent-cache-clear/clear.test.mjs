@@ -99,20 +99,32 @@ describe("agent-cache-clear", () => {
 
     it("rejects invalid layouts for durable writes too", () => {
         const cwd = mkdtempSync(path.join(os.tmpdir(), "durable-layout-"));
-        const previous = process.env.CACHE_PATH;
         try {
-            process.env.CACHE_PATH = "var/agent";
+            writeFileSync(path.join(cwd, ".env"), "CACHE_PATH=var/agent\n");
             expect(() => resolvePersistentAgentRoot("task-plan", cwd)).toThrow(/overlaps/);
-            expect(readdirSync(cwd)).toEqual([]);
-            process.env.CACHE_PATH = "cache";
-            mkdirSync(path.join(cwd, "var/agent"), {recursive: true});
-            mkdirSync(path.join(cwd, "target"));
-            symlinkSync(path.join(cwd, "target"), path.join(cwd, "var/agent/task-plan"));
-            expect(() => resolvePersistentAgentRoot("task-plan", cwd)).toThrow(/symlinks/);
-            expect(() => runAgentCacheClear({cwd, cachePath: "cache"})).toThrow(/symlinks/);
-            expect(existsSync(path.join(cwd, "cache"))).toBe(false);
+            expect(readdirSync(cwd)).toEqual([".env"]);
+            const safeRoot = path.join(cwd, "safe-project");
+            mkdirSync(path.join(safeRoot, "var/agent"), {recursive: true});
+            writeFileSync(path.join(safeRoot, ".env"), "CACHE_PATH=cache\n");
+            mkdirSync(path.join(safeRoot, "target"));
+            symlinkSync(path.join(safeRoot, "target"), path.join(safeRoot, "var/agent/task-plan"));
+            expect(() => resolvePersistentAgentRoot("task-plan", safeRoot)).toThrow(/symlinks/);
+            expect(() => runAgentCacheClear({cwd: safeRoot, cachePath: "cache"})).toThrow(/symlinks/);
+            expect(existsSync(path.join(safeRoot, "cache"))).toBe(false);
         } finally {
-            if (typeof previous === "undefined") { delete process.env.CACHE_PATH; } else { process.env.CACHE_PATH = previous; }
+            rmSync(cwd, {recursive: true, force: true});
+        }
+    });
+
+    it("clears the cache configured by the consumer project without an explicit argument", () => {
+        const cwd = mkdtempSync(path.join(os.tmpdir(), "project-clear-"));
+        try {
+            writeFileSync(path.join(cwd, ".env"), "CACHE_PATH=project-cache\n");
+            mkdirSync(path.join(cwd, "project-cache"));
+            writeFileSync(path.join(cwd, "project-cache/disposable"), "remove");
+            expect(runAgentCacheClear({cwd}).stdout).toContain("project-cache (cleared)");
+            expect(readdirSync(path.join(cwd, "project-cache"))).toEqual([]);
+        } finally {
             rmSync(cwd, {recursive: true, force: true});
         }
     });

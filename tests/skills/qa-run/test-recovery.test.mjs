@@ -21,6 +21,7 @@ function fixture() {
     const cache = path.join(root, "var/agent/cache");
     mkdirSync(path.join(root, "bin"), {recursive: true});
     mkdirSync(cache, {recursive: true});
+    writeFileSync(path.join(root, ".env"), "CACHE_PATH=var/agent/cache\n");
     writeFileSync(path.join(root, ".gitignore"), "var/\ntrace.jsonl\nreport.xml\nremaining.txt\nblocked\nlint-blocked\nreport-mode\n");
     writeFileSync(path.join(root, "source.php"), "initial");
     const script = `#!/usr/bin/env node
@@ -56,7 +57,7 @@ fs.writeFileSync('report.xml', '<testsuite><testcase file="' + file + '" name="'
     const session = path.join(cache, "session.json");
     return {root, config, session,
         run(reason = "initial") { return spawnSync(process.execPath, [runner, "--config", "matrix.json", "--session", session, "--rerun-reason", reason], {
-            cwd: root, encoding: "utf8", env: {...process.env, BIN_PATH: path.join(root, "bin"), CACHE_PATH: cache},
+            cwd: root, encoding: "utf8", env: {...process.env, BIN_PATH: path.join(root, "bin")},
         }); },
         trace() { return readFileSync(path.join(root, "trace.jsonl"), "utf8").trim().split("\n").map(JSON.parse); },
         state() { return JSON.parse(readFileSync(session, "utf8")); },

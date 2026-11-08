@@ -14,7 +14,8 @@ Jeśli środowisko udostępnia **Serenę**, traktuj ją jako preferowaną warstw
   - transformacje narzędziowe typu refactor/codemod.
 
 ## 2. Tool Availability Gate
-- Najpierw ustal, czy bieżące środowisko ma **dostępne i działające** narzędzie symboliczne dla języka dotkniętego zadaniem.
+- Najpierw ustal, czy bieżące środowisko ma **dostępne i działające** narzędzie
+  symboliczne dla języka dotkniętego zadaniem i własny kontekst danych projektu B.
 - Jeśli tym narzędziem jest **Serena**, preferuj właśnie Serenę jako domyślną warstwę symboliczną.
 - Jeśli tak:
   - preferuj je do orientacji w kodzie,
@@ -25,13 +26,20 @@ Jeśli środowisko udostępnia **Serenę**, traktuj ją jako preferowaną warstw
   działającej warstwy, nie brand.
 
 ## 2a. Preflight Sereny
-- Jeśli środowisko udostępnia Serenę, wykonaj krótki preflight przed szerokim odczytem kodu:
-  - sprawdź, czy Serena jest dostępna w bieżącej sesji,
-  - aktywuj projekt dla bieżącego repo, jeśli Serena tego wymaga,
-  - potwierdź, że Serena potrafi odczytać symbole dla języka dotkniętego zadaniem.
-- Jeśli którykolwiek krok preflightu Sereny nie powiedzie się:
-  - zgłoś to krótko,
-  - przejdź do fallbacku opisanego w tej polityce zamiast udawać pracę symboliczną.
+- Z konfiguracji klienta albo handoffu mechanizmu tworzącego środowisko potwierdź,
+  że połączenie Sereny ma odrębny stan B, nie jest współdzielonym aktywnym
+  projektem A/C. Samo występowanie B na liście projektów nie dowodzi własności
+  kontekstu. Nie przełączaj połączenia używanego przez inne środowisko.
+- Przed operacjami na kodzie potwierdź absolutny aktywny root B i dostępność
+  symboli dla dotkniętego języka. Połączenie przypisane do B przy starcie MCP
+  jest poprawnym własnym kontekstem; nie wymaga późniejszej aktywacji. Brak
+  `activate_project` na takim połączeniu nie jest powodem fallbacku.
+- Aktywuj projekt wyłącznie na własnym połączeniu B, jeśli to połączenie wymaga
+  inicjalizacji i udostępnia taką operację. Po niej ponownie potwierdź root B.
+- Przy wspólnym lub niepotwierdzonym stanie, innym aktywnym roocie, nieudanej
+  wymaganej inicjalizacji albo niedostępnych symbolach nie używaj Sereny dla B:
+  zgłoś konkretną przyczynę i przejdź do zwykłych narzędzi polityki. Nie zmieniaj
+  instalacji ani konfiguracji aktywnego MCP konsumenta, aby ominąć ten warunek.
 - Nie powtarzaj preflightu Sereny bez potrzeby w każdej iteracji, jeśli aktywny
   projekt i działająca warstwa zostały już potwierdzone w tej samej sesji.
 

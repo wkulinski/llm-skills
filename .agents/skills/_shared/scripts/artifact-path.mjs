@@ -1,5 +1,28 @@
 import {existsSync, lstatSync} from "node:fs";
 import {dirname, isAbsolute, relative, resolve, sep} from "node:path";
+import {spawnSync} from "node:child_process";
+import {fileURLToPath} from "node:url";
+import {isMainModule} from "./is-main-module.mjs";
+
+const ENV_LOADER = fileURLToPath(new URL("./env-load.sh", import.meta.url));
+const projectCachePaths = new Map();
+// Paths are positional arguments, never interpolated into shell source. Only
+// the child loads project env; neither cwd nor env of the caller is mutated.
+// Project env files are sourced as by other env-load.sh callers, without
+// errexit/nounset, so an unrelated undefined reference does not block the cache.
+const CACHE_PATH_SCRIPT = `set +eu
+source "$1" >/dev/null || exit 1
+ensure_repo_env_loaded "$2" >/dev/null || true
+printf '%s' "\${CACHE_PATH:-var/agent/cache}"
+`;
+const MAX_DIAGNOSTIC_LENGTH = 200;
+
+function resolverDiagnostic(result) {
+    if (result.error) { return result.error.code ?? result.error.message; }
+    const lastLine = (result.stderr ?? "").trim().split(/\r?\n/).at(-1)?.trim() ?? "";
+    const detail = result.signal ? `signal ${result.signal}` : `exit ${result.status}`;
+    return lastLine === "" ? detail : `${detail}: ${lastLine.slice(0, MAX_DIAGNOSTIC_LENGTH)}`;
+}
 
 const persistentDirectories = {
     "task-plan": "var/agent/task-plan",
@@ -48,10 +71,28 @@ export function resolveRepositoryRoot(cwd = process.cwd()) {
     }
 }
 
+function configuredCachePath(repositoryRoot) {
+    if (!projectCachePaths.has(repositoryRoot)) {
+        const env = {...process.env};
+        delete env.CACHE_PATH;
+        const result = spawnSync("bash", ["--noprofile", "--norc", "-c", CACHE_PATH_SCRIPT,
+            "artifact-cache-root", ENV_LOADER, repositoryRoot], {
+            cwd: repositoryRoot, env, encoding: "utf8", timeout: 10_000,
+        });
+        if (result.error || result.status !== 0) {
+            const error = new Error(`Cannot resolve project CACHE_PATH through env-load.sh (${resolverDiagnostic(result)})`);
+            error.code = "INVALID_CACHE_PATH";
+            throw error;
+        }
+        projectCachePaths.set(repositoryRoot, result.stdout || "var/agent/cache");
+    }
+    return projectCachePaths.get(repositoryRoot);
+}
+
 // Validate the entire layout before either deletion or a durable write.
-export function assertStorageLayout({cwd = process.cwd(), cachePath = process.env.CACHE_PATH || "var/agent/cache"} = {}) {
-    const repositoryRoot = resolve(cwd);
-    const cacheRoot = resolve(repositoryRoot, cachePath);
+export function assertStorageLayout({cwd = process.cwd(), cachePath} = {}) {
+    const repositoryRoot = resolveRepositoryRoot(cwd);
+    const cacheRoot = resolve(repositoryRoot, cachePath ?? configuredCachePath(repositoryRoot));
     const persistentRoots = Object.fromEntries(Object.entries(persistentDirectories)
         .map(([name, directory]) => [name, resolve(repositoryRoot, directory)]));
     const plansRoot = resolve(repositoryRoot, "docs/plans");
@@ -100,16 +141,12 @@ export function assertPersistentAgentPath(name, filePath, cwd = process.cwd()) {
 }
 
 export function resolveArtifactCacheRoot(cwd = process.cwd()) {
-    const repositoryRoot = resolve(cwd);
-    const configured = process.env.CACHE_PATH || "var/agent/cache";
-    const cacheRoot = resolve(repositoryRoot, configured);
-    const candidate = relative(repositoryRoot, cacheRoot);
-    if (candidate.startsWith("..") || isAbsolute(candidate)) {
-        const error = new Error("CACHE_PATH must resolve under the repository root");
+    try {
+        return assertStorageLayout({cwd}).cacheRoot;
+    } catch (error) {
         error.code = "INVALID_CACHE_PATH";
         throw error;
     }
-    return cacheRoot;
 }
 
 export function allowedArtifactRoots(cwd = process.cwd()) {
@@ -133,4 +170,19 @@ export function assertArtifactPath(filePath, label, cwd = process.cwd()) {
         throw error;
     }
     return resolved;
+}
+
+if (isMainModule(import.meta.url)) {
+    try {
+        if (process.argv[2] === "--help" || process.argv[2] === "-h") {
+            process.stdout.write("Usage: artifact-path.mjs cache-root\nResolve repository-local cache from the consumer project's active env files.\n");
+        } else if (process.argv.length === 3 && process.argv[2] === "cache-root") {
+            process.stdout.write(`${resolveArtifactCacheRoot()}\n`);
+        } else {
+            throw new Error("Usage: artifact-path.mjs cache-root");
+        }
+    } catch (error) {
+        process.stderr.write(`${error.code ?? "INVALID_CACHE_PATH"}: ${error.message}\n`);
+        process.exitCode = 1;
+    }
 }

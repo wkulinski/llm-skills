@@ -13,6 +13,20 @@ repozytorium; ten plik opisuje kontrakt, a nie jego implementację.
 - `skill_dir` = katalog aktywnego `SKILL.md`.
 - `skills_root` = katalog nadrzędny wobec `skill_dir` (w tym repo:
   `.agents/skills`).
+- Instalacja A wynika z aktywnego `SKILL.md` lub lokalizacji uruchamianego
+  modułu, nie z katalogu procesu. Projekt konsumenta B wynika z katalogu procesu
+  (najbliższy root z `.git`, także plikiem worktree), nie z instalacji ani
+  wspólnego katalogu Git worktree. Instrukcje i narzędzia A mogą być wspólne;
+  dane, cache i trwały stan workflow należą do B.
+- `<CACHE_PATH>` to absolutny wynik
+  `node <skills_root>/_shared/scripts/artifact-path.mjs cache-root` uruchomionego
+  w B. Resolver ładuje aktywne pliki env B przez `env-load.sh` z A, bez
+  odziedziczonego `CACHE_PATH`; brak lub pusta wartość oznacza
+  `./var/agent/cache` w B. Cache nie jest kluczem `docs_map`.
+- Pozostałe ścieżki `docs_map` czytaj z `AGENTS.md` B i rozwiązuj względem B.
+  Gdy B różni się od katalogu sesji, używaj jego absolutnego roota w narzędziach
+  odczytu/wyszukiwania i jako katalogu pracy helperów z A. Wspólne instrukcje
+  nie oznaczają wspólnego stanu workflow.
 - W treści `SKILL.md` używaj wyłącznie jawnej notacji:
   - `./...` dla ścieżek repo-relative (`./` = root repo),
   - `<skill_dir>/...` dla plików aktywnego skilla,
@@ -64,7 +78,10 @@ a nie do pojedynczego skilla.
   `report-gap`). Sama deklaracja nie tworzy obowiązku odczytu ani nie zastępuje
   guardu `read-before-write`.
 - Każdy wpis musi wskazywać istniejący, regularny plik pod `skills_root`, a
-  lokalne zależności deklarowanych plików `.mjs` również muszą być zadeklarowane.
+  lokalne zależności deklarowanych plików `.mjs` również muszą być zadeklarowane,
+  także wywoływane skrypty Bash (np. `env-load.sh` resolvera cache). Dostawa
+  obejmuje skill i pełne zadeklarowane domknięcie zależności, nie zakłada pełnego
+  checkoutu katalogu ani kopiowania instalacji do projektu konsumenta.
 - Semantyka obowiązuje niezależnie od tego, czy harness automatycznie doczytuje
   `shared_files`; skill nie może zakładać takiego doczytania ani maskować braku
   odczytu samą obecnością wpisu na liście.

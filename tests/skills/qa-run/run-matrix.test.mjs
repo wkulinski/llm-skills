@@ -388,10 +388,11 @@ describe("run-matrix output contract", () => {
         expect(spawnSync("git", ["init", "--quiet", tempRoot]).status).toBe(0);
         mkdirSync(path.dirname(path.join(tempRoot, file)), {recursive: true});
         writeFileSync(path.join(tempRoot, file), "# Synthetic instruction\n");
+        writeFileSync(path.join(tempRoot, ".env"), "CACHE_PATH=cache\n");
+        writeFileSync(path.join(tempRoot, ".gitignore"), "cache/\n");
         const result = spawnSync("node", [runnerPath, "--config", configPath, "--rerun-reason", "initial"], {
             cwd: tempRoot,
             encoding: "utf8",
-            env: {...process.env, CACHE_PATH: path.join(tempRoot, "cache")},
         });
         expect(result.status, result.stderr).toBe(0);
         const summary = readSummary(result, tempRoot);
@@ -1017,7 +1018,9 @@ function writeMatrixConfig(config, existingTempRoot = null) {
     return {configPath, tempRoot};
 }
 
-function runMatrixConfig(configPath, tempRoot, args) {
+function runMatrixConfig(configPath, _tempRoot, args) {
+    // Runs against repoRoot intentionally (snapshot/delta fixtures live there).
+    // Its cache comes from the repo env, not an external temporary directory.
     return spawnSync("node", [
         runnerPath,
         "--config",
@@ -1026,10 +1029,6 @@ function runMatrixConfig(configPath, tempRoot, args) {
     ], {
         cwd: repoRoot,
         encoding: "utf-8",
-        env: {
-            ...process.env,
-            CACHE_PATH: path.join(tempRoot, "cache"),
-        },
     });
 }
 

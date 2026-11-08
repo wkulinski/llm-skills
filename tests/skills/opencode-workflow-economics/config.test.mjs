@@ -23,6 +23,20 @@ afterEach(async () => {
 });
 
 describe("OWE configuration", () => {
+    it("uses the consumer cache env for default report navigation despite inherited CACHE_PATH", async () => {
+        const root = mkdtempSync(path.join(os.tmpdir(), "owe-project-cache-"));
+        temporaryRoots.push(root);
+        await writeFile(path.join(root, ".env"), "CACHE_PATH='custom-cache'\n", "utf8");
+        const env = {...process.env, CACHE_PATH: "/another-project/cache"};
+        delete env.OWC_PATH;
+        let error;
+        try {
+            await execFileAsync(process.execPath, [CLI, "brief", "--directory", root], {encoding: "utf8", env});
+        } catch (caught) { error = caught; }
+        expect(error?.stderr).toContain(path.join(root, "custom-cache/owc/report.json"));
+        expect(error?.stderr).not.toContain("/another-project/cache");
+    });
+
     it("keeps only user-facing fields in the config template", async () => {
         const template = JSON.parse(await readFile(TEMPLATE, "utf8"));
 

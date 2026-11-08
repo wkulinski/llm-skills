@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 import {existsSync, mkdirSync, readdirSync, rmSync} from "node:fs";
-import {join} from "node:path";
+import {join, relative} from "node:path";
 
 import {assertStorageLayout, resolveRepositoryRoot} from "../../_shared/scripts/artifact-path.mjs";
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 
-export function resolveCacheRoot(cachePath = process.env.CACHE_PATH || "var/agent/cache", cwd = resolveRepositoryRoot()) {
-    const normalized = String(cachePath).replace(/\/+$/, "") || "/";
+export function resolveCacheRoot(cachePath, cwd = resolveRepositoryRoot()) {
+    const {cacheRoot, repositoryRoot} = assertStorageLayout({cwd, cachePath});
+    const normalized = String(cachePath ?? relative(repositoryRoot, cacheRoot)).replace(/\/+$/, "") || "/";
     return {
         display: normalized,
-        absolute: assertStorageLayout({cwd, cachePath}).cacheRoot,
+        absolute: cacheRoot,
     };
 }
 

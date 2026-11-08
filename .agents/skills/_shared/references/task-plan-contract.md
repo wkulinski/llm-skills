@@ -643,12 +643,12 @@ Task-plan udostępnia cienką fasadę `publish.mjs`; jedyna implementacja jest w
 uruchamiany z root repo (zastąp `<plan-id>` ID istniejącego kanonicznego planu):
 
 ```bash
-node .agents/skills/task-plan/scripts/publish.mjs bind --path docs/plans/<plan-id>.md --issue https://github.com/owner/repo/issues/123
-node .agents/skills/task-plan/scripts/publish.mjs assess --path docs/plans/<plan-id>.md --input - <<'JSON'
+node <skills_root>/task-plan/scripts/publish.mjs bind --path docs/plans/<plan-id>.md --issue https://github.com/owner/repo/issues/123
+node <skills_root>/task-plan/scripts/publish.mjs assess --path docs/plans/<plan-id>.md --input - <<'JSON'
 {"confirm_current_inputs":true,"sources":[],"summaries":[],"replacements":[],"materials":[]}
 JSON
-node .agents/skills/task-plan/scripts/publish.mjs check --path docs/plans/<plan-id>.md
-node .agents/skills/task-plan/scripts/publish.mjs publish --path docs/plans/<plan-id>.md
+node <skills_root>/task-plan/scripts/publish.mjs check --path docs/plans/<plan-id>.md
+node <skills_root>/task-plan/scripts/publish.mjs publish --path docs/plans/<plan-id>.md
 ```
 
 Wszystkie operacje przyjmują opcjonalne `--root <repo>`; `--input -` to JSON na

@@ -1,4 +1,5 @@
 import path from "node:path";
+import {resolveArtifactCacheRoot} from "../../../../_shared/scripts/artifact-path.mjs";
 
 export function resolveRepoPath(repoRoot, maybeAbsPath) {
     return path.isAbsolute(maybeAbsPath)
@@ -18,10 +19,7 @@ export function toRepoRelativePath(repoRoot, absPath) {
 }
 
 export function getCacheRoot(repoRoot) {
-    const rawCachePath = stripWrappingQuotes(process.env.CACHE_PATH ?? "var/agent/cache");
-    return path.isAbsolute(rawCachePath)
-        ? rawCachePath
-        : path.join(repoRoot, rawCachePath);
+    return resolveArtifactCacheRoot(repoRoot);
 }
 
 export function stripWrappingQuotes(value) {

@@ -84,7 +84,7 @@ describe("OpenCode agent configuration", () => {
         const permissions = configBlock(frontmatter(`.opencode/agents/${name}.md`), "permission");
         const rules = permissions.split(/\r?\n/).map(line => line.trim());
 
-        for (const permission of ["edit", "task", "skill", "todowrite", "question", "webfetch"]) {
+        for (const permission of ["bash", "task", "skill", "todowrite", "question", "webfetch"]) {
             expect(rules, name).toContain(`${permission}: deny`);
         }
         for (const permission of ["github_*", "context7_*", "mate_*", "serena*"]) {
@@ -92,16 +92,61 @@ describe("OpenCode agent configuration", () => {
         }
         expect(rules, name).toContain(`"codebase-memory*": ${cmmAction}`);
 
-        for (const permission of ["bash", "external_directory"]) {
-            const block = configBlock(permissions, permission).split(/\r?\n/).map(line => line.trim());
-            expect(block, `${name}: ${permission}`).toContain('"*": deny');
-        }
+        expect(rules, name).toContain("external_directory: allow");
+        const edits = configBlock(permissions, "edit").split(/\r?\n/).map(line => line.trim());
+        expect(edits, name).toContain('"*": deny');
+        expect(edits, name).toContain(`"*-${name === "context-scout-fast" ? "primary" : "fallback"}.scout.json": allow`);
         const reads = configBlock(permissions, "read").split(/\r?\n/).map(line => line.trim());
         for (const artifact of ["report", "ledger"]) {
             expect(reads, name).toContain(`"**/*primary*.${artifact}.json": deny`);
         }
-        expect(configBlock(permissions, "bash"), name)
-            .toContain('"node ./.agents/skills/_shared/scripts/context-scout-report-builder.mjs *": allow');
+        expect(configBlock(permissions, "bash"), name).toBe("");
+        if (name === "context-scout") {
+            expect(reads).toContain('"**/*-primary.scout.json": deny');
+        }
+    });
+
+    it("places read-only CMM mutation denials after the primary server allowance", () => {
+        const permissions = frontmatter(".opencode/agents/context-scout-fast.md");
+        const allowAt = permissions.indexOf('"codebase-memory*": allow');
+        for (const tool of ["index_repository", "delete_project", "manage_adr", "ingest_traces"]) {
+            expect(permissions.indexOf(`"codebase-memory_${tool}": deny`), tool).toBeGreaterThan(allowAt);
+        }
+    });
+
+    it("keeps scout finalization shell-free and uses installation paths from dispatch", () => {
+        for (const name of ["context-scout-fast", "context-scout"]) {
+            const source = read(`.opencode/agents/${name}.md`);
+            expect(source).toContain("absolutnej ścieżki");
+            expect(source).toContain("scoutPath");
+            expect(source).toContain("przez `write`");
+            expect(source).toContain("`apply_patch`");
+            expect(source).toContain('"scout_path"');
+            expect(source).not.toMatch(/batch-render|add-evidence|zainicjalizuj ledger|node \.\/?\.agents/);
+            expect(source).not.toContain('"report_path"');
+        }
+        const playbook = read(".agents/skills/_shared/references/repository-context-scout-playbook.md");
+        const protocol = read(".agents/skills/_shared/references/context-scout-report-protocol.md").split("## Controller:")[0];
+        for (const source of [playbook, protocol]) {
+            expect(source).toContain("write");
+            expect(source).not.toMatch(/^\s*node |outside the repository|<<'REPORT_JSON'/m);
+        }
+    });
+
+    it("requires private CMM data/runtime and separately confirmed index readiness", () => {
+        const source = read(".opencode/agents/context-scout-fast.md");
+        for (const term of ["constraints", "odrębnego", "runtime", "gotowość", "nie odpytuj", "list_projects", "root_path", "alfabetycznie", "0.12.1"]) {
+            expect(source, term).toContain(term);
+        }
+        expect(source).not.toMatch(/wykonaj dokładnie jedno.*index_repository/);
+    });
+
+    it("keeps refresher helpers installation-relative and permits external project access", () => {
+        const source = read(".opencode/agents/context-refresher.md");
+        expect(frontmatter(".opencode/agents/context-refresher.md")).toContain("external_directory: allow");
+        expect(source).toContain("node <skills_root>/_shared/scripts/artifact-path.mjs cache-root");
+        expect(source).toContain("node <skills_root>/_shared/scripts/context-manifest.mjs write --output <CACHE_PATH>/context-refresh/context-manifest.json");
+        expect(source).not.toMatch(/node \.agents|\$CACHE_PATH/);
     });
 
     it("configures scout roles with a model and reasoning outside adapter frontmatter", () => {
