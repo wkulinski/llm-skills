@@ -163,6 +163,13 @@ do treści objętej review.
 Oczekiwany rezultat, symptom i sugerowane rozwiązanie opisuj zgodnie z wynikiem
 oceny z intake. Przykład nie staje się pełnym wymaganiem bez potwierdzenia.
 
+`Observed symptoms` opisuje objaw w brzmieniu zgłoszenia: co zgłaszający zrobił
+i co zobaczył. Techniczna interpretacja, np. klucz błędu albo kod odpowiedzi,
+może go uzupełniać, ale nie zastępuje opisu zgłaszającego. W planie naprawczym
+`Claims verified in evidence` przedstawia drogę od zgłoszonej czynności do
+potwierdzonej przyczyny, a `Claims corrected or still unverified` wskazuje, której
+części tej drogi nie potwierdzono.
+
 Dla punktów dotyczących interakcji użytkownika `Requested outcome` opisuje
 potrzebę użytkownika, a `Suggested diagnosis or solution` proponowaną
 interakcję; hipotezy o celu użytkownika trafiają do
@@ -404,8 +411,11 @@ Przed wpisaniem do `Scope` operacji „dodać”, „zmienić”, „zaimplement
 równoważnej sprawdź punktowo obecnego właściciela mechanizmu. Proponowana zmiana
 pozostaje w `Scope` tylko wtedy, gdy evidence potwierdza brak albo konkretną lukę.
 Jeżeli mechanizm już realizuje wymagane zachowanie, usuń zmianę lub przeformułuj
-ją na weryfikację i szukaj rzeczywistej przyczyny symptomu. Jeżeli nie da się tego
-rozstrzygnąć, zastosuj test wpływu discovery debt opisany w critical review.
+ją na weryfikację i szukaj rzeczywistej przyczyny symptomu. Mechanizm realizuje
+wymagane zachowanie dopiero wtedy, gdy usuwa objaw w brzmieniu zgłoszenia, a
+dowody planu nie pokazują stanu, który zgłaszający uznał za błędny. Jeżeli nie da
+się tego rozstrzygnąć, zastosuj test wpływu discovery debt opisany w critical
+review.
 
 ### Dobór profilu wykonania
 
@@ -535,6 +545,11 @@ których WP nie zawiera. Wiersz może być kontynuowany wcięciem. Streszczenie
 należy do treści objętej review: jego zmiana, jak każda zmiana poza
 `## Execution`, wycofuje potwierdzenie `ready`. Po zmianie WP zaktualizuj jego
 streszczenie w tej samej rewizji.
+
+Streszczenie WP, który naprawia zgłoszony błąd, nazywa ten błąd tak, jak widzi go
+zgłaszający, i krótko wyjaśnia jego przyczynę, jeżeli bez niej czytelnik nie
+zrozumie, dlaczego zmiana usuwa problem. Przykład: „Dodanie kilku pól naraz
+kończyło się błędem, bo klawisz Backspace usuwał pole używane przez sprawy”.
 
 Odbiorcą streszczenia jest człowiek, który zna cel projektu, ale nie zna kodu
 ani rozmowy, z której powstał plan. Ma on z samego streszczenia zrozumieć, co

@@ -27,21 +27,32 @@ Jeśli środowisko udostępnia **Serenę**, traktuj ją jako preferowaną warstw
 
 ## 2a. Preflight Sereny
 - Z konfiguracji klienta albo handoffu mechanizmu tworzącego środowisko potwierdź,
-  że połączenie Sereny ma odrębny stan B, nie jest współdzielonym aktywnym
-  projektem A/C. Samo występowanie B na liście projektów nie dowodzi własności
-  kontekstu. Nie przełączaj połączenia używanego przez inne środowisko.
-- Przed operacjami na kodzie potwierdź absolutny aktywny root B i dostępność
-  symboli dla dotkniętego języka. Połączenie przypisane do B przy starcie MCP
-  jest poprawnym własnym kontekstem; nie wymaga późniejszej aktywacji. Brak
-  `activate_project` na takim połączeniu nie jest powodem fallbacku.
-- Aktywuj projekt wyłącznie na własnym połączeniu B, jeśli to połączenie wymaga
-  inicjalizacji i udostępnia taką operację. Po niej ponownie potwierdź root B.
-- Przy wspólnym lub niepotwierdzonym stanie, innym aktywnym roocie, nieudanej
-  wymaganej inicjalizacji albo niedostępnych symbolach nie używaj Sereny dla B:
-  zgłoś konkretną przyczynę i przejdź do zwykłych narzędzi polityki. Nie zmieniaj
-  instalacji ani konfiguracji aktywnego MCP konsumenta, aby ominąć ten warunek.
-- Nie powtarzaj preflightu Sereny bez potrzeby w każdej iteracji, jeśli aktywny
-  projekt i działająca warstwa zostały już potwierdzone w tej samej sesji.
+  że backend Sereny wykonujący operacje ma odrębny stan B, nie jest
+  współdzielonym aktywnym projektem A/C. Samo występowanie B na liście projektów
+  nie dowodzi własności kontekstu. Nie przełączaj backendu używanego przez inne
+  środowisko.
+- Dostęp do własnego backendu B może odbywać się przez bezpośrednie MCP
+  przypisane do B, router MCP wybierający backend B osobno dla każdego wywołania
+  albo CLI uruchamiane z katalogiem roboczym B. Każdy wariant wymaga potwierdzenia
+  odrębnego stanu B. Przy routerze i CLI katalog startu klienta ani zachowanie
+  tej samej rozmowy nie wyznaczają projektu operacji.
+- Jeżeli schemat narzędzia udostępnia parametr katalogu projektu, np.
+  `project_root`, przekazuj dokładny absolutny root B przy każdym wywołaniu,
+  także po wykonanym preflighcie. Nie dodawaj parametru nieobecnego w schemacie.
+  Przy CLI ustaw katalog roboczy B zgodnie z kontraktem narzędzi konsumenta.
+- Przed operacjami na kodzie potwierdź absolutny root docelowego backendu B
+  i dostępność symboli dla dotkniętego języka. Backend już przypisany do B
+  nie wymaga późniejszej aktywacji; brak `activate_project` w takim dostępie
+  nie jest powodem fallbacku. Router nie musi mieć globalnego aktywnego projektu.
+- Aktywuj projekt wyłącznie na własnym backendzie B, jeśli wymaga inicjalizacji
+  i udostępnia taką operację. Po niej ponownie potwierdź root B.
+- Przy wspólnym lub niepotwierdzonym stanie, innym roocie docelowego backendu,
+  nieudanej wymaganej inicjalizacji albo niedostępnych symbolach nie używaj Sereny
+  dla B: zgłoś konkretną przyczynę i przejdź do zwykłych narzędzi polityki.
+  Nie zmieniaj instalacji ani konfiguracji aktywnych narzędzi konsumenta,
+  aby ominąć ten warunek.
+- Nie powtarzaj preflightu Sereny bez potrzeby w każdej iteracji, jeśli ten sam
+  backend B i działająca warstwa zostały już potwierdzone w tej samej sesji.
 
 ## 3. Bramka kosztowa
 - Nie uruchamiaj warstwy symbolicznej dla banalnej zmiany tekstowej w pliku już wskazanym przez użytkownika, jeśli zwykły patch jest wyraźnie tańszy.
