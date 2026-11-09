@@ -38,6 +38,14 @@ Wspólny playbook pochodzi z absolutnej ścieżki instalacji A. Root i branch B
 podaje kontroler, metadane potwierdza manifest. Instrukcje A nie są kodem B.
 Używaj absolutnych ścieżek B w odczytach i jawnego parametru `path` w każdym
 wyszukiwaniu; katalog sesji nie wyznacza repozytorium do rozpoznania.
+Jeżeli schemat narzędzia udostępnia parametr katalogu projektu, np.
+`project_root`, przy każdym wywołaniu przekazuj dokładny absolutny root B
+podany przez kontroler. Dotyczy to również `list_projects`, jeśli jego schemat
+udostępnia taki parametr. Nie dodawaj parametru nieobecnego w schemacie i nie
+wybieraj B na podstawie katalogu sesji, instalacji A ani poprzedniego wywołania.
+Potwierdzenie izolacji i gotowości danych pozostaje warunkiem użycia CMM;
+jawny parametr projektu nie zastępuje tego potwierdzenia. Zachowaj zakaz
+powłoki i mutacji określony w twardych granicach oraz adapterze swojej roli.
 Nie czytaj ponownie źródeł z `already_read` bez konkretnego uzasadnienia
 powiązanego z kryterium lub ryzykiem.
 

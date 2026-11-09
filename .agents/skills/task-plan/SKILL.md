@@ -216,6 +216,24 @@ Najpierw rozstrzygnij ją przez evidence gate w fazie planowania. Brak możliweg
 do uzyskania evidence pozostawia plan `blocked`; nie przenoś wyboru naprawy do
 wykonawcy ani do `Discovery required`.
 
+Przyczynę uznaj za potwierdzoną dopiero wtedy, gdy wyjaśnia objaw w brzmieniu
+zgłoszenia: od czynności lub warunków opisanych przez zgłaszającego, przez
+mechanizm w kodzie, do obserwowanego komunikatu, stanu albo wyglądu. Odtworzenie
+tego samego komunikatu inną drogą potwierdza mechanizm, ale nie scenariusz
+zgłoszenia. Związek między nimi zapisz jako fakt z dowodem albo jako hipotezę w
+`Claims corrected or still unverified`.
+
+Zanim zapiszesz wniosek, że błędu nie da się odtworzyć albo że istniejący
+mechanizm już spełnia wymaganie:
+
+- prześledź w kodzie warunki, w których powstaje zgłoszony komunikat, stan lub
+  wygląd, i sprawdź te warunki, a nie tylko powtórzone kroki zgłaszającego;
+- porównaj własne dowody (zrzuty, pomiary, odpowiedzi) z dowodami dołączonymi
+  do zgłoszenia; jeżeli własny dowód pokazuje ten sam obraz, który zgłaszający
+  uznał za błędny, wniosek o poprawnym działaniu jest nieuprawniony;
+- nie zastępuj objawu własnym kryterium poprawności; jeżeli źródło nie określa,
+  na czym polega błąd, zadaj pytanie `[open]`.
+
 Traktuj jako zachowanie publiczne także wartości domyślne, okresy ważności,
 retry, timeouty, statusy i przejścia oraz treści komunikatów będące częścią
 zgłoszenia. Jeżeli ich wartość może zmienić obserwowalny rezultat, potwierdź ją
@@ -342,8 +360,9 @@ review: popraw plan, zbierz evidence albo oznacz go jako `blocked`.
 | --- | --- | --- |
 | **Kierunek względem źródła:** Czy plan realizuje rzeczywisty rezultat źródła zamiast bezkrytycznie wdrażać jego sugerowaną diagnozę lub rozwiązanie? | Kontynuuj review. | Skoryguj kierunek. Jeżeli rezultat źródła pozostaje niejednoznaczny, utwórz pytanie `[open]`. |
 | **Rezultat dla użytkownika:** Czy rozjazdy, niespójności i zmiany warunków z inwentarza interakcji są rozstrzygnięte pytaniem, uwagą produktową albo checkiem zgodnie z `<skills_root>/_shared/references/user-facing-behavior-assessment.md`? | Kontynuuj review. | Sklasyfikuj każdy nierozstrzygnięty wynik według referencji. Pytanie blokujące zapisz jako `[open]` z opcjami: utrzymać, przeformułować albo wykluczyć punkt; nie zmieniaj punktu samodzielnie. Uwagi produktowe zapisz jako `N<number> [note]` w `Decisions and open questions`. |
+| **Objaw a przyczyna:** Czy dla każdego zgłoszonego błędu plan wyjaśnia drogę od czynności lub warunków opisanych przez zgłaszającego do obserwowanego objawu? Czy każdy wniosek „nie da się odtworzyć” albo „istniejący mechanizm już działa” opiera się na prześledzeniu warunków powstania objawu w kodzie i porównaniu własnych dowodów z dowodami zgłoszenia? | Kontynuuj review. | Uzupełnij brakujące ogniwo dowodem albo zapisz je jako hipotezę. Wycofaj wniosek, którego nie wspierają warunki z kodu albo porównanie z dowodami zgłoszenia. Jeżeli nie wiadomo, na czym polega zgłoszony błąd, utwórz pytanie `[open]`. |
 | **Pokrycie źródła:** Czy wszystkie punkty źródła są zrealizowane albo jawnie wyłączone? <br> **Przypisanie:** Czy każdy punkt źródła został przypisany albo wykluczony po odpowiedzi użytkownika? | Kontynuuj review. | Przypisz punkt źródła do WP. Wykluczenie albo materialne przeformułowanie punktu wymaga pokazania evidence i pytania użytkownika, czy punkt utrzymać, przeformułować czy wykluczyć. |
-| **Wsparcie evidence:** Czy potwierdzone dowody rzeczywiście wspierają proponowane zmiany? <br> **Potrzeba zmiany:** Czy potrzeba każdej proponowanej zmiany jest potwierdzona evidence? | Kontynuuj review. | Wykonaj punktowy odczyt właściciela mechanizmu albo innego źródła brakującego dowodu. Jeśli mechanizmu albo wymaganego zachowania brakuje, zachowaj zmianę i dopisz konkretne evidence. Jeśli mechanizm już istnieje, usuń zmianę albo przeformułuj ją na weryfikację; nie dodawaj równoległej odpowiedzialności. Jeśli niewiadoma nadal może zmienić plan, zastosuj wiersz `Discovery required`. |
+| **Wsparcie evidence:** Czy potwierdzone dowody rzeczywiście wspierają proponowane zmiany? <br> **Potrzeba zmiany:** Czy potrzeba każdej proponowanej zmiany jest potwierdzona evidence? | Kontynuuj review. | Wykonaj punktowy odczyt właściciela mechanizmu albo innego źródła brakującego dowodu. Jeśli mechanizmu albo wymaganego zachowania brakuje, zachowaj zmianę i dopisz konkretne evidence. Jeśli mechanizm już istnieje i usuwa objaw w brzmieniu zgłoszenia, co potwierdza wiersz `Objaw a przyczyna`, usuń zmianę albo przeformułuj ją na weryfikację; nie dodawaj równoległej odpowiedzialności. Jeśli mechanizm istnieje, ale objaw pozostaje, szukaj rzeczywistej przyczyny. Jeśli niewiadoma nadal może zmienić plan, zastosuj wiersz `Discovery required`. |
 | **Istniejący mechanizm:** Czy plan używa istniejących wzorców zamiast równoległego rozwiązania? <br> **Brak duplikacji:** Czy żaden WP nie dubluje odpowiedzialności, stanu, algorytmu ani integracji innego WP? <br> **Spójność WP:** Czy ownership, kolejność i założenia są spójne między wszystkimi WP? | Kontynuuj review. | Zastosuj istniejący mechanizm albo skoryguj ownership, granice i kolejność WP. Scal lub rozdziel odpowiedzialności tylko wtedy, gdy plan po zmianie nadal pokrywa wynik źródła. |
 | **Minimalność:** Czy mniejsza zmiana osiągnęłaby ten sam rezultat? | Zastąp kierunek mniejszą zmianą i sprawdź ponownie pokrycie źródła oraz kryteria akceptacji. Jeżeli mniejsza zmiana zmienia lub usuwa punkt źródła, zastosuj wiersz `Pokrycie źródła`. | Kontynuuj review. |
 | **Weryfikacja:** Czy każde kryterium akceptacji ma konkretny test albo check? | Kontynuuj review. | Dopisz konkretny test albo check dla właściciela zmienianego zachowania. Jeśli właściciel lub właściwy poziom testu nie jest potwierdzony, wykonaj najpierw punktowy odczyt testów. |
@@ -384,6 +403,11 @@ Read-only review ma sprawdzić również język, format i samodzielną wykonalno
 każdego WP według wymagań powyżej. Poprawna walidacja struktury nie wystarcza,
 jeśli opis nadal wymaga od czytelnika odgadywania intencji albo wyboru
 nierozstrzygniętej naprawy.
+
+Autor planu i reviewer to ten sam agent, więc review traktuje diagnozę planu jako
+twierdzenie do sprawdzenia. Porównuje plan z surowym materiałem źródła, w tym z
+dołączonymi zrzutami, logami i komentarzami, a nie tylko z jego streszczeniem w
+`Source assessment`.
 
 Review planu jest odrębną fazą read-only bieżącego agenta, nie osobnym
 wykonawcą. `$code-review` nie zmienia Markdowna, nie tworzy pytań, nie ustawia

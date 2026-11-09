@@ -15,6 +15,11 @@ decisions, repository evidence, and the plan contract owned by `$task-plan`
 Do not treat `candidate paths`, `discovery debt`, or a plan's suggested diagnosis
 as confirmed facts without supporting evidence.
 
+When the plan's author is also its reviewer, its own diagnosis is a claim, not
+context. Read the raw source material, including attached screenshots, logs, and
+comments, and compare the plan with it rather than with the plan's summary of it in
+`Source assessment`.
+
 A plan verdict is decided by this review, not inherited from a plan as owner, from
 an auxiliary report, or from the plan's own structure. Report honest coverage; if
 relevant evidence is unavailable, say so instead of lowering the bar for the
@@ -36,6 +41,7 @@ contract (`<skills_root>/_shared/references/task-plan-contract.md`, procedure ow
 `<skills_root>/task-plan/SKILL.md`) without editing it:
 
 - **sense before consistency:** for every planned change (each edited path and each `Scope` action) and every verification command, answer two questions separately: what requires it (source sentence, user decision, or acceptance criterion), and what concrete outcome is lost if it is removed. A source mapping proves only that the plan cites a point; a source requirement does not prove the action makes sense. No requirement means unrequested scope, at least MAJOR, including any edit to the plan's own source material, which stays read-only unless explicitly requested. Nothing lost on removal is a finding when the element traces only to the source's `Suggested diagnosis or solution`, an unclassified source sentence, or the planner's own inference: MAJOR for an edit or `Scope` action, actionable MINOR for a check. When it traces to `Requested outcome`, `Explicit constraints`, or a user decision (`D<n>`), the owner cannot drop it alone: raise an approval-affecting QUESTION that challenges the source instead of planning its execution. Once the user confirms such an element after the challenge, record it as `accepted` and do not raise it again. A check that confirms no acceptance criterion or named risk is an actionable MINOR: remove it rather than fix it;
+- **symptom traceability:** for every source point that reports a defect, the plan explains how its confirmed cause produces the symptom as the reporter described it, from the reporter's action or conditions to the observed message, state, or appearance. Reproducing the same message by a different path confirms a mechanism, not the reported scenario; the missing link must be evidenced or recorded as an unverified hypothesis. A conclusion that a defect cannot be reproduced, or that an existing mechanism already satisfies the requirement, needs both a trace in code of the conditions that produce the reported symptom and a comparison of the plan's evidence with the reporter's evidence; plan evidence showing the same state the reporter rejected contradicts the conclusion. A plan that replaces the reported symptom with its own success criterion, or whose WP addresses a different symptom without that link, has at least a MAJOR finding. When the source does not say what exactly is wrong, raise an approval-affecting QUESTION instead;
 - `Source and objective` states the requested outcome, and `Source assessment` separates the actual requested outcome, symptoms, constraints, and verified versus unverified claims;
 - every source point is mapped to a WP or has a justified `excluded` decision;
 - `Scope`, ownership, boundaries, dependencies, and WP order are consistent;
@@ -44,7 +50,7 @@ contract (`<skills_root>/_shared/references/task-plan-contract.md`, procedure ow
 - each WP has an actionable goal, scope, out-of-scope boundary, discovery notes, acceptance criteria, and verification;
 - in a new plan, each WP's `Difficulty: v1` block matches the WP's actual execution, independently of executor selection. Its concise `Profile rationale` justifies the lowest sufficient model/reasoning profile assigned through `Execution environment` (default or override), including the boundary against the immediately lower candidate when one exists. Shared `Profile evidence` in `Execution environment` records the sources and limitations once for the plan (or states explicitly that no data was available); benchmark results inform the agent's judgment without thresholds or reordering the project hierarchy. A missing or unsupported rationale, a missing `Profile evidence` field, or a contradiction with the assigned profile is at least MAJOR because the validator does not assess this judgment. Legacy plans, including historical point-based rationales, do not require migration; apply the current selection contract to new or materially changed choices;
 - a new plan has a 3–5 sentence preamble below its title and one closed, non-nested `details` block per section except the visible `Work package summaries`, with headings outside and exactly one blank line after `summary`; legacy unwrapped plans remain readable without mass migration;
-- each `Work package summaries` entry matches its WP and describes only the change and result: a reader who knows the project goal but not the code or the conversation understands the outcome; exclusions belong in the full WP. An entry with exclusions, paths, code symbols, plan identifiers, unexplained jargon, or clipped keyword phrasing is an actionable MINOR finding, and an entry that adds scope, contradicts the WP's `Out of scope`, or leaves out a change the reader needs to understand the WP's result is at least MAJOR; leaving out a `Scope` detail that does not help that understanding is not a finding;
+- each `Work package summaries` entry matches its WP and describes only the change and result; for a WP that fixes a reported defect it also names the defect as the reporter sees it and, when the reader needs it to understand why the change helps, its cause. A reader who knows the project goal but not the code or the conversation understands the outcome; exclusions belong in the full WP. An entry with exclusions, paths, code symbols, plan identifiers, unexplained jargon, or clipped keyword phrasing is an actionable MINOR finding, and an entry that adds scope, contradicts the WP's `Out of scope`, or leaves out a change the reader needs to understand the WP's result is at least MAJOR; leaving out a `Scope` detail that does not help that understanding is not a finding;
 - acceptance criteria have a concrete test or check, and the execution environment/command contract is internally consistent;
 - every planned permanent test passes the **Durable tests versus one-off change verification** gate from the deep review checklists, applied to each listed test rather than replaced by a general coverage statement; history-only scenarios are removed from permanent test scope, while a scenario verifying an actual migration contract or target invariant stays, and any necessary one-off checks are explicitly distinguished in `Verification`;
 - open questions, missing evidence, or discovery debt that could change public behavior, ownership, WP boundaries, data models, or acceptance criteria are treated as blockers or questions;
@@ -87,8 +93,10 @@ natural unit:
 
 - sense before consistency: one line per element with its requirement and its loss
   on removal, e.g. `Scope 3 → AC2; loss: …`;
-- source-to-WP mapping: source point → WP only where the accuracy of the mapping is
-  in doubt;
+- symptom traceability: one line per source point that reports a defect, with the
+  symptom as reported, the plan's explanation, and the evidence compared;
+- source-to-WP mapping: other source points → WP only where the accuracy of the
+  mapping is in doubt;
 - other checks: one sentence per WP or per section.
 
 In a re-review, limit these rows to the scope defined by
