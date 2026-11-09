@@ -1,5 +1,6 @@
-import {existsSync, lstatSync} from "node:fs";
+import {existsSync, lstatSync, mkdtempSync, openSync, closeSync, readFileSync, rmSync} from "node:fs";
 import {dirname, isAbsolute, relative, resolve, sep} from "node:path";
+import {tmpdir} from "node:os";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {isMainModule} from "./is-main-module.mjs";
@@ -16,6 +17,12 @@ ensure_repo_env_loaded "$2" >/dev/null || true
 printf '%s' "\${CACHE_PATH:-var/agent/cache}"
 `;
 const MAX_DIAGNOSTIC_LENGTH = 200;
+
+function cacheResolverError(detail) {
+    const error = new Error(`Cannot resolve project CACHE_PATH through env-load.sh (${detail})`);
+    error.code = "INVALID_CACHE_PATH";
+    return error;
+}
 
 function resolverDiagnostic(result) {
     if (result.error) { return result.error.code ?? result.error.message; }
@@ -75,14 +82,34 @@ function configuredCachePath(repositoryRoot) {
     if (!projectCachePaths.has(repositoryRoot)) {
         const env = {...process.env};
         delete env.CACHE_PATH;
-        const result = spawnSync("bash", ["--noprofile", "--norc", "-c", CACHE_PATH_SCRIPT,
-            "artifact-cache-root", ENV_LOADER, repositoryRoot], {
-            cwd: repositoryRoot, env, encoding: "utf8", timeout: 10_000,
-        });
+        // Regular file descriptors avoid the socket-based pipes used by Node.
+        // Each invocation owns a private directory; env values never reach logs.
+        let captureDir;
+        try {
+            captureDir = mkdtempSync(resolve(tmpdir(), "artifact-cache-"));
+        } catch (error) {
+            throw cacheResolverError(`capture dir in ${tmpdir()}: ${error.code ?? error.message}`);
+        }
+        const descriptors = [];
+        let result;
+        try {
+            const stdoutPath = resolve(captureDir, "stdout");
+            const stderrPath = resolve(captureDir, "stderr");
+            descriptors.push(openSync(stdoutPath, "wx+", 0o600));
+            descriptors.push(openSync(stderrPath, "wx+", 0o600));
+            result = spawnSync("bash", ["--noprofile", "--norc", "-c", CACHE_PATH_SCRIPT,
+                "artifact-cache-root", ENV_LOADER, repositoryRoot], {
+                cwd: repositoryRoot, env, timeout: 10_000, killSignal: "SIGKILL",
+                stdio: ["ignore", descriptors[0], descriptors[1]],
+            });
+            result.stdout = readFileSync(stdoutPath, "utf8");
+            result.stderr = readFileSync(stderrPath, "utf8");
+        } finally {
+            for (const descriptor of descriptors) { closeSync(descriptor); }
+            rmSync(captureDir, {recursive: true, force: true});
+        }
         if (result.error || result.status !== 0) {
-            const error = new Error(`Cannot resolve project CACHE_PATH through env-load.sh (${resolverDiagnostic(result)})`);
-            error.code = "INVALID_CACHE_PATH";
-            throw error;
+            throw cacheResolverError(resolverDiagnostic(result));
         }
         projectCachePaths.set(repositoryRoot, result.stdout || "var/agent/cache");
     }
