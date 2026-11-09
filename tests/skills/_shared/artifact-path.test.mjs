@@ -25,6 +25,41 @@ afterEach(() => {
 });
 
 describe("project cache resolver", () => {
+
+    it.each([false, true])("captures output through private regular files and cleans up (abort=%s)", (abort) => {
+        const scratch = project();
+        vi.stubEnv("TMPDIR", scratch);
+        const root = project([
+            "test -f /dev/stderr || exit 91",
+            abort ? "echo 'capture failure' >&2; exit 3" : "CACHE_PATH=file-capture",
+            "",
+        ].join("\n"));
+        const before = fs.readdirSync(scratch);
+        if (abort) {
+            expect(() => resolveArtifactCacheRoot(root)).toThrow(/exit 3: capture failure/);
+        } else {
+            expect(resolveArtifactCacheRoot(root)).toBe(path.join(root, "file-capture"));
+        }
+        expect(fs.readdirSync(scratch)).toEqual(before);
+    });
+
+    it("cleans up capture files when Bash cannot be launched", () => {
+        const scratch = project();
+        const root = project();
+        vi.stubEnv("TMPDIR", scratch);
+        vi.stubEnv("PATH", "");
+        const before = fs.readdirSync(scratch);
+        expect(() => resolveArtifactCacheRoot(root)).toThrow(/ENOENT/);
+        expect(fs.readdirSync(scratch)).toEqual(before);
+    });
+
+    it("reports an unavailable capture directory as a cache resolver error", () => {
+        const root = project();
+        vi.stubEnv("TMPDIR", path.join(root, "missing-tmp"));
+        expect(() => resolveArtifactCacheRoot(root))
+            .toThrow(/Cannot resolve project CACHE_PATH through env-load\.sh \(capture dir in .*missing-tmp: ENOENT\)/);
+    });
+
     it.each([
         ["CACHE_PATH='local cache'\nUNRELATED_VALUE=not-for-output\n", "local cache"],
         [undefined, "var/agent/cache"],
