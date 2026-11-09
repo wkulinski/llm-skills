@@ -38,7 +38,7 @@ Użyj tego skilla, gdy pojawia się potrzeba:
 - Ten skill jest CLI-only: wszystkie narzędzia Mate wywołuj przez `<MATE_CMD> mcp:tools:*`; nie wymaga bezpośredniego serwera MCP Mate w kliencie agenta.
 - `mcp:tools:list`, `mcp:tools:inspect` i `mcp:tools:call` pokrywają każde narzędzie aktualnie udostępnione przez Mate, także nowe narzędzia niewymienione jeszcze w scenariuszach tego skilla.
 - Nie dodawaj `--quiet` do wywołań `mcp:tools:call`, ponieważ może stłumić również wynik narzędzia. Ograniczaj output przez parametry narzędzia (`limit`, `channel`, `level`, `route` itd.).
-- CLI Mate nie pokrywa ewentualnych MCP resources, np. URI szczegółowych collectorów profilera. Jeśli do rzetelnej diagnozy potrzebny jest resource niedostępny przez `mcp:tools:call`, zwróć `BLOCKED` i poproś o uruchomienie sesji z bezpośrednim MCP Mate.
+- CLI Mate nie odczytuje bezpośrednio MCP resources, np. URI szczegółowych collectorów profilera. Gdy do rzetelnej diagnozy potrzebna jest treść resource, sprawdź w `mcp:tools:list --format=json` (tabela skraca opisy), czy opis któregoś narzędzia wymienia ten URI albo jego schemat (np. narzędzie projektu z katalogu `mate/src`), i odczytaj treść przez `mcp:tools:call` tego narzędzia. Zwróć `BLOCKED` z prośbą o sesję z bezpośrednim MCP Mate dopiero wtedy, gdy żadne narzędzie nie zwraca tej treści.
 
 ## Zakres
 Skill obejmuje:
