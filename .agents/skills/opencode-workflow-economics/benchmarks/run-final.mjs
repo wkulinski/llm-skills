@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* OWE reports intentionally use the snake_case schema and compact benchmark style. */
-import {execFile} from "node:child_process";
+import {execFile} from "../../_shared/scripts/file-process-async.mjs";
 import {readFile} from "node:fs/promises";
 import {promisify} from "node:util";
 import {relative, resolve} from "node:path";

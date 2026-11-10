@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {execFileSync} from "node:child_process";
+import {execFileSync} from "./file-process.mjs";
 
 import {isMainModule} from "./is-main-module.mjs";
 import {slugifyTitle} from "./slugify-title.mjs";

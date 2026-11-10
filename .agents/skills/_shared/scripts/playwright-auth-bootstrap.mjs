@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import {spawnSync} from "node:child_process";
+import {spawnSync} from "./file-process.mjs";
 import {randomUUID} from "node:crypto";
 import {chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync} from "node:fs";
 import {createRequire} from "node:module";

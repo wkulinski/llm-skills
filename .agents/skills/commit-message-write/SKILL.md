@@ -5,6 +5,7 @@ description: >-
   `COMMIT_MESSAGE_DIR/commit-message.txt`. Użyj, gdy chcesz przygotować commit
   message przed `$git-commit`.
 shared_files:
+  - _shared/scripts/file-process.mjs
   - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md

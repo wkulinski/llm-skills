@@ -1,0 +1,4 @@
+interface:
+  display_name: "Przegląd issues GitHub"
+  short_description: "Aktualna tabela issues według wybranych filtrów"
+  default_prompt: "Użyj $gh-issues-triage, aby przygotować aktualne zestawienie issues według podanych filtrów."

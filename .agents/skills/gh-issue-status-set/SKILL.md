@@ -5,6 +5,7 @@ description: >-
   issue i danych z GitHub; dopytuje tylko o brakujące dane. Użyj, gdy chcesz
   zaktualizować status issue w projekcie.
 shared_files:
+  - _shared/scripts/file-process.mjs
   - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh

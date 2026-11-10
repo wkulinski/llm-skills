@@ -1,6 +1,6 @@
 import {reportStamp, readFailedTests, verifyCodeceptionRetry} from "../session/test-recovery.mjs";
 
-import {spawn} from "node:child_process";
+import {spawn} from "../../../../_shared/scripts/file-process-async.mjs";
 import {createWriteStream} from "node:fs";
 import {performance} from "node:perf_hooks";
 

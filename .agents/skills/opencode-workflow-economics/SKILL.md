@@ -5,6 +5,8 @@ description: >-
   głównego, ocenia ekonomię subagentów i fallbacków oraz duplikację pracy.
   Użyj, gdy analizujesz koszty workflow OpenCode. Tylko diagnostyka.
 shared_files:
+  - _shared/scripts/file-process-async.mjs
+  - _shared/scripts/file-process.mjs
   - _shared/scripts/artifact-path.mjs
   - _shared/scripts/env-load.sh
   - _shared/scripts/is-main-module.mjs

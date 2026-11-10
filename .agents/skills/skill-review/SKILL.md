@@ -8,6 +8,7 @@ description: >-
 metadata:
   mode: read-only
 shared_files:
+  - _shared/scripts/file-process.mjs
   - skill-review/references/conformance-checklist.md
   - skill-review/references/catalog-checklist.md
   - skill-review/references/standard-gap.md

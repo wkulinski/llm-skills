@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import {copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from "node:fs";
-import {spawnSync} from "node:child_process";
+import {spawnSync} from "../../_shared/scripts/file-process.mjs";
 import crypto from "node:crypto";
 import {dirname, join, resolve} from "node:path";
 

@@ -13,6 +13,7 @@ import {formatIsoSeconds, formatLocalDate, formatLocalTime, resolveReadEventsPat
 describe("code-implement state scripts", () => {
     it("uses consumer-local durable paths independently of CACHE_PATH", () => {
         const repoRoot = mkdtempSync(path.join(os.tmpdir(), "durable-state-"));
+        mkdirSync(path.join(repoRoot, ".git"));
         const previous = process.env.CACHE_PATH;
         try {
             process.env.CACHE_PATH = "custom-cache";
@@ -55,6 +56,7 @@ describe("code-implement state scripts", () => {
     });
     it("prints read-log CLI help without requiring or writing state", () => {
         const tempRoot = mkdtempSync(path.join(os.tmpdir(), "code-implement-help-test-"));
+        mkdirSync(path.join(tempRoot, ".git"));
         try {
             const script = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../.agents/skills/code-implement/scripts/state-readlog.mjs");
             for (const flag of ["--help", "-h"]) {
@@ -91,6 +93,7 @@ describe("code-implement state scripts", () => {
 
     it("prints help for init, log and clear without touching state", () => {
         const tempRoot = mkdtempSync(path.join(os.tmpdir(), "code-implement-help-test-"));
+        mkdirSync(path.join(tempRoot, ".git"));
         try {
             const scriptsDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../.agents/skills/code-implement/scripts");
             const run = (script, args) => spawnSync(process.execPath, [path.join(scriptsDir, script), ...args], {

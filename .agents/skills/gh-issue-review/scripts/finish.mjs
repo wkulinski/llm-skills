@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {spawnSync} from "node:child_process";
+import {spawnSync} from "../../_shared/scripts/file-process.mjs";
 import {existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from "node:fs";
 import {join} from "node:path";
 import os from "node:os";

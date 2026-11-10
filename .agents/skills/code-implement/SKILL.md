@@ -5,6 +5,7 @@ description: >-
   doczytuje kontekst repo, wdraża poprawki i raportuje wynik z dowodami. Użyj,
   gdy użytkownik zleca dodanie funkcjonalności, naprawę błędu lub refaktor.
 shared_files:
+    - _shared/scripts/file-process.mjs
     - code-implement/references/state-and-report-contract.md
     - _shared/references/skill-structure-contract.md
     - _shared/references/skill-routing-policy.md

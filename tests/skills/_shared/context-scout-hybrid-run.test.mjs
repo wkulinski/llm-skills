@@ -1104,7 +1104,7 @@ test("snapshot stale during finalize aborts an accepted primary", () => {
     const prepared = prepare(makeFixtureDir(), "stale-finalize");
     const primary = claim(prepared);
     fs.writeFileSync(primary.reportPath, JSON.stringify(validReport()));
-    const evaluated = evaluateAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: primary.dispatchToken});
+    const evaluated = evaluateAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: primary.dispatchToken, "duration-ms": "1"});
     assert.equal(evaluated.next.action, "FINALIZE");
     fs.appendFileSync(prepared.files.prompt, "changed before finalize\n");
 

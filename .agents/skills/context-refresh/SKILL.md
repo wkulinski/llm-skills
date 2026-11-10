@@ -5,6 +5,7 @@ description: >-
   reguły, env i stan repo oraz tworzy manifest kontekstu. Użyj, gdy brakuje
   ważnego manifestu, kontekst jest nieaktualny albo zadanie jest przekrojowe.
 shared_files:
+  - _shared/scripts/file-process.mjs
   - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md

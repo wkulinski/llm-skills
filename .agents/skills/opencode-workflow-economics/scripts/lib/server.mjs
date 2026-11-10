@@ -1,4 +1,4 @@
-import {spawn} from "node:child_process";
+import {spawn} from "../../../_shared/scripts/file-process-async.mjs";
 import {createServer} from "node:net";
 import {setTimeout as delay} from "node:timers/promises";
 

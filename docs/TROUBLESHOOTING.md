@@ -56,6 +56,46 @@ mode explicitly selects `workspace-write`, while its `full-access` mode selects
 `danger-full-access`. Check the active session mode when it differs from
 `~/.codex/config.toml`.
 
+### Runtime subprocess capture in restricted sandboxes
+
+Runtime scripts use the shared [synchronous capture helper](../.agents/skills/_shared/scripts/file-process.mjs)
+and [asynchronous capture helper](../.agents/skills/_shared/scripts/file-process-async.mjs).
+Captured stdin/stdout/stderr use private regular files instead of Node's
+socket-based pipes. Files are removed after completion or launch failure;
+explicit `inherit`, `ignore` and numeric descriptors keep their meaning.
+Asynchronous commands expose live stdout/stderr streams and keep process events
+and `kill()`, so QA and benchmark logs remain available while commands run.
+Interactive stdin and IPC channels are outside these helpers' runtime contract.
+
+The audit covered every JavaScript/module and shell script under
+`.agents/skills`, including benchmark runners:
+
+| Area | Capture paths covered |
+| --- | --- |
+| Context and planning | Manifest/fingerprint Git calls, scout preflight/build/validation, plan publication, cache resolver |
+| Git and GitHub | Issue branch/start/status/review, commit snapshots and staging checks |
+| Implement/review | Change inspection and Claude review Git snapshots |
+| QA and browser tools | Working-tree inspection, tool resolution, command output streaming, auth helpers |
+| PHP tooling and Slack | CLI resolution, status probes, RPC stdin, structured tool output |
+| Economics benchmarks | Git snapshots, validators, CLI workers and managed-server logs |
+
+Direct Node child-process imports remain only in the two runtime helpers and
+in test code. Shell pipelines use OS pipes and do not use Node's synchronous
+socket transport. Test subprocesses still use their bounded test helper; run
+QA with the permissions required by the execution policy above.
+
+The synchronous helper checks `maxBuffer` after the child exits and limits the
+returned capture in memory; it does not stop a running child when its temporary
+output file reaches that size. Keep command-specific timeouts for bounded
+execution. The asynchronous `execFile` wrapper checks its capture limit while
+collecting output and terminates an overflowing child.
+
+This change fixes transport, not command permissions, network access, scout
+reader availability or malformed scout JSON. Consumer installations must be
+synchronized separately. The regression checks include regular-file stdin and
+outputs, binary payloads, cleanup, missing commands, timeout, live logs,
+termination, nonzero exits and capture overflow.
+
 
 The catalog revision, Linux/Node and OpenCode versions, stack profile, selected
 skill, the exact error and the failed stage (delivery, configuration or skill

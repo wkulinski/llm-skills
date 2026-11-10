@@ -9,6 +9,7 @@ compatibility: Git-based projects.
 metadata:
   mode: read-only
 shared_files:
+  - _shared/scripts/file-process.mjs
   - code-review/references/review-checklists.md
   - code-review/references/plan-review.md
   - code-review/references/active-plan.md

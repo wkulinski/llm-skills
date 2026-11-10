@@ -5,6 +5,8 @@ description: >-
   repo-konfigurowalnej macierzy komend JSON, snapshotów i sesji QA. Użyj, gdy
   uruchamiasz `$qa-run`.
 shared_files:
+  - _shared/scripts/file-process-async.mjs
+  - _shared/scripts/file-process.mjs
   - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/project-profiles.md

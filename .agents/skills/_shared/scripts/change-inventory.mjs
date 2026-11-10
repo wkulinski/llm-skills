@@ -3,7 +3,7 @@
 import crypto from "node:crypto";
 import {lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync} from "node:fs";
 import path from "node:path";
-import {execFileSync} from "node:child_process";
+import {execFileSync} from "./file-process.mjs";
 
 import {isMainModule} from "./is-main-module.mjs";
 

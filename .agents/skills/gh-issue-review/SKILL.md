@@ -4,6 +4,7 @@ description: >-
   Wypycha gałąź, otwiera PR do domyślnej gałęzi repo, ustawia status In review
   i opcjonalnie przydziela reviewera. Użyj, gdy issue jest gotowe do review.
 shared_files:
+  - _shared/scripts/file-process.mjs
   - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh

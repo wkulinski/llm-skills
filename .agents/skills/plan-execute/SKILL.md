@@ -5,6 +5,7 @@ description: >-
   work package, zleca implementację i zapis ukończenia z dowodem. Użyj, gdy
   chcesz zrealizować lub wznowić istniejący plan.
 shared_files:
+  - _shared/scripts/file-process.mjs
   - _shared/references/skill-routing-policy.md
   - _shared/references/task-plan-contract.md
   - _shared/scripts/model-hierarchy.mjs
