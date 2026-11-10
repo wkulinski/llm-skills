@@ -3,7 +3,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import {spawnSync} from "node:child_process";
+import {spawnSync} from "./file-process.mjs";
 import {fileURLToPath} from "node:url";
 import {isMainModule} from "./is-main-module.mjs";
 import {assertArtifactPath, resolveArtifactCacheRoot, resolveRepositoryRoot} from "./artifact-path.mjs";

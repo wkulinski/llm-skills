@@ -5,6 +5,7 @@ description: >-
   Rectora i opcjonalnego php-cs-fixer. Użyj, gdy po zawężeniu zakresu potrzebujesz
   move/copy/rename, transformacji klas lub AST.
 shared_files:
+  - _shared/scripts/file-process.mjs
   - _shared/scripts/env-load.sh
   - _shared/references/symbolic-navigation-and-editing-policy.md
 ---

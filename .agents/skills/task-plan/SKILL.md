@@ -5,6 +5,7 @@ description: >-
   zweryfikowany plan wykonawczy: rozdziela fakty, hipotezy i decyzje. Użyj, gdy
   potrzebujesz planu wykonawczego przed implementacją.
 shared_files:
+  - _shared/scripts/file-process.mjs
   - _shared/references/task-plan-contract.md
   - _shared/references/skill-routing-policy.md
   - _shared/references/runtime-collaboration-guidelines.md

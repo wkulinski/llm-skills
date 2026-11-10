@@ -6,6 +6,7 @@ description: >-
   `code-review`. Użyj, gdy jawnie chcesz zlecić review kodu Claude z OpenCode.
 compatibility: Git-based projects with Paseo and Claude Code.
 shared_files:
+  - _shared/scripts/file-process.mjs
   - _shared/references/skill-structure-contract.md
   - _shared/references/skill-routing-policy.md
   - _shared/references/repository-context-hybrid.md

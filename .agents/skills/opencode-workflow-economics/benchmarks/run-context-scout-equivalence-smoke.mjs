@@ -2,7 +2,8 @@
 import crypto from "node:crypto";
 import {createWriteStream, existsSync, readFileSync} from "node:fs";
 import {mkdir, readFile, writeFile, copyFile} from "node:fs/promises";
-import {spawn, spawnSync} from "node:child_process";
+import {spawn} from "../../_shared/scripts/file-process-async.mjs";
+import {spawnSync} from "../../_shared/scripts/file-process.mjs";
 import {join, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 

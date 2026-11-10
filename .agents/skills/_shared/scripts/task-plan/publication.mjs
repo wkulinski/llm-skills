@@ -3,7 +3,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import {spawnSync} from "node:child_process";
+import {spawnSync} from "../file-process.mjs";
 
 import {assertPersistentAgentPath, assertRepositoryFilePath, resolvePersistentAgentRoot} from "../artifact-path.mjs";
 import {isMainModule} from "../is-main-module.mjs";

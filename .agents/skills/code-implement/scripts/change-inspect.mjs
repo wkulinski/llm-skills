@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {execFileSync} from "node:child_process";
+import {execFileSync} from "../../_shared/scripts/file-process.mjs";
 
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 

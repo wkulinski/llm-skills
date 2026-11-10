@@ -50,6 +50,7 @@ function isInvalidPlanWith(message) {
 
 function temporaryRepository() {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-plan-difficulty-"));
+    fs.mkdirSync(path.join(root, ".git"));
     fs.mkdirSync(path.join(root, "docs", "plans"), {recursive: true});
     const configDir = path.join(root, ".agents", "config");
     fs.mkdirSync(configDir, {recursive: true});

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import crypto from "node:crypto";
-import {execFileSync} from "node:child_process";
+import {execFileSync} from "../../_shared/scripts/file-process.mjs";
 import {existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync} from "node:fs";
 import path from "node:path";
 

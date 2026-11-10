@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import {createWriteStream, existsSync} from "node:fs";
 import {mkdir, readFile, writeFile} from "node:fs/promises";
-import {spawn} from "node:child_process";
+import {spawn} from "../../_shared/scripts/file-process-async.mjs";
 import {join, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 

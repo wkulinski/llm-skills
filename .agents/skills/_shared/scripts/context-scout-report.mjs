@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import {existsSync, readFileSync} from "node:fs";
-import {execFileSync} from "node:child_process";
+import {execFileSync} from "./file-process.mjs";
 import {isMainModule} from "./is-main-module.mjs";
 import {readCriteriaFile} from "./context-criteria.mjs";
 import {normalizeReadObservation} from "./read-purpose.mjs";

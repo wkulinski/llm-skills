@@ -5,6 +5,7 @@ description: >-
   a następnie tworzy commit. Użyj, gdy chcesz zacommitować zmiany zgodnie
   z workflow repo.
 shared_files:
+  - _shared/scripts/file-process.mjs
   - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md

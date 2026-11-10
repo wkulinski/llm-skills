@@ -7,6 +7,7 @@ description: >-
   widoki przed implementacją.
 compatibility: Wymaga Bash, Node.js, Git, Playwright CLI oraz narzędzia do odczytu screenshotów jako obrazów.
 shared_files:
+  - _shared/scripts/file-process.mjs
   - _shared/references/playwright-cli-verification.md
   - _shared/references/symfony-ux-twig-components.md
   - _shared/references/symfony-ux-live-components.md

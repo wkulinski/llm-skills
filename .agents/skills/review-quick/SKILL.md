@@ -6,6 +6,7 @@ description: >-
   checkpointu workflow albo jawnie prosisz o szybkie sprawdzenie. Samodzielne
   zlecenie review kodu lub aktualnych zmian należy do code-review.
 shared_files:
+  - _shared/scripts/file-process.mjs
   - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/rule-conformance-policy.md

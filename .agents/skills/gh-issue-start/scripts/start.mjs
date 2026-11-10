@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {spawnSync} from "node:child_process";
+import {spawnSync} from "../../_shared/scripts/file-process.mjs";
 import {fileURLToPath} from "node:url";
 
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";

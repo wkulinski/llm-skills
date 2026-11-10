@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import {mkdtemp, readFile, rm} from "node:fs/promises";
-import {execFile} from "node:child_process";
+import {execFile} from "../../_shared/scripts/file-process-async.mjs";
 import {promisify} from "node:util";
 import {performance} from "node:perf_hooks";
 import {tmpdir} from "node:os";

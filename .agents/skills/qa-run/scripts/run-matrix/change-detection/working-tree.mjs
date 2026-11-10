@@ -1,4 +1,4 @@
-import {spawnSync} from "node:child_process";
+import {spawnSync} from "../../../../_shared/scripts/file-process.mjs";
 import {existsSync, readFileSync} from "node:fs";
 import path from "node:path";
 

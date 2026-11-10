@@ -111,6 +111,7 @@ function foldedPlanBody() {
 
 function createFixture(body = planBody()) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "review-gate-"));
+    fs.mkdirSync(path.join(root, ".git"));
     const configDir = path.join(root, ".agents", "config");
     fs.mkdirSync(configDir, {recursive: true});
     fs.writeFileSync(path.join(configDir, "model-hierarchy.json"), `${JSON.stringify({

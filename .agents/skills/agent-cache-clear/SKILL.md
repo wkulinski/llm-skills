@@ -5,6 +5,7 @@ description: >-
   per skill). Użyj wyłącznie na wyraźne życzenie użytkownika przy zatrzymanych
   workflow; nie usuwa trwałych danych pracy.
 shared_files:
+  - _shared/scripts/file-process.mjs
   - _shared/references/skill-structure-contract.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/scripts/env-load.sh

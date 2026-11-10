@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import {spawnSync} from "node:child_process";
+import {spawnSync} from "./file-process.mjs";
 import {chmodSync, lstatSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync} from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";

@@ -7,6 +7,7 @@ description: >-
   użytkownika. Użyj, gdy zadanie dotyczy kanałów, osób, wiadomości lub plików
   Slacka.
 shared_files:
+  - _shared/scripts/file-process.mjs
   - _shared/references/skill-structure-contract.md
 ---
 
