@@ -88,7 +88,7 @@ form the owner feeds to its review-cycle helper:
 
 - a stable ID `F<number>`; in a re-review a kept or recurring finding keeps its prior ID;
 - `classification`: `finding`, `QUESTION`, or `SUGGESTION`;
-- `severity` (`BLOCKER`, `MAJOR`, `MINOR`) for a `finding` only, and `actionable` stated explicitly (a `QUESTION` states `approval_affecting` instead);
+- `severity` (`BLOCKER`, `MAJOR`, `MINOR`) for a `finding` only, and `actionable` stated explicitly (`false` for `QUESTION` and `SUGGESTION`); a `QUESTION` also states `approval_affecting`;
 - the affected section or WP and the evidence for it;
 - in a re-review: the resolution of every prior ID (`resolved`, `current` with its current severity, or `accepted`), and for each new or recurring finding the same-failure-mode and new-evidence assessment or, for a delta review, the provenance in the changed scope. A full review may
   report independent new defects without fix provenance; prior IDs still require
