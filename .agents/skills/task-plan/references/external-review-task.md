@@ -64,7 +64,8 @@ the `plan` target. `payload` is:
 Every finding and resolution uses exactly the fields of the section
 "Wejście `review-cycle.mjs decide`" in the plan contract: `id` (`F<number>`,
 kept from `previous_findings` for the same failure mode), `classification`,
-`severity` for `finding`, `actionable`, `approval_affecting` for `QUESTION`,
+`severity` for `finding`, `actionable` (explicitly `false` for `QUESTION` and
+`SUGGESTION`), `approval_affecting` for `QUESTION`,
 `repair_attempts`, and in a delta review `previous_id`, `recurrence` and
 `provenance` where the contract requires them. Give exactly one resolution per
 ID in `previous_findings`. Do not add counters, plan references or the delta
