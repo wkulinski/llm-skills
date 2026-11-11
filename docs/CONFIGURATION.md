@@ -208,6 +208,51 @@ strongest first; start from the delivered `.dist` template. The
 [plan-execute skill](../.agents/skills/plan-execute/SKILL.md) defines the model
 gate, explicit-profile fallback and one-WP user attestation.
 
+### External plan review
+
+`$task-plan` can run its read-only plan review in a separate agent session
+through Paseo. Configure it in B's active env (for example `.env.local`):
+
+```bash
+PLAN_REVIEW_1_HARNESS=claude
+PLAN_REVIEW_1_MODEL=claude-sonnet-5-5
+PLAN_REVIEW_1_THINKING=low
+PLAN_REVIEW_1_MODE=auto
+
+PLAN_REVIEW_2_HARNESS=codex
+PLAN_REVIEW_2_MODEL=gpt-6.1-sol
+PLAN_REVIEW_2_THINKING=medium
+PLAN_REVIEW_2_MODE=auto-review
+
+PLAN_REVIEW_3_HARNESS=opencode
+PLAN_REVIEW_3_MODEL=commandcode/deepseek/deepseek-v4.1-flash
+PLAN_REVIEW_3_THINKING=high
+PLAN_REVIEW_3_MODE=build
+
+PLAN_REVIEW_TIMEOUT_SECONDS=1200
+```
+
+`HARNESS` is the Paseo provider, i.e. the agent that runs the session: `claude`
+(Claude Code), `codex` (Codex CLI) or `opencode` (OpenCode). `MODEL` and
+`THINKING` are ids within that harness from
+`paseo provider models <harness> --json`; the same model can have different ids
+in different harnesses. Profiles are tried in preference order 1 → 2 → 3; empty
+profiles are skipped silently. All four settings (`HARNESS`, `MODEL`, `THINKING`,
+`MODE`) are required in each configured profile. Incomplete profiles are skipped
+with a warning; other valid profiles remain available. The coordinator mentions
+configuration warnings in its next progress update or final result without
+pausing or asking for approval. Rejected model/mode identifiers at launch also
+advance to the next profile with a brief notice. Replace the old `MAIN_*` and `FALLBACK_*` keys with
+`1_*` and `2_*`; the old env names are no longer read. Without any profile, without
+Paseo, or when every attempt fails, the plan owner performs the review itself as
+before. The
+[review-session contract](../.agents/skills/_shared/references/review-session-contract.md)
+owns the attempt order and result checks. Failed profiles stay disabled for
+subsequent rounds of the same planning cycle; changing a profile's settings
+re-enables it. A valid report requesting repairs remains a successful review.
+A new cycle after a terminal ready/blocked decision resets the ladder. This
+memory belongs to the cycle's review jobs, not to global provider state.
+
 ## QA and further configuration
 
 Author `.agents/qa-run.matrix.json` with your application's commands before

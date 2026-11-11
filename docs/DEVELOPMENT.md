@@ -78,10 +78,8 @@ or model calls; use synthetic temporary fixtures for helper behavior. Tests that
 resolve actually installed tools belong in `*.integration.test.mjs` (the
 `integration` project, not run in CI).
 
-Integration and cost-bearing runs are local operator actions. The Claude review
-smoke also requires `CLAUDE_REVIEW_SMOKE=1` and the launch parameters required by
-its [test entrypoint](../tests/skills/claude-review/claude-review.integration.test.mjs).
-Do not wire credentials or live integrations into pull request jobs.
+Integration and cost-bearing runs are local operator actions. Do not wire
+credentials or live integrations into pull request jobs.
 
 Keep shell scripts for small glue: env loading, path wiring, Git/filesystem
 orchestration, traps and simple dispatch. Use `.mjs` for substantive parsing,

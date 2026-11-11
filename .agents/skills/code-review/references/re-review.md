@@ -2,6 +2,14 @@
 
 Load this reference when explicitly asked to re-review fixes.
 
+For `plan`, an explicit `review_scope: full` requires reviewing the whole plan,
+including unchanged independent areas, while still resolving every prior ID and
+assessing recurrence and regressions. New independent findings may be actionable
+without fix provenance. The delta artifact binds the base and current versions;
+it does not narrow this full review. A `review_scope: delta` (or an older request
+with delta counters and no explicit scope) uses the bounded rules below. The
+rules below continue to apply to `code` unchanged.
+
 - review the fix delta first, starting from the changed sections/work packages and
   their direct dependencies supplied in the delta input;
 - resolve every prior finding ID as described in `### Finding resolutions` in

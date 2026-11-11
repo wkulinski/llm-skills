@@ -23,11 +23,16 @@ plugins and consumer configuration before trusting them.
 
 ## Workflows with external effects
 
-[`$claude-review`](.agents/skills/claude-review/SKILL.md) starts Claude Code
-through Paseo in `auto` mode, **without additional tool restrictions**: the
-read-only boundary is only the prompt and the `$code-review` rules. A changed
-snapshot marks the result `STALE` but does not prevent or undo writes. Run it only
-in a trusted workspace whose data and permissions you are willing to expose.
+The external plan review of [`$task-plan`](.agents/skills/task-plan/SKILL.md)
+starts a separate agent session through Paseo (harness, model and thinking from
+`PLAN_REVIEW_*` in the project env) in the configured harness permission mode (`PLAN_REVIEW_<N>_MODE`), **without
+additional tool restrictions**: the read-only boundary for repository files is only
+the prompt and the `$code-review` rules. The reviewer may drive the dev
+application through read-only Playwright interactions; changing persistent test
+data requires explicit user authorization. A changed bound input
+ends the round in the owner's self review but does not prevent or undo writes.
+Configure it only for a trusted workspace whose data and permissions you are
+willing to expose.
 
 [`$slack`](.agents/skills/slack/SKILL.md) sends, edits or deletes only on an
 explicit user request; edit and delete also require the helper's `--confirm`.

@@ -46,6 +46,14 @@ procedurę `$context-refresh`. Używa się go jawnie przy inicjalizacji sesji lu
 świadomym odświeżeniu kontekstu. Zwraca zwarty manifest, a nie kopię treści
 dokumentacji.
 
+### Reviewer w osobnej sesji
+
+Sesja uruchomiona według `<skills_root>/_shared/references/review-session-contract.md`
+jest delegowaną rolą, mimo że działa jako osobny proces agenta: nie wykonuje
+procedury startowej agenta głównego, `$context-refresh` ani repository-context,
+nie pyta użytkownika i nie deleguje dalej. Wejścia dostaje jako powiązane pliki
+z promptu, a nie z rozmowy.
+
 ### `context-scout`
 
 `context-scout` jest tylko do odczytu i wykonuje repozytoryjny rekonesans. Musi:

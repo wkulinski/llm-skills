@@ -4,8 +4,10 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+import {acceptResult} from "../../_shared/scripts/review-session-job.mjs";
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
-import {loadPlanFile} from "../../_shared/scripts/task-plan/store.mjs";
+import {REVIEWER_LABEL_PATTERN} from "../../_shared/scripts/task-plan/validate.mjs";
+import {loadPlanFile, reviewerLabel} from "../../_shared/scripts/task-plan/store.mjs";
 
 export const REVIEW_ACTIONS = Object.freeze({
     FINISH_READY: "finish-ready",
@@ -30,8 +32,7 @@ const FINDING_ID_PATTERN = /^F[1-9][0-9]*$/;
 const QUESTION_DECISION_REF_PATTERN = /^Q[1-9][0-9]*$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const SEVERITY_RANK = Object.freeze({BLOCKER: 3, MAJOR: 2, MINOR: 1});
-const MAX_FULL_REVIEWS = 1;
-const MAX_DELTA_REVIEWS = 3;
+const MAX_REVIEW_ROUNDS = 4;
 
 /** @typedef {{code: string, message: string, finding_id?: string}} ValidationIssue */
 /** @typedef {Record<string, any>} JsonObject */
@@ -50,7 +51,53 @@ const MAX_DELTA_REVIEWS = 3;
  */
 export function decideReviewCycle(input = {}) {
     const result = deriveAction(input);
-    return {...result, plan: result.ok ? reviewedPlan(input) : null};
+    const reviewer = isRecord(input) && isRecord(input.reviewer) ? input.reviewer : {mode: "self"};
+    return {...result, plan: result.ok ? reviewedPlan(input) : null, reviewer: result.ok ? reviewer : null,
+        review_scope: result.ok ? reviewScope(input) : null};
+}
+
+/** Fields the external reviewer supplies; every other decide field comes from the bound request. */
+const REVIEWER_FIELDS = Object.freeze(["verdict", "findings", "previous_resolutions"]);
+const REQUEST_FIELDS = Object.freeze(["review_scope", "full_review_count", "delta_review_count", "plan", "delta_review", "previous_findings"]);
+
+/**
+ * Build the decide input from an accepted external review and decide it.
+ *
+ * `result` is the ACCEPTED output of `review-session-job.mjs accept`; `request`
+ * is the owner's review-request JSON that was bound to the session. The request
+ * must be one of the bound inputs with an unchanged hash, so the counters, plan
+ * reference and previous findings are the ones the reviewer saw. Only verdict,
+ * findings and previous_resolutions come from the reviewer's payload.
+ *
+ * @param {{result: JsonObject, request: JsonObject, requestSha256: string}} input
+ */
+export function ingestExternalReview({result, request, requestSha256}) {
+    if (!isRecord(result) || result.decision !== "ACCEPTED" || !isRecord(result.payload) || !isRecord(result.reviewer)) {
+        throw new ReviewCycleError("EXTERNAL_RESULT_NOT_ACCEPTED", "ingest requires the ACCEPTED result of review-session-job.mjs accept.");
+    }
+    const refs = Array.isArray(result.context_refs) ? result.context_refs : [];
+    if (!refs.some((ref) => isRecord(ref) && ref.sha256 === requestSha256)) {
+        throw new ReviewCycleError("EXTERNAL_REQUEST_UNBOUND", "The review request was not a bound input of this review session, or it changed since.");
+    }
+    if (!isRecord(request)) {
+        throw new ReviewCycleError("EXTERNAL_REQUEST_INVALID", "The review request must be a JSON object.");
+    }
+    const input = {};
+    for (const field of REQUEST_FIELDS) {
+        if (Object.hasOwn(request, field)) { input[field] = request[field]; }
+    }
+    for (const field of REVIEWER_FIELDS) {
+        input[field] = result.payload[field];
+    }
+    input.reviewer = result.reviewer;
+    return decideReviewCycle(input);
+}
+
+/** Accept a plan report only when the normal decide protocol can consume it. */
+export function acceptPlanReview({jobPath, envelopeText, inspect, request, requestSha256}) {
+    return acceptResult({jobPath, envelopeText, inspect,
+        validateReport: (result) => ingestExternalReview({result, request, requestSha256}),
+    });
 }
 
 /**
@@ -99,14 +146,14 @@ function deriveAction(input = {}) {
     if (actionable.some((finding) => finding.requires_external_evidence === true)) {
         return decision(REVIEW_ACTIONS.BLOCK, "repair-requires-external-evidence", actionable);
     }
-    if (source.delta_review_count >= MAX_DELTA_REVIEWS) {
-        return decision(REVIEW_ACTIONS.BLOCK, "delta-review-budget-exhausted", actionable);
+    if (reviewRound(source) >= MAX_REVIEW_ROUNDS) {
+        return decision(REVIEW_ACTIONS.BLOCK, "review-budget-exhausted", actionable);
     }
     if (actionable.some((finding) => finding.repair_attempts >= 2)) {
         return decision(REVIEW_ACTIONS.BLOCK, "finding-survived-two-repair-attempts", actionable);
     }
 
-    if (source.delta_review_count > 0) {
+    if (reviewRound(source) > 1) {
         const resolutions = source.previous_resolutions;
         const previousById = new Map(source.previous_findings.map((finding) => [finding.id, finding]));
         if (resolutions.some((resolution) => isWorsenedResolution(resolution, previousById.get(resolution.id)))) {
@@ -140,11 +187,20 @@ export function validateReviewCycleInput(input = {}) {
     }
     validateCounter(input.full_review_count, "full_review_count", errors);
     validateCounter(input.delta_review_count, "delta_review_count", errors);
-    if (Number.isInteger(input.full_review_count) && input.full_review_count !== MAX_FULL_REVIEWS) {
-        errors.push(error("INVALID_FULL_REVIEW_COUNT", "Exactly one full review must precede a cycle decision."));
+    if (Number.isInteger(input.full_review_count) && input.full_review_count < 1) {
+        errors.push(error("INVALID_FULL_REVIEW_COUNT", "The cycle must start with a full review."));
     }
-    if (Number.isInteger(input.delta_review_count) && input.delta_review_count > MAX_DELTA_REVIEWS) {
-        errors.push(error("INVALID_DELTA_REVIEW_COUNT", "delta_review_count must not exceed three."));
+    if (Number.isInteger(input.full_review_count) && Number.isInteger(input.delta_review_count)
+        && reviewRound(input) > MAX_REVIEW_ROUNDS) {
+        errors.push(error("INVALID_REVIEW_COUNT", "The total number of full and delta reviews must not exceed four."));
+    }
+    const scope = reviewScope(input);
+    if (!["full", "delta"].includes(scope)) {
+        errors.push(error("INVALID_REVIEW_SCOPE", "review_scope must be full or delta."));
+    } else if ((scope === "delta" && input.delta_review_count < 1)
+        || (scope === "full" && reviewRound(input) > 1 && input.full_review_count < 2)
+        || (reviewRound(input) === 1 && scope !== "full")) {
+        errors.push(error("REVIEW_SCOPE_COUNT_CONFLICT", "The current scope must be included in its counter; the first review is full."));
     }
 
     const findings = validateArray(input.findings, "findings", errors);
@@ -181,20 +237,51 @@ export function validateReviewCycleInput(input = {}) {
         }
     }
 
-    if (Number.isInteger(input.delta_review_count) && input.delta_review_count > 0) {
+    if (reviewRound(input) > 1) {
         const deltaErrors = validateDeltaReviewInput(input.delta_review);
         errors.push(...deltaErrors);
-        if (input.delta_review_count > 1 && previous.length === 0) {
-            errors.push(error("EMPTY_PREVIOUS_FINDINGS", "A delta review after the first requires at least one previous finding."));
+        if (reviewRound(input) > 2 && previous.length === 0) {
+            errors.push(error("EMPTY_PREVIOUS_FINDINGS", "A continuation after round two requires at least one previous finding."));
         }
         validateDeltaPreviousIds(input.delta_review, previousById, errors);
-        validateDeltaFindingProvenance(findings, previousById, input.delta_review, errors);
+        if (scope === "delta") {
+            validateDeltaFindingProvenance(findings, previousById, input.delta_review, errors);
+        }
     } else if (typeof input.delta_review !== "undefined" && input.delta_review !== null) {
-        errors.push(error("UNEXPECTED_DELTA_INPUT", "delta_review is only valid after at least one delta review."));
+        errors.push(error("UNEXPECTED_DELTA_INPUT", "delta_review is only valid for a continuation after the first round."));
     }
     validatePlanReference(input, errors);
+    validateReviewer(input.reviewer, errors);
 
     return errors;
+}
+
+// Older requests infer their scope; new requests state it explicitly.
+function reviewScope(input) {
+    return typeof input.review_scope === "undefined"
+        ? (input.delta_review_count > 0 ? "delta" : "full") : input.review_scope;
+}
+
+function reviewRound(input) {
+    return input.full_review_count + input.delta_review_count;
+}
+
+function validateReviewer(reviewer, errors) {
+    if (typeof reviewer === "undefined") {
+        return;
+    }
+    if (!isRecord(reviewer) || !["self", "external"].includes(reviewer.mode)) {
+        errors.push(error("INVALID_REVIEWER", "reviewer must be {mode: \"self\"} or an external reviewer from review-session-job.mjs accept."));
+        return;
+    }
+    if (reviewer.mode === "external") {
+        if (!REVIEWER_LABEL_PATTERN.test(reviewerLabel(reviewer))) {
+            errors.push(error("INVALID_REVIEWER", "Reviewer label must match the plan metadata contract."));
+        }
+        for (const field of ["attempt", "provider", "model"]) {
+            requireString(reviewer[field], `reviewer.${field}`, errors, "INVALID_REVIEWER");
+        }
+    }
 }
 
 /**
@@ -207,7 +294,7 @@ function reviewedPlan(input) {
     if (isRecord(input.plan)) {
         return {plan_id: input.plan.plan_id.trim(), revision: input.plan.revision, content_sha256: input.plan.content_sha256};
     }
-    if (input.delta_review_count > 0 && isRecord(input.delta_review)) {
+    if (reviewRound(input) > 1 && isRecord(input.delta_review)) {
         const delta = input.delta_review;
         return {plan_id: delta.plan_id.trim(), revision: delta.current_revision, content_sha256: delta.current_sha256};
     }
@@ -216,7 +303,7 @@ function reviewedPlan(input) {
 
 function validatePlanReference(input, errors) {
     if (typeof input.plan === "undefined" || input.plan === null) {
-        if (input.delta_review_count === 0) {
+        if (reviewRound(input) === 1) {
             errors.push(error("MISSING_PLAN_REFERENCE", "A full review decision requires plan with plan_id, revision and content_sha256 of the reviewed revision."));
         }
         return;
@@ -228,7 +315,7 @@ function validatePlanReference(input, errors) {
     requireString(input.plan.plan_id, "plan.plan_id", errors, "INVALID_PLAN_REFERENCE");
     validatePositiveInteger(input.plan.revision, "plan.revision", errors);
     validateHash(input.plan.content_sha256, "plan.content_sha256", errors);
-    const delta = input.delta_review_count > 0 && isRecord(input.delta_review) ? input.delta_review : null;
+    const delta = reviewRound(input) > 1 && isRecord(input.delta_review) ? input.delta_review : null;
     if (delta && (input.plan.plan_id !== delta.plan_id
         || input.plan.revision !== delta.current_revision
         || input.plan.content_sha256 !== delta.current_sha256)) {
@@ -684,7 +771,7 @@ function isRecord(value) {
 }
 
 function parseArgs(argv) {
-    const result = {_command: null, input: null, file: null, root: null, help: false};
+    const result = {_command: null, input: null, file: null, root: null, result: null, request: null, help: false};
     for (let index = 0; index < argv.length; index += 1) {
         const token = argv[index];
         if (token === "--help" || token === "-h") {
@@ -699,6 +786,15 @@ function parseArgs(argv) {
             index += 1;
         } else if (token === "--root") {
             result.root = argv[index + 1];
+            index += 1;
+        } else if (token === "--result") {
+            result.result = argv[index + 1];
+            index += 1;
+        } else if (["--job", "--envelope", "--inspect"].includes(token)) {
+            result[token.slice(2)] = argv[index + 1];
+            index += 1;
+        } else if (token === "--request") {
+            result.request = argv[index + 1];
             index += 1;
         } else {
             throw new TypeError(`Unknown argument: ${token}`);
@@ -721,14 +817,20 @@ function usage() {
         "  review-cycle.mjs decide --input <file|->",
         "  review-cycle.mjs delta-input --input <file|->",
         "  review-cycle.mjs delta-input --file <plan> [--root <repo>] --input <file|->",
+        "  review-cycle.mjs accept-session --job <job.json> --envelope <file> --inspect <file> --request <file>",
+        "  review-cycle.mjs ingest --result <accept-result.json> --request <review-request.json>",
         "",
-        "The helper is stateless. Semantic assessments are explicit JSON input.",
+        "decide, delta-input and ingest are stateless; accept-session records the session outcome.",
+        "Semantic assessments are explicit JSON input.",
         "decide returns `plan` (plan_id, revision, content_sha256) from the input `plan` reference",
         "or from delta_review; store.mjs record-review accepts only such a bound decision.",
         "With --file, the base is the last review recorded in the plan (review_base_revision,",
         "review_base_sha256); the input supplies only changed_sections, changed_work_packages,",
         "previous_finding_ids and allowed_direct_dependencies. A missing review base is a hard error.",
         "base_sha256/current_sha256 in the input remain explicit overrides, reported in `sources`.",
+        "ingest decides an ACCEPTED external review: verdict, findings and previous_resolutions come",
+        "from the reviewer payload, everything else from the bound review request. Without `reviewer`",
+        "in the input, decide records the review as self review.",
     ].join("\n");
 }
 
@@ -736,6 +838,33 @@ function main(argv) {
     const args = parseArgs(argv);
     if (args.help) {
         process.stdout.write(`${usage()}\n`);
+        return;
+    }
+    if (args._command === "accept-session") {
+        for (const field of ["job", "envelope", "inspect", "request"]) {
+            if (typeof args[field] !== "string") { throw new TypeError(`accept-session requires --${field} <file>.`); }
+        }
+        const bytes = fs.readFileSync(path.resolve(args.request));
+        const accepted = acceptPlanReview({jobPath: args.job,
+            envelopeText: fs.readFileSync(args.envelope, "utf8"),
+            inspect: JSON.parse(fs.readFileSync(args.inspect, "utf8")),
+            request: JSON.parse(bytes.toString("utf8")),
+            requestSha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+        });
+        process.stdout.write(`${JSON.stringify(accepted, null, 2)}\n`);
+        return;
+    }
+    if (args._command === "ingest") {
+        if (typeof args.result !== "string" || typeof args.request !== "string") {
+            throw new TypeError("ingest requires --result <file> and --request <file>.");
+        }
+        const requestBytes = fs.readFileSync(path.resolve(args.request));
+        const ingested = ingestExternalReview({
+            result: JSON.parse(fs.readFileSync(path.resolve(args.result), "utf8")),
+            request: JSON.parse(requestBytes.toString("utf8")),
+            requestSha256: crypto.createHash("sha256").update(requestBytes).digest("hex"),
+        });
+        process.stdout.write(`${JSON.stringify(ingested, null, 2)}\n`);
         return;
     }
     const input = readJsonInput(args.input);
@@ -750,7 +879,7 @@ function main(argv) {
                 : buildDeltaReviewInputFromPlan({repoRoot: args.root ?? process.cwd(), planPath: args.file, input})
             : null;
     if (result === null) {
-        throw new TypeError("Command must be decide or delta-input.");
+        throw new TypeError("Command must be decide, delta-input or ingest.");
     }
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
