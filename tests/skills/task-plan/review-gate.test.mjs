@@ -515,3 +515,70 @@ it("record-review CLI reads a decision file, is idempotent and rejects an unboun
         assert.equal(JSON.parse(second.stdout).changed, false);
     });
 });
+
+for (const attempt of ["main", "fallback", "1", "2", "3"]) {
+    it(`records reviewer ${attempt} and keeps it as part of the delta base`, () => {
+        withFixture((fixture) => {
+            assert.equal(record(fixture).review_reviewer, "self");
+
+            const saved = saveBody(fixture, changedGoalBody(fixture));
+            assert.equal(saved.metadata.review_reviewer, "self");
+
+            const external = {mode: "external", attempt, provider: "codex", model: "gpt-6.1-sol", thinking: "high"};
+            const recorded = record(fixture, bound(fixture, {...FINISH_READY, reviewer: external}));
+            assert.equal(recorded.review_reviewer, `external:${attempt}:codex/gpt-6.1-sol/high`);
+            assert.ok(read(fixture).includes(`review_reviewer: "external:${attempt}:codex/gpt-6.1-sol/high"`));
+            assert.equal(recorded.status, "ready");
+        });
+    });
+
+}
+
+it("rejects a malformed reviewer label in the front matter", () => {
+    withFixture((fixture) => {
+        const markdown = read(fixture).replace(/^review_reviewer: null$/m, "review_reviewer: \"someone\"");
+        const validation = validatePlanDocument(markdown, {repoRoot: fixture.root});
+        assert.ok(validation.errors.some((message) => message.includes("review_reviewer")));
+    });
+});
+
+function withVerification(fixture, replacement) {
+    const markdown = read(fixture).replace("- Verification: Run the focused test.", replacement);
+    return validatePlanDocument(markdown, {repoRoot: fixture.root});
+}
+
+it("accepts a structured Verification with durable tests and one-off checks", () => {
+    withFixture((fixture) => {
+        const validation = withVerification(fixture, [
+            "- Verification: v1",
+            "  - Durable tests: Update the existing gate test in tests/skills/task-plan/review-gate.test.mjs.",
+            "  - One-off checks: none",
+        ].join("\n"));
+        assert.deepEqual(validation.errors, []);
+    });
+});
+
+it("rejects a structured Verification without a sub-field or with nothing to check", () => {
+    withFixture((fixture) => {
+        const missing = withVerification(fixture, "- Verification: v1\n  - Durable tests: Update the gate test.");
+        assert.ok(missing.errors.some((message) => message.includes("One-off checks")));
+
+        const empty = withVerification(fixture, "- Verification: v1\n  - Durable tests: none\n  - One-off checks: none");
+        assert.ok(empty.errors.some((message) => message.includes("at least one durable test or one-off check")));
+    });
+});
+
+it("keeps the inline Verification valid in plans without the structured form", () => {
+    withFixture((fixture) => {
+        assert.deepEqual(withVerification(fixture, "- Verification: Run the focused test.").errors, []);
+    });
+});
+
+it("preserves the plan when a decision has invalid reviewer metadata", () => {
+    withFixture((fixture) => {
+        const before = read(fixture);
+        const reviewer = {mode: "external", attempt: "4", provider: "codex", model: "m"};
+        assert.throws(() => record(fixture, bound(fixture, {...FINISH_READY, reviewer})));
+        assert.equal(read(fixture), before);
+    });
+});

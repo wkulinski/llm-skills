@@ -35,7 +35,7 @@ ten plik czytaj tylko wtedy, gdy aktywna faza wymaga kontraktu dokumentu.
 ## Deterministyczna edycja istniejącego planu
 
 Do punktowej aktualizacji już zapisanego planu używaj helpera `edit.mjs` skilla
-`$task-plan` (składnia komend: `<skills_root>/task-plan/SKILL.md`), zamiast
+`$task-plan` (routing instrukcji użycia: `<skills_root>/task-plan/SKILL.md`), zamiast
 tworzyć doraźne skrypty oparte na zamianie tekstu. Każdy punkt w sekcji planu musi
 mieć nazwę przed `: `:
 
@@ -187,8 +187,32 @@ odrzuca wpis `D`, `N` albo `Q` w innej postaci:
 - N1 [note]: <interakcja>; koszt: <koszt dla użytkownika>; podstawa: <źródło | fakt kodowy | hipoteza>; kierunek: <kierunek albo pytanie>
 ```
 
+Znane pytanie zależne pozostaje `[open]`; jego treść nazywa przesłankę, np.
+„Rozstrzygnięcie po Q1”. Zależność nie tworzy nowego statusu ani pola schematu.
+Pytania rozstrzygnięte podczas intake przed pierwszym zapisem planu trafiają
+do niego jako `[answered]`, z dosłowną odpowiedzią i `Source: current conversation`.
+Jeśli odpowiedź usuwa potrzebę pytania zależnego, pomiń tę nieaktualną gałąź w
+bieżącym planie; zachowaj rozstrzygnięcie, z którego wynika jej pominięcie.
+Nie oznaczaj niezadanego pytania jako `[answered]` ani nie używaj pominięcia
+gałęzi do usunięcia wymagania źródła bez decyzji użytkownika.
+
 Uwagi `N<number> [note]` nie są pytaniami i nie blokują `ready`. Konflikt
 zmieniający kryteria akceptacji zapisuj jako pytanie `Q<number> [open]`.
+
+Wynik kontroli domenowej używa istniejących sekcji: znaczenie potwierdzone w
+obecnym systemie trafia do `Claims verified in evidence` ze wskazaniem dowodu,
+a sprzeczne lub niepotwierdzone znaczenie do `Claims corrected or still unverified`.
+Uzgodnione znaczenie docelowe zapisuj jako decyzję albo odpowiedź w
+`Decisions and open questions`. Jego konsekwencje muszą być zgodne w `Scope`
+i `Acceptance criteria` odpowiednich WP. Nie twórz obowiązkowej sekcji słownika
+w każdym planie.
+
+Jeśli ustalenie wymaga utrwalenia w dokumentacji projektu, w `Scope` właściwego
+WP podaj docelową treść lub referencję do uzgodnionego ustalenia oraz ścieżkę
+dokumentu, a w `Acceptance criteria` obserwowalny wynik aktualizacji. Nową
+ścieżkę oznacz jako miejsce utworzenia dokumentu, nie jako potwierdzony
+istniejący plik. Decyzję dostępną już w ADR wskazuj odnośnikiem; nie kopiuj
+jej pełnego uzasadnienia do planu.
 
 `Direction, simplicity and consistency` jest zwięzłym, widocznym wynikiem
 critical review. Zawiera dokładnie informacje potrzebne do obrony kierunku:
@@ -220,6 +244,36 @@ Każdy pakiet używa nagłówka `### WP<number> — <tytuł>` i zawiera:
 - Acceptance criteria:
 - Verification:
 ```
+
+### Pole `Verification: v1`
+
+W nowym WP zapisz `Verification` jako blok, który oddziela trwałe testy od
+jednorazowych checków (dzieci wcięte dwiema spacjami):
+
+```md
+- Verification: v1
+  - Durable tests: Zaktualizuj istniejący test listy spraw w `tests/Case/CaseListTest.php` (funkcjonalny), aby sprawdzał komplet rekordów spełniających filtr.
+  - One-off checks: W przeglądarce otwórz `/cases` jako koordynator i sprawdź, że menu kontekstowe wiersza pozwala otworzyć sprawę w nowej karcie (snapshot).
+```
+
+- `Durable tests` wymienia każdy test pozostający w repozytorium: regułę
+  docelowego systemu, ścieżkę istniejącego testu do aktualizacji albo miejsce
+  nowego testu oraz poziom (jednostkowy, integracyjny, funkcjonalny, e2e).
+  Każdy wpis przechodzi bramkę „Trwałe testy a jednorazowa weryfikacja zmiany”.
+- `One-off checks` wymienia jednorazowe sprawdzenia wykonawcze: komendę albo
+  kroki i oczekiwany wynik.
+- Jedno z pól może mieć wartość `none`, oba — nie.
+- Gdy wynik kryterium akceptacji widać tylko w wyrenderowanej aplikacji
+  (układ, fokus, interakcja JavaScript, stan komponentu po akcji), `One-off
+  checks` zawiera check w przeglądarce według
+  `<skills_root>/_shared/references/playwright-cli-verification.md`: trasę lub
+  URL, rolę, kroki i rodzaj dowodu (snapshot, screenshot albo eval). Trwały test
+  e2e takiego zachowania trafia do `Durable tests` tylko po przejściu bramki
+  trwałości.
+
+Gdy choć jeden WP używa `Verification: v1`, walidacja wymaga go we wszystkich
+WP. Plan z samymi polami jednowierszowymi pozostaje ważny; nie migruj go
+masowo, ale każde nowe WP zapisuj już w formacie `v1`.
 
 ### Ocena trudności work package
 
@@ -378,7 +432,7 @@ ich wartości zapisuj pełnymi zdaniami w wybranym języku.
   dokładnie ma się wydarzyć.
 - `Verification` wskazuje trwały test albo jednorazowe sprawdzenie oraz oczekiwany
   wynik. Zachowaj rozróżnienie opisane w bramce „Trwałe testy a jednorazowa
-  weryfikacja zmiany”.
+  weryfikacja zmiany” i format „Pole `Verification: v1`”.
 - Opis nie może wymagać znajomości wcześniejszej rozmowy ani niejawnego
   dopowiadania brakującego wymagania. Jeśli odpowiedź może zmienić zachowanie
   publiczne, model danych, podział odpowiedzialności, granice WP lub kryteria
@@ -809,18 +863,35 @@ Poprawna decyzja zwraca pole `plan`; bez niego `record-review` jej nie przyjmie.
 | Pole | Wymagane | Zasady |
 | --- | --- | --- |
 | `verdict` | zawsze | Jeden z: `PLAN READY`, `PLAN READY WITH CAVEAT`, `PLAN DISCUSS`, `PLAN CHANGES REQUESTED`, `PLAN BLOCKED`. |
-| `full_review_count` | zawsze | Liczba całkowita równa `1`: jedno pełne review poprzedza każdą decyzję cyklu. |
-| `delta_review_count` | zawsze | Liczba całkowita od `0` do `3`. `0` oznacza pełne review; `1`–`3` oznacza kolejne delta-review. Review otwierające nowy cykl po decyzji końcowej ma `1`. |
-| `plan` | pełne review (`delta_review_count: 0`) | Obiekt `plan_id`, `revision`, `content_sha256` przeglądanej rewizji; brak albo `null` przy pełnym review jest błędem `MISSING_PLAN_REFERENCE`. Przy delta-review opcjonalny, ale jeśli jest, musi zgadzać się z `plan_id`, `current_revision` i `current_sha256` z `delta_review` (`PLAN_REFERENCE_CONFLICT`); bez niego helper bierze te wartości z `delta_review`. |
+| `full_review_count` | zawsze | Liczba pełnych review, co najmniej `1`. Pierwsza runda jest pełna; kolejne pełne review zwiększa ten licznik. |
+| `delta_review_count` | zawsze | Liczba delta-review, co najmniej `0`. Suma `full_review_count + delta_review_count` to numer rundy i nie może przekroczyć `4`. Zakres nie resetuje budżetu. |
+| `review_scope` | nowe żądania | `full` albo `delta`: zakres bieżącego review. Pierwsza runda wymaga `full`; kolejne pełne review wymaga co najmniej dwóch w `full_review_count`, delta wymaga co najmniej jednego w `delta_review_count`. Starsze wejście bez pola oznacza `delta`, gdy `delta_review_count > 0`, inaczej `full`. |
+| `review_scope_reason` | nowe żądania review | Krótkie uzasadnienie zakresu zapisane przez ownera w powiązanym żądaniu; helper nie ocenia jego treści. Zmiana kierunku, ownership, modelu danych, zachowania publicznego, kryteriów akceptacji lub granic, zależności czy kolejności WP wymaga `full`; lokalna korekta wymaga `delta`. |
+| `plan` | pierwsza runda (suma liczników `1`) | Obiekt `plan_id`, `revision`, `content_sha256` przeglądanej rewizji; brak albo `null` w pierwszej rundzie jest błędem `MISSING_PLAN_REFERENCE`. W kolejnych rundach opcjonalny, ale jeśli jest, musi zgadzać się z `plan_id`, `current_revision` i `current_sha256` z `delta_review` (`PLAN_REFERENCE_CONFLICT`); bez niego helper bierze te wartości z `delta_review`. |
 | `findings` | zawsze (może być pusta) | Findings bieżącego review. Każdy ma unikalne `id` w formacie `F<number>`, `classification` (`finding`, `QUESTION` albo `SUGGESTION`), jawne `actionable` (boolean) oraz `repair_attempts` (liczba całkowita ≥ 0). |
 | `findings[].severity` | `finding` | `BLOCKER`, `MAJOR` albo `MINOR` dla `classification: finding`; dla `QUESTION` i `SUGGESTION` brak albo `null`. `BLOCKER` i `MAJOR` nie mogą być nieactionable bez `accepted_decision_ref`. |
 | `findings[].approval_affecting` | `QUESTION` | Boolean. Pytanie nie jest `actionable`; approval-affecting `QUESTION` blokuje nawet przy `PLAN READY`. `SUGGESTION` nigdy nie jest actionable. |
 | `findings[].accepted_decision_ref`, `requires_user_decision`, `requires_external_evidence` | opcjonalne | Niepusty string z odwołaniem do decyzji użytkownika albo booleany. Odwołanie wyłącza finding z listy actionable; flagi blokują naprawę. |
 | `findings[].previous_id`, `recurrence` | gdy finding wiąże się z wcześniejszym ID | `previous_id` wskazuje ID z `previous_findings`. Towarzyszy mu `recurrence`: `same_failure_mode` i `new_evidence` (booleany); `new_evidence: true` wymaga niepustego `evidence`. Ten sam failure mode zachowuje poprzednie ID, inny failure mode dostaje nowe. |
 | `findings[].provenance` | nowy actionable finding w delta-review | `kind` (`changed_section`, `changed_work_package` albo `direct_dependency`), `target` z zadeklarowanego zakresu delta oraz niepusty `evidence`. Hashe dokumentów nie zastępują pochodzenia. |
-| `previous_findings` | zawsze (może być pusta) | Wcześniejsze findings: `{id, severity}` albo, dla pytania, `{id, classification: "QUESTION"}` bez severity. Przy pełnym review pusta. Review otwierające nowy cykl (`delta_review_count: 1`) przenosi nierozwiązane findings i pytania z poprzedniego review albo ma pustą listę po `finish-ready`; przy `delta_review_count` ≥ 2 lista musi być niepusta (`EMPTY_PREVIOUS_FINDINGS`). |
+| `previous_findings` | zawsze (może być pusta) | Wcześniejsze findings: `{id, severity}` albo, dla pytania, `{id, classification: "QUESTION"}` bez severity. W pierwszej rundzie pusta. Review otwierające nowy cykl po decyzji końcowej przenosi nierozwiązane findings i pytania albo ma pustą listę po `finish-ready`; używa licznika `1+1` dla delta albo `2+0` dla full, licząc zapisaną bazę jako pierwszą rundę. Od trzeciej rundy lista musi być niepusta (`EMPTY_PREVIOUS_FINDINGS`). |
 | `previous_resolutions` | zawsze (może być pusta) | Dokładnie jedno rozstrzygnięcie na każde wcześniejsze ID; brak to `MISSING_PREVIOUS_RESOLUTION`. Statusy: `resolved`; `current` z `current_severity` zgodnym z bieżącym findingiem; `accepted` z `decision_ref`. Wcześniejsze pytanie można rozstrzygnąć wyłącznie jako `accepted` z `decision_ref: Q<number>`. |
-| `delta_review` | `delta_review_count` ≥ 1 | Obiekt z `delta-input --file`; przy `delta_review_count: 0` jest błędem. Zawiera `plan_id`, `base_revision`, `current_revision`, `base_sha256`, `current_sha256`, `changed_sections`, `changed_work_packages`, `previous_finding_ids` i `allowed_direct_dependencies`. Wymaga co najmniej jednej zmienionej sekcji lub WP, różnych hashy i `previous_finding_ids` zgodnych z `previous_findings`. |
+| `reviewer` | opcjonalne | Kto wykonał review: `{mode: "self"}` albo reviewer z wyniku `review-session-job.mjs accept` (`mode: "external"`, `attempt`, `provider`, `model`, `thinking`). Brak oznacza `self`. Decyzja z `ok=true` zwraca je w polu `reviewer`. |
+| `delta_review` | suma liczników ≥ 2 | Obiekt z `delta-input --file` także przy ponownym pełnym review; w pierwszej rundzie jest błędem. Pełne review używa go do powiązania rewizji i wcześniejszych ID, bez ograniczenia zakresu. Zawiera `plan_id`, `base_revision`, `current_revision`, `base_sha256`, `current_sha256`, `changed_sections`, `changed_work_packages`, `previous_finding_ids` i `allowed_direct_dependencies`. Wymaga co najmniej jednej zmienionej sekcji lub WP, różnych hashy i `previous_finding_ids` zgodnych z `previous_findings`. |
+
+Na czwartej rundzie bez actionable findings wolno zakończyć `finish-ready`.
+Actionable findings na czwartej rundzie dają `blocked` z
+`review-budget-exhausted`, bez automatycznej piątej rundy. Ocena postępu,
+nawrotów i pogorszenia wcześniejszych findings dotyczy każdego kolejnego review,
+także pełnego. Tylko `delta` ogranicza nowe findings do poprawki i jej zależności;
+pełne review może zgłosić niezależny defekt bez provenance z poprawki.
+
+Po review w osobnej sesji wejście buduje `review-cycle.mjs ingest --result
+<result.json> --request <review-request.json>`. Żądanie musi być powiązanym
+wejściem sesji z niezmienionym hashem (`EXTERNAL_REQUEST_UNBOUND`); z raportu
+reviewera pochodzą wyłącznie `verdict`, `findings` i `previous_resolutions`,
+a pozostałe pola i `reviewer` — z żądania i wyniku `accept`. Procedurę opisuje
+`<skills_root>/task-plan/SKILL.md`.
 
 Pochodzenie hashy: `plan.content_sha256` pełnego review to `content_sha256` z
 ostatniego wyniku `validate`, `save` albo `edit` dla przeglądanej rewizji. Po
@@ -936,6 +1007,7 @@ może pozostać i jest sprawdzana przy ponowieniu. Trwałość lokalna nie jest 
 | `reviewed_body_sha256` | SHA-256 treści planu bez sekcji `## Execution` w chwili review; `null` przed review. |
 | `review_base_revision` | Rewizja objęta ostatnią zapisaną decyzją review (dowolne `action`); baza następnego delta-review; `null` przed review. |
 | `review_base_sha256` | SHA-256 bajtów dokumentu, który oceniło ostatnie zapisane review; `null` przed review. |
+| `review_reviewer` | Kto wykonał ostatnie zapisane review: `self` albo `external:<attempt>:<provider>/<model>/<thinking>`; `null` przed review. Przechodzi do kolejnych rewizji razem z `review_base_*`. |
 
 Zasady:
 

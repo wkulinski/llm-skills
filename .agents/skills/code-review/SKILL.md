@@ -363,6 +363,12 @@ A candidate becomes a finding only if it has:
   scenario already present in the baseline and independent of the change is a
   `SUGGESTION` or a rejected candidate
 
+For a `plan` target with full-review scope (`review_scope: full`, or the initial
+full review), the reviewed object is the entire current plan. An independent
+defect already present before the latest fix can be actionable without fix
+provenance. Keep concrete evidence, impact, prior-ID resolutions and recurrence
+checks. Delta plan reviews and code reviews retain the provenance rule above.
+
 Before publication, every candidate must pass this ordered publication gate:
 
 1. **observation** — the concrete behavior, artifact, or gap actually observed;

@@ -47,7 +47,6 @@ Stosuj następującą kolejność:
       istniejącego planu → `$code-implement`;
     - samodzielne zlecenie review kodu lub zmian, także „review aktualnych
       zmian”, bez wymogu słów „pełny” albo „głęboki” → `$code-review` w trybie `code`;
-    - jawne zlecenie review kodu Claude Code z OpenCode → `$claude-review`;
     - szybka auto-weryfikacja przyrostu jako etap workflow implementacji/QA
       albo jawna prośba o szybkie sprawdzenie → `$review-quick`;
     - audyt zgodności skilla, agenta albo reguł instrukcji („zaudytuj

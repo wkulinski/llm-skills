@@ -29,7 +29,6 @@ before installing. The alphabetical skill list is at the end.
 | --- | --- | --- |
 | Review code/current changes or perform a separate read-only plan review | `$code-review` | findings first, coverage and verdict before merge or plan execution |
 | Quickly check an increment during implementation or explicitly request a quick-check | `$review-quick` | findings-first report without a formal verdict |
-| Delegate read-only code review from OpenCode to Claude Code (Opus) through Paseo | `$claude-review` | reviewer report assessed by the `$code-review` gate |
 
 ### Instruction review
 
@@ -116,7 +115,6 @@ remaining skills are independent opt-in entrypoints.
 ## Skill list
 
 - `$agent-cache-clear`
-- `$claude-review`
 - `$code-implement`
 - `$code-review`
 - `$commit-message-write`

@@ -9,6 +9,8 @@ import {assertRepositoryFilePath} from "../artifact-path.mjs";
 import {hasModelProfile, loadModelHierarchy} from "../model-hierarchy.mjs";
 import {parsePackageDifficulty} from "./difficulty.mjs";
 
+export const REVIEWER_LABEL_PATTERN = /^(self|external:(main|fallback|[123]):\S+)$/;
+
 export const PLAN_RESULTS = Object.freeze(["invalid", "blocked", "ready"]);
 
 export const REQUIRED_SECTIONS = Object.freeze([
@@ -116,14 +118,16 @@ export function validatePlanDocument(markdown, options = {}) {
     }
     const packageIds = new Set();
     const difficultyFormat = packages.some((packageRecord) => parsePackageDifficulty(packageRecord.body).present);
+    const verificationFormat = packages.some((packageRecord) => parseStructuredVerification(packageRecord.body).present);
     for (const packageRecord of packages) {
         if (packageIds.has(packageRecord.id)) {
             errors.push(`Duplicate work package id: ${packageRecord.id}.`);
         }
         packageIds.add(packageRecord.id);
-        errors.push(...validatePackage(packageRecord, difficultyFormat));
+        errors.push(...validatePackage(packageRecord, difficultyFormat, verificationFormat));
     }
     errors.push(...validateDifficulty(packages, difficultyFormat));
+    errors.push(...validateStructuredVerification(packages, verificationFormat));
     errors.push(...validateSourceCoverage(parsed.body, packageIds));
     errors.push(...validateExecutionEnvironment(parsed.body, packages, options));
     errors.push(...validateExecutionContract(parsed.body, packages));
@@ -848,6 +852,10 @@ function validateReviewMetadata(metadata) {
             }
         }
     }
+    if (Object.hasOwn(metadata, "review_reviewer") && metadata.review_reviewer !== null
+        && !REVIEWER_LABEL_PATTERN.test(String(metadata.review_reviewer))) {
+        errors.push("Front matter review_reviewer must be null, self or external:<attempt>:<provider>/<model>/<thinking>.");
+    }
     return errors;
 }
 
@@ -951,10 +959,68 @@ function validateDifficulty(packages, difficultyFormat) {
     });
 }
 
-function validatePackage(packageRecord, difficultyFormat) {
+export const VERIFICATION_SUBFIELDS = Object.freeze(["Durable tests", "One-off checks"]);
+
+/**
+ * Read the structured `Verification` field: a top-level `- Verification: v1`
+ * line followed by indented `Durable tests:` and `One-off checks:` bullets.
+ * Other packages keep the inline legacy form.
+ *
+ * @param {string} body
+ * @returns {{present: boolean, values: Map<string, string>}}
+ */
+export function parseStructuredVerification(body) {
+    const values = new Map();
+    const header = realMatches(body, /^-\s+Verification:[ \t]+v1[ \t]*$/gm)[0];
+    if (!header) {
+        return {present: false, values};
+    }
+    const lines = body.slice(header.index + header[0].length).split(/\r?\n/).slice(1);
+    for (const line of lines) {
+        if (line.trim() === "") {
+            continue;
+        }
+        const nested = line.match(/^\s+-\s+([^:]+):[ \t]*(.*)$/);
+        if (!nested) {
+            break;
+        }
+        values.set(nested[1].trim(), nested[2].trim());
+    }
+    return {present: true, values};
+}
+
+/**
+ * Once one package uses the structured `Verification`, every package must:
+ * durable tests and one-off checks are listed separately, `none` is allowed
+ * for one of them, never for both.
+ */
+function validateStructuredVerification(packages, verificationFormat) {
+    if (!verificationFormat) {
+        return [];
+    }
+    return packages.flatMap((packageRecord) => {
+        const {present, values} = parseStructuredVerification(packageRecord.body);
+        if (!present) {
+            return [`${packageRecord.id} must use the structured Verification: v1 field with ${VERIFICATION_SUBFIELDS.join(" and ")}.`];
+        }
+        const errors = VERIFICATION_SUBFIELDS
+            .filter((field) => (values.get(field) ?? "") === "")
+            .map((field) => `${packageRecord.id} Verification is missing non-empty ${field} (use none when there is nothing to list).`);
+        if (errors.length === 0 && VERIFICATION_SUBFIELDS.every((field) => isNone(values.get(field)))) {
+            errors.push(`${packageRecord.id} Verification needs at least one durable test or one-off check.`);
+        }
+        return errors;
+    });
+}
+
+function validatePackage(packageRecord, difficultyFormat, verificationFormat = false) {
     const errors = [];
     const values = new Map();
     for (const field of REQUIRED_PACKAGE_FIELDS) {
+        if (field === "Verification" && verificationFormat) {
+            // Checked as a whole by validateStructuredVerification.
+            continue;
+        }
         // Difficulty has a nested Verification score, not the WP's check.
         // Keep legacy matching unchanged; new-format fields must be top-level.
         const match = difficultyFormat

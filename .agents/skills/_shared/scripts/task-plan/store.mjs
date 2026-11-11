@@ -231,6 +231,7 @@ export function recordReview({repoRoot = process.cwd(), planPath, decision, fsOp
                 : {}),
             review_base_revision: reference.revision,
             review_base_sha256: reference.content_sha256,
+            review_reviewer: reviewerLabel(decision.reviewer),
         };
         const markdown = renderPlanDocument(existing.body, metadata);
         const changed = markdown !== existing.markdown;
@@ -238,10 +239,13 @@ export function recordReview({repoRoot = process.cwd(), planPath, decision, fsOp
         if (!matchesFile && changed) {
             throw staleError();
         }
+        const after = changed ? validatePlanDocument(markdown, {repoRoot: root, fsOps}) : validation;
+        if (!after.valid) {
+            throw new StoreError("INVALID_PLAN", after.errors.join(" "), {errors: after.errors});
+        }
         if (changed) {
             writeFileAtomic(paths.draftPath, markdown, {rootDir: root, fsOps});
         }
-        const after = changed ? validatePlanDocument(markdown, {repoRoot: root, fsOps}) : validation;
         return projectPlanOutcome({
             status: after.status,
             changed,
@@ -259,6 +263,7 @@ export function recordReview({repoRoot = process.cwd(), planPath, decision, fsOp
                 reviewed_body_sha256: metadata.reviewed_body_sha256 ?? null,
                 review_base_revision: metadata.review_base_revision,
                 review_base_sha256: metadata.review_base_sha256,
+                review_reviewer: metadata.review_reviewer,
             },
         });
     });
@@ -443,6 +448,7 @@ const OPTIONAL_METADATA_FIELDS = Object.freeze([
     "reviewed_body_sha256",
     "review_base_revision",
     "review_base_sha256",
+    "review_reviewer",
 ]);
 
 export function renderPlanDocument(body, metadata) {
@@ -462,6 +468,7 @@ export function renderPlanDocument(body, metadata) {
         "reviewed_body_sha256",
         "review_base_revision",
         "review_base_sha256",
+        "review_reviewer",
         "updated_at",
     ];
     const lines = ["---"];
@@ -945,12 +952,25 @@ function carriedReview(existing, body, revision) {
  */
 function carriedReviewBase(existing) {
     if (!existing) {
-        return {review_base_revision: null, review_base_sha256: null};
+        return {review_base_revision: null, review_base_sha256: null, review_reviewer: null};
     }
     return {
         review_base_revision: existing.metadata.review_base_revision ?? null,
         review_base_sha256: existing.metadata.review_base_sha256 ?? null,
+        review_reviewer: existing.metadata.review_reviewer ?? null,
     };
+}
+
+/**
+ * Describe who performed the recorded review: `self` for the plan owner's own
+ * review phase, otherwise `external:<attempt>:<provider>/<model>/<thinking>`
+ * from `review-session-job.mjs accept`. A decision without reviewer is self review.
+ */
+export function reviewerLabel(reviewer) {
+    if (!reviewer || typeof reviewer !== "object" || reviewer.mode !== "external") {
+        return "self";
+    }
+    return `external:${reviewer.attempt}:${reviewer.provider}/${reviewer.model}/${reviewer.thinking ?? "default"}`;
 }
 
 function isSamePlanContent(existing, body, metadata) {

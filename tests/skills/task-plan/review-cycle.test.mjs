@@ -204,7 +204,7 @@ describe("review-cycle budget and progress gate", () => {
     it("blocks before a fourth delta review", () => {
         expect(decideReviewCycle(laterReview({delta_review_count: 3}))).toMatchObject({
             action: REVIEW_ACTIONS.BLOCK,
-            reason: "delta-review-budget-exhausted",
+            reason: "review-budget-exhausted",
         });
     });
 
@@ -547,4 +547,64 @@ describe("review-cycle CLI", () => {
         expect(output.delta_review).toBeNull();
         expect(output.errors.length).toBeGreaterThan(0);
     });
+});
+
+
+describe("adaptive review scope with a four-round budget", () => {
+    function fullAgain(overrides = {}) {
+        return laterReview({review_scope: "full", full_review_count: 2, delta_review_count: 0,
+            findings: [finding({id: "F2"})],
+            previous_resolutions: [{id: "F1", status: "resolved"}], ...overrides});
+    }
+    it("allows a second full review to find an independent defect", () => {
+        expect(decideReviewCycle(fullAgain())).toMatchObject({ok: true, action: REVIEW_ACTIONS.APPLY_REPAIR,
+            review_scope: "full", actionable_finding_ids: ["F2"], plan: REVIEWED_PLAN});
+    });
+    it("still restricts delta findings to the fix and its dependencies", () => {
+        expect(decideReviewCycle(fullAgain({review_scope: "delta", full_review_count: 1, delta_review_count: 1})))
+            .toMatchObject({ok: false, action: REVIEW_ACTIONS.BLOCK});
+    });
+    it.each([[4, 0, "full"], [2, 2, "full"], [2, 2, "delta"], [1, 3, "delta"]])(
+        "blocks further repairs at full=%s delta=%s scope=%s", (full, delta, scope) => {
+            expect(decideReviewCycle(fullAgain({full_review_count: full, delta_review_count: delta, review_scope: scope,
+                findings: [finding({severity: "MINOR", repair_attempts: 1})],
+                previous_resolutions: [{id: "F1", status: "current", current_severity: "MINOR"}]})))
+                .toMatchObject({ok: true, action: REVIEW_ACTIONS.BLOCK, reason: "review-budget-exhausted"});
+        });
+    it("allows readiness on the fourth round", () => {
+        expect(decideReviewCycle(fullAgain({full_review_count: 3, delta_review_count: 1,
+            verdict: "PLAN READY", findings: []})))
+            .toMatchObject({ok: true, action: REVIEW_ACTIONS.FINISH_READY});
+    });
+    it("rejects a fifth round even if it claims readiness", () => {
+        const r = decideReviewCycle(fullAgain({full_review_count: 4, delta_review_count: 1,
+            verdict: "PLAN READY", findings: []}));
+        expect(r.ok).toBe(false);
+        expect(r.errors.map(e => e.code)).toContain("INVALID_REVIEW_COUNT");
+    });
+    it("keeps the progress gate in repeated full reviews", () => {
+        expect(decideReviewCycle(fullAgain({findings: [finding()],
+            previous_resolutions: [{id: "F1", status: "current", current_severity: "MAJOR"}]})))
+            .toMatchObject({ok: true, action: REVIEW_ACTIONS.BLOCK, reason: "no-measurable-progress"});
+    });
+    it("requires the reviewed base and previous resolutions for repeated full reviews", () => {
+        const input = fullAgain();
+        delete input.delta_review;
+        expect(decideReviewCycle(input).ok).toBe(false);
+        const r = decideReviewCycle(fullAgain({previous_resolutions: []}));
+        expect(r.errors.map(e => e.code)).toContain("MISSING_PREVIOUS_RESOLUTION");
+    });
+    it.each(["invalid", null, "delta"])("rejects initial scope %s", scope => {
+        expect(decideReviewCycle(reviewInput({review_scope: scope})).ok).toBe(false);
+    });
+    it("rejects a full continuation whose count only includes the initial full review", () => {
+        expect(decideReviewCycle(fullAgain({full_review_count: 1, delta_review_count: 1})).ok).toBe(false);
+    });
+});
+
+it.each([
+    {attempt: "4", provider: "codex", model: "m", thinking: "high"},
+    {attempt: "1", provider: "codex", model: "bad model", thinking: "high"},
+])("rejects reviewer metadata incompatible with the plan: %j", (fields) => {
+    expect(decideReviewCycle(reviewInput({reviewer: {mode: "external", ...fields}})).ok).toBe(false);
 });

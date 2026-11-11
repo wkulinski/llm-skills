@@ -337,7 +337,7 @@ it("blocks the fourth delta review at the budget boundary", () => {
         }));
 
         assert.equal(decision.action, REVIEW_ACTIONS.BLOCK);
-        assert.equal(decision.reason, "delta-review-budget-exhausted");
+        assert.equal(decision.reason, "review-budget-exhausted");
         assert.equal(snapshot(fixture).content_sha256, after.content_sha256);
     } finally {
         cleanup(fixture);
