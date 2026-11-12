@@ -24,7 +24,7 @@ plugins and consumer configuration before trusting them.
 ## Workflows with external effects
 
 The external plan review of [`$task-plan`](.agents/skills/task-plan/SKILL.md)
-starts a separate agent session through Paseo (harness, model and thinking from
+starts a separate agent process through its CLI directly (harness, model and thinking from
 `PLAN_REVIEW_*` in the project env) in the configured harness permission mode (`PLAN_REVIEW_<N>_MODE`), **without
 additional tool restrictions**: the read-only boundary for repository files is only
 the prompt and the `$code-review` rules. The reviewer may drive the dev

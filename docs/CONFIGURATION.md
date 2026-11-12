@@ -211,7 +211,7 @@ gate, explicit-profile fallback and one-WP user attestation.
 ### External plan review
 
 `$task-plan` can run its read-only plan review in a separate agent session
-through Paseo. Configure it in B's active env (for example `.env.local`):
+through the harness CLI directly, without Paseo. Configure it in B's active env (for example `.env.local`):
 
 ```bash
 PLAN_REVIEW_1_HARNESS=claude
@@ -232,19 +232,27 @@ PLAN_REVIEW_3_MODE=build
 PLAN_REVIEW_TIMEOUT_SECONDS=1200
 ```
 
-`HARNESS` is the Paseo provider, i.e. the agent that runs the session: `claude`
-(Claude Code), `codex` (Codex CLI) or `opencode` (OpenCode). `MODEL` and
-`THINKING` are ids within that harness from
-`paseo provider models <harness> --json`; the same model can have different ids
-in different harnesses. Profiles are tried in preference order 1 → 2 → 3; empty
+`HARNESS` selects `claude` (Claude Code), `codex` (Codex CLI) or `opencode`
+(OpenCode), resolved through `resolve_tool_cmd` in B. `MODEL` and `THINKING`
+are native CLI identifiers (`--model` plus Claude `--effort`, Codex
+`model_reasoning_effort`, or OpenCode `--variant`). `MODE` selects Claude's
+permission mode, Codex's sandbox mapping, or OpenCode's built-in `build`/`plan` agent. See the
+[mode mapping](../.agents/skills/_shared/references/review-session-contract.md#konfiguracja).
+Codex `auto-review` maps to `workspace-write` with `approval_policy=never`;
+it does not invoke Paseo's approval reviewer. OpenCode permissions come from
+its configuration; the runner does not enable `--auto`. Direct execution requires
+a POSIX runtime (use WSL on Windows). The reviewer CLI runs with the coordinator's environment: B's env files are
+used only to resolve the executable (`BIN_PATH`), so application variables such
+as API keys are not passed to it. The CLI must support these noninteractive
+options; unsupported settings fail the profile instead of selecting defaults.
+Model ids can differ between harnesses. Profiles are tried in preference order 1 → 2 → 3; empty
 profiles are skipped silently. All four settings (`HARNESS`, `MODEL`, `THINKING`,
 `MODE`) are required in each configured profile. Incomplete profiles are skipped
 with a warning; other valid profiles remain available. The coordinator mentions
 configuration warnings in its next progress update or final result without
 pausing or asking for approval. Rejected model/mode identifiers at launch also
 advance to the next profile with a brief notice. Replace the old `MAIN_*` and `FALLBACK_*` keys with
-`1_*` and `2_*`; the old env names are no longer read. Without any profile, without
-Paseo, or when every attempt fails, the plan owner performs the review itself as
+`1_*` and `2_*`; the old env names are no longer read. Without any profile, when configured CLIs are unavailable, or when every attempt fails, the plan owner performs the review itself as
 before. The
 [review-session contract](../.agents/skills/_shared/references/review-session-contract.md)
 owns the attempt order and result checks. Failed profiles stay disabled for

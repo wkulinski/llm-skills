@@ -72,7 +72,7 @@ The audit covered every JavaScript/module and shell script under
 
 | Area | Capture paths covered |
 | --- | --- |
-| Context and planning | Manifest/fingerprint Git calls, scout preflight/build/validation, plan publication, cache resolver |
+| Context and planning | Manifest/fingerprint Git calls, scout preflight/build/validation, plan publication, cache resolver, external review runner |
 | Git and GitHub | Issue branch/start/status/review, commit snapshots and staging checks |
 | Implement/review | Change inspection and Claude review Git snapshots |
 | QA and browser tools | Working-tree inspection, tool resolution, command output streaming, auth helpers |

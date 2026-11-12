@@ -6,6 +6,7 @@ description: >-
   potrzebujesz planu wykonawczego przed implementacją.
 shared_files:
   - _shared/scripts/file-process.mjs
+  - _shared/scripts/file-process-async.mjs
   - _shared/references/task-plan-contract.md
   - _shared/references/skill-routing-policy.md
   - _shared/references/runtime-collaboration-guidelines.md
@@ -33,6 +34,7 @@ shared_files:
   - _shared/scripts/task-plan/publication.mjs
   - _shared/scripts/task-plan/validate.mjs
   - _shared/scripts/review-session-job.mjs
+  - _shared/scripts/review-session-run.mjs
   - _shared/references/review-session-contract.md
   - _shared/references/playwright-cli-verification.md
   - _shared/scripts/playwright-access-prepare.sh
@@ -418,9 +420,9 @@ z ostatnim zakończonym jobem: profile, które zawiodły, pozostają wyłączone
 a zmiana ich ustawień pozwala na ponowną próbę. Poprawny raport z findings
 nie wyłącza profilu; zmiana wejść również nie jest awarią reviewera.
 Puste profile pomijaj bez komunikatu; o wadliwych (`prepare.warnings` albo
-odrzucenie ustawień przez Paseo) informuj przy okazji komunikatu postępu i
+odrzucenie ustawień przez CLI harnessu) informuj przy okazji komunikatu postępu i
 kontynuuj według `next`, bez pytania ani zatrzymywania workflow.
-Gdy mechanizm zwraca `self` — brak konfiguracji, brak Paseo, porażka
+Gdy mechanizm zwraca `self` — brak konfiguracji, niedostępne CLI, porażka
 wszystkich prób albo zmiana wejść w trakcie — review wykonuje bieżący agent jako
 odrębną fazę read-only, tak jak bez tego mechanizmu. Budżet rund, decyzja helpera
 i tabela werdyktów są w obu przypadkach te same. W nowym żądaniu zapisuj
