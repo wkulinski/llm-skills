@@ -2,7 +2,7 @@
 
 Czytaj przed każdą rundą read-only review planu (sekcja 5 `SKILL.md`): pełnym
 review kandydata i każdym delta-review. Mechanizm uruchamia review w osobnej
-sesji agenta przez Paseo. Format zlecenia, kolejność prób i decyzje helpera
+sesji agenta przez bezpośrednie CLI harnessu (bez Paseo). Format zlecenia, kolejność prób i decyzje helpera
 opisuje `<skills_root>/_shared/references/review-session-contract.md`.
 
 Każde `next.action: self` oznacza powrót do dotychczasowego review bieżącego
@@ -80,49 +80,45 @@ resetowania drabinki w trwającym cyklu.
 
 ## 3. Próba
 
-Dla `next.action: launch` ustal Paseo przez `resolve_tool_cmd paseo` z
-`<skills_root>/_shared/scripts/env-load.sh`. Brak Paseo oznacza review bieżącego
-agenta bez dalszych kroków. Uruchom sesję z parametrów `next.launch`:
+Dla `next.action: launch` uruchom jedną próbę przez wspólny runner:
 
 ```bash
-source <skills_root>/_shared/scripts/env-load.sh
-PASEO="$(resolve_tool_cmd paseo)"
-"$PASEO" run --no-wait -q --provider <provider> --model <model> --thinking <thinking> \
-  --mode <mode> --cwd <cwd> --title "<title>" "$(cat <prompt_path>)" > <job_dir>/session-<attempt>.txt
-"$PASEO" inspect "$(cat <job_dir>/session-<attempt>.txt)" --json > <job_dir>/inspect-launch-<attempt>.json
-node <skills_root>/_shared/scripts/review-session-job.mjs bind-session \
-  --job <job_path> --inspect <job_dir>/inspect-launch-<attempt>.json \
-  [--parent-id "$PASEO_AGENT_ID"] > <job_dir>/bind-<attempt>.json
+node <skills_root>/_shared/scripts/review-session-run.mjs --job <job_path> \
+  > <job_dir>/run-<attempt>.json
 ```
 
-`--mode` jest wymagany dla każdego uruchamianego profilu. `--parent-id` podaj tylko wtedy, gdy `PASEO_AGENT_ID` jest ustawione. Nieudane
-`paseo run` zapisz przez `record-failure --reason LAUNCH_FAILED`; gdy przyczyną
-jest odrzucenie ustawień profilu, zgłoś je użytkownikowi przy okazji komunikatu
-postępu i przejdź do kolejnego profilu według `next`, bez pytania i zatrzymania. Sesja z `PendingPermissions` oznacza, że ustawiony tryb nie pozwala na pracę
-bez nadzoru: zatrzymaj tę sesję, zapisz porażkę przez `record-failure --reason
-LAUNCH_FAILED`, krótko zgłoś problem i wykonaj `next`. Nie czekaj na poprawienie
-env ani zatwierdzenie uprawnienia przez użytkownika. Wynik
-`bind-session` z `ok: false` oznacza niezgodną sesję: zatrzymaj ją
-(`paseo stop <id>`) i wykonaj jego `next`.
+Runner ładuje env projektu B, ustala CLI przez `resolve_tool_cmd`, wiąże osobne
+uruchomienie z jobem, przekazuje jawne ustawienia profilu i czeka na proces.
+Dla długiej próby używaj nieblokującego wykonania dostępnego w narzędziu
+harnessu ownera i wysyłaj komunikaty postępu. Nie uruchamiaj równolegle dwóch
+runnerów dla tego samego joba. Runtime wymaga POSIX (na Windows użyj WSL).
 
-Po `next.action: wait`:
+Runner zapisuje stdout, stderr i metadane procesu w katalogu joba. Brak CLI lub
+nieobsługiwany harness/tryb daje `LAUNCH_FAILED`; błąd procesu lub brak poprawnego
+wyniku harnessu daje `PROVIDER_ERROR`. Timeout zatrzymuje grupę procesów i daje
+`TIMEOUT_STOPPED` albo `TIMEOUT_STOP_UNCONFIRMED`. Przy niepotwierdzonym
+zatrzymaniu zgłoś identyfikator uruchomienia z metadanych procesu.
+Ostrzeżenia runnera pokaż przy okazji komunikatu postępu, bez pytań i zatrzymania.
+Wynik `next.action: launch` oznacza kolejną próbę tego samego polecenia,
+a `self` — review bieżącego agenta. Nie ponawiaj profilu inną ścieżką.
+Gdy runner został przerwany (limit czasu narzędzia, Ctrl+C, zamknięty terminal),
+uruchom to samo polecenie ponownie: runner zatrzyma pozostawiony proces i zwróci
+`self` (`INTERRUPTED`) bez wyłączania profilu w kolejnych rundach cyklu.
+
+Dla `next.action: accept` użyj dokładnych ścieżek `envelope_path` i
+`inspect_path` zwróconych przez runner:
 
 ```bash
-"$PASEO" wait <session-id> --timeout <wait_timeout_seconds> --json > <job_dir>/wait-<attempt>.json
-"$PASEO" inspect <session-id> --json > <job_dir>/inspect-final-<attempt>.json
-"$PASEO" logs <session-id> --filter text --tail 1 > <job_dir>/envelope-<attempt>.txt
 node <skill_dir>/scripts/review-cycle.mjs accept-session \
-  --job <job_path> --envelope <job_dir>/envelope-<attempt>.txt \
-  --inspect <job_dir>/inspect-final-<attempt>.json \
-  --request <CACHE_PATH>/task-plan/review-request-<plan-id>-r<revision>.json > <job_dir>/accept-<attempt>.json
+  --job <job_path> --envelope <envelope_path> --inspect <inspect_path> \
+  --request <CACHE_PATH>/task-plan/review-request-<plan-id>-r<revision>.json \
+  > <job_dir>/accept-<attempt>.json
 ```
 
-Gdy `wait` przekroczy limit, wykonaj `paseo stop <session-id>`, sprawdź przez
-`inspect`, czy sesja nie pracuje, i zapisz `record-failure --reason
-TIMEOUT_STOPPED` albo `TIMEOUT_STOP_UNCONFIRMED`. Sesję zakończoną błędem
-providera (np. wyczerpany limit tokenów) bez koperty zapisz jako
-`PROVIDER_ERROR`; brak lub niepoprawna koperta przy `accept` daje to samo
-przejście do kolejnej próby. Każdy wynik wykonuj według jego `next`.
+Tożsamość uruchomienia jest dowodem lokalnego wywołania z zadanymi parametrami,
+nie niezależnym potwierdzeniem faktycznego modelu po stronie providera.
+Runner nie przyjmuje raportu samodzielnie: o kolejnym kroku rozstrzyga wynik
+`accept-session`. Nie używaj surowego stdout jako raportu.
 
 Podczas review nie zmieniaj planu ani powiązanych wejść. Zmiana daje `STALE` i
 review bieżącego agenta dla aktualnego stanu.

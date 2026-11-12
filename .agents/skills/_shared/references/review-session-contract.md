@@ -8,18 +8,21 @@ zlecającego (np. `$task-plan`).
 ## Zasada
 
 Jedno zlecenie (`job.json`) to jedna runda review z najwyżej trzema próbami:
-profile `1`, `2`, `3` w kolejności preferencji. Helper nie uruchamia agentów, nie wywołuje Paseo i nie
-czeka na wynik; robi to agent koordynujący i przekazuje helperowi wyniki. Każda
+profile `1`, `2`, `3` w kolejności preferencji. Helper nie uruchamia agentów i nie czeka na wynik. Koordynator wywołuje
+`<skills_root>/_shared/scripts/review-session-run.mjs --job <job.json>`, który
+uruchamia bezpośrednie CLI i przekazuje helperowi tożsamość uruchomienia.
+Paseo nie jest wymagane ani używane. Każda
 operacja zwraca pole `next`:
 
 | `next.action` | Działanie koordynatora |
 | --- | --- |
-| `launch` | Uruchom sesję z `next.launch` (provider, model, thinking, cwd, timeout, prompt). |
-| `wait` | Czekaj na zakończenie powiązanej sesji, potem `accept`. |
+| `launch` | Uruchom jedną próbę przez `review-session-run.mjs --job`; parametry pochodzą z joba. |
+| `wait` | Wewnętrzny stan po `bind-session`; runner czeka na zakończenie procesu. |
+| `accept` | Wynik runnera: przekaż `envelope_path` i `inspect_path` do walidatora konsumenta. |
 | `evaluate` | Raport przyjęty; oceń go według procedury skilla zlecającego. |
 | `self` | Zewnętrzne review nie dało wyniku; wykonaj review samodzielnie, jak bez tego mechanizmu. |
 
-Brak konfiguracji, brak Paseo, błąd providera, wyczerpanie limitu, timeout,
+Brak konfiguracji, brak CLI harnessu, błąd providera, wyczerpanie limitu, timeout,
 niezgodna sesja i niepoprawny raport nigdy nie blokują workflow: kończą się
 kolejnym skonfigurowanym profilem, a po wyczerpaniu profili `self`.
 
@@ -62,7 +65,7 @@ zlecający, np. `PLAN_REVIEW`.
 | Klucz | Znaczenie |
 | --- | --- |
 | `<PREFIX>_<N>_HARNESS`, `_<N>_MODEL`, `_<N>_THINKING` | Profil review, gdzie `N` to `1`, `2` albo `3`. Niższy numer oznacza wyższą preferencję; puste profile są pomijane. Bez żadnego profilu `prepare` zwraca `self` (`NOT_CONFIGURED`). |
-| `<PREFIX>_<N>_MODE` | Wymagany tryb uprawnień harnessu (`paseo run --mode`), dobrany do sesji bez nadzoru. |
+| `<PREFIX>_<N>_MODE` | Wymagany tryb uprawnień harnessu (mapowanie na CLI opisane poniżej), dobrany do sesji bez nadzoru. |
 | `<PREFIX>_TIMEOUT_SECONDS` | Limit oczekiwania na jedną próbę; domyślnie 1200. |
 
 Profil z wszystkimi czterema polami pustymi jest nieobecny: pomiń go bez
@@ -75,21 +78,52 @@ jakichkolwiek profili nadal daje `NOT_CONFIGURED`.
 
 Koordynator pokazuje ostrzeżenia użytkownikowi przy okazji najbliższego komunikatu
 postępu lub wyniku, bez pytania i bez zatrzymywania workflow. Także odrzucenie
-parametrów przez Paseo (np. nieznany model albo tryb) zgłoś krótko przy okazji,
+parametrów przez CLI (np. nieznany model albo tryb) zgłoś krótko przy okazji,
 zapisz porażkę próby i przejdź według `next`. Helper sprawdza kompletność profilu;
-ważność identyfikatorów harnessu, modelu, thinking i mode sprawdza Paseo przy
+Runner sprawdza obsługiwany harness i mode; CLI sprawdza model i thinking przy
 uruchomieniu. Nie uruchamiaj profilu bez jawnego `MODE`.
 
 Niepoprawny wspólny timeout nadal daje `self` (`CONFIG_INVALID`) z listą
 problemów, ponieważ dotyczy wszystkich prób.
 
-`HARNESS` to provider Paseo, czyli agent uruchamiający sesję: `claude` (Claude
-Code), `codex` (Codex CLI), `opencode` (OpenCode); listę zwraca `paseo provider ls`.
-`MODEL` i `THINKING` to identyfikatory w obrębie tego harnessu z
-`paseo provider models <harness> --json` (`id`, `thinkingOptionIds`). Ten sam
-model może mieć różne identyfikatory w różnych harnessach, np. `gpt-6.1-sol` w
-`codex` i `openai/gpt-6.1-sol` w `opencode`, jeśli OpenCode ma skonfigurowanego
-providera OpenAI.
+`HARNESS` wybiera bezpośrednie CLI: `claude`, `codex` albo `opencode`.
+Entrypoint jest ustalany przez `resolve_tool_cmd` z env projektu B (w tym
+`BIN_PATH`). `MODEL` i `THINKING` to natywne identyfikatory harnessu; dostępność
+modelu i wariantu zależy od konfiguracji providera. Runner nie wybiera zamiennika.
+
+| Harness | Model / thinking | MODE |
+| --- | --- | --- |
+| `claude` | `--model` / `--effort` | `auto`, `acceptEdits`, `bypassPermissions`, `dontAsk`, `plan` → `--permission-mode` |
+| `codex` | `--model` / `model_reasoning_effort` | `read-only` → sandbox `read-only`; `auto-review` → `workspace-write`; `full-access` → `danger-full-access`; zawsze `approval_policy=never` dla pracy bez pytań |
+| `opencode` | `--model` / `--variant` | `build` albo `plan` → `--agent`; uprawnienia wynikają z konfiguracji OpenCode |
+
+`MODE` nie ma wspólnej semantyki między harnessami. Przy migracji z Paseo
+sprawdź powyższe mapowanie: Codex `auto-review` nie korzysta z automatycznego
+recenzenta uprawnień Paseo, a polecenia wymagające zgody są odrzucane.
+Nieobsługiwany tryb kończy próbę; runner nie rozszerza uprawnień automatycznie.
+Runner obsługuje tylko wbudowane tryby OpenCode `build` i `plan`; inne nazwy
+odrzuca, aby nie dopuścić cichego wyboru agenta domyślnego przez CLI.
+OpenCode nie dostaje `--auto`. Żaden harness nie dostaje flagi kontynuacji sesji.
+
+Runner wykonuje jedną próbę na POSIX (Windows: WSL), zapisuje prywatne logi
+w katalogu joba i zatrzymuje grupę procesów po timeout lub przerwaniu
+SIGINT/SIGTERM/SIGHUP. Env projektu B służy wyłącznie do ustalenia entrypointu
+CLI (`resolve_tool_cmd`, `BIN_PATH`); CLI działa ze środowiskiem koordynatora,
+więc zmienne z plików env aplikacji (np. klucze API) do niego nie trafiają.
+PID i czas startu grupy procesów runner zapisuje w katalogu joba zaraz po
+uruchomieniu (`running-<id>.json`).
+Przerwanie runnera nie jest awarią providera: próba kończy się wynikiem
+`INTERRUPTED`, profil nie trafia do `disabled_profiles`, a `next` to `self`.
+Gdy runner zginął bez obsługi (SIGKILL, zamknięty terminal), ponowne
+`review-session-run.mjs --job` zatrzymuje pozostawioną grupę (po zgodności czasu
+startu, by nie ruszyć obcego procesu o tym samym PID) i zwraca to samo `self`;
+niepotwierdzone zatrzymanie oznacza `RUNNER_INTERRUPTED_STOP_UNCONFIRMED`.
+Kod wyjścia różny od zera oznacza porażkę nawet przy obecności raportu.
+Codex oddaje ostatnią wiadomość przez `--output-last-message`, Claude przez
+wynik JSON `--print`, a OpenCode przez zdarzenia JSON zakończone `step_finish`
+z powodem `stop`. Odrzucone uprawnienia Claude albo zdarzenie błędu OpenCode
+kończą próbę jako błąd providera. Wynik runnera `next.action: accept` zawiera
+`envelope_path` i `inspect_path` do walidacji przez konsumenta; nie jest `ACCEPTED`.
 
 Stare klucze env `MAIN_*` i `FALLBACK_*` zastąp odpowiednio `1_*` i `2_*`.
 Helper nie odczytuje starych nazw. Istniejące zlecenia i wpisy review planów
@@ -134,10 +168,14 @@ schemat określa plik zadania skilla zlecającego.
 
 ## Decyzje
 
-`bind-session` porównuje `paseo inspect` z bieżącą próbą: identyfikator sesji,
-provider i cwd zawsze, model i thinking, gdy provider je raportuje, a rodzica
-tylko przy podanym `--parent-id` (koordynator działający pod Paseo przekazuje
-`$PASEO_AGENT_ID`). Niezgodność kończy próbę wynikiem `SESSION_MISMATCH`.
+`bind-session` porównuje tożsamość lokalnego uruchomienia z bieżącą próbą:
+`id`, `provider`, `cwd`, oraz `model` i `thinking`, gdy są raportowane.
+Runner tworzy nowy UUID dla każdej próby i zapisuje go razem z PID i wynikiem
+procesu. Tożsamość ma pola `id`, `provider`, `model`, `thinking`, `cwd`,
+`pending_permissions`; nie wymaga formatu ani relacji rodzica Paseo.
+Dowodzi parametrów wywołania, nie faktycznego wyboru modelu przez provider.
+Starsze tożsamości `Id`/`Provider`/`Cwd` pozostają czytelne dla istniejących jobów.
+Niezgodność kończy próbę wynikiem `SESSION_MISMATCH`.
 
 `accept` sprawdza warunki w tej kolejności:
 
@@ -153,7 +191,7 @@ tylko przy podanym `--parent-id` (koordynator działający pod Paseo przekazuje
 | wszystkie powyższe spełnione | `ACCEPTED` | `evaluate` |
 
 `record-failure --reason` zapisuje porażkę bez koperty: `LAUNCH_FAILED` (brak
-Paseo, odrzucone uruchomienie), `PROVIDER_ERROR` (sesja zakończona błędem, np.
+CLI, odrzucone uruchomienie), `PROVIDER_ERROR` (sesja zakończona błędem, np.
 wyczerpanym limitem), `TIMEOUT_STOPPED` i `TIMEOUT_STOP_UNCONFIRMED`. Przy
 niepotwierdzonym zatrzymaniu zgłoś użytkownikowi identyfikator sesji; runda i tak
 przechodzi dalej.

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 // One review round delegated to a separate agent session (for example through
-// Paseo). The helper prepares and validates the round; it never starts agents,
-// runs Paseo, or polls. The coordinating agent launches sessions and passes the
+// direct CLI). The helper prepares and validates the round; it never starts
+// agents or polls. The coordinating agent launches sessions and passes the
 // results in. Every operation returns `next`: launch the next attempt, evaluate
 // an accepted report, or fall back to the coordinator's own (self) review.
 
@@ -114,7 +114,7 @@ export function resolveAttempts(values, prefix) {
     const warnings = [];
     for (const name of ATTEMPTS) {
         const read = (field) => String(values[`${prefix}_${name.toUpperCase()}_${field}`] ?? "").trim();
-        // HARNESS is the Paseo provider: claude (Claude Code), codex (Codex CLI), opencode (OpenCode).
+        // HARNESS is the direct CLI: claude (Claude Code), codex (Codex CLI), opencode (OpenCode).
         const fields = {HARNESS: read("HARNESS"), MODEL: read("MODEL"), THINKING: read("THINKING"), MODE: read("MODE")};
         const missing = Object.keys(fields).filter(field => fields[field] === "");
         if (missing.length === 4) { continue; }
@@ -154,7 +154,7 @@ function renderPrompt(job, task) {
     return `You are a delegated reviewer started by a coordinating agent in a separate session.
 You are not the main agent of this repository: do not run \`$context-refresh\` or the
 repository-context hybrid, do not follow the startup procedure of AGENTS.md, do not
-ask the user questions, and do not start agents or Paseo sessions. Do not edit, create
+ask the user questions, and do not start other agents or harness sessions. Do not edit, create
 or delete repository files; your own temporary artifacts may go only under
 ${job.cache_root}.
 
@@ -352,12 +352,12 @@ function failAttempt(jobPath, job, attempt, outcome) {
 
 function sessionIdentity(inspect) {
     return {
-        id: inspect?.Id ?? null,
-        parent_id: inspect?.ParentAgentId ?? null,
-        provider: inspect?.Provider ?? null,
-        model: inspect?.Model ?? null,
-        thinking: inspect?.Thinking ?? null,
-        cwd: typeof inspect?.Cwd === "string" ? canonicalPath(inspect.Cwd) : null,
+        id: inspect?.id ?? inspect?.Id ?? null,
+        parent_id: inspect?.parent_id ?? inspect?.ParentAgentId ?? null,
+        provider: inspect?.provider ?? inspect?.Provider ?? null,
+        model: inspect?.model ?? inspect?.Model ?? null,
+        thinking: inspect?.thinking ?? inspect?.Thinking ?? null,
+        cwd: typeof (inspect?.cwd ?? inspect?.Cwd) === "string" ? canonicalPath(inspect.cwd ?? inspect.Cwd) : null,
     };
 }
 
@@ -404,7 +404,7 @@ function inputChanges(job) {
     return changed;
 }
 
-// Harnesses differ in what `paseo logs --tail 1` returns around the final message
+// Harnesses differ in the framing around the final message
 // (Codex prefixes a `---` separator). The envelope is the last line that is by
 // itself one JSON object; text sharing that line with the JSON is still rejected.
 function extractEnvelope(text) {
@@ -473,7 +473,7 @@ export function acceptResult({jobPath, envelopeText, inspect, validateReport = n
     if (identity.id !== attempt.session.id) {
         return failAttempt(jobPath, job, attempt, {decision: "REJECTED", reason: "SESSION_MISMATCH", details: ["id"]});
     }
-    if (Array.isArray(inspect?.PendingPermissions) && inspect.PendingPermissions.length > 0) {
+    if ((inspect?.pending_permissions ?? inspect?.PendingPermissions ?? []).length > 0) {
         return failAttempt(jobPath, job, attempt, {decision: "BLOCKED", reason: "PERMISSION_PENDING"});
     }
     const parsed = parseEnvelope(envelopeText);
@@ -534,23 +534,44 @@ export function recordFailure({jobPath, reason}) {
     return failAttempt(jobPath, job, attempt, {decision: "FAILED", reason, session_id: attempt.session?.id ?? null});
 }
 
+/**
+ * The runner was stopped (signal, or its own death found on restart) while an
+ * attempt was bound. This is neither a provider failure nor a verdict about the
+ * profile: it stays enabled for later rounds, and this round ends in self review.
+ */
+export function recordInterruption({jobPath, stopped = true}) {
+    const job = loadJob(jobPath);
+    const attempt = currentAttempt(job);
+    if (attempt === null) {
+        throw new JobError("NO_ATTEMPT_LEFT", "No attempt is running.");
+    }
+    attempt.outcome = {
+        decision: "INTERRUPTED",
+        reason: stopped ? "RUNNER_INTERRUPTED" : "RUNNER_INTERRUPTED_STOP_UNCONFIRMED",
+        session_id: attempt.session?.id ?? null,
+    };
+    job.result = {decision: "SELF", reason: "INTERRUPTED"};
+    saveJob(jobPath, job);
+    return {...attempt.outcome, attempt: attempt.name, next: selfNext("INTERRUPTED")};
+}
+
 function usage() {
     return `Usage:
   review-session-job.mjs prepare --prefix <ENV_PREFIX> --kind <label> --job-id <uuid> --task <file> --context <file>... [--root <repo>] [--previous-job <job.json>]
-  review-session-job.mjs bind-session --job <job.json> --inspect <paseo-inspect.json> [--parent-id <agent-id>]
-  review-session-job.mjs accept --job <job.json> --envelope <final-message.txt> --inspect <paseo-inspect.json>
+  review-session-job.mjs bind-session --job <job.json> --inspect <identity.json> [--parent-id <agent-id>]
+  review-session-job.mjs accept --job <job.json> --envelope <final-message.txt> --inspect <identity.json>
   review-session-job.mjs record-failure --job <job.json> --reason <${FAILURE_REASONS.join("|")}>
 
 Configuration comes from the project env: <PREFIX>_<N>_{HARNESS,MODEL,THINKING,MODE}
 for N=1,2,3 in preference order (empty profiles are skipped; incomplete ones are
 skipped with warnings), and <PREFIX>_TIMEOUT_SECONDS
-(default ${DEFAULT_TIMEOUT_SECONDS}). HARNESS is the Paseo provider (claude, codex,
-opencode); MODEL and THINKING are ids from "paseo provider models <harness> --json".
+(default ${DEFAULT_TIMEOUT_SECONDS}). HARNESS is the direct CLI (claude, codex,
+opencode); MODEL and THINKING are native harness identifiers.
 Pass --previous-job only for another round of the same planning cycle. Unchanged
 failed profiles are skipped; changed settings enable retries. Omit it for a new
 cycle. skipped_profiles is a brief progress notice, not a blocker.
 Every result carries "next": launch, wait,
-evaluate or self. The helper never starts agents, runs Paseo, or polls.
+evaluate or self. The helper never starts agents, executes harnesses, or polls.
 `;
 }
 
