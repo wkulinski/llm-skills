@@ -1,0 +1,92 @@
+[
+  {
+    "id": "missing-requirement",
+    "source": "Export active and archived orders. Preserve the existing CSV columns.",
+    "files": {
+      "src/export.mjs": "export function exportOrders(rows) { return rows.filter(row => !row.archived).map(row => `${row.id},${row.total}`).join(\"\\n\"); }\n"
+    },
+    "plan": "# Order workflow change\n\n## Execution\n\n- [ ] WP1\n\n## Work package summaries\n\n- WP1 — Export orders.\n\n## Source and objective\n\nExport active and archived orders. Preserve the existing CSV columns.\n\n## Source assessment\n\n- Requested outcome: Export active and archived orders. Preserve the existing CSV columns.\n- Explicit constraints: Preserve behavior outside the requested outcome.\n- Observed symptoms: As described in source.md.\n- Suggested diagnosis or solution: As proposed below; subject to review.\n- Claims verified in evidence: Repository files exist.\n- Claims corrected or still unverified: Planned changes require verification.\n\n## Scope\n\nImplement the listed work packages only.\n\n## Direction, simplicity and consistency\n\n- Existing mechanism reused: Existing entrypoints and storage.\n- Simpler alternative considered: Keep the current behavior; it does not meet the requested outcome.\n- Why the selected approach is minimal: Restrict edits to the mechanism listed in each WP.\n- Duplicate or parallel responsibilities: No additional subsystem.\n- Cross-WP consistency and ownership: Follow Order below.\n\n## Source coverage\n\n- Source request → WP1\n\n## Work packages\n\n### WP1 — Export orders\n\n- Source: source.md\n- Goal: Export orders.\n- Scope: Change src/export.mjs to format totals with two decimals; keep the current filter.\n- Out of scope: Unrelated cleanup.\n- Confirmed paths: src/export.mjs\n- Candidate paths: none\n- Discovery required: none\n- Estimated size: small\n- Acceptance criteria: Active orders have two decimal totals.\n- Verification: Check active orders with fractional totals.\n\n## Order\n\nWP1\n\n## Decisions and open questions\n\n- No open product decisions.\n\n## Risks and discovery debt\n\n- Verify the proposed mechanism against the supplied repository before execution.\n\n## Acceptance and verification\n\nAcceptance criteria and checks are listed per WP.\n\n## Execution environment\n\nNode.js; use node:test for durable tests.\n",
+    "expected": [
+      {
+        "id": "archive-omission",
+        "failure": "The plan never removes the archived-order filter, so the requested archived rows remain absent.",
+        "evidence": "Source requested archived orders; src/export.mjs filter and WP1 scope/AC."
+      }
+    ]
+  },
+  {
+    "id": "wrong-diagnosis",
+    "source": "Fix CSV exports containing only the first 100 orders when 250 orders match the filter.",
+    "files": {
+      "src/ui.mjs": "export const previewLimit = 100;\nexport function downloadLink() { return \"/export.csv\"; }\n",
+      "src/export.mjs": "export function exportOrders(rows) { return rows.slice(0, 100).map(row => row.id).join(\"\\n\"); }\n"
+    },
+    "plan": "# Order workflow change\n\n## Execution\n\n- [ ] WP1\n\n## Work package summaries\n\n- WP1 — Increase preview size.\n\n## Source and objective\n\nFix CSV exports containing only the first 100 orders when 250 orders match the filter.\n\n## Source assessment\n\n- Requested outcome: Fix CSV exports containing only the first 100 orders when 250 orders match the filter.\n- Explicit constraints: Preserve behavior outside the requested outcome.\n- Observed symptoms: As described in source.md.\n- Suggested diagnosis or solution: As proposed below; subject to review.\n- Claims verified in evidence: Repository files exist.\n- Claims corrected or still unverified: Planned changes require verification.\n\n## Scope\n\nImplement the listed work packages only.\n\n## Direction, simplicity and consistency\n\n- Existing mechanism reused: Existing entrypoints and storage.\n- Simpler alternative considered: Keep the current behavior; it does not meet the requested outcome.\n- Why the selected approach is minimal: Restrict edits to the mechanism listed in each WP.\n- Duplicate or parallel responsibilities: No additional subsystem.\n- Cross-WP consistency and ownership: Follow Order below.\n\n## Source coverage\n\n- Source request → WP1\n\n## Work packages\n\n### WP1 — Increase preview size\n\n- Source: source.md\n- Goal: Increase preview size.\n- Scope: Change previewLimit in src/ui.mjs to 250 because the preview limit truncates downloads.\n- Out of scope: Unrelated cleanup.\n- Confirmed paths: src/ui.mjs, src/export.mjs\n- Candidate paths: none\n- Discovery required: none\n- Estimated size: small\n- Acceptance criteria: A preview can display 250 orders.\n- Verification: Check previewLimit equals 250.\n\n## Order\n\nWP1\n\n## Decisions and open questions\n\n- No open product decisions.\n\n## Risks and discovery debt\n\n- Verify the proposed mechanism against the supplied repository before execution.\n\n## Acceptance and verification\n\nAcceptance criteria and checks are listed per WP.\n\n## Execution environment\n\nNode.js; use node:test for durable tests.\n",
+    "expected": [
+      {
+        "id": "wrong-cause",
+        "failure": "The CSV is truncated by the server slice, independent of previewLimit. The planned UI edit cannot fix the reported export.",
+        "evidence": "src/ui.mjs downloadLink and src/export.mjs slice versus WP1 diagnosis."
+      }
+    ]
+  },
+  {
+    "id": "missed-consumer",
+    "source": "Reject negative order totals in both manual creation and CSV imports.",
+    "files": {
+      "src/orders.mjs": "export function saveOrder(store, order) { store.push(order); }\n",
+      "src/form.mjs": "import {saveOrder} from \"./orders.mjs\";\nexport function submit(store, order) { saveOrder(store, order); }\n",
+      "src/import.mjs": "import {saveOrder} from \"./orders.mjs\";\nexport function importRows(store, rows) { rows.forEach(row => saveOrder(store, row)); }\n"
+    },
+    "plan": "# Order workflow change\n\n## Execution\n\n- [ ] WP1\n\n## Work package summaries\n\n- WP1 — Validate totals.\n\n## Source and objective\n\nReject negative order totals in both manual creation and CSV imports.\n\n## Source assessment\n\n- Requested outcome: Reject negative order totals in both manual creation and CSV imports.\n- Explicit constraints: Preserve behavior outside the requested outcome.\n- Observed symptoms: As described in source.md.\n- Suggested diagnosis or solution: As proposed below; subject to review.\n- Claims verified in evidence: Repository files exist.\n- Claims corrected or still unverified: Planned changes require verification.\n\n## Scope\n\nImplement the listed work packages only.\n\n## Direction, simplicity and consistency\n\n- Existing mechanism reused: Existing entrypoints and storage.\n- Simpler alternative considered: Keep the current behavior; it does not meet the requested outcome.\n- Why the selected approach is minimal: Restrict edits to the mechanism listed in each WP.\n- Duplicate or parallel responsibilities: No additional subsystem.\n- Cross-WP consistency and ownership: Follow Order below.\n\n## Source coverage\n\n- Source request → WP1\n\n## Work packages\n\n### WP1 — Validate totals\n\n- Source: source.md\n- Goal: Validate totals.\n- Scope: Add a negative-total guard in src/form.mjs before saveOrder. The form is the entrypoint for saving orders.\n- Out of scope: Unrelated cleanup.\n- Confirmed paths: src/orders.mjs, src/form.mjs, src/import.mjs\n- Candidate paths: none\n- Discovery required: none\n- Estimated size: small\n- Acceptance criteria: Negative manual submissions are rejected.\n- Verification: Submit a negative total through the form and check store remains empty.\n\n## Order\n\nWP1\n\n## Decisions and open questions\n\n- No open product decisions.\n\n## Risks and discovery debt\n\n- Verify the proposed mechanism against the supplied repository before execution.\n\n## Acceptance and verification\n\nAcceptance criteria and checks are listed per WP.\n\n## Execution environment\n\nNode.js; use node:test for durable tests.\n",
+    "expected": [
+      {
+        "id": "import-bypass",
+        "failure": "CSV imports bypass the proposed form guard and still persist negative totals.",
+        "evidence": "src/import.mjs calls saveOrder directly; source explicitly includes imports."
+      }
+    ]
+  },
+  {
+    "id": "dependency-order",
+    "source": "Add a required currency column to the order store and expose it through the order reader. Each WP must leave a working application.",
+    "files": {
+      "src/store.mjs": "export const columns = [\"id\", \"total\"];\nexport function select(column) { if (!columns.includes(column)) throw new Error(\"Unknown column\"); return column; }\n",
+      "src/reader.mjs": "import {select} from \"./store.mjs\";\nexport function readOrder() { return [select(\"id\"), select(\"total\")]; }\n"
+    },
+    "plan": "# Order workflow change\n\n## Execution\n\n- [ ] WP1\n- [ ] WP2\n\n## Work package summaries\n\n- WP1 — Read currency.\n- WP2 — Add currency column.\n\n## Source and objective\n\nAdd a required currency column to the order store and expose it through the order reader. Each WP must leave a working application.\n\n## Source assessment\n\n- Requested outcome: Add a required currency column to the order store and expose it through the order reader. Each WP must leave a working application.\n- Explicit constraints: Preserve behavior outside the requested outcome.\n- Observed symptoms: As described in source.md.\n- Suggested diagnosis or solution: As proposed below; subject to review.\n- Claims verified in evidence: Repository files exist.\n- Claims corrected or still unverified: Planned changes require verification.\n\n## Scope\n\nImplement the listed work packages only.\n\n## Direction, simplicity and consistency\n\n- Existing mechanism reused: Existing entrypoints and storage.\n- Simpler alternative considered: Keep the current behavior; it does not meet the requested outcome.\n- Why the selected approach is minimal: Restrict edits to the mechanism listed in each WP.\n- Duplicate or parallel responsibilities: No additional subsystem.\n- Cross-WP consistency and ownership: Follow Order below.\n\n## Source coverage\n\n- Source request → WP1 and WP2\n\n## Work packages\n\n### WP1 — Read currency\n\n- Source: source.md\n- Goal: Read currency.\n- Scope: Extend src/reader.mjs to select currency; dependencies: none.\n- Out of scope: Unrelated cleanup.\n- Confirmed paths: src/store.mjs, src/reader.mjs\n- Candidate paths: none\n- Discovery required: none\n- Estimated size: small\n- Acceptance criteria: Reader returns id, total and currency.\n- Verification: Call readOrder and inspect returned columns.\n\n### WP2 — Add currency column\n\n- Source: source.md\n- Goal: Add currency column.\n- Scope: Extend src/store.mjs columns with currency; depends on WP1.\n- Out of scope: Unrelated cleanup.\n- Confirmed paths: src/store.mjs, src/reader.mjs\n- Candidate paths: none\n- Discovery required: none\n- Estimated size: small\n- Acceptance criteria: Currency is selectable.\n- Verification: Call select(\"currency\").\n\n## Order\n\nWP1 → WP2\n\n## Decisions and open questions\n\n- No open product decisions.\n\n## Risks and discovery debt\n\n- Verify the proposed mechanism against the supplied repository before execution.\n\n## Acceptance and verification\n\nAcceptance criteria and checks are listed per WP.\n\n## Execution environment\n\nNode.js; use node:test for durable tests.\n",
+    "expected": [
+      {
+        "id": "reader-before-schema",
+        "failure": "WP1 selects a column that only WP2 introduces, breaking the reader between WPs contrary to the explicit constraint.",
+        "evidence": "src/store.mjs select guard and WP order."
+      }
+    ]
+  },
+  {
+    "id": "unverifiable-acceptance",
+    "source": "Ensure the export worker retries transient failures without duplicating delivered exports.",
+    "files": {
+      "src/worker.mjs": "export async function processJob(deliver, job) { return deliver(job); }\n"
+    },
+    "plan": "# Order workflow change\n\n## Execution\n\n- [ ] WP1\n\n## Work package summaries\n\n- WP1 — Retry deliveries.\n\n## Source and objective\n\nEnsure the export worker retries transient failures without duplicating delivered exports.\n\n## Source assessment\n\n- Requested outcome: Ensure the export worker retries transient failures without duplicating delivered exports.\n- Explicit constraints: Preserve behavior outside the requested outcome.\n- Observed symptoms: As described in source.md.\n- Suggested diagnosis or solution: As proposed below; subject to review.\n- Claims verified in evidence: Repository files exist.\n- Claims corrected or still unverified: Planned changes require verification.\n\n## Scope\n\nImplement the listed work packages only.\n\n## Direction, simplicity and consistency\n\n- Existing mechanism reused: Existing entrypoints and storage.\n- Simpler alternative considered: Keep the current behavior; it does not meet the requested outcome.\n- Why the selected approach is minimal: Restrict edits to the mechanism listed in each WP.\n- Duplicate or parallel responsibilities: No additional subsystem.\n- Cross-WP consistency and ownership: Follow Order below.\n\n## Source coverage\n\n- Source request → WP1\n\n## Work packages\n\n### WP1 — Retry deliveries\n\n- Source: source.md\n- Goal: Retry deliveries.\n- Scope: Add bounded retry and deduplication by job ID in src/worker.mjs.\n- Out of scope: Unrelated cleanup.\n- Confirmed paths: src/worker.mjs\n- Candidate paths: none\n- Discovery required: none\n- Estimated size: small\n- Acceptance criteria: A transient failure is retried; a retry never duplicates delivery, including when delivery succeeds but acknowledgement fails.\n- Verification: Run one successful delivery and check it returns successfully.\n\n## Order\n\nWP1\n\n## Decisions and open questions\n\n- No open product decisions.\n\n## Risks and discovery debt\n\n- Verify the proposed mechanism against the supplied repository before execution.\n\n## Acceptance and verification\n\nAcceptance criteria and checks are listed per WP.\n\n## Execution environment\n\nNode.js; use node:test for durable tests.\n",
+    "expected": [
+      {
+        "id": "missing-failure-verification",
+        "failure": "The only planned check exercises success, so neither retry nor delivery-success/acknowledgement-failure deduplication is verified.",
+        "evidence": "WP1 acceptance criteria compared with its success-only verification."
+      }
+    ]
+  },
+  {
+    "id": "valid-control",
+    "source": "Reject negative integer order totals in manual creation and CSV import. Zero remains valid. Validation must happen before writing an order; no other behavior changes.",
+    "files": {
+      "src/orders.mjs": "export function saveOrder(store, order) { store.push(order); }\n",
+      "src/form.mjs": "import {saveOrder} from \"./orders.mjs\";\nexport function submit(store, order) { saveOrder(store, order); }\n",
+      "src/import.mjs": "import {saveOrder} from \"./orders.mjs\";\nexport function importRows(store, rows) { rows.forEach(row => saveOrder(store, row)); }\n"
+    },
+    "plan": "# Order workflow change\n\n## Execution\n\n- [ ] WP1\n\n## Work package summaries\n\n- WP1 — Guard shared save.\n\n## Source and objective\n\nReject negative integer order totals in manual creation and CSV import. Zero remains valid. Validation must happen before writing an order; no other behavior changes.\n\n## Source assessment\n\n- Requested outcome: Reject negative integer order totals in manual creation and CSV import. Zero remains valid. Validation must happen before writing an order; no other behavior changes.\n- Explicit constraints: Preserve behavior outside the requested outcome.\n- Observed symptoms: As described in source.md.\n- Suggested diagnosis or solution: As proposed below; subject to review.\n- Claims verified in evidence: Repository files exist.\n- Claims corrected or still unverified: Planned changes require verification.\n\n## Scope\n\nImplement the listed work packages only.\n\n## Direction, simplicity and consistency\n\n- Existing mechanism reused: Existing entrypoints and storage.\n- Simpler alternative considered: Keep the current behavior; it does not meet the requested outcome.\n- Why the selected approach is minimal: Restrict edits to the mechanism listed in each WP.\n- Duplicate or parallel responsibilities: No additional subsystem.\n- Cross-WP consistency and ownership: Follow Order below.\n\n## Source coverage\n\n- Source request → WP1\n\n## Work packages\n\n### WP1 — Guard shared save\n\n- Source: source.md\n- Goal: Guard shared save.\n- Scope: Add an order.total < 0 guard throwing RangeError before store.push in src/orders.mjs. Both src/form.mjs and src/import.mjs call this shared function. Keep import per-row semantics.\n- Out of scope: Unrelated cleanup.\n- Confirmed paths: src/orders.mjs, src/form.mjs, src/import.mjs\n- Candidate paths: none\n- Discovery required: none\n- Estimated size: small\n- Acceptance criteria: Both entrypoints reject a negative total without appending that order; zero and positive totals remain accepted.\n- Verification: Use node:test with independent stores: call submit and importRows each with one negative order and assert RangeError plus unchanged store; verify zero and positive orders are appended through both paths. No UI rendering changes.\n\n## Order\n\nWP1\n\n## Decisions and open questions\n\n- No open product decisions.\n\n## Risks and discovery debt\n\n- Verify the proposed mechanism against the supplied repository before execution.\n\n## Acceptance and verification\n\nAcceptance criteria and checks are listed per WP.\n\n## Execution environment\n\nNode.js; use node:test for durable tests.\n",
+    "expected": []
+  }
+]

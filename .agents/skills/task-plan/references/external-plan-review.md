@@ -61,8 +61,8 @@ node <skills_root>/_shared/scripts/review-session-job.mjs prepare \
 ```
 
 `<source_artifact>` pochodzi z front matter planu. Dodaj `--context` także dla
-`context_report` i `context_criteria`, jeśli front matter je wskazuje. W każdym
-review po pierwszym dodaj też `--context <raport_ostatniej_rundy>` zgodnie
+`context_report` i `context_criteria`, jeśli front matter je wskazuje. Wyłącznie w delta-review
+po pierwszym dodaj też `--context <raport_ostatniej_rundy>` zgodnie
 z sekcją 5 poniżej: zawiera opis, lokalizacje i dowody wcześniejszych findings,
 których same ID i severity nie przenoszą. Raport ostatniej rundy i poprzedni
 job to osobne referencje; po self-review nie używaj starszego raportu zewnętrznego.
@@ -153,8 +153,8 @@ zbuduj `delta-input --file`. Do następnego żądania przenieś nierozwiązane
 findings z ich oryginalnymi ID i klasyfikacją z payloadu, a nie z listy samych
 `actionable_finding_ids`. Następnie wykonaj nowe review i ponowne `record-review`.
 
-`ingest` bierze z raportu tylko werdykt, findings i rozstrzygnięcia wcześniejszych
-ID; liczniki, referencję planu i delta pobiera z powiązanego żądania. Nie
+`ingest` bierze z raportu werdykt, findings i podane coverage; rozstrzygnięcia wcześniejszych
+ID pochodzą z delta-review albo z rozliczenia ownera po pełnym review (sekcja 6); liczniki, referencję planu i delta pobiera z powiązanego żądania. Nie
 poprawiaj ocen reviewera ręcznie. Gdy uznajesz finding za błędny, traktuj go
 jak każdy inny: rozstrzygalny fakt naprawiasz w planie albo pokazujesz dowód w
 kolejnej rundzie, decyzję biznesową zamieniasz w pytanie `[open]`.
@@ -186,7 +186,58 @@ Przed naprawą planu zachowaj raport ostatniej ukończonej rundy i przekaż jego
 Raport self-review służy jako kontekst następnego review; nie przekazuj go do
 `ingest`, które wymaga wyniku `ACCEPTED`. Nie twórz zastępczego `result.json`
 w katalogu joba: helper nie zapisuje go dla `SELF` ani `job_path: null`.
-W następnej rundzie `previous_findings` i raport muszą pochodzić z tej samej
+W następnej rundzie delta-review `previous_findings` i raport muszą pochodzić z tej samej
 ostatniej recenzji. Jeśli raportu brakuje, zgłoś lukę evidence i wykonaj
 self-review; nie przekazuj nieistniejącego pliku do `prepare` ani nie zastępuj
 raportu starszym wynikiem. Zachowaj przy tym istniejącą pamięć awarii jobów.
+
+## 6. Pełne review bez historii i rozliczenie ownera
+
+Dla `review_scope: full` przekazuj do `prepare` kanoniczny plan jako pierwszy
+`--context`, żądanie ownera oraz source/context wskazane w front matter.
+Nie dodawaj poprzedniego raportu. `--previous-job` nadal przenosi pamięć awarii.
+Helper wiąże oryginalne wejścia hashami, ale reviewerowi wskazuje tylko automatyczny
+`review-plan.md`, `review-scope.json` oraz źródła i evidence. Widok usuwa wyłącznie
+pola front matter `review_*`, `reviewed_*`, `previous_sha256`, `revision`, `status`
+wraz z ich wartościami. Cała treść merytoryczna pozostaje niezmieniona.
+Nie filtruj historycznych zdań heurystycznie: bieżące decyzje i ryzyka podlegają
+ocenie. Historię findings utrzymuj w raportach, nie w treści nowych planów.
+
+Pełny reviewer nie dostaje liczników, delty, listy poprzednich findings ani
+poprzednich werdyktów. Nie uruchamia walidatora kanonicznego planu; robi to owner.
+`accept-session` sprawdza niezależny payload bez żądania historycznych rozstrzygnięć.
+Wymaga też `coverage` według kontraktu task-plan: wszystkie pięć obszarów,
+scenariusze i dowody dla sprawdzonych tematów, powody pominięć oraz jawne luki.
+Istotna luka wyklucza oba werdykty gotowości. Błędny lub niekompletny payload
+jest odrzucany przed finalizacją sesji; helper nie ocenia prawdziwości dowodów.
+Owner porównuje te same wpisy z raportem Markdown, sprawdza wsparcie w dowodach
+i pominięcia istotnych tematów przed `ingest`. Nie przepisuje `coverage`.
+Nie oznacza to jeszcze `finish-ready`. Przy wcześniejszych findings `ingest`
+wymaga `--reconciliation <plik.json>` przygotowanego przez ownera:
+
+```json
+{
+  "binding_sha256": "<z przyjętego result.json>",
+  "payload_sha256": "<SHA-256 JSON.stringify(result.payload)>",
+  "finding_mappings": [{"report_id": "F1", "id": "F3"}],
+  "previous_resolutions": [{"id": "F1", "status": "resolved", "evidence": "WP2 A3 i wskazany dowód usuwają wcześniejszy failure mode."}]
+}
+```
+
+Mapowanie obejmuje każdy nowy finding dokładnie raz. Owner może zmienić tylko
+ID oraz pola historii `previous_id`, `recurrence`, `provenance`, `repair_attempts`.
+Niezależny reviewer nie zna historii i zwraca `repair_attempts: 0`, więc mapowanie
+z `previous_id` musi podać `repair_attempts` z historii napraw ownera
+(`REPAIR_ATTEMPTS_REQUIRED`); inaczej bramki powtórzeń nie zadziałają.
+Owner nie może zmieniać severity, klasyfikacji, actionable ani werdyktu reviewera.
+Rozlicza każde wcześniejsze ID z konkretnym evidence; brak findingu w nowym
+raporcie nie jest dowodem naprawy. Pytania nadal wymagają decyzji `Q<number>`.
+Nierozwiązany problem pominięty przez reviewera zatrzymuje gotowość: owner
+zapisuje blokadę przez `decide`, zamiast dopisywać go do przyjętego raportu lub
+oznaczać jako resolved. Zachowaj liczniki, bazę i bramkę postępu bieżącego cyklu.
+Przy braku wcześniejszych findings reconciliation nie jest potrzebne.
+Delta-review zachowuje dotychczasowy odbiór i pełną historię potrzebną do napraw.
+
+Izolacja jest kontraktem przekazywania kontekstu, nie sandboxem plików. Self-review
+agenta znającego historię nie jest niezależnym przeglądem; jawnie raportuj to
+ograniczenie i nie deklaruj, że usunięcie plików z promptu wymazuje pamięć sesji.

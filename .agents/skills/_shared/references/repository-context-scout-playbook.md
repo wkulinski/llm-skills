@@ -1,15 +1,30 @@
 # Repository-context scout playbook
 
 Ten playbook jest wspólnym kontraktem wykonawczym dla `context-scout-fast` i
-`context-scout`. Adapter agenta określa rolę, dozwolone narzędzia i strategię
-nawigacji; ten dokument określa niezmienną procedurę rekonesansu i raportowania.
+`context-scout`. Prompt delegacji określa rolę; ten dokument określa jej
+strategię, granice i procedurę rekonesansu oraz raportowania. Profil klienta może dodatkowo
+egzekwować te granice, ale jego brak nie zmienia kontraktu.
+
+## Strategie ról niezależne od klienta
+
+- `context-scout-fast`: używaj CMM-first wyłącznie po potwierdzeniu izolacji
+  danych, runtime i gotowości indeksu zgodnie z `context-subagent-contract.md`
+  z tego samego katalogu instalacji. Brak potwierdzenia lub narzędzia oznacza
+  odczyty plikowe i zapisanie przyczyny w ryzykach. Każdy claim potwierdź
+  bezpośrednim odczytem źródła; nie indeksuj ani nie mutuj CMM.
+- `context-scout`: wykonaj niezależny rekonesans plikowy bez CMM. Zacznij od
+  deklaracji i konfiguracji wynikających z criteria, potem sprawdź konieczne
+  implementacje, referencje i testy. Nie czytaj wyników ani błędów primary.
+- W obu rolach używaj dostępnych narzędzi wyszukiwania i odczytu plików
+  zgodnie z poniższymi granicami. Nazwy narzędzi zależą od klienta.
+  Nie uruchamiaj powłoki, jeśli klient nie udostępnia potrzebnych narzędzi.
 
 ## Twarde granice
 
 - Pracuj wyłącznie read-only. Nie implementuj, nie edytuj kodu, nie uruchamiaj
   QA/review, nie commituj i nie diagnozuj runtime.
 - Nie uruchamiaj `./.agents/skills/_shared/scripts/context-scout-hybrid-run.mjs`.
-- Nie deleguj agentów, scoutów ani fallbacków i nie uruchamiaj `task`.
+- Nie deleguj agentów, scoutów ani fallbacków żadnym mechanizmem klienta.
 - Nie wykonuj `$context-refresh`, nie pobieraj ani nie interpretuj issue lub
   komentarzy GitHub.
 - Nie kopiuj pełnych plików, dokumentów, diffów, logów ani sekretów. Raportuj
@@ -57,7 +72,7 @@ powiązanego z kryterium lub ryzykiem.
    `required_symbols`, `required_tests` i
    `forbid_negative_claims`: są to twarde bramki budżetu lub walidatora, nie
    sugestie.
-2. Nawiguj strategią opisaną w adapterze agenta. Grupuj niezależne odczyty i nie
+2. Nawiguj strategią swojej roli opisaną powyżej. Grupuj niezależne odczyty i nie
    skanuj szerzej, niż wymagają criteria.
 3. Dla każdego kryterium zbierz minimalne evidence: dokładną repo-relative
    ścieżkę, liczbowe `line_start`/`line_end`, opcjonalny locator oraz relację,
@@ -92,8 +107,8 @@ powiązanego z kryterium lub ryzykiem.
     evidence. Jeśli twierdzenie dotyczy kilku niezależnych plików, rozbij je na
     osobne findings zamiast łączyć kotwice z różnych źródeł.
 
-Przy wznowieniu przez `task_id` odczytaj wyłącznie zakres wskazany przez agenta
-głównego i nie powtarzaj ukończonego rekonesansu.
+Przy wznowieniu tej samej próby przez identyfikator sesji klienta odczytaj
+wyłącznie zakres wskazany przez agenta głównego i nie powtarzaj ukończonego rekonesansu.
 
 ## Budowanie raportu
 

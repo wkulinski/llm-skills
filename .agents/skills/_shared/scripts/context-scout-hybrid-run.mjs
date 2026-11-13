@@ -63,8 +63,9 @@ function usage() {
 
 The helper never starts OpenCode or any agent. prepare validates inputs and
 creates artifacts; the main agent claims each attempt (idempotent dispatch guard)
-to obtain a one-time token and the task prompt, delegates through the native task
-tool, then evaluates. settle performs evaluate+finalize in one shot.
+to obtain a one-time token and the task prompt, delegates through the available
+independent subagent mechanism (task, Agent, spawn_agent or equivalent), then
+evaluates. settle performs evaluate+finalize in one shot.
 `;
 }
 
@@ -366,6 +367,8 @@ function buildTaskPrompt({agent, inputs, scoutPath, cwd, branch, mode, budget}) 
         : `Use a bounded discovery budget: at most ${budget.effective_file_budget} relevant files, ${budget.effective_symbol_budget} symbols, and ${budget.effective_test_budget} tests/commands; stop after one discovery pass and one direct verification pass once criteria are covered.`;
     return [
         `Act strictly as ${agent} for one read-only repository-context attempt.`,
+        "This prompt and the shared playbook supply your role and strategy even without a named harness profile. Follow the role strategy in the playbook.",
+        primary ? "Use CMM only when available and its isolation and index readiness are confirmed by the supplied constraints; otherwise use file tools and record the reason. Verify claims in source files." : "Use file search and direct source reads only, without CMM. Start with declarations and configuration required by the criteria, then necessary implementations, references and tests.",
         "Do not delegate, invoke another agent, run context-scout-hybrid-run.mjs, or perform QA/review/implementation.",
         `Before discovery, read and follow the shared installation playbook: ${path.resolve(SCRIPT_DIR, "../references/repository-context-scout-playbook.md")}`,
         `Consumer project root: ${cwd}`,

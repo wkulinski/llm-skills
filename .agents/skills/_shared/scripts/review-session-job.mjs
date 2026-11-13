@@ -149,8 +149,68 @@ function bindingHash(refs) {
     return sha256(refs.map((ref) => `${ref.path}\0${ref.sha256}\n`).join(""));
 }
 
+/**
+ * Keep owner bookkeeping bound, but out of an independent reviewer's inputs.
+ * Pure validation and rendering: nothing is written, so a rejected input leaves
+ * no job directory behind and the same job_id can be prepared again.
+ */
+function buildPlanReviewerView({repo, contextRefs}) {
+    const read = ref => readFileSync(path.resolve(repo, ref.path), "utf8");
+    const requests = contextRefs.flatMap(ref => {
+        try {
+            const value = JSON.parse(read(ref));
+            return value && typeof value.full_review_count === "number" ? [{ref, value}] : [];
+        } catch { return []; }
+    });
+    // Legacy generic jobs without a plan request retain their existing protocol.
+    if (requests.length === 0) { return; }
+    if (requests.length !== 1) { throw new JobError("INVALID_REVIEW_REQUEST", "Exactly one plan review request is required."); }
+    const {value: request} = requests[0];
+    const scope = request.review_scope ?? (request.delta_review_count > 0 ? "delta" : "full");
+    if (scope !== "full") { return; }
+    const plan = read(contextRefs[0]);
+    const match = /^(---\r?\n)([\s\S]*?)(\r?\n---\r?\n)([\s\S]*)$/.exec(plan);
+    if (!match) { throw new JobError("INVALID_REVIEW_PLAN", "Full review requires a Markdown plan with front matter as its first input."); }
+    const metadata = match[2].split(/\r?\n/);
+    const evidenceKeys = ["source_artifact", "context_report", "context_criteria"];
+    const evidence = evidenceKeys.flatMap(key => {
+        const line = metadata.find(line => line.startsWith(`${key}:`));
+        if (!line) { return []; }
+        const value = line.slice(key.length + 1).trim().replace(/^['"]|['"]$/g, "");
+        if (!value || value === "null") { return []; }
+        const ref = contextRefs.find(ref => path.resolve(repo, ref.path) === path.resolve(repo, value));
+        if (!ref) { throw new JobError("REVIEW_EVIDENCE_UNBOUND", `Missing bound evidence: ${key}`); }
+        return [ref];
+    });
+    // Remove defined top-level workflow fields and their indented YAML values.
+    // Never filter the body: decisions, risks and fixes remain reviewable claims.
+    const hidden = /^(?:review_[\w]+|reviewed_[\w]+|previous_sha256|revision|status):/;
+    let omit = false;
+    const visible = metadata.filter(line => {
+        if (/^[^ #\s][^:]*:/.test(line)) { omit = hidden.test(line); }
+        return !omit;
+    });
+    return {
+        view: match[1] + visible.join("\n") + match[3] + match[4],
+        scopeBytes: JSON.stringify({review_scope: "full", independent: true}),
+        evidence,
+    };
+}
+
+function writePlanReviewerView(job, {view, scopeBytes, evidence}) {
+    const viewPath = path.join(job.directory, "review-plan.md");
+    writeFileSync(viewPath, view);
+    const requestPath = path.join(job.directory, "review-scope.json");
+    writeFileSync(requestPath, scopeBytes);
+    job.reviewer_context_refs = [
+        {path: path.relative(job.repo, viewPath), sha256: sha256(view)},
+        {path: path.relative(job.repo, requestPath), sha256: sha256(scopeBytes)},
+        ...evidence,
+    ];
+}
+
 function renderPrompt(job, task) {
-    const inputs = job.context_refs.map((ref) => `- ${ref.path} (sha256 ${ref.sha256})`).join("\n");
+    const inputs = (job.reviewer_context_refs ?? job.context_refs).map((ref) => `- ${ref.path} (sha256 ${ref.sha256})`).join("\n");
     return `You are a delegated reviewer started by a coordinating agent in a separate session.
 You are not the main agent of this repository: do not run \`$context-refresh\` or the
 repository-context hybrid, do not follow the startup procedure of AGENTS.md, do not
@@ -281,6 +341,9 @@ export function prepareJob(options, {cwd = process.cwd(), now = new Date(), read
         throw new JobError("INVALID_PARAMETERS", "At least one --context input is required; it binds the report to what was reviewed.");
     }
 
+    // Validate the reviewer view before creating the job directory.
+    const reviewerView = options.kind === "plan-review" ? buildPlanReviewerView({repo, contextRefs}) : undefined;
+
     mkdirSync(directory, {recursive: true});
     const job = {
         version: JOB_VERSION,
@@ -302,6 +365,9 @@ export function prepareJob(options, {cwd = process.cwd(), now = new Date(), read
         attempts: config.attempts.map((attempt) => ({...attempt, session: null, outcome: null})),
         result: null,
     };
+    if (reviewerView) {
+        writePlanReviewerView(job, reviewerView);
+    }
     const task = readFileSync(options.task, "utf8").replaceAll("<skills_root>", SKILLS_ROOT);
     const prompt = renderPrompt(job, task);
     writeFileSync(path.join(directory, "prompt.md"), prompt);
@@ -393,7 +459,7 @@ export function bindSession({jobPath, inspect, parentId = null}) {
 }
 
 function inputChanges(job) {
-    const changed = job.context_refs
+    const changed = [...job.context_refs, ...(job.reviewer_context_refs ?? [])]
         .filter((ref) => {
             const filePath = path.join(job.repo, ref.path);
             return !existsSync(filePath) || sha256(readFileSync(filePath)) !== ref.sha256;
@@ -502,6 +568,7 @@ export function acceptResult({jobPath, envelopeText, inspect, validateReport = n
         job_id: job.job_id,
         binding_sha256: job.binding_sha256,
         context_refs: job.context_refs,
+        ...(job.reviewer_context_refs ? {independent_full_review: true} : {}),
         reviewer,
         report_markdown: envelope.report_markdown,
         payload: envelope.payload,

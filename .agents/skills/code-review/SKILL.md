@@ -366,8 +366,11 @@ A candidate becomes a finding only if it has:
 For a `plan` target with full-review scope (`review_scope: full`, or the initial
 full review), the reviewed object is the entire current plan. An independent
 defect already present before the latest fix can be actionable without fix
-provenance. Keep concrete evidence, impact, prior-ID resolutions and recurrence
-checks. Delta plan reviews and code reviews retain the provenance rule above.
+provenance. Keep concrete evidence and impact. An independent full review (see
+`references/re-review.md`) uses local IDs and returns no prior-ID resolutions or
+recurrence checks; the owner reconciles history. Prior-ID resolutions and
+recurrence checks remain required in a self-review continuation and in delta plan
+reviews. Delta plan reviews and code reviews retain the provenance rule above.
 
 Before publication, every candidate must pass this ordered publication gate:
 

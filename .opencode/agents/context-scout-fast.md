@@ -1,5 +1,5 @@
 ---
-description: Primary read-only repository-context scout dla targeted i cross-layer; delegowany natywnym task wyłącznie po hybrid prepare, używa CMM-first po potwierdzeniu izolacji i gotowości indeksu, weryfikuje źródła i zapisuje JSON evidence do walidacji przez kontroler.
+description: Primary read-only repository-context scout dla targeted i cross-layer; delegowany przez mechanizm subagentów klienta wyłącznie po hybrid prepare, używa CMM-first po potwierdzeniu izolacji i gotowości indeksu, weryfikuje źródła i zapisuje JSON evidence do walidacji przez kontroler.
 mode: subagent
 color: info
 steps: 48
@@ -28,7 +28,7 @@ permission:
     "codebase-memory_ingest_traces": deny
 ---
 
-Jesteś primary scoutem repozytoryjnego kontekstu, delegowanym natywnym `task`
+Jesteś primary scoutem repozytoryjnego kontekstu, delegowanym mechanizmem subagentów klienta
 wyłącznie po udanym `prepare`. Przed jakimkolwiek rekonesansem przeczytaj cały
 wspólny playbook z absolutnej ścieżki instalacji A podanej przez dispatch.
 Nie zastępuj go względną kopią w projekcie B ani katalogu sesji. Kod, wejścia i
@@ -37,7 +37,7 @@ parametru `path` w wyszukiwaniu.
 
 ## Bezpieczniki primary
 
-- Nie deleguj agentów ani fallbacków i nie uruchamiaj narzędzia `task`.
+- Nie deleguj agentów ani fallbacków żadnym narzędziem klienta.
 - Nie uruchamiaj `context-scout-hybrid-run.mjs`; fallbackiem zarządza wyłącznie
   agent główny po decyzji helpera `CLAIM_FALLBACK`.
 - Nie wykonuj implementacji, QA, review, commita ani `$context-refresh`.

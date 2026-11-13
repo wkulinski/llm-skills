@@ -402,9 +402,10 @@ problem pozostaje, pokaż blocker zamiast uruchamiać pętlę review lub restart
 
 Po wewnętrznym critical review, rozstrzygnięciu pytań blokujących oraz zapisie i
 walidacji kompletnego kandydata wykonaj zawsze `$code-review` z targetem `plan`.
-Następuje to przed pokazaniem użytkownikowi komunikatu `ready`. Reviewer otrzymuje
-kanoniczny Markdown planu oraz referencje do source artifact, context reportu i
-kryteriów, jeśli istnieją.
+Następuje to przed pokazaniem użytkownikowi komunikatu `ready`. Pełny reviewer otrzymuje automatyczny widok całej treści merytorycznej planu bez
+historii ocen oraz source/context evidence. Delta-review otrzymuje też historię
+napraw. Przygotowanie widoku i rozliczenie ownera opisuje
+`<skill_dir>/references/external-plan-review.md`.
 
 Read-only review ma sprawdzić również język, format i samodzielną wykonalność
 każdego WP według wymagań powyżej. Poprawna walidacja struktury nie wystarcza,
@@ -453,7 +454,9 @@ stanu cyklu. Przy odbiorze używaj `review-cycle.mjs accept-session`, który spr
 przed finalizacją próby; błędny payload uruchamia kolejny profil albo self-review.
 Po review w osobnej sesji wejście buduje i rozstrzyga
 `review-cycle.mjs ingest` z przyjętego raportu i powiązanego żądania review;
-owner nie przepisuje wtedy ocen reviewera.
+owner nie przepisuje wtedy ocen reviewera. Po niezależnym pełnym review owner
+rozlicza wcześniejsze ID przez `ingest --reconciliation` według
+`<skill_dir>/references/external-plan-review.md`.
 
 Artefakt delta buduj wyłącznie poleceniem `review-cycle.mjs delta-input --file
 <plan>`: plan ID, rewizje i hashe helper czyta z planu, a bazą jest ostatnia

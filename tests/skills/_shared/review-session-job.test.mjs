@@ -436,3 +436,45 @@ it("keeps acceptance retryable when writing the report fails", () => {
     expect(acceptResult(input).decision).toBe("ACCEPTED");
     expect(JSON.parse(fs.readFileSync(resultPath, "utf8")).decision).toBe("ACCEPTED");
 });
+
+describe("independent full plan inputs", () => {
+    function inputs(scope = "full") {
+        write("docs/plans/plan.md", "---\nrevision: 10\nreview_reviewer: previous-model\nreviewed_revision: 10\nsource_artifact: source.json\n---\n# Plan\nD13: substantive decision remains.\n");
+        write("source.json", '{"requirement":"retain history"}');
+        write("request.json", JSON.stringify({review_scope: scope, full_review_count: 2, delta_review_count: 0, previous_findings: [{id: "F8"}]}));
+        write("prior-result.json", '{"verdict":"PLAN READY"}');
+        return ["docs/plans/plan.md", "request.json", "source.json", "prior-result.json"].map(file => path.join(repo, file));
+    }
+    it("hides owner history while preserving substantive text and evidence", () => {
+        prepare(BOTH, {context: inputs()});
+        const job = readJob();
+        const prompt = fs.readFileSync(path.join(job.directory, "prompt.md"), "utf8");
+        expect(prompt).not.toContain("prior-result.json");
+        expect(prompt).not.toContain("request.json");
+        expect(prompt).not.toContain("docs/plans/plan.md");
+        expect(prompt).toContain("source.json");
+        const view = fs.readFileSync(path.join(job.directory, "review-plan.md"), "utf8");
+        expect(view).toContain("D13: substantive decision remains.");
+        expect(view).not.toContain("review_reviewer");
+        expect(view).not.toContain("revision:");
+        expect(job.context_refs).toHaveLength(4);
+    });
+    it.each(["docs/plans/plan.md", "view"])("rejects changed %s despite hidden owner refs", file => {
+        prepare(BOTH, {context: inputs()});
+        bindSession({jobPath: jobPath(), inspect: inspect()});
+        const job = readJob();
+        fs.appendFileSync(file === "view" ? path.join(job.directory, "review-plan.md") : path.join(repo, file), "changed");
+        expect(acceptResult({jobPath: jobPath(), inspect: inspect(), envelopeText: envelope(job)})).toMatchObject({reason: "INPUT_CHANGED"});
+    });
+    it("leaves no job directory after a rejected view so the same job_id can be retried", () => {
+        const context = inputs();
+        const withoutSource = context.filter(file => !file.endsWith("source.json"));
+        expect(() => prepare(BOTH, {context: withoutSource})).toThrow(/Missing bound evidence/);
+        expect(() => prepare(BOTH, {context})).not.toThrow();
+    });
+    it("preserves history in delta review", () => {
+        prepare(BOTH, {context: inputs("delta")});
+        expect(readJob().reviewer_context_refs).toBeUndefined();
+        expect(fs.readFileSync(path.join(readJob().directory, "prompt.md"), "utf8")).toContain("prior-result.json");
+    });
+});
