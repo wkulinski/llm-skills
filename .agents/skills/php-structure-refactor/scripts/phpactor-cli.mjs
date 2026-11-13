@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import {spawnSync} from "../../_shared/scripts/file-process.mjs";
-import fs from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 
@@ -16,34 +15,39 @@ if (rawArgs[0] === "--help" || rawArgs[0] === "-h") {
     usage({help: true});
 }
 
-const repoRoot = findRepoRoot();
+let repoRoot;
+const phpactorArgs = normalizeArgs(rawArgs);
+try {
+    repoRoot = findRepoRoot();
+    const phpactor = resolveTool("phpactor");
+    const result = spawnSync(phpactor[0], [...phpactor.slice(1), ...phpactorArgs], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        maxBuffer: 50 * 1024 * 1024,
+    });
+    reportResult(result);
+} catch (error) {
+    reportResult({status: null, error, stdout: "", stderr: ""});
+}
 
-const phpactor = resolveTool("phpactor");
-let toolWorkingDirForOutput = null;
-const phpactorArgs = normalizeArgs(rewritePathArgs(rawArgs, phpactor));
-const phpactorResult = spawnSync(phpactor[0], [...phpactor.slice(1), ...phpactorArgs], {
-    cwd: repoRoot,
-    encoding: "utf8",
-    maxBuffer: 50 * 1024 * 1024,
-});
-
-const phpactorCommand = detectCommand(rawArgs);
-const parsedJson = parseJsonOutput(phpactorResult.stdout);
-const ok = phpactorResult.status === 0;
-
-writeJson({
-    ok,
-    tool: "phpactor",
-    mode: "cli",
-    command: phpactorCommand,
-    args: phpactorArgs.map(normalizeArgForOutput),
-    status: phpactorResult.status,
-    json: parsedJson ? summarizeJson(parsedJson) : void 0,
-    stdout: parsedJson ? void 0 : summarizeText(phpactorResult.stdout),
-    stderr: debugStderr(phpactorResult.stderr),
-});
-
-process.exit(ok ? 0 : (phpactorResult.status ?? 1));
+function reportResult(result) {
+    const parsedJson = parseJsonOutput(result.stdout ?? "");
+    const ok = !result.error && !result.signal && result.status === 0;
+    writeJson({
+        ok,
+        tool: "phpactor",
+        mode: "cli",
+        command: detectCommand(rawArgs),
+        args: phpactorArgs,
+        status: result.status,
+        signal: result.signal || void 0,
+        error: result.error ? {code: result.error.code, message: result.error.message} : void 0,
+        json: parsedJson ? summarizeJson(parsedJson) : void 0,
+        stdout: parsedJson ? void 0 : summarizeText(result.stdout ?? ""),
+        stderr: result.stderr?.trim() || void 0,
+    });
+    process.exitCode = ok ? 0 : (result.status || 1);
+}
 
 function usage({help = false} = {}) {
     const output = `Usage:
@@ -51,7 +55,7 @@ function usage({help = false} = {}) {
 
 Adapter behavior:
     Commands and options pass through to Phpactor.
-    Repository-relative paths are normalized to Phpactor's working directory.
+    Paths and option values pass through unchanged to the project entrypoint.
     The wrapper adds --no-interaction and --no-ansi when they are not supplied.
     --help and -h show this wrapper help before git/tool resolution.
 
@@ -75,83 +79,6 @@ function normalizeArgs(inputArgs) {
         normalized.push("--no-ansi");
     }
     return normalized;
-}
-
-function rewritePathArgs(inputArgs, toolCommand) {
-    let toolRoot = null;
-
-    return inputArgs.map((arg) => {
-        const rewritten = rewritePathValue(arg, () => {
-            toolRoot ??= findToolWorkingDir(toolCommand);
-            return toolRoot;
-        });
-        return rewritten;
-    });
-}
-
-function rewritePathValue(value, toolRootResolver) {
-    if (!value || value.startsWith("-") && !value.includes("=")) {
-        return value;
-    }
-
-    const equalsIndex = value.indexOf("=");
-    if (value.startsWith("--") && equalsIndex > 0) {
-        const option = value.slice(0, equalsIndex + 1);
-        const optionValue = value.slice(equalsIndex + 1);
-        return `${option}${rewritePathValue(optionValue, toolRootResolver)}`;
-    }
-
-    const repoRelative = repoRelativePathCandidate(value);
-    if (repoRelative === null) {
-        return value;
-    }
-
-    return path.posix.join(toolRootResolver(), ...repoRelative.split(path.sep));
-}
-
-function repoRelativePathCandidate(value) {
-    if (value.startsWith("{") || value.startsWith("[")) {
-        return null;
-    }
-
-    if (path.isAbsolute(value)) {
-        const relative = path.relative(repoRoot, value);
-        if (!relative.startsWith("..") && relative !== "") {
-            return relative;
-        }
-        return null;
-    }
-
-    if (!value.includes("/") && !value.startsWith(".")) {
-        return null;
-    }
-
-    const absolute = path.resolve(repoRoot, value);
-    const parent = path.dirname(absolute);
-    if (fs.existsSync(absolute) || fs.existsSync(parent)) {
-        return path.relative(repoRoot, absolute);
-    }
-
-    return null;
-}
-
-function findToolWorkingDir(toolCommand) {
-    if (process.env.PHP_STRUCTURE_TOOL_REPO_ROOT) {
-        return process.env.PHP_STRUCTURE_TOOL_REPO_ROOT;
-    }
-
-    const statusResult = spawnSync(toolCommand[0], [...toolCommand.slice(1), "status", "--no-interaction", "--no-ansi"], {
-        cwd: repoRoot,
-        encoding: "utf8",
-        maxBuffer: 1024 * 1024,
-    });
-    const match = statusResult.stdout.match(/^Working directory:\s*(.+)$/m);
-    if (statusResult.status === 0 && match) {
-        toolWorkingDirForOutput = match[1].trim();
-        return toolWorkingDirForOutput;
-    }
-
-    return repoRoot;
 }
 
 function hasOption(inputArgs, name) {
@@ -299,7 +226,7 @@ function compactEntry(item, limit) {
 }
 
 function summarizeText(stdout) {
-    const text = normalizeToolText(stdout.trim());
+    const text = stdout.trim();
     if (!text) {
         return void 0;
     }
@@ -312,40 +239,6 @@ function summarizeText(stdout) {
     };
 }
 
-function normalizeToolText(text) {
-    if (!text) {
-        return text;
-    }
-
-    const toolRoots = new Set([repoRoot]);
-    if (toolWorkingDirForOutput) {
-        toolRoots.add(toolWorkingDirForOutput);
-    }
-    const workingDir = text.match(/^Working directory:\s*(.+)$/m);
-    if (workingDir) {
-        toolRoots.add(workingDir[1].trim());
-    }
-
-    let normalized = text;
-    for (const root of toolRoots) {
-        normalized = normalized.split(root).join(".");
-    }
-    return normalized;
-}
-
-function normalizeArgForOutput(arg) {
-    const equalsIndex = arg.indexOf("=");
-    if (arg.startsWith("--") && equalsIndex > 0) {
-        return `${arg.slice(0, equalsIndex + 1)}${normalizeArgForOutput(arg.slice(equalsIndex + 1))}`;
-    }
-
-    if (path.isAbsolute(arg)) {
-        return relativePath(arg);
-    }
-
-    return arg;
-}
-
 function resolveTool(tool) {
     const envLoadPath = path.join(skillsRoot, "_shared/scripts/env-load.sh");
     const script = `source ${shellQuote(envLoadPath)}; resolve_tool_cmd ${shellQuote(tool)}`;
@@ -354,7 +247,7 @@ function resolveTool(tool) {
         encoding: "utf8",
     });
     if (resolved.status !== 0 || !resolved.stdout.trim()) {
-        throw new Error(`Unable to resolve tool: ${tool}`);
+        throw new Error(`Unable to resolve tool: ${tool}. ${resolved.error?.message ?? resolved.stderr.trim()}`);
     }
     return [resolved.stdout.trim()];
 }
@@ -371,26 +264,14 @@ function findRepoRoot() {
 }
 
 function relativePath(filePath) {
-    if (!filePath) {
+    if (!repoRoot || !path.isAbsolute(filePath)) {
         return filePath;
     }
-    return path.relative(repoRoot, normalizeToolPath(filePath)) || ".";
-}
-
-function normalizeToolPath(filePath) {
-    if (!path.isAbsolute(filePath) || filePath.startsWith(repoRoot)) {
+    const relative = path.relative(repoRoot, filePath);
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
         return filePath;
     }
-
-    const parts = filePath.split(path.sep).filter(Boolean);
-    for (let index = 0; index < parts.length; index += 1) {
-        const candidate = path.join(repoRoot, ...parts.slice(index));
-        if (fs.existsSync(candidate) || fs.existsSync(path.dirname(candidate))) {
-            return candidate;
-        }
-    }
-
-    return filePath;
+    return relative || ".";
 }
 
 function normalizePaths(value) {
@@ -427,12 +308,4 @@ function shellQuote(value) {
 
 function writeJson(value) {
     process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
-}
-
-function debugStderr(stderr) {
-    if (process.env.PHP_STRUCTURE_DEBUG !== "1") {
-        return void 0;
-    }
-
-    return stderr.trim() || void 0;
 }

@@ -104,6 +104,30 @@ Nie używaj samego `rg` jako rozstrzygnięcia, gdy trzeba odróżnić symbole o 
 ### `phpactor-cli.mjs`
 Generyczny wrapper CLI Phpactora. Przyjmuje komendę i argumenty Phpactora bez odtwarzania ich API w skillu. Wrapper rozwiązuje `phpactor` przez `resolve_tool_cmd`, uruchamia go z repo root, dokłada `--no-interaction` i `--no-ansi`, parsuje JSON jeśli komenda go zwróci oraz streszcza output.
 
+Entry point projektu odpowiada za wybór środowiska narzędzia, konfiguracji,
+zaufania i prywatnego stanu. Adapter odpowiada za prezentację wyniku; nie
+odpytuje backendu o katalog pracy, nie wybiera projektu i nie przepisuje
+argumentów. Ścieżki względne i bezwzględne, także cele w nowych katalogach,
+trafiają do entrypointu bez zmian. Argumenty są interpretowane przez narzędzie
+uruchomione w root repozytorium konsumenta.
+
+Stdout adaptera zawiera jeden JSON z wynikiem i statusem backendu. Niepusty
+stderr jest dostępny bez trybu debug i zachowywany w całości w granicy bufora
+procesu (50 MiB), aby nie zgubić przyczyny błędu. Nieudane uruchomienie jest
+opisane w `error`, a zakończenie sygnałem w `signal`; w obu przypadkach
+`ok` jest fałszywe, a kod adaptera wynosi 1, gdy backend nie zwrócił statusu.
+Ścieżki w danych JSON są skracane tylko wtedy, gdy należą do root konsumenta;
+ścieżki spoza repozytorium pozostają dosłowne.
+
+Kod zakończenia 0 i poprawny JSON nie gwarantują pełnego odczytania składni
+przez parser. Przed zapisem w kodzie z nowszymi konstrukcjami, np. property
+hooks lub asymmetric visibility, porównaj wynik introspekcji z oczekiwanymi
+polami i metodami. Jeśli symbole są pominięte lub zakres klasy jest ucięty,
+nie wykonuj zapisu na podstawie tego wyniku; zgłoś ograniczenie backendu.
+Nie utożsamiaj wersji interpretera uruchamiającego narzędzie ze zbiorem
+konstrukcji poprawnie analizowanych przez jego parser.
+
+
 Przykłady:
 ```bash
 node <skill_dir>/scripts/phpactor-cli.mjs list --format=json
