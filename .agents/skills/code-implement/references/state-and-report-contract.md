@@ -124,9 +124,9 @@ rzeczywiście pasującego `STOP_CODE`; lista pozostaje zamknięta.
 
 ### Słownik `STOP_CODES` (znaczenie + kiedy użyć)
 #### `missing_acceptance_criteria`
-- Znaczenie: brak minimalnych kryteriów akceptacji uniemożliwia bezpieczną implementację.
-- Kiedy zwracać: nie da się określić `done/not done` dla R#.
-- Kiedy nie zwracać: kryteria są niepełne, ale wystarczają do wykonania minimalnej, odwracalnej iteracji.
+- Znaczenie: brak kryteriów akceptacji lub nierozstrzygnięta intencja blokuje zależną implementację.
+- Kiedy zwracać: nie da się określić `done/not done` dla R# albo możliwe interpretacje zmieniają zakres, zachowanie lub kryteria akceptacji i wymagają decyzji użytkownika.
+- Kiedy nie zwracać: brak dotyczy wyłącznie szczegółu technicznego, który można ustalić w ramach uzgodnionej intencji. Mały zakres lub odwracalność zmiany nie zastępują rozstrzygnięcia intencji.
 
 #### `security_scope_unclear`
 - Znaczenie: zmiana dotyka auth/security/permissions bez jednoznacznego wymagania.

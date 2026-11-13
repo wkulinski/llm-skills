@@ -85,15 +85,16 @@ Nie używaj zamiast:
 
 ## Tryb domyślny i autonomia
 - Domyślnie `$code-implement` działa w trybie `autonomous`.
-- `autonomous` oznacza: agent samodzielnie implementuje i weryfikuje zmianę bez dopytywania, o ile nie zachodzi `stop-condition`.
+- `autonomous` oznacza samodzielne wykonanie i weryfikację techniczną w ramach
+  ustalonej intencji; nie uprawnia do rozstrzygania istotnych różnic w jej
+  interpretacji bez użytkownika.
 - Bezpieczne, lokalne czynności, które wolno wykonać bez dodatkowego pytania,
   definiuje sekcja „Bezpieczne workflow bez dodatkowej zgody” w
   `<skills_root>/_shared/references/runtime-collaboration-guidelines.md`; korzeń
   nie powtarza tej listy.
-- Dopytanie jest wymagane wyłącznie przy blockerach z zamkniętej listy
-  `STOP_CODES`; pełną listę, słownik znaczeń i warunki użycia zawiera wyłącznie
-  `<skill_dir>/references/state-and-report-contract.md`, a korzeń nie tworzy
-  drugiej kopii tej listy.
+- Wymagania doprecyzowuj według Intake. Formalne blokery oznaczaj kodami
+  z zamkniętej listy `STOP_CODES`; pełną listę, słownik znaczeń i warunki użycia
+  zawiera wyłącznie `<skill_dir>/references/state-and-report-contract.md`.
 
 ## Kontrakt iteracji (obowiązkowy)
 - `Iteracja` = jedna zamknięta pętla: cel -> implementacja -> weryfikacja -> aktualizacja stanu.
@@ -268,9 +269,12 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
    - “jak to przetestujemy” (manualnie/testami),
    - “jakie istotne reguły/ograniczenia obowiązują” — według `<skills_root>/_shared/references/rule-conformance-policy.md` i aktywnych źródeł repo.
 3. Wyprowadź Rejestr wymagań (R1..Rn) i zapisz w `STATE_PATH`; zapisz też istotne ograniczenia/reguły, zanim podejmiesz decyzje implementacyjne.
-4. Kompromis “ocena prompta 1–10”:
-   - wykonaj ocenę **tylko jeśli** zadanie jest niejednoznaczne, przekrojowe albo wchodzi w obszary ryzykowne (patrz Stop-conditions),
-   - jeśli ocena <10: zaproponuj doprecyzowania (lista pytań) + opcja “zostaw bez zmian” i wstrzymaj implementację do decyzji.
+4. Traktuj opis jako potencjalnie skrótowy i niepełny. Aktywnie szukaj
+   niewypowiedzianych reguł, wieloznaczności i granic analogii. Fakty ustalaj
+   z dostępnych źródeł; o nierozstrzygniętą intencję pytaj użytkownika, gdy różne
+   interpretacje zmieniają zakres, zachowanie lub kryteria akceptacji. Pokaż
+   konkretny scenariusz i konsekwencje odpowiedzi. Do rozstrzygnięcia wstrzymaj
+   zależną implementację; kontynuuj niezależne prace w uzgodnionym zakresie.
 
 ### 2) Kontekst repo (skalowalnie)
 1. Dla zadania przekrojowego, nieznanego modułu albo dużego dirty diffu użyj
