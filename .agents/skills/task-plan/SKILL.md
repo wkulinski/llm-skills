@@ -66,7 +66,7 @@ Task-plan:
   odrębną fazę read-only `$code-review` gotowego kandydata planu: w osobnej
   sesji agenta, gdy jest skonfigurowana i działa, a w przeciwnym razie
   samodzielnie;
-- zadaje wyłącznie pytania blokujące;
+- aktywnie doprecyzowuje wymagania, pytając o nierozstrzygnięcia istotne dla planu;
 - dopisuje do planu każdą zmianę, o którą użytkownik prosi w trakcie
   planowania (np. „zapisz X w pliku Y”), zamiast od razu ją wprowadzać;
 - wyprowadza wynik `ready` albo `blocked` bezpośrednio z Markdowna.
@@ -197,6 +197,14 @@ Nie zapisuj widocznego draftu z placeholderami tylko po to, aby odnotować fazę
 Pierwszy zapisany plan ma być merytorycznie użyteczny.
 
 ### 1. Intake
+
+Traktuj opis zadania jako potencjalnie skrótowy i niepełny: kompletność wymagań
+ustalaj przez analizę, nie zakładaj jej z góry. Aktywnie szukaj niewypowiedzianych
+reguł, wieloznaczności i granic analogii; nie uzupełniaj ich po cichu własną
+interpretacją. Krótko przedstaw swoje rozumienie celu i dopytuj o nierozstrzygnięte
+kwestie, które mogą zmienić zakres, zachowanie lub kryteria akceptacji, pokazując
+konkretny scenariusz i konsekwencje odpowiedzi. Fakty ustalaj z dostępnych źródeł;
+o intencję, której źródła nie rozstrzygają, pytaj użytkownika.
 
 1. Ustal stabilną tożsamość źródła.
 2. Zachowaj jego pełną treść albo niezmienną referencję z hashem.
