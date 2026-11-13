@@ -876,6 +876,7 @@ Poprawna decyzja zwraca pole `plan`; bez niego `record-review` jej nie przyjmie.
 | `findings[].provenance` | nowy actionable finding w delta-review | `kind` (`changed_section`, `changed_work_package` albo `direct_dependency`), `target` z zadeklarowanego zakresu delta oraz niepusty `evidence`. Hashe dokumentów nie zastępują pochodzenia. |
 | `previous_findings` | zawsze (może być pusta) | Wcześniejsze findings: `{id, severity}` albo, dla pytania, `{id, classification: "QUESTION"}` bez severity. W pierwszej rundzie pusta. Review otwierające nowy cykl po decyzji końcowej przenosi nierozwiązane findings i pytania albo ma pustą listę po `finish-ready`; używa licznika `1+1` dla delta albo `2+0` dla full, licząc zapisaną bazę jako pierwszą rundę. Od trzeciej rundy lista musi być niepusta (`EMPTY_PREVIOUS_FINDINGS`). |
 | `previous_resolutions` | zawsze (może być pusta) | Dokładnie jedno rozstrzygnięcie na każde wcześniejsze ID; brak to `MISSING_PREVIOUS_RESOLUTION`. Statusy: `resolved`; `current` z `current_severity` zgodnym z bieżącym findingiem; `accepted` z `decision_ref`. Wcześniejsze pytanie można rozstrzygnąć wyłącznie jako `accepted` z `decision_ref: Q<number>`. |
+| `coverage` | niezależne zewnętrzne pełne review; opcjonalne w pozostałych wejściach | Tablica wpisów według sekcji poniżej; pochodzi wyłącznie z payloadu reviewera i jest zachowana w decyzji. |
 | `reviewer` | opcjonalne | Kto wykonał review: `{mode: "self"}` albo reviewer z wyniku `review-session-job.mjs accept` (`mode: "external"`, `attempt`, `provider`, `model`, `thinking`). Brak oznacza `self`. Decyzja z `ok=true` zwraca je w polu `reviewer`. |
 | `delta_review` | suma liczników ≥ 2 | Obiekt z `delta-input --file` także przy ponownym pełnym review; w pierwszej rundzie jest błędem. Pełne review używa go do powiązania rewizji i wcześniejszych ID, bez ograniczenia zakresu. Zawiera `plan_id`, `base_revision`, `current_revision`, `base_sha256`, `current_sha256`, `changed_sections`, `changed_work_packages`, `previous_finding_ids` i `allowed_direct_dependencies`. Wymaga co najmniej jednej zmienionej sekcji lub WP, różnych hashy i `previous_finding_ids` zgodnych z `previous_findings`. |
 
@@ -889,9 +890,56 @@ pełne review może zgłosić niezależny defekt bez provenance z poprawki.
 Po review w osobnej sesji wejście buduje `review-cycle.mjs ingest --result
 <result.json> --request <review-request.json>`. Żądanie musi być powiązanym
 wejściem sesji z niezmienionym hashem (`EXTERNAL_REQUEST_UNBOUND`); z raportu
-reviewera pochodzą wyłącznie `verdict`, `findings` i `previous_resolutions`,
-a pozostałe pola i `reviewer` — z żądania i wyniku `accept`. Procedurę opisuje
+reviewera pochodzą `verdict`, `findings` i podane `coverage`, a w delta-review także
+`previous_resolutions`. Po niezależnym pełnym review rozstrzygnięcia wcześniejszych
+ID i mapowanie tożsamości dostarcza owner przez `--reconciliation`, bez zmiany
+ocen reviewera. Kontrakt i przykład zawiera
+`<skills_root>/task-plan/references/external-plan-review.md`. Pozostałe pola
+i `reviewer` pochodzą z żądania i wyniku `accept`. Procedurę opisuje
 `<skills_root>/task-plan/SKILL.md`.
+
+### Pokrycie niezależnego pełnego review
+
+`coverage` zawiera co najmniej jeden wpis dla każdego obszaru:
+
+- `source_coverage`: wymagania i ograniczenia odtworzone ze źródła, ich pokrycie;
+- `scope_justification`: zasadność działań i kontroli planu;
+- `critical_assumptions`: założenia mogące zmienić zakres, granice lub odbiór,
+  sprawdzone w rzeczywistym mechanizmie i jego istotnych wejściach/odbiorcach;
+- `wp_dependencies`: zależności, kolejność i poprawność stanów pomiędzy WP;
+- `execution_verification`: wykonalność oraz związek kryteriów z kontrolami.
+
+Każdy wpis ma `area`, niepusty `subject`, `outcome` i tablicę `evidence`
+(referencje do konkretnego źródła, fragmentu, symbolu lub wyniku kontroli).
+`outcome` to `REVIEWED`, `FINDING`, `NOT_RELEVANT` albo `NOT_COVERED`:
+
+- `REVIEWED` i `FINDING` wymagają niepustego `scenario` oraz co najmniej jednej
+  niepustej referencji w `evidence`;
+- `NOT_RELEVANT` wymaga niepustego `reason` uzasadniającego pominięcie;
+- `NOT_COVERED` wymaga niepustego `gap` oraz boolean `material`: czy luka wpływa
+  na gotowość. Istotna luka wyklucza `PLAN READY` i `PLAN READY WITH CAVEAT`;
+- w pozostałych wynikach `gap` jest pominięte albo `null`.
+
+```json
+{
+  "area": "critical_assumptions",
+  "subject": "Wspólna walidacja obejmuje import",
+  "outcome": "REVIEWED",
+  "scenario": "Import ujemnej kwoty dochodzi do wspólnej walidacji przed zapisem",
+  "evidence": ["src/Import/Handler.php:42", "src/Order/Validator.php:18"],
+  "gap": null
+}
+```
+
+Wpisów może być wiele na obszar. Oddziel wymagania, krytyczne założenia lub WP,
+gdy różnią się scenariuszem albo wynikiem. Markdown korzysta z tych samych wpisów;
+nie twórz drugiej niezależnej ewidencji. Helper sprawdza kompletność i spójność
+deklaracji przy `accept-session` i ponownie przy `ingest`, nie prawdziwość dowodów
+ani semantyczną kompletność tematów. To pozostaje obowiązkiem ownera.
+W starszych wynikach bez `independent_full_review: true`, delta-review i self-review
+pole jest opcjonalne; niepuste pole jest walidowane również w `decide`, a pusta
+tablica lub `null` oznacza brak pola. Niezależne pełne review wymaga niepustego
+`coverage` zawsze.
 
 Pochodzenie hashy: `plan.content_sha256` pełnego review to `content_sha256` z
 ostatniego wyniku `validate`, `save` albo `edit` dla przeglądanej rewizji. Po

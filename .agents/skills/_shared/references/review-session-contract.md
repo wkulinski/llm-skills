@@ -214,3 +214,13 @@ dodatkowych ograniczeń narzędzi nakładanych przez mechanizm review.
 Granicę „tylko odczyt plików repozytorium” wyznacza prompt; zmiana powiązanego
 wejścia jest wykrywana przy `accept`, ale nie jest cofana. Konsekwencje opisuje
 `SECURITY.md`.
+
+## Widok niezależnego plan-review
+
+Dla `kind: plan-review` z żądaniem `review_scope: full` helper zachowuje
+`context_refs` jako prywatne wejścia ownera i generuje `reviewer_context_refs`.
+Prompt wskazuje wyłącznie te drugie. Oba zestawy są sprawdzane pod kątem zmiany
+bajtów przed przyjęciem wyniku. Wynik zawiera `independent_full_review: true`;
+metodyka i rozliczenie wcześniejszych findings należą do task-plan.
+Pełny reviewer nie odczytuje joba ani kanonicznego planu. Nie jest to izolacja
+systemu plików: dostęp pozostaje ograniczony instrukcjami sesji.

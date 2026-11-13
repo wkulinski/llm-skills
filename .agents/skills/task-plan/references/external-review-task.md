@@ -9,18 +9,25 @@ including its reference routing for continuation reviews. Read the files directl
 do not wait for a skill tool. The plan contract is
 `<skills_root>/_shared/references/task-plan-contract.md`.
 
-Bound inputs:
+Bound inputs depend on scope:
 
-- the plan Markdown (`docs/plans/...`);
-- its source artifact and, when present, the repository-context report and
-  criteria from the plan front matter;
-- in every continuation, the last completed round's report and finding IDs:
-  either an accepted external result or the owner's self-review report with
-  `reviewer.mode: self`, `plan`, `report_markdown` and `payload`; this may be
-  newer than the last external job and is the source for previous findings;
-- the review request JSON: `full_review_count`, `delta_review_count`, the `plan`
-  reference or the `delta_review` artifact, and `previous_findings` with the IDs
-  you must resolve.
+- Full review receives `review-plan.md` (the complete substantive plan with workflow
+  metadata removed), `review-scope.json`, source artifact and available context
+  evidence. Review the entire current plan independently. Do not open the canonical
+  plan, owner request, job/result files, previous reports or planning history.
+  Do not run the canonical plan validator: the owner validates the original.
+  Start local finding IDs at F1 and return `previous_resolutions: []`.
+  Read the source before the proposed solution: reconstruct outcomes and constraints,
+  incorporate recorded user decisions, then independently map them to the plan.
+  Follow the source ledger and critical-assumption traces in `plan-review.md`.
+- Delta review receives the canonical plan, source/context evidence, owner request,
+  delta and last completed report. Resolve all supplied previous findings and
+  assess the fixes and direct dependencies.
+
+Do not treat the plan's own assertions, decisions without a user source, or claims
+of correctness as evidence. Preserve and assess all substantive decisions and risks.
+Reuse factual evidence only after checking relevance and currency; a previous
+verdict or coverage declaration is not evidence for your own assessment.
 
 Answers recorded in the plan as `[answered]` with `Source: current conversation`
 are the user's decisions; you cannot see the conversation, so do not ask for proof
@@ -38,15 +45,9 @@ Do not edit the plan, do not create questions in it, and do not run
 `$task-plan`, its scripts that write (`store.mjs`, `edit.mjs`) or the
 repository-context hybrid. Report a missing decision as a `QUESTION` finding.
 
-The request's `review_scope` selects coverage: `full` means the whole plan,
-including independent unchanged areas; `delta` means the fix and its direct
-dependencies. If absent in an older request, infer `delta` when
-`delta_review_count > 0`, otherwise `full`. Every continuation resolves all
-previous finding IDs; the delta artifact binds versions even in a full review.
-New findings in a delta review need fix provenance; a full review does not
-require it for independently discovered defects. Recurring findings still keep
-their IDs and recurrence assessments. Never reset counters or choose a narrower
-scope than the request.
+The supplied `review_scope` selects full independent coverage or bounded delta
+coverage. Full review never resolves previous IDs, even in a continuation. Delta
+review requires provenance for new findings and keeps recurring IDs.
 
 ## Result
 
@@ -61,12 +62,26 @@ the `plan` target. `payload` is:
 }
 ```
 
+Add `"coverage": [...]` to the payload only for independent full review (see below).
+In delta review omit the field; an empty array or `null` is treated as not supplied.
+
 Every finding and resolution uses exactly the fields of the section
 "Wejście `review-cycle.mjs decide`" in the plan contract: `id` (`F<number>`,
 kept from `previous_findings` for the same failure mode), `classification`,
 `severity` for `finding`, `actionable` (explicitly `false` for `QUESTION` and
 `SUGGESTION`), `approval_affecting` for `QUESTION`,
 `repair_attempts`, and in a delta review `previous_id`, `recurrence` and
-`provenance` where the contract requires them. Give exactly one resolution per
-ID in `previous_findings`. Do not add counters, plan references or the delta
+`provenance` where the contract requires them. For delta review, give exactly one resolution per
+ID in `previous_findings`; full review returns no historical resolutions. Do not add counters, plan references or the delta
 artifact to the payload; they come from the bound review request.
+
+For independent full review, `coverage` must contain evidence-backed entries for
+all five areas defined in the plan contract: `source_coverage`,
+`scope_justification`, `critical_assumptions`, `wp_dependencies`, and
+`execution_verification`. Use multiple rows when distinct requirements, critical
+claims or WPs need different outcomes. For each reviewed subject name the checked
+scenario and evidence. A missing context or unavailable check becomes a named gap;
+mark whether it materially affects readiness. Do not claim either ready verdict
+with a material gap. Generate Markdown coverage from these same entries. Delta
+review keeps its existing bounded protocol; structured coverage is optional there.
+For delta review, omit `coverage` unless deliberately supplying valid entries.

@@ -8,6 +8,7 @@ import {acceptResult} from "../../_shared/scripts/review-session-job.mjs";
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {REVIEWER_LABEL_PATTERN} from "../../_shared/scripts/task-plan/validate.mjs";
 import {loadPlanFile, reviewerLabel} from "../../_shared/scripts/task-plan/store.mjs";
+import {validatePlanReviewCoverage} from "./review-coverage.mjs";
 
 export const REVIEW_ACTIONS = Object.freeze({
     FINISH_READY: "finish-ready",
@@ -52,12 +53,13 @@ const MAX_REVIEW_ROUNDS = 4;
 export function decideReviewCycle(input = {}) {
     const result = deriveAction(input);
     const reviewer = isRecord(input) && isRecord(input.reviewer) ? input.reviewer : {mode: "self"};
-    return {...result, plan: result.ok ? reviewedPlan(input) : null, reviewer: result.ok ? reviewer : null,
+    return {...result, ...(result.ok && hasCoverage(input) ? {coverage: input.coverage} : {}),
+        plan: result.ok ? reviewedPlan(input) : null, reviewer: result.ok ? reviewer : null,
         review_scope: result.ok ? reviewScope(input) : null};
 }
 
 /** Fields the external reviewer supplies; every other decide field comes from the bound request. */
-const REVIEWER_FIELDS = Object.freeze(["verdict", "findings", "previous_resolutions"]);
+const REVIEWER_FIELDS = Object.freeze(["verdict", "findings", "previous_resolutions", "coverage"]);
 const REQUEST_FIELDS = Object.freeze(["review_scope", "full_review_count", "delta_review_count", "plan", "delta_review", "previous_findings"]);
 
 /**
@@ -67,11 +69,11 @@ const REQUEST_FIELDS = Object.freeze(["review_scope", "full_review_count", "delt
  * is the owner's review-request JSON that was bound to the session. The request
  * must be one of the bound inputs with an unchanged hash, so the counters, plan
  * reference and previous findings are the ones the reviewer saw. Only verdict,
- * findings and previous_resolutions come from the reviewer's payload.
+ * findings, coverage and (for delta) previous_resolutions come from the reviewer's payload.
  *
  * @param {{result: JsonObject, request: JsonObject, requestSha256: string}} input
  */
-export function ingestExternalReview({result, request, requestSha256}) {
+export function ingestExternalReview({result, request, requestSha256, reconciliation = null, acceptanceOnly = false}) {
     if (!isRecord(result) || result.decision !== "ACCEPTED" || !isRecord(result.payload) || !isRecord(result.reviewer)) {
         throw new ReviewCycleError("EXTERNAL_RESULT_NOT_ACCEPTED", "ingest requires the ACCEPTED result of review-session-job.mjs accept.");
     }
@@ -90,13 +92,57 @@ export function ingestExternalReview({result, request, requestSha256}) {
         input[field] = result.payload[field];
     }
     input.reviewer = result.reviewer;
+    if (result.independent_full_review === true) {
+        const coverageErrors = validatePlanReviewCoverage(input.coverage, input.verdict);
+        if (coverageErrors.length > 0) {
+            return {ok: false, action: REVIEW_ACTIONS.BLOCK, reason: "invalid-review-coverage",
+                actionable_finding_ids: [], errors: coverageErrors, plan: null, reviewer: null, review_scope: null};
+        }
+        const isolated = {...input, review_scope: "full", full_review_count: 1, delta_review_count: 0,
+            plan: reviewedPlan(input), previous_findings: [], previous_resolutions: []};
+        delete isolated.delta_review;
+        const validation = decideReviewCycle(isolated);
+        if (!validation.ok) { return validation; }
+        if (!Array.isArray(result.payload.previous_resolutions) || result.payload.previous_resolutions.length > 0) {
+            return {...validation, ok: false, action: null, plan: null,
+                errors: [{code: "INDEPENDENT_HISTORY_PRESENT", message: "Independent reviewers must return previous_resolutions: []."}]};
+        }
+        if (acceptanceOnly) { return validation; }
+        if ((request.previous_findings ?? []).length > 0) {
+            if (!isRecord(reconciliation) || reconciliation.binding_sha256 !== result.binding_sha256
+                || reconciliation.payload_sha256 !== crypto.createHash("sha256").update(JSON.stringify(result.payload)).digest("hex")) {
+                throw new ReviewCycleError("OWNER_RECONCILIATION_REQUIRED", "Bind owner reconciliation to this report's binding_sha256 and SHA-256 of JSON.stringify(payload).");
+            }
+            const mappings = reconciliation.finding_mappings;
+            if (!Array.isArray(mappings) || mappings.some(item => !isRecord(item)) || mappings.length !== input.findings.length
+                || new Set(mappings.map(item => item.report_id)).size !== mappings.length) {
+                throw new ReviewCycleError("INVALID_FINDING_MAPPING", "Map every independent finding exactly once; do not omit findings.");
+            }
+            input.findings = input.findings.map(finding => {
+                const mapping = mappings.find(item => item.report_id === finding.id);
+                if (!mapping || Object.keys(mapping).some(key => !["report_id", "id", "previous_id", "recurrence", "provenance", "repair_attempts"].includes(key))) {
+                    throw new ReviewCycleError("INVALID_FINDING_MAPPING", "Owner may map identity and repair history only, not rewrite reviewer judgments.");
+                }
+                if (typeof mapping.previous_id !== "undefined"
+                    && !(Number.isInteger(mapping.repair_attempts) && mapping.repair_attempts >= 0)) {
+                    throw new ReviewCycleError("REPAIR_ATTEMPTS_REQUIRED", `Mapping ${mapping.report_id} sets previous_id; supply repair_attempts from the owner's repair history (the independent reviewer cannot know it).`);
+                }
+                const {report_id, ...identity} = mapping;
+                return {...finding, ...identity};
+            });
+            input.previous_resolutions = reconciliation.previous_resolutions;
+            if (!Array.isArray(input.previous_resolutions) || input.previous_resolutions.some(item => typeof item.evidence !== "string" || !item.evidence.trim())) {
+                throw new ReviewCycleError("RESOLUTION_EVIDENCE_REQUIRED", "Each owner resolution needs explicit evidence; absence from the new report is not evidence.");
+            }
+        }
+    }
     return decideReviewCycle(input);
 }
 
 /** Accept a plan report only when the normal decide protocol can consume it. */
 export function acceptPlanReview({jobPath, envelopeText, inspect, request, requestSha256}) {
     return acceptResult({jobPath, envelopeText, inspect,
-        validateReport: (result) => ingestExternalReview({result, request, requestSha256}),
+        validateReport: (result) => ingestExternalReview({result, request, requestSha256, acceptanceOnly: true}),
     });
 }
 
@@ -178,6 +224,11 @@ function deriveAction(input = {}) {
 export function validateReviewCycleInput(input = {}) {
     /** @type {ValidationIssue[]} */
     const errors = [];
+    // An empty or null coverage is the schema placeholder, i.e. "not supplied";
+    // the independent full review requires it separately in ingestExternalReview.
+    if (hasCoverage(input)) {
+        errors.push(...validatePlanReviewCoverage(input.coverage, input.verdict));
+    }
     if (!isRecord(input)) {
         return [error("INVALID_INPUT", "Review-cycle input must be an object.")];
     }
@@ -254,6 +305,11 @@ export function validateReviewCycleInput(input = {}) {
     validateReviewer(input.reviewer, errors);
 
     return errors;
+}
+
+function hasCoverage(input) {
+    return isRecord(input) && typeof input.coverage !== "undefined" && input.coverage !== null
+        && !(Array.isArray(input.coverage) && input.coverage.length === 0);
 }
 
 // Older requests infer their scope; new requests state it explicitly.
@@ -790,7 +846,7 @@ function parseArgs(argv) {
         } else if (token === "--result") {
             result.result = argv[index + 1];
             index += 1;
-        } else if (["--job", "--envelope", "--inspect"].includes(token)) {
+        } else if (["--job", "--envelope", "--inspect", "--reconciliation"].includes(token)) {
             result[token.slice(2)] = argv[index + 1];
             index += 1;
         } else if (token === "--request") {
@@ -818,7 +874,7 @@ function usage() {
         "  review-cycle.mjs delta-input --input <file|->",
         "  review-cycle.mjs delta-input --file <plan> [--root <repo>] --input <file|->",
         "  review-cycle.mjs accept-session --job <job.json> --envelope <file> --inspect <file> --request <file>",
-        "  review-cycle.mjs ingest --result <accept-result.json> --request <review-request.json>",
+        "  review-cycle.mjs ingest --result <accept-result.json> --request <review-request.json> [--reconciliation <file>]",
         "",
         "decide, delta-input and ingest are stateless; accept-session records the session outcome.",
         "Semantic assessments are explicit JSON input.",
@@ -861,6 +917,7 @@ function main(argv) {
         const requestBytes = fs.readFileSync(path.resolve(args.request));
         const ingested = ingestExternalReview({
             result: JSON.parse(fs.readFileSync(path.resolve(args.result), "utf8")),
+            reconciliation: args.reconciliation ? readJsonInput(args.reconciliation) : null,
             request: JSON.parse(requestBytes.toString("utf8")),
             requestSha256: crypto.createHash("sha256").update(requestBytes).digest("hex"),
         });

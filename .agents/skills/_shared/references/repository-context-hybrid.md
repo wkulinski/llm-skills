@@ -35,6 +35,40 @@ the session root; client permissions must allow the required operations, and an
 actual denial must be reported literally rather than converted into a directory
 hierarchy requirement.
 
+## Harness-independent delegation
+
+Use the subagent mechanism actually exposed by the current session. Prefer the
+configured project role; if that OpenCode role is unavailable, launch a fresh,
+independent subagent with the role and strategy supplied by `dispatch.prompt`
+and the shared scout playbook. Do not require OpenCode or a tool with a particular
+name. `task`, `Agent` (formerly `Task`) and `spawn_agent` are examples, not an
+exhaustive allowlist. Using an equivalent mechanism requires no user approval.
+
+The dispatch field `subagent_type` identifies the logical role, not a required
+parameter name or an assertion that a matching harness profile exists. Map it to
+the client's role selector when available; otherwise use an independent generic
+subagent. Map `description` to its task label and pass `dispatch.prompt` verbatim
+as its task message. Do not pass unsupported parameters. Any separately required
+role instructions must remain separate from that unchanged message.
+
+Start each attempt with a fresh context containing only its dispatch and the
+permitted immutable inputs. Do not fork the parent conversation, resume another
+attempt or expose primary findings to the fallback. Set the consumer working
+directory when supported; absolute consumer paths in the prompt remain binding.
+Preserve the role's read-only boundaries, budgets, output path and report
+validation, and any tool restrictions the client can enforce; a client that cannot
+enforce tool restrictions is not a reason to stop, because the prompt-level
+boundaries and controller validation still apply. The shared playbook supplies role strategies even when no
+named project profile is installed; do not depend on `.opencode/agents` in the
+consumer project.
+
+This transport substitution executes the same claimed attempt. It does not
+consume the single discovery fallback or authorize skipping primary. Only
+`settle` returning `CLAIM_FALLBACK` authorizes that second attempt. Stop and
+report the actual limitation only if no delegation mechanism is available or
+it cannot satisfy this contract; after `prepare`, always settle or abort.
+A missing tool name or named role alone is not such a limitation.
+
 ## Inputs
 
 Both agents receive exactly the same:
@@ -103,12 +137,12 @@ requires a fresh manifest and a new run.
 2. After `prepare` the helper returns `CLAIM_PRIMARY`. The main agent calls
    `claim --attempt primary` to atomically move the attempt to running under a
    per-state lock and obtain a one-time dispatch token plus a ready-to-use
-   `dispatch` object. The main agent passes `dispatch.subagent_type`,
-   `dispatch.description` and `dispatch.prompt` directly to the native `task`
-   tool. `dispatch.prompt` MUST be passed verbatim: never summarize, wrap,
+   `dispatch` object. The main agent maps the dispatch fields to the available
+   subagent mechanism according to Harness-independent delegation above.
+   `dispatch.prompt` MUST be passed verbatim: never summarize, wrap,
    paraphrase or replace it with a reference such as "use the supplied prompt".
    The helper never starts OpenCode or an agent. A duplicate claim is rejected.
-   Both scout adapters must read the absolute installation playbook path supplied
+   Both scout roles must read the absolute installation playbook path supplied
    in the prompt (`<skills_root>/_shared/references/repository-context-scout-playbook.md`)
    before discovery; their local prompts contain only role-specific strategy and
    duplicated safety guards.
@@ -158,11 +192,12 @@ requires a fresh manifest and a new run.
    Claimed attempt bez raportu pozostaje `REPORT_MISSING`; helper nie tworzy
    sztucznego raportu bez evidence i zachowuje normalną decyzję o pojedynczym
    fallbacku.
-6. Delegate exactly one `context-scout` fallback through native `task` only when
+6. Delegate exactly one independent `context-scout` fallback only when
     `settle` returns `CLAIM_FALLBACK`, then call `claim --attempt fallback` to
-    obtain its dispatch token and ready-to-use `dispatch` object. Pass that
-    object's fields directly to native `task`, including `dispatch.prompt`
-    verbatim. The fallback receives the same immutable inputs and budget, never
+    obtain its dispatch token and ready-to-use `dispatch` object. Map its fields
+    through the same harness-independent delegation contract, including
+    `dispatch.prompt` verbatim. The fallback receives the same immutable inputs
+    and budget, never
     the primary's report or failure explanation.
 7. Call `settle --attempt fallback --token <dispatch-token>` with the same
    immutable inputs. A rejected fallback always finalizes the run and never
@@ -181,7 +216,7 @@ requires a fresh manifest and a new run.
 
 - Neither scout may delegate another scout or invoke this helper.
 - `context-scout-fast` is never run standalone; the main agent delegates it
-  through native `task` only after `prepare`.
+  through the available subagent mechanism only after `prepare` and `claim`.
 - `context-scout` is delegated directly by the main agent only after the helper
   returns `CLAIM_FALLBACK` and the main agent claims that attempt.
 - Neither scout may edit files, run QA/review, create commits, read issues or
@@ -218,10 +253,13 @@ makes the existing report stale.
 
 ## Run isolation
 
-The controller does not use a worktree-wide lock. Recursion and duplicate
-attempts within one run are prevented by native task delegation, denied
-task/helper execution in scout permissions, unique `runId` artifact paths, and
-fail-closed phases. Independent runs may execute concurrently; each run keeps
+The controller does not use a worktree-wide lock. Duplicate attempts within one
+run are prevented by controller-enforced controls that hold in every client:
+one-time dispatch tokens, unique `runId` artifact paths, and fail-closed phases.
+Recursion (a scout delegating or running the helper) is blocked by denied
+delegation/helper permissions only where a project role profile such as
+`.opencode/agents` is actually in force; with an independent generic subagent the
+boundary rests on the verbatim `dispatch.prompt` and the playbook. Independent runs may execute concurrently; each run keeps
 its own state, reports, input hashes, and final metadata. Claim transitions use
 a per-state lock; no worktree-wide lock is required.
 
@@ -301,11 +339,11 @@ node <skills_root>/_shared/scripts/context-scout-hybrid-run.mjs prepare \
 
 # Every placeholder above resolves under repository-local CACHE_PATH.
 
-# Claim the next attempt to obtain a one-time token and native task dispatch.
+# Claim the next attempt to obtain a one-time token and subagent dispatch.
 node <skills_root>/_shared/scripts/context-scout-hybrid-run.mjs claim \
   --state <statePath> --run-id <runId> --attempt primary
 
-# Call native task with claim.dispatch.subagent_type, description and prompt.
+# Map claim.dispatch to the available independent subagent mechanism.
 # Pass claim.dispatch.prompt verbatim; do not summarize or replace it.
 
 node <skills_root>/_shared/scripts/context-scout-hybrid-run.mjs settle \
@@ -345,7 +383,7 @@ paths, symbols, expected findings or instructions that solve a benchmark case.
 - Keep live model/task tests optional and explicitly gated because they incur
   cost and can depend on external MCP state. OpenCode's V2 Session SDK may drive
   create/prompt/wait/event flows when a repeatable end-to-end harness is needed.
-- A live smoke test must use the native `task` path and the same
+- A live smoke test must use the current harness's subagent mechanism and the same
   `prepare`/`claim`/`settle` controller; never restore `opencode run`.
 
 ## Helper contract

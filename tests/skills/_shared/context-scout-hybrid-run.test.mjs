@@ -105,7 +105,24 @@ function assertEvaluateRejectsWorktreeDrift(prepared, mutate, cleanup, expectedF
     }
 }
 
-test("prepare returns native task instructions and never starts OpenCode", () => {
+test("delegation contract supports independent harness agents without bypassing validation", () => {
+    const policy = fs.readFileSync(path.join(ROOT, ".agents/skills/_shared/references/repository-context-hybrid.md"), "utf8");
+    for (const transport of ["task", "Agent", "spawn_agent"]) {
+        assert.ok(policy.includes("`" + transport + "`"));
+    }
+    assert.match(policy, /not an\s+exhaustive allowlist/);
+    assert.match(policy, /requires no user approval/);
+    assert.match(policy, /Do not fork the parent conversation/);
+    assert.match(policy, /does not\s+consume the single discovery fallback/);
+    assert.match(policy, /pass `dispatch.prompt` verbatim/);
+    assert.doesNotMatch(policy, /native `task`|native task/);
+    const playbook = fs.readFileSync(path.join(ROOT, ".agents/skills/_shared/references/repository-context-scout-playbook.md"), "utf8");
+    assert.match(playbook, /`context-scout-fast`:.*CMM-first/);
+    assert.match(playbook, /`context-scout`:.*bez CMM/);
+    assert.match(playbook, /context-subagent-contract.md/);
+});
+
+test("prepare returns portable role instructions and never starts OpenCode", () => {
     const dir = makeFixtureDir();
     const result = prepare(dir);
     assert.equal(result.protocolVersion, 5);
@@ -118,6 +135,8 @@ test("prepare returns native task instructions and never starts OpenCode", () =>
     assert.equal(Object.hasOwn(claimed, "agent"), false);
     assert.equal(Object.hasOwn(claimed, "taskPrompt"), false);
     assert.match(claimed.dispatch.prompt, /Do not delegate/);
+    assert.match(claimed.dispatch.prompt, /even without a named harness profile/);
+    assert.match(claimed.dispatch.prompt, /Use CMM only when available.*otherwise use file tools/);
     assert.match(claimed.dispatch.prompt, /native file tool \(write or apply_patch/);
     assert.match(claimed.dispatch.prompt, /Use absolute consumer-project paths/);
     assert.match(claimed.dispatch.prompt, /path parameter explicitly/);
@@ -736,6 +755,9 @@ test("invalid primary requests exactly one isolated fallback", () => {
     const fallbackClaim = claim(prepared, "fallback");
     assert.equal(fallbackClaim.dispatch.subagent_type, "context-scout");
     assert.equal(fallbackClaim.dispatch.description, "Retry repository context");
+    assert.match(fallbackClaim.dispatch.prompt, /even without a named harness profile/);
+    assert.match(fallbackClaim.dispatch.prompt, /direct source reads only, without CMM/);
+    assert.doesNotMatch(fallbackClaim.dispatch.prompt, /Use CMM only when available/);
     fs.writeFileSync(fallbackClaim.reportPath, JSON.stringify(validReport()));
     const fallback = evaluateAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "fallback", token: fallbackClaim.dispatchToken, "duration-ms": "23"});
     assert.equal(fallback.validation.valid, true);

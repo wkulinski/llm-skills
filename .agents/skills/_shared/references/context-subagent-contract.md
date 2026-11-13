@@ -1,5 +1,12 @@
 # Kontrakt kontekstu między agentami
 
+## Delegacja między klientami
+
+Wybór mechanizmu delegacji i zastąpienie niedostępnej roli OpenCode niezależnym
+subagentem opisuje `repository-context-hybrid.md`, sekcja
+„Harness-independent delegation”. Nazwa narzędzia nie określa dostępności
+workflow; granice roli, izolacja wejść i walidacja raportu pozostają obowiązkowe.
+
 ## Role
 
 ### Agent główny

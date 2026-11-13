@@ -6,7 +6,12 @@ import {execFileSync} from "node:child_process";
 import {prepareJob, bindSession} from "../../../.agents/skills/_shared/scripts/review-session-job.mjs";
 import {describe, expect, it} from "vitest";
 
+import {PLAN_REVIEW_AREAS} from "../../../.agents/skills/task-plan/scripts/review-coverage.mjs";
+
 import {acceptPlanReview, decideReviewCycle, ingestExternalReview} from "../../../.agents/skills/task-plan/scripts/review-cycle.mjs";
+
+const COVERAGE = PLAN_REVIEW_AREAS.map(area => ({area, subject: area, outcome: "REVIEWED",
+    scenario: "Source requirement traced to the relevant WP and repository mechanism.", evidence: ["plan.md:10", "src/example.mjs:4"]}));
 
 const PLAN = {plan_id: "v2-example-1111aaaa-2222bbbb", revision: 1, content_sha256: "1".repeat(64)};
 const REQUEST = {full_review_count: 1, delta_review_count: 0, plan: PLAN, previous_findings: []};
@@ -94,8 +99,9 @@ function withSession(callback) {
         execFileSync("git", ["init", "--quiet"], {cwd: root});
         fs.writeFileSync(path.join(root, "request.json"), JSON.stringify(REQUEST));
         fs.writeFileSync(path.join(root, "task.md"), "Review the plan.");
+        fs.writeFileSync(path.join(root, "plan.md"), "---\nrevision: 1\n---\n# Plan\n");
         const prepared = prepareJob({root, prefix: "TEST_REVIEW", kind: "plan-review", jobId: crypto.randomUUID(),
-            task: path.join(root, "task.md"), context: [path.join(root, "request.json")]},
+            task: path.join(root, "task.md"), context: [path.join(root, "plan.md"), path.join(root, "request.json")]},
         {readConfig: () => Object.fromEntries([1, 2].flatMap(n => [
             [`TEST_REVIEW_${n}_HARNESS`, "opencode"], [`TEST_REVIEW_${n}_MODEL`, "deepseek"], [`TEST_REVIEW_${n}_THINKING`, "high"], [`TEST_REVIEW_${n}_MODE`, "build"],
         ]))});
@@ -119,7 +125,7 @@ describe("plan session acceptance", () => {
             expect(accept({verdict: "PLAN READY"})).toMatchObject({reason: "REPORT_PAYLOAD_INVALID", next: {action: "launch", attempt: "2"}});
             expect(fs.existsSync(path.join(path.dirname(jobPath), "result.json"))).toBe(false);
             bind();
-            expect(accept({verdict: "PLAN READY", findings: [], previous_resolutions: []})).toMatchObject({decision: "ACCEPTED", reviewer: {attempt: "2"}});
+            expect(accept({verdict: "PLAN READY", findings: [], previous_resolutions: [], coverage: COVERAGE})).toMatchObject({decision: "ACCEPTED", reviewer: {attempt: "2"}});
         });
     });
     it("falls back to self when all payloads fail validation", () => {
@@ -133,7 +139,101 @@ describe("plan session acceptance", () => {
             bind();
             const findings = verdict === "PLAN CHANGES REQUESTED"
                 ? [{id: "F1", classification: "finding", severity: "MAJOR", actionable: true, repair_attempts: 0}] : [];
-            expect(accept({verdict, findings, previous_resolutions: []})).toMatchObject({decision: "ACCEPTED", next: {action: "evaluate"}});
+            expect(accept({verdict, findings, previous_resolutions: [], coverage: COVERAGE})).toMatchObject({decision: "ACCEPTED", next: {action: "evaluate"}});
+        });
+    });
+});
+
+describe("independent review reconciliation", () => {
+    const request = {...REQUEST, review_scope: "full", previous_findings: [{id: "F1", severity: "MAJOR"}]};
+    const payload = {verdict: "PLAN READY", findings: [], previous_resolutions: [], coverage: COVERAGE};
+    const result = accepted(payload, request, {independent_full_review: true, binding_sha256: "b".repeat(64)});
+    const run = options => ingestExternalReview({result, request, requestSha256: requestSha(request), ...options});
+    it("accepts independent coverage without exposing prior findings, but cannot finalize without owner evidence", () => {
+        expect(run({acceptanceOnly: true})).toMatchObject({ok: true});
+        expect(() => run({})).toThrow(/reconciliation/);
+    });
+    it("rejects historical resolutions in an independent payload before accepting the session", () => {
+        expect(run({acceptanceOnly: true, result: {...result,
+            payload: {...payload, previous_resolutions: [{id: "F1", status: "resolved"}]}}}))
+            .toMatchObject({ok: false, errors: [{code: "INDEPENDENT_HISTORY_PRESENT"}]});
+    });
+    it("rejects an unbound or evidence-free reconciliation", () => {
+        expect(() => run({reconciliation: {}})).toThrow(/reconciliation/);
+        expect(() => run({reconciliation: {binding_sha256: result.binding_sha256,
+            payload_sha256: requestSha(payload), finding_mappings: [], previous_resolutions: [{id: "F1", status: "resolved"}]}})).toThrow(/evidence/);
+    });
+    it("requires owner-supplied repair_attempts when a mapping links a previous finding", () => {
+        const found = {...result, payload: {...payload, verdict: "PLAN CHANGES REQUESTED", findings: [{id: "F1", classification: "finding", severity: "MAJOR", actionable: true, repair_attempts: 0}]}};
+        const reconcile = mapping => ({binding_sha256: found.binding_sha256, payload_sha256: requestSha(found.payload),
+            finding_mappings: [mapping], previous_resolutions: [{id: "F1", status: "current", current_severity: "MAJOR", evidence: "Same defect remains in WP1."}]});
+        const linked = {report_id: "F1", id: "F1", previous_id: "F1", recurrence: {same_failure_mode: true, new_evidence: true, evidence: "New trace in WP1 A2."}};
+        expect(() => run({result: found, reconciliation: reconcile(linked)})).toThrow(/repair_attempts/);
+        expect(run({result: found, reconciliation: reconcile({...linked, repair_attempts: 1})})).toMatchObject({ok: true, action: "apply-repair"});
+    });
+    it("never permits dropping an independent finding", () => {
+        const found = {...result, payload: {...payload, verdict: "PLAN CHANGES REQUESTED", findings: [{id: "F1", classification: "finding", severity: "MAJOR", actionable: true, repair_attempts: 0}]}};
+        expect(() => run({result: found, reconciliation: {binding_sha256: found.binding_sha256,
+            payload_sha256: requestSha(found.payload), finding_mappings: [], previous_resolutions: []}})).toThrow(/exactly once/);
+    });
+});
+
+
+it("finalizes an independent continuation only with explicit bound owner resolutions", () => {
+    const request = {...REQUEST, review_scope: "full", full_review_count: 2,
+        previous_findings: [{id: "F1", severity: "MAJOR"}],
+        delta_review: {plan_id: PLAN.plan_id, base_revision: 1, current_revision: 2,
+            base_sha256: "2".repeat(64), current_sha256: PLAN.content_sha256,
+            changed_sections: ["Work packages"], changed_work_packages: ["WP1"],
+            previous_finding_ids: ["F1"], allowed_direct_dependencies: []}};
+    delete request.plan;
+    const payload = {verdict: "PLAN READY", findings: [], previous_resolutions: [], coverage: COVERAGE};
+    const result = accepted(payload, request, {independent_full_review: true, binding_sha256: "b".repeat(64)});
+    const reconciliation = {binding_sha256: result.binding_sha256, payload_sha256: requestSha(payload),
+        finding_mappings: [], previous_resolutions: [{id: "F1", status: "resolved", evidence: "WP1 A2 now covers the missing branch."}]};
+    expect(ingestExternalReview({result, request, requestSha256: requestSha(request), reconciliation}))
+        .toMatchObject({ok: true, action: "finish-ready", plan: {...PLAN, revision: 2}});
+    reconciliation.previous_resolutions = [];
+    expect(ingestExternalReview({result, request, requestSha256: requestSha(request), reconciliation}))
+        .toMatchObject({ok: false});
+});
+
+
+describe("independent full review coverage acceptance", () => {
+    it("rejects empty coverage before finalizing and accepts the next profile's complete report", () => {
+        withSession(({jobPath, bind, accept}) => {
+            bind();
+            expect(accept({verdict: "PLAN READY", findings: [], previous_resolutions: []}))
+                .toMatchObject({reason: "REPORT_PAYLOAD_INVALID", next: {attempt: "2"}});
+            expect(fs.existsSync(path.join(path.dirname(jobPath), "result.json"))).toBe(false);
+            bind();
+            expect(accept({verdict: "PLAN READY", findings: [], previous_resolutions: [], coverage: COVERAGE}))
+                .toMatchObject({decision: "ACCEPTED", payload: {coverage: COVERAGE}});
+        });
+    });
+    it("does not take coverage from the owner request or reconciliation", () => {
+        const request = {...REQUEST, coverage: COVERAGE};
+        const payload = {verdict: "PLAN READY", findings: [], previous_resolutions: []};
+        const result = accepted(payload, request, {independent_full_review: true});
+        expect(ingestExternalReview({result, request, requestSha256: requestSha(request), reconciliation: {coverage: COVERAGE}}))
+            .toMatchObject({ok: false, errors: [{code: "REVIEW_COVERAGE_REQUIRED"}]});
+    });
+    it("rechecks coverage at ingest and keeps valid evidence in the owner decision", () => {
+        const payload = {verdict: "PLAN READY", findings: [], previous_resolutions: [], coverage: COVERAGE};
+        const result = accepted(payload, REQUEST, {independent_full_review: true});
+        expect(ingestExternalReview({result, request: REQUEST, requestSha256: requestSha(REQUEST)}))
+            .toMatchObject({ok: true, action: "finish-ready", coverage: COVERAGE});
+        result.payload.coverage = COVERAGE.filter(row => row.area !== "critical_assumptions");
+        expect(ingestExternalReview({result, request: REQUEST, requestSha256: requestSha(REQUEST)}))
+            .toMatchObject({ok: false, action: "blocked", errors: [{code: "REVIEW_COVERAGE_AREA_MISSING"}]});
+    });
+    it("accepts an honest material gap for discussion and never turns it into ready", () => {
+        withSession(({bind, accept}) => {
+            bind();
+            const coverage = COVERAGE.map(row => row.area === "critical_assumptions"
+                ? {...row, outcome: "NOT_COVERED", gap: "Import implementation unavailable.", material: true} : row);
+            expect(accept({verdict: "PLAN DISCUSS", findings: [], previous_resolutions: [], coverage}))
+                .toMatchObject({decision: "ACCEPTED", next: {action: "evaluate"}});
         });
     });
 });

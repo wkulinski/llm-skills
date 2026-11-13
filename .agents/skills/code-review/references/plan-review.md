@@ -15,6 +15,24 @@ decisions, repository evidence, and the plan contract owned by `$task-plan`
 Do not treat `candidate paths`, `discovery debt`, or a plan's suggested diagnosis
 as confirmed facts without supporting evidence.
 
+For a full review, reconstruct expectations before assessing the proposed solution:
+
+1. Read the raw source first. Record its requested outcomes, explicit constraints,
+   reported symptoms and relevant boundary scenarios in a short source ledger.
+   Distinguish requirements from suggested solutions; do not invent requirements.
+2. Read the plan's recorded user decisions, incorporating authoritative decisions
+   into that ledger without borrowing the author's source-to-WP mapping.
+3. Read the proposed solution and independently map the ledger to WPs and
+   acceptance criteria. Look for omitted outcomes and unsupported scope as well
+   as defects in the proposed actions.
+
+In the report, give each source requirement or constraint a concise row:
+source reference and expected outcome → WP/criterion (or missing) → assessment
+and evidence. Existing per-element scope and source coverage rows may serve this
+purpose; do not maintain a second copy. A boundary scenario is a probe of a
+requirement, not a new requirement. A delta review updates only the affected
+ledger entries and their direct dependencies.
+
 When the plan's author is also its reviewer, its own diagnosis is a claim, not
 context. Read the raw source material, including attached screenshots, logs, and
 comments, and compare the plan with it rather than with the plan's summary of it in
@@ -45,6 +63,23 @@ For a `plan` target, also read the relevant `$task-plan` contract
 repository documentation needed to verify ownership, boundaries, dependencies,
 paths, or acceptance checks claimed by the plan. Do not turn plan review into a
 second full implementation discovery pass.
+
+This limit does not excuse checking critical assumptions. An assumption is
+critical when disproving it would change scope, architecture/ownership, WP order
+or dependencies, public behavior, or acceptance criteria. For each such claim:
+
+- name the claim and a concrete scenario that could disprove it;
+- trace the actual mechanism in repository code, including the relevant producer,
+  consumer or alternate entrypoint when the claim crosses that boundary;
+- compare that trace with the proposed WP and verification; record paths/symbols
+  and the conclusion, or the exact missing evidence and its consequence.
+
+For example, a claim that shared validation covers all writes requires checking
+the form, import and background entrypoints that can reach the write, rather than
+only locating the validator. Check only entrypoints relevant to the claim. There
+is no minimum file, command or finding count. For a plan without runtime code,
+trace the corresponding document, CLI or workflow contract instead. Combine these
+traces with the coverage rows below rather than adding a parallel report.
 
 ## Plan integrity and execution readiness
 
@@ -90,9 +125,8 @@ form the owner feeds to its review-cycle helper:
 - `classification`: `finding`, `QUESTION`, or `SUGGESTION`;
 - `severity` (`BLOCKER`, `MAJOR`, `MINOR`) for a `finding` only, and `actionable` stated explicitly (`false` for `QUESTION` and `SUGGESTION`); a `QUESTION` also states `approval_affecting`;
 - the affected section or WP and the evidence for it;
-- in a re-review: the resolution of every prior ID (`resolved`, `current` with its current severity, or `accepted`), and for each new or recurring finding the same-failure-mode and new-evidence assessment or, for a delta review, the provenance in the changed scope. A full review may
-  report independent new defects without fix provenance; prior IDs still require
-  explicit resolutions and recurrence assessments.
+- in a delta-review: the resolution of every prior ID (`resolved`, `current` with its current severity, or `accepted`), and for each new or recurring finding the same-failure-mode and new-evidence assessment or, for a delta review, the provenance in the changed scope. A full review reports independent findings with local IDs and no historical
+  resolutions; reconciliation belongs to the owner.
 
 ## Plan coverage
 
@@ -119,6 +153,13 @@ natural unit:
 
 In a re-review, limit these rows to the scope defined by
 `<skill_dir>/references/re-review.md`.
+
+For independent external full review, also return the structured `coverage`
+defined in `<skills_root>/_shared/references/task-plan-contract.md`. Render the
+report's coverage from those same entries, supplemented by the source ledger and
+per-element checks above; do not independently invent a second set of outcomes.
+The helper checks completeness and internal consistency; the owner checks that
+the cited evidence supports the scenario and that no material subject is omitted.
 
 ## Plan verdicts
 
