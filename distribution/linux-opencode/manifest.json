@@ -21,16 +21,48 @@
         ".agents/skills/php-structure-refactor"
     ],
     "files": [
-        {"source": ".opencode/agents/context-refresher.md", "target": ".opencode/agents/context-refresher.md"},
-        {"source": ".opencode/agents/context-scout-fast.md", "target": ".opencode/agents/context-scout-fast.md"},
-        {"source": ".opencode/agents/context-scout.md", "target": ".opencode/agents/context-scout.md"},
-        {"source": ".opencode/plugins/session-model-env.js", "target": ".opencode/plugins/session-model-env.js"},
-        {"source": ".agents/skills/plan-execute/model-hierarchy.json.dist", "target": ".agents/skills-templates/model-hierarchy.json.dist"},
-        {"source": "distribution/linux-opencode/opencode.json.dist", "target": ".agents/skills-templates/opencode.json.dist"},
-        {"source": ".env.dist", "target": ".agents/skills-templates/env.dist"},
-        {"source": "LICENSE", "target": ".agents/skills-templates/LICENSE"}
+        {
+            "source": ".opencode/agents/context-refresher.md",
+            "target": ".opencode/agents/context-refresher.md"
+        },
+        {
+            "source": ".opencode/agents/context-scout.md",
+            "target": ".opencode/agents/context-scout.md"
+        },
+        {
+            "source": ".opencode/plugins/session-model-env.js",
+            "target": ".opencode/plugins/session-model-env.js"
+        },
+        {
+            "source": ".agents/skills/plan-execute/model-hierarchy.json.dist",
+            "target": ".agents/skills-templates/model-hierarchy.json.dist"
+        },
+        {
+            "source": "distribution/linux-opencode/opencode.json.dist",
+            "target": ".agents/skills-templates/opencode.json.dist"
+        },
+        {
+            "source": ".env.dist",
+            "target": ".agents/skills-templates/env.dist"
+        },
+        {
+            "source": "LICENSE",
+            "target": ".agents/skills-templates/LICENSE"
+        }
     ],
-    "consumerOwned": ["AGENTS.md", "opencode.jsonc", ".agents/config/model-hierarchy.json", ".agents/qa-run.matrix.json"],
-    "requiredRoles": ["context-refresher", "context-scout-fast", "context-scout"],
-    "requiredMcp": ["codebase-memory", "serena", "context7"]
+    "consumerOwned": [
+        "AGENTS.md",
+        "opencode.jsonc",
+        ".agents/config/model-hierarchy.json",
+        ".agents/qa-run.matrix.json"
+    ],
+    "requiredRoles": [
+        "context-refresher",
+        "context-scout"
+    ],
+    "requiredMcp": [
+        "codebase-memory",
+        "serena",
+        "context7"
+    ]
 }

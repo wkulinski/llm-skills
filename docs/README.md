@@ -26,7 +26,7 @@ This repository is a source catalog of reusable agent workflows. Start with the
 - [Workflow routing policy](../.agents/skills/_shared/references/skill-routing-policy.md) — selecting the top-level workflow
 - [Module index](./modules/README.md)
 - [Context scout benchmark](./benchmark/context-scout-fast-vs-inline.md)
-- [Repository-context hybrid protocol](../.agents/skills/_shared/references/repository-context-hybrid.md)
+- [Repository-context protocol](../.agents/skills/_shared/references/repository-context.md)
 
 ## Notes
 - This repo does not define application modules like a business monolith.

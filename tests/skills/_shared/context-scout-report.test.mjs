@@ -1,13 +1,7 @@
+import fs from "node:fs";
 import {describe, expect, it} from "vitest";
 
-import {
-    FAILURE_CLASSES,
-    RETRYABLE_FAILURE_CLASSES,
-    classifyReportValidation,
-    isRetryableFailureClass,
-    nextActionForFailureClass,
-    validateScoutReport,
-} from "../../../.agents/skills/_shared/scripts/context-scout-report.mjs";
+import {validateScoutReport} from "../../../.agents/skills/_shared/scripts/context-scout-report.mjs";
 
 function report(overrides = {}) {
     const evidence = {path: "AGENTS.md", line_start: 1, line_end: 1, relation: "defines"};
@@ -33,15 +27,14 @@ describe("context scout report evidence discipline", () => {
         expect(result.errors.join("\n")).toMatch(/claim_type/);
     });
 
-    it("rejects evidence ranges wider than the parent-ready budget", () => {
+    it("accepts valid evidence ranges without a numeric line quota", () => {
         const evidence = {path: "AGENTS.md", line_start: 1, line_end: 81};
         const result = validateScoutReport(report({
             findings: [{criterion_id: "C1", claim: "broad claim", claim_type: "structural", confidence: "medium", anchors: ["Repository Guidelines"], evidence: [evidence]}],
             coverage: [{criterion_id: "C1", status: "covered", evidence: [evidence]}],
         }), {criteria: new Set(["C1"])});
 
-        expect(result.valid).toBe(false);
-        expect(result.errors.join("\n")).toMatch(/more than 80 lines/);
+        expect(result.valid).toBe(true);
     });
 
     it("rejects a claim whose literal anchor is absent from evidence", () => {
@@ -163,41 +156,26 @@ describe("context scout report evidence discipline", () => {
     });
 });
 
-describe("context scout failure classification", () => {
-    const cases = [
-        [FAILURE_CLASSES.INPUT_INVALID, "STOP", false],
-        [FAILURE_CLASSES.SCOPE_INVALID, "STOP", false],
-        [FAILURE_CLASSES.SNAPSHOT_STALE, "ABORT", false],
-        [FAILURE_CLASSES.AGENT_INCOMPLETE, "CLAIM_FALLBACK", true],
-        [FAILURE_CLASSES.AGENT_TIMEOUT, "CLAIM_FALLBACK", true],
-        [FAILURE_CLASSES.REPORT_MISSING, "CLAIM_FALLBACK", true],
-        [FAILURE_CLASSES.REPORT_INVALID, "CLAIM_FALLBACK", true],
-        [FAILURE_CLASSES.REPORT_WRITE_FAILED, "CLAIM_FALLBACK", true],
-    ];
+it("validates the documented minimal BLOCKED envelope and requires version 1", () => {
+    const protocol = fs.readFileSync(new URL("../../../.agents/skills/_shared/references/context-scout-report-protocol.md", import.meta.url), "utf8");
+    const minimal = JSON.parse(protocol.match(/```json\n([\s\S]*?)\n```/)[1]);
+    expect(validateScoutReport(minimal, {criteria: new Set(["C1"])})).toEqual({valid: true, errors: []});
+    expect(minimal).not.toHaveProperty("read_coverage");
+    delete minimal.version;
+    expect(validateScoutReport(minimal, {criteria: new Set(["C1"])}).errors).toContain("version must be 1");
+});
 
-    it.each(cases)("classifies %s with primary action %s", (failureClass, action, retryable) => {
-        expect(isRetryableFailureClass(failureClass)).toBe(retryable);
-        expect(nextActionForFailureClass(failureClass, "primary")).toBe(action);
-        expect(nextActionForFailureClass(failureClass, "fallback")).toBe(retryable ? "FINALIZE" : action);
-        expect(RETRYABLE_FAILURE_CLASSES.has(failureClass)).toBe(retryable);
-    });
+it("allows a justified follow-up for an already partially read file", () => {
+    const value = report({read_coverage: {
+        covered: [{path: "AGENTS.md", line_start: 1, line_end: 1}],
+        follow_up: [{path: "AGENTS.md", reason: "Read the remaining workflow section beyond line 1."}],
+    }});
+    expect(validateScoutReport(value, {criteria: new Set(["C1"])}).valid).toBe(true);
+    value.read_coverage.follow_up[0].reason = "";
+    expect(validateScoutReport(value).valid).toBe(false);
+});
 
-    it("classifies valid incomplete and blocked reports as retryable agent results", () => {
-        for (const status of ["INCOMPLETE", "BLOCKED"]) {
-            expect(classifyReportValidation({
-                valid: false,
-                reportExists: true,
-                schemaValid: true,
-                status,
-                modeMatches: true,
-            })).toBe(FAILURE_CLASSES.AGENT_INCOMPLETE);
-        }
-    });
-
-    it("distinguishes missing, invalid, write-failed and accepted reports", () => {
-        expect(classifyReportValidation({reportExists: false})).toBe(FAILURE_CLASSES.REPORT_MISSING);
-        expect(classifyReportValidation({reportExists: true, ioFailure: true})).toBe(FAILURE_CLASSES.REPORT_WRITE_FAILED);
-        expect(classifyReportValidation({reportExists: true, schemaValid: false, modeMatches: false})).toBe(FAILURE_CLASSES.REPORT_INVALID);
-        expect(classifyReportValidation({valid: true, reportExists: true, schemaValid: true, status: "COMPLETE", modeMatches: true})).toBeNull();
-    });
+it.each(["INCOMPLETE", "BLOCKED"])("requires explicit criterion gaps in %s", status => {
+    const value = report({status, findings: [], coverage: []});
+    expect(validateScoutReport(value, {criteria: new Set(["C1"])}).valid).toBe(false);
 });

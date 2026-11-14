@@ -118,12 +118,12 @@ the agent integration test, syntax checks, and resolved-agent audits:
 
 ```bash
 npx vitest run --project unit \
-  tests/skills/_shared/context-scout-hybrid-run.test.mjs \
+  tests/skills/_shared/context-scout-run.test.mjs \
   tests/skills/_shared/context-scout-report-builder.test.mjs \
   tests/skills/opencode-workflow-economics/run-context-scout-fast.test.mjs
 npx vitest run --project integration \
   tests/skills/_shared/context-scout-opencode.integration.test.mjs
-node --check .agents/skills/_shared/scripts/context-scout-hybrid-run.mjs
+node --check .agents/skills/_shared/scripts/context-scout-run.mjs
 node --check .agents/skills/opencode-workflow-economics/benchmarks/run-context-scout-fast.mjs
 ```
 
@@ -132,3 +132,14 @@ permissions, changed snapshot hashes, or `PRIMARY_OUTPUT_MISSING` invalidate
 the cohort before cost/latency aggregation. The current OpenCode debug payload
 exposes an `invalid` tool key for ordinary agents as well; it is recorded, not
 treated as an adapter parse failure.
+
+
+## Current production scout
+
+The production lifecycle now uses one context-scout, no numeric discovery
+quotas, and report correction in the same scout context. The older
+run-context-scout-fast model-isolation experiments and their two-arm measurements
+are historical comparisons, not an automatic fallback used by the current
+workflow. The equivalence runner uses the current controller but aborts with an
+explicit limitation if child-session resumption is needed for report repair;
+it never substitutes a new agent. No live benchmark is run by unit tests.

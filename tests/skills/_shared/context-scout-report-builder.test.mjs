@@ -47,7 +47,7 @@ describe("context scout report builder", () => {
         expect(result.stderr).toMatch(/must be under repository-local CACHE_PATH/);
     });
 
-    it("records a bounded parent read-set and explicit follow-up paths", () => {
+    it("records read ranges and permits a justified follow-up on the same file", () => {
         const dir = fs.mkdtempSync(path.join(ROOT, "var", "agent", "cache", "context-scout-builder-test-"));
         const ledger = path.join(dir, "ledger.json");
         const criteria = path.join(dir, "criteria.json");
@@ -88,13 +88,12 @@ describe("context scout report builder", () => {
             "--path",
             "AGENTS.md",
             "--reason",
-            "already covered",
+            "read the remaining workflow beyond line 1",
         ], {cwd: ROOT, encoding: "utf8"});
-        expect(duplicate.status).toBe(1);
-        expect(duplicate.stderr).toMatch(/already covered/);
+        expect(duplicate.status, duplicate.stderr).toBe(0);
         const value = JSON.parse(fs.readFileSync(ledger, "utf8"));
         expect(value.read_coverage.covered).toHaveLength(1);
-        expect(value.read_coverage.follow_up).toEqual([{path: "README.md", reason: "parent needs implementation-level read"}]);
+        expect(value.read_coverage.follow_up).toEqual([{path: "README.md", reason: "parent needs implementation-level read"}, {path: "AGENTS.md", reason: "read the remaining workflow beyond line 1"}]);
     });
 
     it("accepts a declared read purpose on covered evidence", () => {

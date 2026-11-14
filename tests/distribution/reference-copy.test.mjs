@@ -62,7 +62,7 @@ describe("Linux/OpenCode reference delivery", () => {
         expect(skills).toHaveLength(15);
         for (const entry of applied.files) { expect(fs.lstatSync(path.join(target, entry.path)).isFile()).toBe(true); }
         for (const [relative, data] of before) { expect(read(target, relative)).toBe(data); }
-        for (const role of ["context-refresher", "context-scout-fast", "context-scout"]) {
+        for (const role of ["context-refresher", "context-scout"]) {
             expect(read(target, `.opencode/agents/${role}.md`)).toContain("mode: subagent");
         }
         expect(read(target, ".opencode/plugins/session-model-env.js")).toContain("shell.env");

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
-import {readFileSync} from "node:fs";
+import {existsSync, readFileSync} from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {it} from "vitest";
@@ -19,6 +19,7 @@ it("commits every tracked script with a shebang as executable", () => {
     const missing = entries
         .map(line => line.match(/^(\d+) \S+ \d+\t(.+)$/))
         .filter(match => match && /\.(?:mjs|cjs|js|sh)$/.test(match[2]))
+        .filter(match => existsSync(path.join(ROOT, match[2])))
         .filter(match => readFileSync(path.join(ROOT, match[2]), "utf8").startsWith("#!"))
         .filter(match => match[1] !== "100755")
         .map(match => match[2]);

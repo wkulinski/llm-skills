@@ -5,11 +5,7 @@ import path from "node:path";
 
 import {isMainModule} from "./is-main-module.mjs";
 
-const MAX_REQUIRED_EVIDENCE = 4;
-const MAX_REQUIRED_ANCHORS = 4;
 const DECLARED_SURFACE_FIELDS = Object.freeze(["required_tests", "required_symbols"]);
-const DEFAULT_TEST_BUDGET = 2;
-const DEFAULT_SYMBOL_BUDGET = 3;
 export const CRITERIA_SCHEMA_VERSION = 2;
 export const ANCHOR_MODES = Object.freeze(["scout-selected", "required-literal"]);
 
@@ -40,8 +36,8 @@ function validateDeclaredSurface(value, location, errors) {
 
 function validateRequiredEvidence(value, criterionIndex, errors) {
     if (value === undefined) { return; }
-    if (!Array.isArray(value) || value.length === 0 || value.length > MAX_REQUIRED_EVIDENCE) {
-        errors.push(`criteria[${criterionIndex}].required_evidence must contain 1-${MAX_REQUIRED_EVIDENCE} items`);
+    if (!Array.isArray(value) || value.length === 0) {
+        errors.push(`criteria[${criterionIndex}].required_evidence must contain one or more items`);
         return;
     }
     for (const [requirementIndex, requirement] of value.entries()) {
@@ -57,8 +53,8 @@ function validateRequiredEvidence(value, criterionIndex, errors) {
         if (requirement.relation !== undefined && (typeof requirement.relation !== "string" || requirement.relation.trim() === "")) {
             errors.push(`${location}.relation must be a non-empty string`);
         }
-        if (requirement.anchors !== undefined && (!Array.isArray(requirement.anchors) || requirement.anchors.length === 0 || requirement.anchors.length > MAX_REQUIRED_ANCHORS || requirement.anchors.some((anchor) => typeof anchor !== "string" || anchor.trim() === ""))) {
-            errors.push(`${location}.anchors must contain 1-${MAX_REQUIRED_ANCHORS} non-empty strings`);
+        if (requirement.anchors !== undefined && (!Array.isArray(requirement.anchors) || requirement.anchors.length === 0 || requirement.anchors.some((anchor) => typeof anchor !== "string" || anchor.trim() === ""))) {
+            errors.push(`${location}.anchors must contain one or more non-empty strings`);
         }
         if (requirement.anchor_mode !== undefined && !ANCHOR_MODES.includes(requirement.anchor_mode)) {
             errors.push(`${location}.anchor_mode must be scout-selected or required-literal`);
@@ -253,125 +249,21 @@ function findContradictoryRequirements(criteria) {
     return errors;
 }
 
-function collectRequiredEntries(criteria, field, selector) {
-    const entries = [];
-    const seen = new Set();
-    for (const criterion of criteria) {
-        const declared = criterion[field];
-        if (declared === undefined) { continue; }
-        if (Number.isInteger(declared)) {
-            for (let index = 0; index < declared; index += 1) {
-                const key = `${criterion.id}:${field}:${index + 1}`;
-                if (!seen.has(key)) {
-                    seen.add(key);
-                    entries.push({criterion_id: criterion.id, value: key});
-                }
-            }
-            continue;
-        }
-        for (const value of declared) {
-            const key = selector(value);
-            if (!seen.has(key)) {
-                seen.add(key);
-                entries.push({criterion_id: criterion.id, value});
-            }
-        }
-    }
-    return entries;
-}
-
-function scopeError(resource, entries, hardBudget, minimum = entries.length) {
-    if (minimum <= hardBudget) { return null; }
-    const overflow = entries.slice(hardBudget);
-    const criterionIds = [...new Set(overflow.map((entry) => entry.criterion_id))];
-    return {
-        code: "SCOPE_TOO_BROAD",
-        resource,
-        criterion_ids: criterionIds,
-        criteria: criterionIds,
-        items: overflow.map((entry) => entry.value),
-        minimum_budget: minimum,
-        hard_budget: hardBudget,
-        message: `${resource} requirements exceed the hard discovery budget`,
-    };
-}
-
-function budgetValue(value, fallback) {
-    return Number.isInteger(value) && value >= 0 ? value : fallback;
-}
-
-export function calculateCriteriaBudget(document, options = {}) {
-    const criteria = document.criteria;
-    const requiredPaths = [];
-    const seenPaths = new Set();
-    for (const criterion of criteria) {
-        for (const requirement of criterion.required_evidence ?? []) {
-            if (requirement.path === undefined || seenPaths.has(requirement.path)) { continue; }
-            seenPaths.add(requirement.path);
-            requiredPaths.push({criterion_id: criterion.id, value: requirement.path});
-        }
-    }
-
-    const hardFileBudget = budgetValue(options.hard_file_budget, 10);
-    const defaultFileBudget = Math.min(budgetValue(options.default_file_budget, hardFileBudget), hardFileBudget);
-    const minimumFileBudget = requiredPaths.length;
-    const verificationMargin = Math.min(
-        budgetValue(options.verification_margin, 2),
-        Math.max(0, hardFileBudget - minimumFileBudget),
-    );
-    const effectiveFileBudget = Math.min(
-        hardFileBudget,
-        Math.max(defaultFileBudget, minimumFileBudget + verificationMargin),
-    );
-
-    const requiredTests = collectRequiredEntries(criteria, "required_tests", (value) => `test:${value}`);
-    const requiredSymbols = collectRequiredEntries(criteria, "required_symbols", (value) => `symbol:${value}`);
-    const hardTestBudget = budgetValue(options.hard_test_budget, budgetValue(options.default_test_budget, DEFAULT_TEST_BUDGET));
-    const hardSymbolBudget = budgetValue(options.hard_symbol_budget, budgetValue(options.default_symbol_budget, DEFAULT_SYMBOL_BUDGET));
-    const defaultTestBudget = Math.min(budgetValue(options.default_test_budget, hardTestBudget), hardTestBudget);
-    const defaultSymbolBudget = Math.min(budgetValue(options.default_symbol_budget, hardSymbolBudget), hardSymbolBudget);
-    const minimumTestBudget = requiredTests.length;
-    const minimumSymbolBudget = requiredSymbols.length;
-
-    return {
-        minimum_file_budget: minimumFileBudget,
-        verification_margin: verificationMargin,
-        effective_file_budget: effectiveFileBudget,
-        hard_file_budget: hardFileBudget,
-        minimum_test_budget: minimumTestBudget,
-        effective_test_budget: Math.min(hardTestBudget, Math.max(defaultTestBudget, minimumTestBudget)),
-        hard_test_budget: hardTestBudget,
-        minimum_symbol_budget: minimumSymbolBudget,
-        effective_symbol_budget: Math.min(hardSymbolBudget, Math.max(defaultSymbolBudget, minimumSymbolBudget)),
-        hard_symbol_budget: hardSymbolBudget,
-        required_paths: requiredPaths.map((entry) => entry.value),
-        required_tests: requiredTests.map((entry) => entry.value),
-        required_symbols: requiredSymbols.map((entry) => entry.value),
-        scope_errors: [
-            scopeError("files", requiredPaths, hardFileBudget, minimumFileBudget),
-            scopeError("tests", requiredTests, hardTestBudget),
-            scopeError("symbols", requiredSymbols, hardSymbolBudget),
-        ].filter(Boolean),
-    };
-}
-
-export function preflightCriteriaDocument(document, root = process.cwd(), budgetOptions = {}) {
+export function preflightCriteriaDocument(document, root = process.cwd()) {
     const normalized = normalizeCriteriaDocument(document);
     const errors = findContradictoryRequirements(normalized.criteria);
-    const budget = calculateCriteriaBudget(normalized, budgetOptions);
-    errors.push(...budget.scope_errors);
     for (const criterion of normalized.criteria) {
         for (const requirement of criterion.required_evidence ?? []) {
             const error = preflightRequirement(criterion, requirement, root);
             if (error) { errors.push(error); }
         }
     }
-    return {valid: errors.length === 0, errors, document: normalized, budget};
+    return {valid: errors.length === 0, errors, document: normalized};
 }
 
-export function preflightCriteriaFile(filePath, root = process.cwd(), budgetOptions = {}) {
+export function preflightCriteriaFile(filePath, root = process.cwd()) {
     const document = JSON.parse(readFileSync(filePath, "utf8"));
-    return preflightCriteriaDocument(document, root, budgetOptions);
+    return preflightCriteriaDocument(document, root);
 }
 
 export function readCriteriaFile(filePath) {

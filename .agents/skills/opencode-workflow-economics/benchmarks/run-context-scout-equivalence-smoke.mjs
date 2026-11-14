@@ -9,11 +9,11 @@ import {fileURLToPath} from "node:url";
 
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {
-    claimAttempt,
-    HYBRID_PROTOCOL_VERSION,
-    prepareHybrid,
-    settleAttempt,
-} from "../../../skills/_shared/scripts/context-scout-hybrid-run.mjs";
+    claimScout,
+    SCOUT_PROTOCOL_VERSION,
+    prepareScout,
+    settleScout,
+} from "../../../skills/_shared/scripts/context-scout-run.mjs";
 import {assertArtifactPath} from "../../../skills/_shared/scripts/artifact-path.mjs";
 import {validateContextManifest} from "../../../skills/_shared/scripts/context-manifest.mjs";
 
@@ -146,7 +146,7 @@ function parseEvents(raw) {
 async function controllerRun(options, dispatch, outputDir, title, attempt) {
     const prompt = [
         "You are only a benchmark controller for one canonical repository-context attempt.",
-        "Do not perform discovery, read source files, call the hybrid helper, edit files, or run QA yourself.",
+        "Do not perform discovery, read source files, call the scout helper, edit files, or run QA yourself.",
         `Use exactly one native task call with subagent_type ${JSON.stringify(dispatch.subagent_type)} and description ${JSON.stringify(dispatch.description)}.`,
         "Pass the exact task prompt below verbatim; do not summarize, wrap, or replace it.",
         "After the child task returns, respond with a compact acknowledgement only.",
@@ -163,13 +163,13 @@ async function controllerRun(options, dispatch, outputDir, title, attempt) {
 }
 
 async function runCanonicalJob(options, inputs, variant, repetition) {
-    const outputDir = join(options.outputDir, `hybrid-${variant}-${repetition}`);
+    const outputDir = join(options.outputDir, `scout-${variant}-${repetition}`);
     await mkdir(outputDir, {recursive: true});
     const fixtureDir = join(inputs.inputRoot, `test-${variant}`);
     let prepared = null;
     const attempts = [];
     try {
-        prepared = prepareHybrid({
+        prepared = prepareScout({
             "prompt-file": join(fixtureDir, "prompt.txt"),
             manifest: inputs.manifestPath,
             handoff: join(fixtureDir, "handoff.json"),
@@ -177,16 +177,13 @@ async function runCanonicalJob(options, inputs, variant, repetition) {
             "output-dir": outputDir,
             title: `canonical-${variant}-${repetition}`,
         }, options.repoDir);
-        let claim = claimAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary"});
-        let run = await controllerRun(options, claim.dispatch, outputDir, `canonical-${variant}-${repetition}-primary`, "primary");
-        const primaryOutputObserved = existsSync(claim.reportPath) || existsSync(claim.ledgerPath);
-        let settlement = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "primary", token: claim.dispatchToken, "duration-ms": run.duration_ms, ack: {session_ids: run.session_ids, task_tools: run.task_tools, tool_events: run.tool_events, output_observed: primaryOutputObserved}});
-        attempts.push({attempt: "primary", run, evaluation: settlement.evaluate, output_observed: primaryOutputObserved});
-        if (settlement.evaluate.next.action === "CLAIM_FALLBACK") {
-            claim = claimAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "fallback"});
-            run = await controllerRun(options, claim.dispatch, outputDir, `canonical-${variant}-${repetition}-fallback`, "fallback");
-            settlement = settleAttempt({state: prepared.statePath, "run-id": prepared.runId, attempt: "fallback", token: claim.dispatchToken, "duration-ms": run.duration_ms, ack: {session_ids: run.session_ids, task_tools: run.task_tools, tool_events: run.tool_events, output_observed: existsSync(claim.reportPath) || existsSync(claim.ledgerPath)}});
-            attempts.push({attempt: "fallback", run, evaluation: settlement.evaluate, output_observed: existsSync(claim.reportPath) || existsSync(claim.ledgerPath)});
+        const claim = claimScout({state: prepared.statePath, "run-id": prepared.runId});
+        const run = await controllerRun(options, claim.dispatch, outputDir, `canonical-${variant}-${repetition}-scout`, "scout");
+        const outputObserved = existsSync(claim.scoutPath);
+        const settlement = settleScout({state: prepared.statePath, "run-id": prepared.runId, token: claim.dispatchToken});
+        attempts.push({attempt: "scout", run, evaluation: settlement.validation, output_observed: outputObserved});
+        if (settlement.next.action === "REPAIR_REPORT") {
+            throw new Error("Report repair requires resuming the same scout context; this benchmark adapter does not support child-session resumption. No second agent was started.");
         }
         const final = settlement.finalized;
         if (!final) { throw new Error("Canonical settlement did not finalize the run"); }
@@ -194,15 +191,15 @@ async function runCanonicalJob(options, inputs, variant, repetition) {
             variant,
             repetition,
             attempts,
-            primary_output_observed: attempts.find((item) => item.attempt === "primary")?.output_observed === true,
-            primary_failure_class: attempts.find((item) => item.attempt === "primary")?.output_observed === true ? null : "PRIMARY_OUTPUT_MISSING",
+            scout_output_observed: attempts.find((item) => item.attempt === "scout")?.output_observed === true,
+            scout_failure_class: attempts.find((item) => item.attempt === "scout")?.output_observed === true ? null : "SCOUT_OUTPUT_MISSING",
             final,
-            valid: final.hybrid_final,
+            valid: final.complete,
             session_ids: attempts.flatMap((item) => item.run.session_ids),
         };
     } catch (error) {
         if (prepared) {
-            const abort = spawnSync(process.execPath, [join(REPO_ROOT, ".agents/skills/_shared/scripts/context-scout-hybrid-run.mjs"), "abort", "--state", prepared.statePath, "--run-id", prepared.runId], {cwd: options.repoDir, encoding: "utf8"});
+            const abort = spawnSync(process.execPath, [join(REPO_ROOT, ".agents/skills/_shared/scripts/context-scout-run.mjs"), "abort", "--state", prepared.statePath, "--run-id", prepared.runId], {cwd: options.repoDir, encoding: "utf8"});
             if (abort.status !== 0) { process.stderr.write(abort.stderr ?? ""); }
         }
         throw error;
@@ -234,7 +231,7 @@ function equivalentCriteria(criteriaPath, hybridReport, inlineReport, hybridVali
     const inlineCovered = covered(inlineReport);
     return {
         criteria,
-        hybrid_covered: hybridCovered,
+        scout_covered: hybridCovered,
         inline_covered: inlineCovered,
         complete: hybridValid && inlineValid && hybridCovered.join("\0") === criteria.join("\0") && inlineCovered.join("\0") === criteria.join("\0"),
         criteria_interchangeable: hybridValid && inlineValid && hybridCovered.join("\0") === inlineCovered.join("\0"),
@@ -251,15 +248,15 @@ export async function runSmoke(options) {
             return [variant, Object.fromEntries(["prompt.txt", "handoff.json", "criteria.json"].map((name) => [name, hashFile(join(fixtureDir, name))]))];
         })),
     };
-    const hybrid = [];
+    const scout = [];
     for (const variant of options.variants) {
         for (let repetition = 1; repetition <= options.repetitions; repetition += 1) {
-            hybrid.push(await runCanonicalJob(options, inputs, variant, repetition));
+            scout.push(await runCanonicalJob(options, inputs, variant, repetition));
         }
     }
     const inline = await runInline(options, inputs);
     const comparisons = [];
-    for (const result of hybrid) {
+    for (const result of scout) {
         const inlineResult = inline.results.find((item) => item.variant === result.variant && item.repetition === result.repetition);
         const hybridReportPath = result.final.final.reportPath;
         const inlineReportPath = inlineResult?.report_path;
@@ -268,12 +265,11 @@ export async function runSmoke(options) {
         comparisons.push({
             variant: result.variant,
             repetition: result.repetition,
-            hybrid_valid: result.valid,
+            scout_valid: result.valid,
             inline_valid: Boolean(inlineResult?.valid),
-            hybrid_duration_ms: result.attempts.reduce((total, item) => total + item.run.duration_ms, 0),
+            scout_duration_ms: result.attempts.reduce((total, item) => total + item.run.duration_ms, 0),
             inline_duration_ms: inlineResult?.duration_ms ?? null,
-            hybrid_fallback_used: result.attempts.some((item) => item.attempt === "fallback"),
-            hybrid_session_ids: result.session_ids,
+            scout_session_ids: result.session_ids,
             inline_session_ids: inlineResult?.session_ids ?? [],
             semantic_gate: equivalentCriteria(join(inputs.inputRoot, `test-${result.variant}`, "criteria.json"), hybridReport, inlineReport, result.valid, Boolean(inlineResult?.valid)),
         });
@@ -281,18 +277,16 @@ export async function runSmoke(options) {
     const after = workspaceHash(options.repoDir);
     const summary = {
         harness_class: HARNESS_CLASS,
-        protocol_version: HYBRID_PROTOCOL_VERSION,
+        protocol_version: SCOUT_PROTOCOL_VERSION,
         source: inputs.metadata,
         workspace_snapshot: {before, after, unchanged: before.sha256 === after.sha256 && before.file_count === after.file_count},
         inputs: {root: inputs.inputRoot, hashes: inputHashes},
-        hybrid,
-        dispatch_audit: hybrid.map((item) => ({
+        scout,
+        dispatch_audit: scout.map((item) => ({
             variant: item.variant,
             repetition: item.repetition,
             run_id: item.final.runId,
-            primary_agent: item.final.primaryAgent,
-            fallback_agent: item.final.fallbackAgent,
-            fast_first_pass: item.final.fast_first_pass,
+            agent: "context-scout",
             attempts: item.attempts.map((attempt) => ({
                 attempt: attempt.attempt,
                 task_tools: attempt.run.task_tools,
@@ -304,11 +298,11 @@ export async function runSmoke(options) {
         comparisons,
         gates: {
             workspace_unchanged: before.sha256 === after.sha256 && before.file_count === after.file_count,
-            all_primary_observed: hybrid.every((item) => item.primary_output_observed),
-            all_hybrid_valid: hybrid.every((item) => item.valid),
+            all_scout_observed: scout.every((item) => item.scout_output_observed),
+            all_scout_valid: scout.every((item) => item.valid),
             all_inline_valid: inline.results.every((item) => item.valid),
             criteria_equivalence: comparisons.every((item) => item.semantic_gate.complete && item.semantic_gate.criteria_interchangeable),
-            passed: before.sha256 === after.sha256 && before.file_count === after.file_count && hybrid.every((item) => item.primary_output_observed) && hybrid.every((item) => item.valid) && inline.results.every((item) => item.valid) && comparisons.every((item) => item.semantic_gate.complete && item.semantic_gate.criteria_interchangeable),
+            passed: before.sha256 === after.sha256 && before.file_count === after.file_count && scout.every((item) => item.scout_output_observed) && scout.every((item) => item.valid) && inline.results.every((item) => item.valid) && comparisons.every((item) => item.semantic_gate.complete && item.semantic_gate.criteria_interchangeable),
         },
     };
     await writeFile(join(options.outputDir, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`, {mode: 0o600});

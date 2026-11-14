@@ -64,7 +64,7 @@ export function buildInlinePrompt({promptPath, manifestPath, handoffPath, criter
     return [
         "You are the main agent performing one bounded inline repository-context scout task.",
         "This is the inline arm of an equivalence experiment; execute the same task envelope as a canonical child without delegation.",
-        "Do not call task, delegate to any subagent, invoke context-scout-hybrid-run.mjs, implement changes, or run QA.",
+        "Do not call task, delegate to any subagent, invoke context-scout-run.mjs, implement changes, or run QA.",
         "Before discovery, read and follow ./.agents/skills/_shared/references/repository-context-scout-playbook.md.",
         "Read these exact immutable inputs:",
         `- original prompt: ${promptPath}`,
