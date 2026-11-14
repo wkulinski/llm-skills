@@ -104,7 +104,7 @@
                 ".agents/qa-run.matrix.json"
             ],
             "commands": [
-                "npm run test:unit -- tests/skills/_shared/skills-shared-files.test.mjs tests/skills/_shared/skill-description-contract.test.mjs tests/skills/skill-review/catalog-inventory.test.mjs tests/skills/_shared/context-scout-agent-contract.test.mjs"
+                "npm run test:unit -- tests/skills/_shared/skills-shared-files.test.mjs tests/skills/_shared/skill-description-contract.test.mjs tests/skills/skill-review/catalog-inventory.test.mjs tests/skills/_shared/context-scout-agent-contract.test.mjs tests/skills/_shared/frontmatter-yaml.test.mjs"
             ],
             "runOn": ["full", "rerun"],
             "requiresFinalFullPass": false

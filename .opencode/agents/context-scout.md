@@ -1,5 +1,6 @@
 ---
-description: Read-only repository-context scout: mapuje źródła i zależności, zapisuje raport dowodów, poprawia go w tej samej rozmowie po walidacji; używa CMM tylko przy potwierdzonej izolacji i gotowości indeksu.
+description: >-
+  Read-only repository-context scout: mapuje źródła i zależności, zapisuje raport dowodów, poprawia go w tej samej rozmowie po walidacji; używa CMM tylko przy potwierdzonej izolacji i gotowości indeksu.
 mode: subagent
 color: info
 permission:
