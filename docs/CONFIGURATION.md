@@ -121,16 +121,16 @@ The [delivered template](../distribution/linux-opencode/opencode.json.dist) is a
 merge example, **not ready-to-run config**. In the consumer's `opencode.jsonc`:
 
 - register the actual local or shared skills path under `skills.paths`;
-- configure the three delivered roles under `agent`, using the adapter filename
+- configure the two delivered roles under `agent`, using the adapter filename
   without `.md` as the key;
-- choose available provider/model IDs and reasoning settings. Keep the primary
-  `context-scout-fast` fast and the fallback `context-scout` stronger;
-- use `variant` for ordinary role reasoning; the fast-role
-  `options.thinking.type` setting in the template is provider-specific;
+- choose available provider/model IDs and reasoning settings for the refresher
+  and the single `context-scout`; there is no automatic fallback;
+- use `variant` for role reasoning as supported by the provider;
 - allow the main agent to delegate the context roles and keep the scout
   adapters' read-only code permissions. Each scout may write its complete JSON
   only to the exact attempt path supplied by the controller, through the native
-  `write` or `apply_patch` tool exposed by its profile; shell access stays denied.
+  `write` or `apply_patch` tool exposed by its profile; read-only shell access is permitted only when file tools are unavailable,
+  under the shared playbook boundaries.
 
 Role definitions belong in `.opencode/agents/`; model/thinking overrides belong
 in consumer config, not `.env` or the adapter Markdown.
@@ -184,7 +184,7 @@ Startup binding is sufficient. Activate only on an owned connection that needs
 and exposes it. With unconfirmed ownership, a wrong root or unavailable symbols,
 use files; never switch another environment's active project. The
 [symbolic-tool policy](../.agents/skills/_shared/references/symbolic-navigation-and-editing-policy.md#2a-preflight-sereny)
-and [hybrid contract](../.agents/skills/_shared/references/repository-context-hybrid.md)
+and [repository-context policy](../.agents/skills/_shared/references/repository-context.md)
 remain the procedural owners.
 
 ### Session model environment

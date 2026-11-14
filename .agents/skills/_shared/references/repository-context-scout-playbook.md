@@ -1,38 +1,34 @@
 # Repository-context scout playbook
 
-Ten playbook jest wspólnym kontraktem wykonawczym dla `context-scout-fast` i
-`context-scout`. Prompt delegacji określa rolę; ten dokument określa jej
-strategię, granice i procedurę rekonesansu oraz raportowania. Profil klienta może dodatkowo
-egzekwować te granice, ale jego brak nie zmienia kontraktu.
-
-## Strategie ról niezależne od klienta
-
-- `context-scout-fast`: używaj CMM-first wyłącznie po potwierdzeniu izolacji
-  danych, runtime i gotowości indeksu zgodnie z `context-subagent-contract.md`
-  z tego samego katalogu instalacji. Brak potwierdzenia lub narzędzia oznacza
-  odczyty plikowe i zapisanie przyczyny w ryzykach. Każdy claim potwierdź
-  bezpośrednim odczytem źródła; nie indeksuj ani nie mutuj CMM.
-- `context-scout`: wykonaj niezależny rekonesans plikowy bez CMM. Zacznij od
-  deklaracji i konfiguracji wynikających z criteria, potem sprawdź konieczne
-  implementacje, referencje i testy. Nie czytaj wyników ani błędów primary.
-- W obu rolach używaj dostępnych narzędzi wyszukiwania i odczytu plików
-  zgodnie z poniższymi granicami. Nazwy narzędzi zależą od klienta.
-  Nie uruchamiaj powłoki, jeśli klient nie udostępnia potrzebnych narzędzi.
+Ten playbook określa strategię i granice jednego `context-scout`. Nazwy narzędzi
+zależą od klienta. Używaj CMM tylko z potwierdzoną izolacją magazynu/runtime
+i gotowością indeksu w constraints handoffu; inaczej pracuj plikowo i nazwij
+przyczynę. Każde twierdzenie potwierdź w źródle. Dokumentację czytaj narzędziem
+plikowym, a symbole kodu nawigacją symboliczną. Gdy brakuje narzędzia plikowego,
+użyj wyłącznie odczytowej powłoki według granic poniżej.
 
 ## Twarde granice
 
 - Pracuj wyłącznie read-only. Nie implementuj, nie edytuj kodu, nie uruchamiaj
   QA/review, nie commituj i nie diagnozuj runtime.
-- Nie uruchamiaj `./.agents/skills/_shared/scripts/context-scout-hybrid-run.mjs`.
+- Nie uruchamiaj `./.agents/skills/_shared/scripts/context-scout-run.mjs`.
 - Nie deleguj agentów, scoutów ani fallbacków żadnym mechanizmem klienta.
 - Nie wykonuj `$context-refresh`, nie pobieraj ani nie interpretuj issue lub
   komentarzy GitHub.
 - Nie kopiuj pełnych plików, dokumentów, diffów, logów ani sekretów. Raportuj
   tylko minimalne ścieżki, symbole, identyfikatory, zakresy linii i streszczenia.
-- Trzymaj twardy budżet: najwyżej 10 istotnych plików, 5 symboli i 3 testy/komendy;
-  wykonaj najwyżej jeden przebieg discovery oraz jeden przebieg weryfikacji źródłowej.
-- Nie czytaj raportu, błędów ani metadanych innej próby.
-- Nie używaj powłoki ani helperów. Jedyny zapis to kompletny plik JSON własnej
+- Nie ma liczbowych limitów plików, symboli, odczytów, kroków ani długości raportu.
+  Każdy kolejny odczyt ma rozstrzygać konkretną niewiadomą. Zakończ po pokryciu
+  kryteriów; nazwij rzeczywistą blokadę lub brak postępu zamiast błądzić.
+  Po obcięciu wyniku zawęź wyszukiwanie lub zakres odczytu.
+- Nie czytaj danych innych runów. Korektę własnego raportu wykonuj w tej samej
+  rozmowie na podstawie błędów walidacji zwróconych przez kontroler; bez nowego discovery.
+- Powłoka jest dozwolona wyłącznie do odczytu i wyszukiwania, np. `rg`, `sed`,
+  `head`, `tail`, `cat`, `ls`, z katalogiem roboczym B. Nie uruchamiaj aplikacji,
+  testów, instalatorów, interpreterów kodu, helperów ani walidatorów. Nie używaj
+  przekierowań zapisu, wykonywania treści plików ani poleceń mutujących stan.
+  Zakaz odczytu danych innych prób obowiązuje także w powłoce.
+  Jedyny zapis to kompletny plik JSON własnej
   próby przez natywne narzędzie `write` albo `apply_patch`, udostępnione w profilu,
   pod dokładną ścieżką przekazaną przez kontroler.
 
@@ -60,7 +56,17 @@ udostępnia taki parametr. Nie dodawaj parametru nieobecnego w schemacie i nie
 wybieraj B na podstawie katalogu sesji, instalacji A ani poprzedniego wywołania.
 Potwierdzenie izolacji i gotowości danych pozostaje warunkiem użycia CMM;
 jawny parametr projektu nie zastępuje tego potwierdzenia. Zachowaj zakaz
-powłoki i mutacji określony w twardych granicach oraz adapterze swojej roli.
+mutacji oraz ograniczenia odczytowej powłoki określone w twardych granicach.
+Instrukcje z instalacji A czytaj zwykłym narzędziem plikowym albo odczytową
+powłoką; nie zmieniaj projektu Sereny w celu ich odczytania. Dostęp do A
+obejmuje wyłącznie instrukcje wskazane przez kontroler i ich wymagane referencje,
+a kod, wejścia i artefakty pozostają ograniczone do B.
+Przed discovery sprawdź odczyt playbooka i czterech wymaganych wejść dostępną
+metodą. Nie wnioskuj o narzędziach scouta z narzędzi kontrolera. Gdy żadna
+metoda nie jest dostępna, zapisz minimalny `BLOCKED` z dokładną przyczyną
+według `context-scout-report-protocol.md`; nie rozpoczynaj discovery.
+Uprawnienia klienta mogą egzekwować część granic; pozostałe są kontraktem
+agenta, nie techniczną gwarancją izolacji powłoki.
 Nie czytaj ponownie źródeł z `already_read` bez konkretnego uzasadnienia
 powiązanego z kryterium lub ryzykiem.
 
@@ -70,7 +76,7 @@ powiązanego z kryterium lub ryzykiem.
    wszystkich identyfikatorów criteria.
    Dla każdego criterion przepisz też opcjonalne `required_evidence`,
    `required_symbols`, `required_tests` i
-   `forbid_negative_claims`: są to twarde bramki budżetu lub walidatora, nie
+   `forbid_negative_claims`: są to twarde bramki walidatora, nie
    sugestie.
 2. Nawiguj strategią swojej roli opisaną powyżej. Grupuj niezależne odczyty i nie
    skanuj szerzej, niż wymagają criteria.
@@ -113,8 +119,7 @@ wyłącznie zakres wskazany przez agenta głównego i nie powtarzaj ukończonego
 ## Budowanie raportu
 
 Stosuj `context-scout-report-protocol.md` z tego samego katalogu instalacji co
-playbook. Zarezerwuj co najmniej 40% kroków na preflight evidence, coverage i
-zapis. Zbuduj kompletny JSON w pamięci i zapisz go przez `write` albo `apply_patch`
+playbook. Zbuduj kompletny JSON w pamięci i zapisz go przez `write` albo `apply_patch`
 (narzędziem dostępnym w profilu) dokładnie do
 pliku `.scout.json` własnej próby wskazanego w promptcie. Nie inicjalizuj ledgeru,
 nie wykonuj buildera ani walidatorów i nie zapisuj końcowego `.report.json`.
@@ -125,8 +130,7 @@ Kontroler wykonuje builder i walidację w projekcie B.
 oraz poprawnego coverage każdego criterion. `INCOMPLETE` zapisuje tylko
 zweryfikowane findings i oznacza niepokryte criteria statusem `blocked` z powodem.
 `BLOCKED` nie zawiera findings i oznacza każde criterion jako `blocked` albo
-`not_applicable` z konkretnym powodem. Brak pełnego coverage albo wyczerpanie
-budżetu nie zwalnia z zapisu minimalnego raportu; nie kończ próby bez artefaktu.
+`not_applicable` z konkretnym powodem. Brak pełnego coverage nie zwalnia z zapisu minimalnego raportu; nie kończ próby bez artefaktu.
 
 Jeżeli odczyt lub zapis zostanie odrzucony przez klienta, zgłoś dosłowną odmowę.
 Nie próbuj zastępować pliku treścią odpowiedzi ani zapisywać go w innym projekcie.
@@ -136,8 +140,7 @@ każdego criterion jako `covered` albo uzasadnione `not_applicable`. Status
 
 ## Odpowiedź
 
-Po zapisaniu pliku zwróć wyłącznie krótkie potwierdzenie z `status`,
-`scout_path`, `findings_count` i `covered_criteria`. JSON raportu nie przechodzi
-przez kontekst agenta głównego. Potwierdzenie jest metadanymi, nie zamiennikiem
-pliku. Obowiązuje koperta z `context-subagent-contract.md` z tego samego katalogu
-instalacji, w tym maksymalnie 12 findings i około 1500 tokenów.
+Po zapisaniu pliku zwróć wyłącznie krótkie potwierdzenie ze `status` i
+`scout_path`. JSON raportu nie przechodzi przez kontekst agenta głównego.
+Potwierdzenie jest metadanymi, nie zamiennikiem pliku. Obowiązuje koperta
+z `context-subagent-contract.md` z tego samego katalogu instalacji.

@@ -45,7 +45,7 @@
             "variant": "xhigh"
         },
         "build": {
-            "prompt": "Stosuj ./AGENTS.md oraz aktywny skill jako źródła prawdy. Każdy repository-context wykonuj wyłącznie według kanonicznej polityki ./.agents/skills/_shared/references/repository-context-hybrid.md; nie deleguj scouta bez decyzji helpera i nie obchodź walidacji. Po prepare zawsze zakończ przebieg przez finalize albo abort, także po błędzie. Po zwalidowanym raporcie możesz wykonywać punktowe odczyty potrzebne do implementacji lub review.",
+            "prompt": "Stosuj ./AGENTS.md oraz aktywny skill jako źródła prawdy. Każdy repository-context wykonuj wyłącznie według kanonicznej polityki ./.agents/skills/_shared/references/repository-context.md; nie deleguj scouta bez decyzji helpera i nie obchodź walidacji. Po prepare zawsze zakończ przebieg przez settle albo abort, także po błędzie. Po zwalidowanym raporcie możesz wykonywać punktowe odczyty potrzebne do implementacji lub review.",
             "permission": {
                 "task": {
                     "*": "allow"
@@ -57,17 +57,13 @@
             "model": "commandcode/deepseek/deepseek-v4.1-flash",
             "variant": "max"
         },
-        "context-scout-fast": {
+        "context-scout": {
             "model": "commandcode/deepseek/deepseek-v4.1-flash",
             "options": {
                 "thinking": {
                     "type": "disabled"
                 }
             }
-        },
-        "context-scout": {
-            "model": "openai/gpt-5.6-luna",
-            "variant": "high"
         }
     },
     "mcp": {

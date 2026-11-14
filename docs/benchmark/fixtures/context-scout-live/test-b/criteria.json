@@ -2,10 +2,10 @@
   "criteria": [
     {
       "id": "C1",
-      "description": "Locate the context-scout-fast agent strategy and safety permissions.",
+      "description": "Locate the context-scout agent strategy and safety permissions.",
       "forbid_negative_claims": true,
       "required_evidence": [
-        {"path": ".opencode/agents/context-scout-fast.md", "anchors": ["permission:", "codebase-memory*"]}
+        {"path": ".opencode/agents/context-scout.md", "anchors": ["permission:", "codebase-memory*"]}
       ]
     },
     {
@@ -13,7 +13,7 @@
       "description": "Locate the shared report and hybrid lifecycle implementation.",
       "forbid_negative_claims": true,
       "required_evidence": [
-        {"path": ".agents/skills/_shared/scripts/context-scout-hybrid-run.mjs", "anchors": ["prepareHybrid", "evaluateAttempt"]},
+        {"path": ".agents/skills/_shared/scripts/context-scout-run.mjs", "anchors": ["prepareScout", "settleScout"]},
         {"path": ".agents/skills/_shared/scripts/context-scout-report-builder.mjs", "anchors": ["batchRender"]}
       ]
     },
@@ -23,7 +23,7 @@
       "forbid_negative_claims": true,
       "required_evidence": [
         {"path": "tests/skills/_shared/context-scout-agent-contract.test.mjs", "anchors": ["context scout agent contracts"]},
-        {"path": "tests/skills/_shared/context-scout-hybrid-run.test.mjs", "anchors": ["valid primary finalizes without fallback"]}
+        {"path": "tests/skills/_shared/context-scout-run.test.mjs", "anchors": ["one scout finalizes a complete report with unbounded valid ranges in an external consumer"]}
       ]
     }
   ]

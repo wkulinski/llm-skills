@@ -18,7 +18,7 @@ not just the selector names. The delivered set contains:
   standards (activated only by the [stack profile](CONFIGURATION.md#stack-profile-and-tool-entrypoints));
 - the three conditional specialist branches (`dev-mate`,
   `frontend-ui-consistency`, `php-structure-refactor`), for 15 skills total;
-- the `context-refresher`, `context-scout-fast` and `context-scout` role adapters;
+- the `context-refresher` and `context-scout` role adapters;
 - `.opencode/plugins/session-model-env.js` (automatically loaded project plugin);
 - hierarchy, OpenCode and env **templates** plus the license, placed under
   `.agents/skills-templates/`, not over the consumer's active configuration.
@@ -161,10 +161,10 @@ requiring the plan/execution or QA configuration checked by `verify`.
 - In a fresh Bash shell at B's root, source
   `<skills_root>/_shared/scripts/env-load.sh` from A, run `ensure_repo_env_loaded`, then
   `resolve_stack_profile`; require the intended result and no error.
-- Inspect `opencode debug agent context-refresher`, `context-scout-fast` and
-  `context-scout`: all roles must load, with the intended profiles and read-only
+- Inspect `opencode debug agent context-refresher` and `context-scout`: both
+  roles must load, with the intended profiles and read-only
   scout permissions, including the profile's native `write` or `apply_patch`
-  tool and denied scout shell access. Only query Codebase Memory after the
+  tool and read-only shell access only when file tools are unavailable. Only query Codebase Memory after the
   environment owner confirms its private store, runtime and index readiness;
   otherwise use the documented file fallback. Check Serena's private context
   before code operations. See [private tool contexts](CONFIGURATION.md#private-tool-contexts);

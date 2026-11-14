@@ -304,7 +304,6 @@ function addCoveredPath(ledgerPath, options) {
     }
     validateEvidenceNow(evidence, ledger.head);
     ledger.read_coverage ??= {covered: [], follow_up: []};
-    if (ledger.read_coverage.covered.length >= 10) { throw new Error("read_coverage.covered exceeds 10 paths"); }
     if (!ledger.read_coverage.covered.some((item) => JSON.stringify(item) === JSON.stringify(evidence))) {
         ledger.read_coverage.covered.push(evidence);
     }
@@ -317,8 +316,6 @@ function addFollowUpPath(ledgerPath, options) {
     const reason = requireValue(options, "reason");
     if (path.startsWith("/") || path.includes("..") || path.includes("...")) { throw new Error("follow-up path must be repo-relative without shorthand"); }
     ledger.read_coverage ??= {covered: [], follow_up: []};
-    if (ledger.read_coverage.covered.some((item) => item.path === path)) { throw new Error(`follow-up path is already covered: ${path}`); }
-    if (ledger.read_coverage.follow_up.length >= 8) { throw new Error("read_coverage.follow_up exceeds 8 paths"); }
     if (!ledger.read_coverage.follow_up.some((item) => item.path === path)) {
         ledger.read_coverage.follow_up.push({path, reason});
     }

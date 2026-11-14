@@ -22,7 +22,7 @@ shared_files:
   - _shared/references/project-profiles.md
   - _shared/scripts/env-load.sh
   - _shared/references/cqrs-monolith-standard-overrides.md
-  - _shared/references/repository-context-hybrid.md
+  - _shared/references/repository-context.md
   - _shared/references/playwright-cli-verification.md
   - _shared/references/symfony-ux-twig-components.md
   - _shared/references/symfony-ux-live-components.md
@@ -80,7 +80,7 @@ Read only the files required by the active step. Declared references are availab
 |---|---|
 | before investigating a risk, read or receive in context the checklist sections selected in Section 4: Correctness and propagation; Contracts and integrations; State, persistence, and data flow; Security and privacy; Reliability and concurrency; Reactivity, lifecycle and feedback loops; Performance; Architecture and maintainability; Tests and verification | `<skill_dir>/references/review-checklists.md` |
 | workflow routing and skill-selection guard before this skill starts | `<skills_root>/_shared/references/skill-routing-policy.md` |
-| repository reconnaissance, broad versus targeted reads, and scout lifecycle | `<skills_root>/_shared/references/repository-context-hybrid.md` |
+| repository reconnaissance, broad versus targeted reads, and scout lifecycle | `<skills_root>/_shared/references/repository-context.md` |
 | applicable-rules register semantics (source, scope, force, evidence, result) | `<skills_root>/_shared/references/rule-conformance-policy.md` |
 | every review: resolve the profile before review and read only the standards activated there; configuration errors stop the procedure | `<skills_root>/_shared/references/project-profiles.md` |
 | choosing, running and limiting verification commands | `<skills_root>/_shared/references/runtime-collaboration-guidelines.md` (section "QA Command Policy") |

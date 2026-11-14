@@ -2,7 +2,7 @@ import {mkdirSync, mkdtempSync, rmSync} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {describe, expect, it} from "vitest";
-import {calculateCriteriaBudget, normalizeCriteriaDocument, preflightCriteriaDocument, validateCriteriaDocument} from "../../../.agents/skills/_shared/scripts/context-criteria.mjs";
+import {normalizeCriteriaDocument, preflightCriteriaDocument, validateCriteriaDocument} from "../../../.agents/skills/_shared/scripts/context-criteria.mjs";
 
 describe("criteria validator", () => {
     it("accepts the canonical object format", () => {
@@ -152,94 +152,14 @@ describe("criteria validator", () => {
         expect(mixedAnchors.errors.join("\n")).toMatch(/anchors must be omitted/);
     });
 
-    it("calculates unique required surface and declared test/symbol budgets", () => {
-        const document = normalizeCriteriaDocument({criteria: [
-            {
-                id: "C1",
-                description: "Require a source and verification targets.",
-                required_evidence: [{path: "AGENTS.md"}],
-                required_tests: ["criteria-test", "criteria-test"],
-                required_symbols: ["prepareHybrid"],
-            },
-            {
-                id: "C2",
-                description: "Reuse the source and add one target.",
-                required_evidence: [{path: "AGENTS.md"}, {path: "README.md"}],
-                required_tests: ["criteria-test", "hybrid-test"],
-                required_symbols: ["prepareHybrid", "calculateCriteriaBudget"],
-            },
-        ]});
-
-        const budget = calculateCriteriaBudget(document, {
-            default_file_budget: 2,
-            verification_margin: 1,
-            hard_file_budget: 4,
-            default_test_budget: 2,
-            hard_test_budget: 2,
-            default_symbol_budget: 2,
-            hard_symbol_budget: 2,
-        });
-
-        expect(budget.minimum_file_budget).toBe(2);
-        expect(budget.verification_margin).toBe(1);
-        expect(budget.effective_file_budget).toBe(3);
-        expect(budget.hard_file_budget).toBe(4);
-        expect(budget.minimum_test_budget).toBe(2);
-        expect(budget.minimum_symbol_budget).toBe(2);
-        expect(budget.scope_errors).toEqual([]);
-    });
-
-    it("reports the criteria that exceed a hard surface budget", () => {
-        const result = preflightCriteriaDocument({criteria: [
-            {id: "C1", description: "First path.", required_evidence: [{path: "AGENTS.md"}]},
-            {id: "C2", description: "Second path.", required_evidence: [{path: "README.md"}]},
-            {id: "C3", description: "Third path.", required_evidence: [{path: "package.json"}]},
-        ]}, process.cwd(), {default_file_budget: 2, hard_file_budget: 2, verification_margin: 1});
-
-        expect(result.valid).toBe(false);
-        expect(result.errors).toEqual([expect.objectContaining({
-            code: "SCOPE_TOO_BROAD",
-            resource: "files",
-            criterion_ids: ["C3"],
-            criteria: ["C3"],
-            minimum_budget: 3,
-            hard_budget: 2,
-        })]);
-    });
-
-    it("applies the hard cap to declared tests and symbols", () => {
+    it("preflights broad declared surfaces without numeric quotas", () => {
         const result = preflightCriteriaDocument({criteria: [{
-            id: "C1",
-            description: "Require explicit verification targets.",
-            required_tests: ["T1", "T2", "T3"],
-            required_symbols: ["S1", "S2", "S3", "S4"],
-        }]}, process.cwd(), {
-            default_test_budget: 2,
-            hard_test_budget: 2,
-            default_symbol_budget: 3,
-            hard_symbol_budget: 3,
-        });
-
-        expect(result.valid).toBe(false);
-        expect(result.errors.map((error) => error.resource)).toEqual(["tests", "symbols"]);
-        expect(result.errors.every((error) => error.code === "SCOPE_TOO_BROAD" && error.criterion_ids.includes("C1"))).toBe(true);
-    });
-
-    it("clamps the verification margin when the minimum reaches the hard cap", () => {
-        const result = preflightCriteriaDocument({criteria: [{
-            id: "C1",
-            description: "Use the complete bounded file surface.",
-            required_evidence: [{path: "AGENTS.md"}, {path: "README.md"}],
-        }]}, process.cwd(), {
-            default_file_budget: 1,
-            verification_margin: 50,
-            hard_file_budget: 2,
-        });
-
+            id: "C1", description: "Large but explicit task.",
+            required_evidence: Array.from({length: 20}, () => ({path: "AGENTS.md"})),
+            required_tests: Array.from({length: 30}, (_, i) => `T${i}`),
+            required_symbols: 50,
+        }]});
         expect(result.valid).toBe(true);
-        expect(result.budget.minimum_file_budget).toBe(2);
-        expect(result.budget.verification_margin).toBe(0);
-        expect(result.budget.effective_file_budget).toBe(2);
-        expect(result.budget.effective_file_budget).toBeLessThanOrEqual(result.budget.hard_file_budget);
+        expect(result).not.toHaveProperty("budget");
     });
 });

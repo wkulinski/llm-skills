@@ -11,16 +11,19 @@ shared_files:
   - _shared/references/skill-routing-policy.md
   - _shared/references/runtime-collaboration-guidelines.md
   - _shared/references/runtime-quality-procedures.md
-  - _shared/references/repository-context-hybrid.md
+  - _shared/references/repository-context.md
   - _shared/references/context-subagent-contract.md
+  - _shared/references/context-scout-report-protocol.md
+  - _shared/references/repository-context-scout-playbook.md
   - _shared/references/user-facing-behavior-assessment.md
   - _shared/scripts/env-load.sh
   - _shared/scripts/context-criteria.mjs
   - _shared/scripts/context-handoff.mjs
   - _shared/scripts/context-manifest.mjs
   - _shared/scripts/artifact-path.mjs
-  - _shared/scripts/context-scout-hybrid-run.mjs
+  - _shared/scripts/context-scout-run.mjs
   - _shared/scripts/context-scout-report.mjs
+  - _shared/scripts/context-scout-report-builder.mjs
   - _shared/scripts/read-purpose.mjs
   - _shared/scripts/secret-detector.mjs
   - _shared/scripts/slugify-title.mjs
@@ -162,7 +165,7 @@ Odczytaj tylko pliki wymagane przez aktywny krok:
 | istniejący plan jest wznawiany, wymaga punktowej edycji lub zmiany wymagań ukończonego WP | `<skill_dir>/references/plan-revision.md` |
 | użytkownik zleca publikację albo trzeba odświeżyć istniejącą publikację | `<skill_dir>/references/publication.md` |
 | routing nadrzędnego workflow i guard wyboru skilla | `<skills_root>/_shared/references/skill-routing-policy.md` |
-| canonical lifecycle repository-context i macierz broad vs targeted | `<skills_root>/_shared/references/repository-context-hybrid.md` |
+| canonical lifecycle repository-context i macierz broad vs targeted | `<skills_root>/_shared/references/repository-context.md` |
 | kontrakt kontekstu między agentami | `<skills_root>/_shared/references/context-subagent-contract.md` |
 | punkt źródła dotyczy nawigacji, interakcji, wyboru obiektu, komunikatu albo akcji o istotnych skutkach dla użytkownika | `<skills_root>/_shared/references/user-facing-behavior-assessment.md` |
 | agent ma pytania blokujące lub zapisuje odpowiedzi użytkownika | `<skill_dir>/references/decision-clarification.md` — rundy i zapis odpowiedzi |
@@ -281,12 +284,11 @@ Repository-context zbiera **plan-level evidence**. Ma wystarczyć do ustalenia:
 
 Nie wymagaj od scouta pełnej inwentaryzacji endpointów, kompletnego przepływu
 UI–application–persistence, projektu migracji ani wszystkich testów, jeśli te
-informacje nie zmieniają planu. Pozwól scoutowi wybrać minimalne evidence w
-stałym budżecie. Exact `required_evidence`, `required_symbols` i `required_tests`
+informacje nie zmieniają planu. Pozwól scoutowi wybrać minimalne evidence potrzebne do rozstrzygnięcia decyzji. Exact `required_evidence`, `required_symbols` i `required_tests`
 stosuj tylko wtedy, gdy konkretny artefakt jest warunkiem rozstrzygnięcia decyzji.
 
 Niepusta lista uruchamia dokładnie jeden canonical lifecycle zgodnie z
-`<skills_root>/_shared/references/repository-context-hybrid.md`. Task-plan nie
+`<skills_root>/_shared/references/repository-context.md`. Task-plan nie
 deleguje scoutów poza decyzją helpera i po udanym `prepare` zawsze kończy run
 przez `settle` albo `abort`.
 
@@ -304,7 +306,7 @@ powstaniem kompletnego planu zachowaj partial report wyłącznie w canonical sta
 helpera i nie twórz pustego Markdowna. Jeśli context dotyczył materialnej rewizji
 istniejącego planu `ready`, zachowaj jego dotychczasową treść, ale zapisz pełny
 Markdown przez `store.mjs` z `context_status: INCOMPLETE/BLOCKED`, canonical
-`final.partialReportPath` oraz referencją do kryteriów jako jawny `context`.
+`final.reportPath` (przy `complete: false`) oraz referencją do kryteriów jako jawny `context`.
 Magazyn zachowuje status i utrwala wszystkie dostarczone referencje. Taka rewizja waliduje się jako
 `blocked` i nie może trafić do wykonania. Poinformuj użytkownika o blockerze.
 Szczegóły wykonawcze niezmieniające planu nie powinny być criteria; trafiają do
@@ -312,7 +314,7 @@ Szczegóły wykonawcze niezmieniające planu nie powinny być criteria; trafiaj�
 
 Po zwalidowanym raporcie wolno wykonywać wyłącznie punktowe odczyty potrzebne do
 planu. Wybór między rekonesansem szerokim a odczytem punktowym rozstrzyga
-macierz w `<skills_root>/_shared/references/repository-context-hybrid.md`;
+macierz w `<skills_root>/_shared/references/repository-context.md`;
 task-plan nie kopiuje tej macierzy.
 
 Po ustaleniu confirmed production paths wykonaj punktowe sprawdzenie testów

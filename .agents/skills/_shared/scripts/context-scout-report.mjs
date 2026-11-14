@@ -10,9 +10,6 @@ const MODES = new Set(["targeted", "cross-layer"]);
 const COVERAGE_STATUSES = new Set(["covered", "not_applicable", "blocked"]);
 const CLAIM_TYPES = new Set(["observed", "structural", "inferred"]);
 const CONFIDENCES = new Set(["high", "medium", "low"]);
-const MAX_EVIDENCE_SPAN = 80;
-const MAX_COVERED_PATHS = 10;
-const MAX_FOLLOW_UP_PATHS = 8;
 const FORBIDDEN_NEGATIVE_PATTERNS = [
     /\b(?:does not exist|is missing|is absent|not present)\b/i,
     /\bno\s+(?:(?:dedicated|standalone|sample|matching|relevant)\s+)?(?:[a-z0-9_.-]+\s+){0,3}(?:test|tests|file|files|config|configuration|route|entrypoint|artifact)\b/i,
@@ -20,47 +17,6 @@ const FORBIDDEN_NEGATIVE_PATTERNS = [
     /\b(?:nie istnieje|nie ma|nie znaleziono|jedyny|jedyna|jedyne|żaden|żadna|żadne)\b/i,
     /\bbrak(?:uje|ują|owało)?\b/i,
 ];
-
-// Stable failure classification contract (WP3). The hybrid helper imports
-// these constants and helpers so that one owner defines the retry policy.
-export const FAILURE_CLASSES = Object.freeze({
-    INPUT_INVALID: "INPUT_INVALID",
-    SCOPE_INVALID: "SCOPE_INVALID",
-    SNAPSHOT_STALE: "SNAPSHOT_STALE",
-    AGENT_INCOMPLETE: "AGENT_INCOMPLETE",
-    AGENT_TIMEOUT: "AGENT_TIMEOUT",
-    REPORT_MISSING: "REPORT_MISSING",
-    REPORT_INVALID: "REPORT_INVALID",
-    REPORT_WRITE_FAILED: "REPORT_WRITE_FAILED",
-});
-
-export const RETRYABLE_FAILURE_CLASSES = Object.freeze(new Set([
-    FAILURE_CLASSES.AGENT_INCOMPLETE,
-    FAILURE_CLASSES.AGENT_TIMEOUT,
-    FAILURE_CLASSES.REPORT_MISSING,
-    FAILURE_CLASSES.REPORT_INVALID,
-    FAILURE_CLASSES.REPORT_WRITE_FAILED,
-]));
-
-export function isRetryableFailureClass(failureClass) {
-    return RETRYABLE_FAILURE_CLASSES.has(failureClass);
-}
-
-export function classifyReportValidation({valid = false, reportExists = true, ioFailure = false, schemaValid = false, status = null, modeMatches = true} = {}) {
-    if (!reportExists) { return FAILURE_CLASSES.REPORT_MISSING; }
-    if (ioFailure) { return FAILURE_CLASSES.REPORT_WRITE_FAILED; }
-    if (valid && modeMatches) { return null; }
-    if (schemaValid && (status === "INCOMPLETE" || status === "BLOCKED")) { return FAILURE_CLASSES.AGENT_INCOMPLETE; }
-    return FAILURE_CLASSES.REPORT_INVALID;
-}
-
-export function nextActionForFailureClass(failureClass, attempt = "primary") {
-    if (failureClass === null || failureClass === undefined) { return "FINALIZE"; }
-    if (failureClass === FAILURE_CLASSES.SNAPSHOT_STALE) { return "ABORT"; }
-    if (failureClass === FAILURE_CLASSES.INPUT_INVALID || failureClass === FAILURE_CLASSES.SCOPE_INVALID) { return "STOP"; }
-    if (isRetryableFailureClass(failureClass)) { return attempt === "primary" ? "CLAIM_FALLBACK" : "FINALIZE"; }
-    return "STOP";
-}
 
 function normalizeCriteria(criteria) {
     if (criteria === null) { return {ids: null, entries: new Map()}; }
@@ -131,10 +87,6 @@ function validateEvidence(evidence, head, errors, location, evidenceIndex) {
         errors.push(`${location}.evidence[${evidenceIndex}] has an invalid line range`);
         return;
     }
-    if (lineEnd - lineStart + 1 > MAX_EVIDENCE_SPAN) {
-        errors.push(`${location}.evidence[${evidenceIndex}] spans more than ${MAX_EVIDENCE_SPAN} lines`);
-    }
-
     const content = readSnapshotFile(path, head);
     if (content === null) {
         errors.push(`${location}.evidence[${evidenceIndex}].path does not exist at the selected snapshot: ${path}`);
@@ -259,15 +211,14 @@ function validateReadCoverage(readCoverage, head, errors) {
         return;
     }
     const covered = readCoverage.covered;
-    if (!Array.isArray(covered) || covered.length > MAX_COVERED_PATHS) {
-        errors.push(`read_coverage.covered must be an array with at most ${MAX_COVERED_PATHS} items`);
+    if (!Array.isArray(covered)) {
+        errors.push("read_coverage.covered must be an array");
     } else {
         covered.forEach((evidence, index) => validateEvidence(evidence, head, errors, "read_coverage.covered", index));
     }
-    const coveredPaths = new Set((covered ?? []).map((evidence) => evidence?.path).filter(Boolean));
     const followUp = readCoverage.follow_up;
-    if (!Array.isArray(followUp) || followUp.length > MAX_FOLLOW_UP_PATHS) {
-        errors.push(`read_coverage.follow_up must be an array with at most ${MAX_FOLLOW_UP_PATHS} items`);
+    if (!Array.isArray(followUp)) {
+        errors.push("read_coverage.follow_up must be an array");
     } else {
         followUp.forEach((item, index) => {
             if (typeof item !== "object" || item === null || Array.isArray(item)) {
@@ -276,9 +227,6 @@ function validateReadCoverage(readCoverage, head, errors) {
             }
             if (typeof item.path !== "string" || item.path.trim() === "" || item.path.startsWith("/") || item.path.includes("..") || item.path.includes("...")) {
                 errors.push(`read_coverage.follow_up[${index}].path must be a repo-relative path without shorthand`);
-            }
-            if (coveredPaths.has(item.path)) {
-                errors.push(`read_coverage.follow_up[${index}].path is already covered: ${item.path}`);
             }
             if (typeof item.reason !== "string" || item.reason.trim() === "") {
                 errors.push(`read_coverage.follow_up[${index}].reason must be non-empty`);
@@ -344,8 +292,8 @@ export function validateScoutReport(report, {head = "", criteria = null} = {}) {
     if (report.version !== 1) { errors.push("version must be 1"); }
     if (!STATUSES.has(report.status)) { errors.push("status must be COMPLETE, INCOMPLETE or BLOCKED"); }
     if (!MODES.has(report.mode)) { errors.push("mode must be targeted or cross-layer"); }
-    if (!Array.isArray(report.findings) || report.findings.length > 12) {
-        errors.push("findings must be an array with at most 12 items");
+    if (!Array.isArray(report.findings)) {
+        errors.push("findings must be an array");
     }
 
     if (Array.isArray(report.findings)) {
@@ -407,12 +355,12 @@ export function validateScoutReport(report, {head = "", criteria = null} = {}) {
     validateReadCoverage(report.read_coverage, head, errors);
     validateSemanticRequirements(report, criteriaSpec.entries, head, errors);
 
-    if (report.status === "COMPLETE" && criterionIds !== null) {
+    if (criterionIds !== null) {
         const coverage = new Map((report.coverage ?? []).map((entry) => [entry.criterion_id, entry.status]));
         for (const criterionId of criterionIds) {
             if (!coverage.has(criterionId)) {
-                errors.push(`COMPLETE report does not cover acceptance criterion: ${criterionId}`);
-            } else if (coverage.get(criterionId) === "blocked") {
+                errors.push(`report does not cover acceptance criterion: ${criterionId}`);
+            } else if (report.status === "COMPLETE" && coverage.get(criterionId) === "blocked") {
                 errors.push(`COMPLETE report has blocked acceptance criterion: ${criterionId}`);
             }
         }

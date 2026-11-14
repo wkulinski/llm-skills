@@ -25,15 +25,5 @@
     "include_titles": false
   },
   "tool_mappings": {},
-  "hybrid_families": [
-    {
-      "name": "context-scout",
-      "primary_agents": [
-        "context-scout-fast"
-      ],
-      "fallback_agents": [
-        "context-scout"
-      ]
-    }
-  ]
+  "hybrid_families": []
 }

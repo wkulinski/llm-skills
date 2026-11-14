@@ -3,7 +3,7 @@
 ## Delegacja między klientami
 
 Wybór mechanizmu delegacji i zastąpienie niedostępnej roli OpenCode niezależnym
-subagentem opisuje `repository-context-hybrid.md`, sekcja
+subagentem opisuje `repository-context.md`, sekcja
 „Harness-independent delegation”. Nazwa narzędzia nie określa dostępności
 workflow; granice roli, izolacja wejść i walidacja raportu pozostają obowiązkowe.
 
@@ -38,12 +38,12 @@ obowiązkowego narzędzia zarządzającego. Brak dowodu izolacji lub gotowości 
 jawną informację o pracy plikowej: scout nie odpytuje niepotwierdzonego połączenia.
 Samo `list_projects` nie potwierdza prywatności magazynu ani runtime.
 
-Primary przy potwierdzonym połączeniu wywołuje `list_projects` i wybiera pierwszy
+Scout przy potwierdzonym połączeniu wywołuje `list_projects` i wybiera pierwszy
 alfabetycznie po nazwie gotowy projekt zgodny z absolutnym `root_path` i branchem
 B z manifestu. Gotowość wynika z mechanizmu przygotowującego indeks, nie z pola
 `status: ready` w tej odpowiedzi (sprawdzona wersja CMM 0.12.1 go nie zwraca).
 Brak zgodnego gotowego indeksu lub błąd serwera oznacza narzędzia plikowe i
-konkretną przyczynę w ryzykach. Scouci nie indeksują ani nie mutują CMM; każde
+konkretną przyczynę w ryzykach. Scout nie indeksują ani nie mutują CMM; każde
 wykorzystane twierdzenie i tak wymaga odczytu źródła w B.
 
 ### `context-refresher`
@@ -79,33 +79,10 @@ bez wyjaśnienia, dlaczego manifest jest niewystarczający.
 
 ## Triggery routingu
 
-Cały routing primary/fallback, warunki delegacji i lifecycle kontrolera definiuje
-wyłącznie `<skills_root>/_shared/references/repository-context-hybrid.md`. Ten
-kontrakt nie powiela algorytmu. Brak delegacji jest uzasadniony tylko wtedy, gdy
-zakres jest oczywiście poza `repository-context` i nie wymaga scoutingu.
-
-### `context-scout-fast`
-
-`context-scout-fast` jest primary hybrydy z CMM i pracuje w trybie `targeted`
-albo `cross-layer`. Nie ma trybu standalone.
-
-### `context-scout`
-
-`context-scout` jest niezależnym fallbackiem o tym samym zakresie `targeted` lub
-`cross-layer`, bez CMM i bez danych primary.
-
-### Reguły wspólne
-
-- Oba scouty przed rekonesansem czytają wspólny playbook z absolutnej ścieżki
-  instalacji A przekazanej przez dispatch;
-  adaptery zachowują lokalnie role, strategię narzędziową i krytyczne zakazy.
-- Nie deleguj scouta do QA, review, commita, runtime diagnostics ani obsługi
-  pliku stanu.
-- Żaden scout nie uruchamia helpera ani nie deleguje innego agenta. Naruszenie
-  tej granicy jest błędem procedury, nie sygnałem do retry.
-
-Deleguj `context-initialization` do `context-refresher` tylko wtedy, gdy agent
-główny potrzebuje nowego/odświeżonego kontekstu i nie istnieje ważny manifest.
+Lifecycle pojedynczego scouta, korektę raportu w tej samej rozmowie i wybór
+między rekonesansem a punktowym odczytem definiuje wyłącznie
+`<skills_root>/_shared/references/repository-context.md`. Nie ma automatycznego
+fallbacku. Scout przed pracą czyta playbook instalacji A wskazany przez kontroler.
 
 ## Handoff od agenta głównego
 
@@ -134,13 +111,13 @@ Kryterium może opcjonalnie zawierać deterministyczną bramkę evidence:
 ```json
 {
   "id": "C1",
-  "description": "Map the primary agent definition.",
+  "description": "Map the scout agent definition.",
   "forbid_negative_claims": true,
   "required_symbols": 1,
   "required_tests": 0,
   "required_evidence": [
     {
-      "path": ".opencode/agents/context-scout-fast.md",
+      "path": ".opencode/agents/context-scout.md",
       "relation": "defines",
       "anchors": ["permission:"]
     }
@@ -157,8 +134,7 @@ nie zgaduj ścieżek tylko po to, aby utworzyć bramkę.
 
 Opcjonalne `required_symbols` i `required_tests` przyjmują nieujemną liczbę albo
 listę nazw. Stosuj je wyłącznie wtedy, gdy symbol albo test jest twardą bramką
-criterion. Minimalny file budget wynika z konkretnych `required_evidence.path`;
-pozostałe evidence scout dobiera sam w stałym budżecie.
+criterion. Deklaracje nie ustanawiają limitów liczby plików, symboli ani odczytów.
 
 Scout waliduje wejście w tej kolejności:
 
@@ -213,8 +189,7 @@ Odczyty bez takiego powiązania są pomijane.
 ## Raport scouta
 
 Raport ma stałą, domenowo neutralną kopertę i dynamiczną treść wynikającą z
-briefu oraz kryteriów akceptacji. Scout zwraca maksymalnie dwanaście ustaleń,
-zwykle do około 1500 tokenów:
+briefu oraz kryteriów akceptacji. Scout zwraca zwięzłe ustalenia wystarczające do pokrycia kryteriów:
 
 ```json
 {
@@ -276,7 +251,8 @@ Opcjonalne `read_coverage` opisuje read-set przekazywany rodzicowi:
 }
 ```
 
-`covered` ma maksymalnie 10 ścieżek, a `follow_up` maksymalnie 8. Rodzic nie
+`covered` opisuje rzeczywiste odczyty; `follow_up` może wskazywać ten sam plik
+z powodem nazywającym nieodczytany zakres albo nierozstrzygniętą kwestię. Rodzic nie
 powinien ponownie czytać ścieżki z `covered`, poza punktowym guardem
 `read-before-write`, gdy raport nie obejmuje bieżącej wersji lub zakresu patcha,
 zmianą snapshotu, luką w raporcie albo jawnym wymaganiem użytkownika. Sam status
@@ -296,7 +272,7 @@ a `inferred` interpretację, która musi jawnie zachować niepewność. Każdy a
 znaczenie zależy od zadania. `coverage` jest obowiązkową, domenowo neutralną
 mapą kompletności kryteriów. Status `covered` wymaga evidence bezpośrednio w
 `coverage` albo evidence w findingu z tym samym `criterion_id`, a
-`not_applicable` i `blocked` wymagają niepustego `reason`. Nie wolno dodawać pól domenowych do koperty raportu. Pojedynczy zakres evidence nie może przekraczać 80 linii. Zakres
+`not_applicable` i `blocked` wymagają niepustego `reason`. Nie wolno dodawać pól domenowych do koperty raportu. Dobieraj najmniejszy wystarczający zakres evidence, bez sztywnego limitu linii. Zakres
 każdego twierdzenia musi być równy zakresowi dowodów. Uogólnienie dotyczące
 zbioru wymaga dowodów obejmujących cały zbiór; w przeciwnym razie elementy
 trzeba wymienić osobno albo oznaczyć twierdzenie jako częściowe.
@@ -320,7 +296,8 @@ nie `COMPLETE`.
 Zapis JSON scouta i mechaniczne budowanie raportu po stronie kontrolera definiuje
 wyłącznie
 `<skills_root>/_shared/references/context-scout-report-protocol.md`. Scout nie
-uruchamia powłoki ani buildera. Zapisuje kompletny JSON natywnym narzędziem
+uruchamia helperów ani buildera; odczytową powłokę dopuszcza wyłącznie
+kontrakt z `repository-context-scout-playbook.md`. Zapisuje kompletny JSON natywnym narzędziem
 `write` albo `apply_patch`, dostępnym w profilu, do pliku
 własnej próby i zwraca krótkie potwierdzenie bez treści raportu. Kontroler buduje
 i waliduje raport wyłącznie z tego pliku w projekcie konsumenta.
@@ -345,8 +322,9 @@ pełnej semantycznej oceny prawdziwości claimów.
 Agent główny nie powtarza szerokiego rekonesansu, chyba że raport jest
 niekompletny albo sprzeczny z repo.
 
-Schema-valid `INCOMPLETE` albo `BLOCKED` pozostaje niezaakceptowanym wynikiem,
-ale helper zachowuje go jako `partialReportPath`. Brak raportu pozostaje jawną
-klasą `REPORT_MISSING` w state i final metadata; helper nie tworzy wtedy
-sztucznego evidence artifact. `partialReportPath` nie jest równoważny
-`reportPath` raportu `COMPLETE` i nie ustawia `hybrid_final`.
+Schema-valid `INCOMPLETE` albo `BLOCKED` jest zwracany agentowi głównemu jako
+raport z jawnymi lukami; `final.reportPath` wskazuje zachowany plik, a `complete`
+pozostaje false. Nie oznacza to zgody na zapis gotowego planu: właściciel
+`task-plan` nadal wymaga raportu COMPLETE. Niepoprawny format wraca do tego
+samego scouta do korekty, bez nowego discovery. Kontroler zachowuje diagnostykę,
+a powtarzające się błędy bez postępu kończy wynikiem STOP.

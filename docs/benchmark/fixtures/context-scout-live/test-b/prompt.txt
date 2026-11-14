@@ -1,1 +1,1 @@
-Map the repository-context contract used by context-scout-fast, including the primary prompt, shared playbook, report builder/validator, and lifecycle tests. Do not implement changes. Return only a validated repository-context report.
+Map the repository-context contract used by context-scout, including the primary prompt, shared playbook, report builder/validator, and lifecycle tests. Do not implement changes. Return only a validated repository-context report.

@@ -17,7 +17,7 @@ shared_files:
     - _shared/references/cqrs-monolith-standard-overrides.md
     - _shared/references/symbolic-navigation-and-editing-policy.md
     - _shared/references/context-subagent-contract.md
-    - _shared/references/repository-context-hybrid.md
+    - _shared/references/repository-context.md
     - _shared/references/playwright-cli-verification.md
     - _shared/references/symfony-ux-twig-components.md
     - _shared/references/symfony-ux-live-components.md
@@ -27,7 +27,7 @@ shared_files:
     - _shared/scripts/context-handoff.mjs
     - _shared/scripts/context-manifest.mjs
     - _shared/scripts/artifact-path.mjs
-    - _shared/scripts/context-scout-hybrid-run.mjs
+    - _shared/scripts/context-scout-run.mjs
     - _shared/scripts/context-scout-report-builder.mjs
     - _shared/scripts/context-scout-report.mjs
     - _shared/scripts/read-purpose.mjs
@@ -121,7 +121,7 @@ Odczytaj tylko pliki wymagane przez aktywny krok:
 | każde zadanie: wybór profilu przed zmianami i odczyt wyłącznie aktywowanych standardów | `<skills_root>/_shared/references/project-profiles.md` |
 | wybór nawigacji symbolicznej, zwykłego patcha i narzędzi refactor | `<skills_root>/_shared/references/symbolic-navigation-and-editing-policy.md` |
 | kontrakt kontekstu między agentami | `<skills_root>/_shared/references/context-subagent-contract.md` |
-| rekonesans repozytoryjny i macierz broad vs targeted | `<skills_root>/_shared/references/repository-context-hybrid.md` |
+| rekonesans repozytoryjny i macierz broad vs targeted | `<skills_root>/_shared/references/repository-context.md` |
 | implementacja lub punktowa weryfikacja w renderowanej przeglądarce | `<skills_root>/_shared/references/playwright-cli-verification.md` |
 | brak ważnego manifestu kontekstu dla bieżącej sesji | `$context-refresh` (`<skills_root>/context-refresh/SKILL.md`) |
 | problemy runtime, DI, logów albo profilera | `$dev-mate` (`<skills_root>/dev-mate/SKILL.md`) |
@@ -146,7 +146,7 @@ tworzyć drugą. Implementacja, UI i diagnostyka nie wymagają dedykowanego
 subagenta. Procedury kontekstowe zachowują własne zasady wykonania:
 
 - repozytoryjny rekonesans wykonuj przez
-  `<skills_root>/_shared/scripts/context-scout-hybrid-run.mjs` i jego lifecycle
+  `<skills_root>/_shared/scripts/context-scout-run.mjs` i jego lifecycle
   `prepare → claim → settle/abort`; po walidacji raportu możesz wykonywać
   punktowe odczyty,
 - pełny `$context-refresh` wykonuj jako agent główny albo deleguj bezpośrednio
@@ -278,16 +278,16 @@ Opcjonalnie (zalecane): do stworzenia szablonu użyj
 
 ### 2) Kontekst repo (skalowalnie)
 1. Dla zadania przekrojowego, nieznanego modułu albo dużego dirty diffu użyj
-   `<skills_root>/_shared/scripts/context-scout-hybrid-run.mjs`. Zwalidowany
+   `<skills_root>/_shared/scripts/context-scout-run.mjs`. Zwalidowany
    raport z repozytoryjnego rekonesansu zastępuje bezpośredni szeroki odczyt.
 2. Jeśli nie istnieje ważny manifest kontekstu dla bieżącej sesji, uruchom
    `$context-refresh` bezpośrednio jako agent główny albo deleguj bezpośrednio
    `context-refresher`. Nie uruchamiaj pełnego refreshu z `context-scout`.
 3. Dla każdego zadania wymagającego repozytoryjnego rekonesansu przygotuj zwięzły brief,
-   handoff, manifest i criteria, a następnie uruchom helper hybrydy zgodnie z
+   handoff, manifest i criteria, a następnie uruchom helper scouta zgodnie z
    `<skills_root>/_shared/references/context-subagent-contract.md`. Nie
    przekazuj pełnej treści issue, komentarzy, dokumentów ani plików i nie omijaj
-   primary bezpośrednim wywołaniem scouta.
+   kontrolera bezpośrednim wywołaniem scouta.
 4. Ustal obszar zmian:
    - znajdź docelowe moduły/pliki (np. przez `rg` po symbolach),
    - doczytaj README dokumentacji dla dotkniętych modułów (zgodnie z `docs_map` z `AGENTS.md`),
@@ -313,7 +313,7 @@ wywołanego entrypointu → punktowy odczyt źródła tylko przy braku lub sprze
 kontraktu. Nie czytaj całego skryptu, jeśli dokumentacja albo help opisują
 argumenty i skutki wywołania. Wybór między rekonesansem szerokim a odczytem
 punktowym rozstrzyga macierz w
-`<skills_root>/_shared/references/repository-context-hybrid.md`; ten skill nie
+`<skills_root>/_shared/references/repository-context.md`; ten skill nie
 kopiuje macierzy ani nie powtarza zakazów broad rediscovery i read-before-write.
 
 ### 3) Plan pracy
