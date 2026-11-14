@@ -1,6 +1,13 @@
+import {chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync} from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {spawnSync} from "node:child_process";
+import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 
 import {runIssueStatusSet} from "../../../.agents/skills/gh-issue-status-set/scripts/set-status.mjs";
+
+const SET_STATUS_SCRIPT = fileURLToPath(new URL("../../../.agents/skills/gh-issue-status-set/scripts/set-status.mjs", import.meta.url));
 
 describe("gh-issue-status-set", () => {
     it("updates the project status with the legacy item-edit path", () => {
@@ -137,5 +144,32 @@ describe("gh-issue-status-set", () => {
 
         expect(result.code).toBe(7);
         expect(result.stderr).toContain("Nieprawidłowy numer projektu");
+    });
+
+    it("runs gh outside a repository when owner, repo and issue are explicit", () => {
+        const outside = realpathSync(mkdtempSync(path.join(os.tmpdir(), "set-status-outside-")));
+        try {
+            const binDirectory = path.join(outside, "bin");
+            const logFile = path.join(outside, "gh.log");
+            const workDirectory = path.join(outside, "work");
+            mkdirSync(binDirectory);
+            mkdirSync(workDirectory);
+            writeFileSync(path.join(binDirectory, "gh"), `#!/usr/bin/env bash\nprintf '%s %s\\n' "$PWD" "$1" >> ${JSON.stringify(logFile)}\n`, "utf8");
+            chmodSync(path.join(binDirectory, "gh"), 0o755);
+
+            const result = spawnSync(process.execPath, [
+                SET_STATUS_SCRIPT, "--status", "In review", "--issue", "12", "--owner", "acme", "--repo", "demo",
+            ], {
+                cwd: workDirectory,
+                encoding: "utf8",
+                env: {...process.env, PATH: `${binDirectory}${path.delimiter}${process.env.PATH}`},
+            });
+
+            expect(result.status, result.stderr).toBe(4);
+            expect(result.stderr).toContain("nie jest w żadnym ProjectV2");
+            expect(readFileSync(logFile, "utf8")).toBe(`${workDirectory} api\n`);
+        } finally {
+            rmSync(outside, {force: true, recursive: true});
+        }
     });
 });

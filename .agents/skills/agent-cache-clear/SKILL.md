@@ -11,6 +11,7 @@ shared_files:
   - _shared/scripts/env-load.sh
   - _shared/scripts/is-main-module.mjs
   - _shared/scripts/artifact-path.mjs
+  - _shared/scripts/repo-root.mjs
 ---
 
 # $agent-cache-clear

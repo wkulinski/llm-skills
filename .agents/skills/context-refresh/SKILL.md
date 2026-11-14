@@ -16,6 +16,7 @@ shared_files:
   - _shared/references/symbolic-navigation-and-editing-policy.md
   - _shared/references/context-subagent-contract.md
   - _shared/scripts/context-manifest.mjs
+  - _shared/scripts/repo-root.mjs
   - _shared/scripts/secret-detector.mjs
   - _shared/scripts/change-inventory.mjs
   - _shared/scripts/is-main-module.mjs

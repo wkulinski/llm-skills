@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 import {spawnSync} from "../../_shared/scripts/file-process.mjs";
-import {fileURLToPath} from "node:url";
 
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
+import {requireRepositoryRoot} from "../../_shared/scripts/repo-root.mjs";
 
-const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-
-export function createExecutor({cwd = repoRoot} = {}) {
+export function createExecutor({cwd = requireRepositoryRoot()} = {}) {
     return (command, args, options = {}) => spawnSync(command, args, {
         cwd,
         encoding: "utf-8",

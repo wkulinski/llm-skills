@@ -8,6 +8,7 @@ shared_files:
   - _shared/scripts/file-process-async.mjs
   - _shared/scripts/file-process.mjs
   - _shared/scripts/artifact-path.mjs
+  - _shared/scripts/repo-root.mjs
   - _shared/scripts/env-load.sh
   - _shared/scripts/is-main-module.mjs
   - _shared/scripts/read-purpose.mjs

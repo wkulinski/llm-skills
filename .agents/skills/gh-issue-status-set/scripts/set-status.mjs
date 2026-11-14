@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 import {spawnSync} from "../../_shared/scripts/file-process.mjs";
-import {fileURLToPath} from "node:url";
 
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {parseIssueBranch} from "../../_shared/scripts/issue-branch.mjs";
+import {resolveRepositoryRoot} from "../../_shared/scripts/repo-root.mjs";
 
-const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-
-export function createExecutor({cwd = repoRoot} = {}) {
+export function createExecutor({cwd = resolveRepositoryRoot()} = {}) {
     return (command, args, options = {}) => spawnSync(command, args, {
         cwd,
         encoding: "utf-8",

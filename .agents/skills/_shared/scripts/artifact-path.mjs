@@ -1,9 +1,12 @@
-import {existsSync, lstatSync} from "node:fs";
-import {dirname, isAbsolute, relative, resolve, sep} from "node:path";
+import {lstatSync} from "node:fs";
+import {isAbsolute, relative, resolve, sep} from "node:path";
 import {tmpdir} from "node:os";
 import {spawnSync} from "./file-process.mjs";
 import {fileURLToPath} from "node:url";
 import {isMainModule} from "./is-main-module.mjs";
+import {resolveRepositoryRoot} from "./repo-root.mjs";
+
+export {resolveRepositoryRoot};
 
 const ENV_LOADER = fileURLToPath(new URL("./env-load.sh", import.meta.url));
 const projectCachePaths = new Map();
@@ -64,17 +67,6 @@ function assertDirectoryAncestors(directory, repositoryRoot) {
         if (stat.isSymbolicLink() || !stat.isDirectory()) {
             throw storageError(`Storage path must use real directories without symlinks: ${current}`);
         }
-    }
-}
-
-// Nearest ancestor containing `.git`; falls back to `cwd` outside a repository.
-export function resolveRepositoryRoot(cwd = process.cwd()) {
-    let current = resolve(cwd);
-    while (true) {
-        if (existsSync(resolve(current, ".git"))) { return current; }
-        const parent = dirname(current);
-        if (parent === current) { return resolve(cwd); }
-        current = parent;
     }
 }
 

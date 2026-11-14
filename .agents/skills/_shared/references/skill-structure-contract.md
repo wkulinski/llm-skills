@@ -18,6 +18,15 @@ repozytorium; ten plik opisuje kontrakt, a nie jego implementację.
   (najbliższy root z `.git`, także plikiem worktree), nie z instalacji ani
   wspólnego katalogu Git worktree. Instrukcje i narzędzia A mogą być wspólne;
   dane, cache i trwały stan workflow należą do B.
+- W skryptach JS root B wyznaczaj przez
+  `_shared/scripts/repo-root.mjs`: `resolveRepositoryRoot` dla ścieżek
+  storage/artefaktów i dla CLI, których część ścieżek (`--help`, błędy
+  argumentów, `gh` z jawnym repo) działa poza repozytorium — błąd Git zgłasza
+  wtedy samo polecenie Git; `requireRepositoryRoot` dla skryptów, które bez
+  drzewa roboczego Git nie mają nic do zrobienia. Nie wyprowadzaj rootu B z
+  `import.meta.url` ani z
+  katalogu instalacji A. Skrypty powłoki korzystają z `env-load.sh` uruchomionego
+  w B.
 - `<CACHE_PATH>` to absolutny wynik
   `node <skills_root>/_shared/scripts/artifact-path.mjs cache-root` uruchomionego
   w B. Resolver ładuje aktywne pliki env B przez `env-load.sh` z A, bez

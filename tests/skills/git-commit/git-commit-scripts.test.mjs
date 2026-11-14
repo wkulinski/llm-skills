@@ -1,10 +1,14 @@
 import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {spawnSync} from "node:child_process";
+import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 
 import {runSnapshotClean} from "../../../.agents/skills/git-commit/scripts/snapshot-clean.mjs";
 import {runStagingSanity} from "../../../.agents/skills/git-commit/scripts/staging-sanity.mjs";
+
+const STAGING_SCRIPT = fileURLToPath(new URL("../../../.agents/skills/git-commit/scripts/staging-sanity.mjs", import.meta.url));
 
 describe("git-commit scripts", () => {
     it("blocks only hard-risk staged paths", () => {
@@ -55,6 +59,22 @@ describe("git-commit scripts", () => {
             code: 0,
             stdout: "STAGING_EMPTY\n",
         });
+    });
+
+    it("checks the caller worktree instead of the skill installation path", () => {
+        const repo = mkdtempSync(path.join(os.tmpdir(), "staging-sanity-cwd-"));
+        try {
+            spawnSync("git", ["init", "-q"], {cwd: repo});
+            writeFileSync(path.join(repo, "tracked.txt"), "content\n", "utf8");
+            spawnSync("git", ["add", "tracked.txt"], {cwd: repo});
+
+            const result = spawnSync(process.execPath, [STAGING_SCRIPT], {cwd: repo, encoding: "utf8"});
+
+            expect(result.status, result.stderr).toBe(0);
+            expect(result.stdout).toBe("STAGING_OK\n");
+        } finally {
+            rmSync(repo, {force: true, recursive: true});
+        }
     });
 
     it("deletes the current snapshot and pointer", () => {

@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import {dirname, join, resolve} from "node:path";
 
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
+import {requireRepositoryRoot} from "../../_shared/scripts/repo-root.mjs";
 
 export const DEFAULT_POINTER_FILE = "/tmp/agent-git-commit-snapshot-pointer.txt";
 
@@ -426,12 +427,7 @@ export async function runSnapshotTools(argv, {execCommand = runCommand, pointerF
     }
 
     const [command = "", ...rest] = argv;
-    const repoRootResult = execCommand("git", ["rev-parse", "--show-toplevel"]);
-    if (repoRootResult.status !== 0) {
-        throw new Error(repoRootResult.stderr || "git rev-parse --show-toplevel failed");
-    }
-
-    const repoRoot = String(repoRootResult.stdout ?? "").trim();
+    const repoRoot = requireRepositoryRoot();
 
     switch (command) {
         case "create": {

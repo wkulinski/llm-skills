@@ -182,7 +182,7 @@ describe("change inventory", () => {
     it("fails instead of treating a non-repository as an empty inventory", () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "change-inventory-invalid-"));
         try {
-            assert.throws(() => buildChangeInventory({cwd: root}), /Git command failed/);
+            assert.throws(() => buildChangeInventory({cwd: root}), /Not inside a git repository/);
         } finally {
             fs.rmSync(root, {force: true, recursive: true});
         }

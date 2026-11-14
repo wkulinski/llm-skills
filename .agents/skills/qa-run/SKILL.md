@@ -12,6 +12,7 @@ shared_files:
   - _shared/references/project-profiles.md
   - _shared/scripts/env-load.sh
   - _shared/scripts/artifact-path.mjs
+  - _shared/scripts/repo-root.mjs
   - _shared/scripts/is-main-module.mjs
   - _shared/scripts/secret-detector.mjs
 ---

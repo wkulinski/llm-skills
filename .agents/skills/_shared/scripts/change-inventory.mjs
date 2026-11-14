@@ -6,6 +6,7 @@ import path from "node:path";
 import {execFileSync} from "./file-process.mjs";
 
 import {isMainModule} from "./is-main-module.mjs";
+import {requireRepositoryRoot} from "./repo-root.mjs";
 
 function sha256(value) {
     return crypto.createHash("sha256").update(value).digest("hex");
@@ -29,7 +30,7 @@ function gitOutput(args, {cwd, execFile} = {}) {
 }
 
 export function getWorktreeFingerprint({cwd = process.cwd(), execFile = execFileSync} = {}) {
-    const context = {cwd: resolveRepositoryRoot(cwd, execFile), execFile};
+    const context = {cwd: requireRepositoryRoot(cwd), execFile};
 
     const stagedOutput = gitOutput([
         "diff", "--cached", "--binary", "--full-index", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--",
@@ -85,14 +86,6 @@ function deriveSubsystem(filePath) {
 
 function splitNull(output) {
     return output.split("\0").filter(Boolean);
-}
-
-function resolveRepositoryRoot(cwd, execFile = execFileSync) {
-    const output = gitOutput(["rev-parse", "--show-toplevel"], {cwd, execFile}).trim();
-    if (!output) {
-        throw new Error("Git command failed: not inside a git repository.");
-    }
-    return path.resolve(output);
 }
 
 function describeUntrackedEntry(relativePath, cwd) {
@@ -179,7 +172,7 @@ function aggregateKnownStats(files, field) {
 }
 
 export function buildChangeInventory({cwd = process.cwd(), execFile = execFileSync, now = new Date()} = {}) {
-    const repositoryRoot = resolveRepositoryRoot(cwd, execFile);
+    const repositoryRoot = requireRepositoryRoot(cwd);
     const context = {cwd: repositoryRoot, execFile};
 
     const staged = readTrackedSurface("staged", context);
