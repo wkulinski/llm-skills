@@ -37,6 +37,17 @@ w istniejących `constraints` handoffu, bez sekretów. Nie twórz rejestru ani
 obowiązkowego narzędzia zarządzającego. Brak dowodu izolacji lub gotowości oznacza
 jawną informację o pracy plikowej: scout nie odpytuje niepotwierdzonego połączenia.
 Samo `list_projects` nie potwierdza prywatności magazynu ani runtime.
+Kontroler zbiera ten dowód przed `prepare` i delegacją, używając istniejących
+mechanizmów konsumenta; nie przekazuje scoutowi zadania diagnozy runtime.
+Analogicznie zapisuje dowód prywatnego stanu Sereny, jeśli ma być używana.
+Brak wykonanego preflightu oznacza brak potwierdzenia, nie wykryty brak izolacji.
+
+Gotowość indeksu nie oznacza pełnego pokrycia składni i plików. Sprawdź
+dostępną diagnostykę pokrycia dla zakresu zadania i przekaż znane braki w
+`constraints`. Przy błędach parsowania lub pominiętych plikach scout korzysta
+z odczytu źródeł albo dostępnej nawigacji symbolicznej. Pusty wynik CMM nie
+uzasadnia twierdzenia o braku symbolu lub zależności, gdy pokrycie jest niepełne
+albo niepotwierdzone.
 
 Scout przy potwierdzonym połączeniu wywołuje `list_projects` i wybiera pierwszy
 alfabetycznie po nazwie gotowy projekt zgodny z absolutnym `root_path` i branchem

@@ -44,6 +44,12 @@ Jeśli środowisko udostępnia **Serenę**, traktuj ją jako preferowaną warstw
   i dostępność symboli dla dotkniętego języka. Backend już przypisany do B
   nie wymaga późniejszej aktywacji; brak `activate_project` w takim dostępie
   nie jest powodem fallbacku. Router nie musi mieć globalnego aktywnego projektu.
+- Korzystaj z operacji faktycznie dostępnych w bieżącym trybie backendu.
+  W trybie stałego projektu root może potwierdzić `initial_instructions`;
+  `get_current_config` może być wyłączone. Brak jednej operacji oznacza brak
+  tej funkcji, nie całej Sereny. Użyj dostępnego odczytu zgodnego z rolą,
+  bez zmiany projektu lub uprawnień. Sam katalog narzędzi nie potwierdza
+  poprawnego działania ani izolacji backendu.
 - Aktywuj projekt wyłącznie na własnym backendzie B, jeśli wymaga inicjalizacji
   i udostępnia taką operację. Po niej ponownie potwierdź root B.
 - Przy wspólnym lub niepotwierdzonym stanie, innym roocie docelowego backendu,

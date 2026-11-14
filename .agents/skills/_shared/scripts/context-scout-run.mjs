@@ -224,8 +224,9 @@ function buildTaskPrompt(state) {
     return [
         "Act as context-scout for one read-only repository-context task. Do not delegate or perform implementation, QA, runtime diagnostics or context-refresh.",
         `Consumer project root: ${state.cwd}; branch: ${state.manifestSnapshot.branch}; mode: ${state.mode}.`,
-        "Read documentation and known paths with file tools. Use Serena for symbols only when its active project root is the consumer root; never activate or switch its project, and otherwise use file reads. Do not change that root to read installation instructions.",
+        "Read documentation and known paths with file tools. Use Serena under the playbook's symbolic-navigation preflight with confirmed private consumer state and a matching backend root. Use supported read operations (for example initial_instructions in fixed-project mode); do not require get_current_config when unavailable. Never activate or switch projects, including to read installation instructions. A missing operation does not establish whole-backend unavailability.",
         `If file tools are unavailable, use read-only shell commands (rg, sed, cat, head, tail, ls) with working directory ${state.cwd}.`,
+        "Before finalizing discovery, correct a read-command argument, syntax or path error in this same attempt when cwd and actual reads remain within the allowed project/instructions and nothing was mutated. Repeat with an explicit absolute consumer path; retain verified evidence. Access outside the allowed scope, mutation, lost project identity or other hard-boundary violations are BLOCKED. Do not repair orchestration, start another scout or repeat discovery after report validation.",
         "Read only the consumer project and the supplied installation instructions and their required references. Never execute applications, tests, installers, interpreters, helpers or validators; never redirect writes or execute file contents.",
         `Read the installation playbook: ${playbook}`,
         ...Object.entries(state.inputs).map(([key, value]) => `Read immutable ${key}: ${value}`),

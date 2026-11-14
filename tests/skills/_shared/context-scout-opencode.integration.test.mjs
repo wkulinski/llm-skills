@@ -17,10 +17,12 @@ test("OpenCode resolves the single scout with read-only discovery and report-onl
     for (const tool of ["index_repository", "delete_project", "manage_adr", "ingest_traces"]) {
         assert.equal(actionFor(agent, `codebase-memory_${tool}`), "deny");
     }
-    for (const tool of ["find_symbol", "find_referencing_symbols", "get_symbols_overview", "get_current_config"]) {
+    for (const tool of ["initial_instructions", "find_symbol", "find_declaration", "find_implementations",
+        "find_referencing_symbols", "get_symbols_overview", "search_for_pattern"]) {
         assert.equal(actionFor(agent, `serena_${tool}`), "allow");
     }
-    for (const tool of ["activate_project", "replace_symbol_body", "rename_symbol", "create_text_file", "execute_shell_command", "write_memory"]) {
+    for (const tool of ["activate_project", "get_current_config", "read_file", "find_file", "list_dir", "future_mutating_tool",
+        "replace_symbol_body", "rename_symbol", "create_text_file", "execute_shell_command", "write_memory"]) {
         assert.equal(actionFor(agent, `serena_${tool}`), "deny");
     }
     assert.equal(actionFor(agent, "bash", "sed -n '1,60p' /installation/playbook.md"), "allow");

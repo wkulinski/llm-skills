@@ -34,7 +34,6 @@ permission:
     # Serena tylko do odczytu symboli; brak aktywacji/przełączania projektu,
     # edycji, pamięci i powłoki. Ostatnia pasująca reguła wygrywa.
     "serena*": deny
-    "serena_get_current_config": allow
     "serena_initial_instructions": allow
     "serena_find_symbol": allow
     "serena_find_declaration": allow
@@ -42,9 +41,6 @@ permission:
     "serena_find_referencing_symbols": allow
     "serena_get_symbols_overview": allow
     "serena_search_for_pattern": allow
-    "serena_find_file": allow
-    "serena_list_dir": allow
-    "serena_read_file": allow
     "codebase-memory*": allow
     "codebase-memory_index_repository": deny
     "codebase-memory_delete_project": deny
@@ -60,9 +56,12 @@ repozytorium do analizy.
 
 - Dokumentację i znane pliki czytaj narzędziem plikowym. Gdy go brakuje, użyj
   tylko odczytowej powłoki według playbooka, również do instrukcji A.
-- Serenę stosuj do symboli tylko wtedy, gdy `get_current_config` pokazuje
-  aktywny projekt o rootcie B. Nie aktywuj ani nie przełączaj projektu; przy
-  innym rootcie lub braku narzędzia czytaj pliki i nazwij przyczynę.
+- Serenę stosuj według preflightu z polityki nawigacji symbolicznej wskazanej
+  przez playbook: wymagaj potwierdzonego prywatnego stanu B w handoffie,
+  zgodnego rootu i działającego odczytu symboli. W trybie stałego projektu
+  użyj dostępnej operacji, np. `initial_instructions`, bez wymagania
+  `get_current_config`. Nie aktywuj ani nie przełączaj projektu.
+  Brak pojedynczej operacji nie oznacza niedostępności całej Sereny.
 - Użyj CMM-first tylko z dowodem odrębnego magazynu i runtime oraz gotowości
   indeksu w constraints. `list_projects` potwierdza root_path i branch, nie
   zastępuje dowodu izolacji. Brak warunków oznacza odczyty plikowe, nie blokadę.
