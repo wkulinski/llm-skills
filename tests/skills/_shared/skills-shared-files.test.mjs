@@ -72,6 +72,27 @@ describe("skill shared_files contract", () => {
         }
     });
 
+    it("declares every shared file imported by a skill script", () => {
+        const failures = [];
+
+        for (const skillFile of skillFiles()) {
+            const skillDirectory = path.dirname(skillFile);
+            const declared = new Set(parseSharedFiles(fs.readFileSync(skillFile, "utf8"), skillFile));
+            for (const scriptPath of scriptFiles(skillDirectory)) {
+                for (const importPath of localImportPaths(scriptPath)) {
+                    const dependency = resolveImport(scriptPath, importPath);
+                    if (!dependency || !isWithinSkillsRoot(dependency) || isWithin(skillDirectory, dependency)) { continue; }
+                    const dependencyRelativePath = path.relative(SKILLS_ROOT, dependency);
+                    if (!declared.has(dependencyRelativePath)) {
+                        failures.push(`${skillFile}: ${path.relative(skillDirectory, scriptPath)} imports undeclared ${dependencyRelativePath}`);
+                    }
+                }
+            }
+        }
+
+        expect(failures, ["Undeclared shared files imported by skill scripts:", ...failures].join("\n")).toEqual([]);
+    });
+
     it("rejects shared file paths that escape the skills root", () => {
         const skillFile = path.join(SKILLS_ROOT, "example", "SKILL.md");
 
@@ -131,6 +152,22 @@ function parseSharedFiles(source, skillFile) {
     return values;
 }
 
+function scriptFiles(skillDirectory) {
+    const scriptsDirectory = path.join(skillDirectory, "scripts");
+    if (!fs.existsSync(scriptsDirectory)) { return []; }
+    const files = [];
+    const pending = [scriptsDirectory];
+    while (pending.length > 0) {
+        const current = pending.pop();
+        for (const entry of fs.readdirSync(current, {withFileTypes: true})) {
+            const entryPath = path.join(current, entry.name);
+            if (entry.isDirectory()) { pending.push(entryPath); }
+            if (entry.isFile() && entry.name.endsWith(".mjs")) { files.push(entryPath); }
+        }
+    }
+    return files;
+}
+
 function resolveSharedFile(declaredPath, skillFile) {
     if (path.isAbsolute(declaredPath)) {
         return {ok: false, error: `${declaredPath} must be repository-relative`};
@@ -172,4 +209,9 @@ function resolveImport(sourceFile, importPath) {
 function isWithinSkillsRoot(filePath) {
     const relativePath = path.relative(SKILLS_ROOT, filePath);
     return relativePath !== "" && !relativePath.startsWith(`..${path.sep}`) && !path.isAbsolute(relativePath);
+}
+
+function isWithin(directory, filePath) {
+    const relativePath = path.relative(directory, filePath);
+    return relativePath !== "" && !relativePath.startsWith(`..${path.sep}`) && relativePath !== ".." && !path.isAbsolute(relativePath);
 }

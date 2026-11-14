@@ -7,11 +7,11 @@ import {fileURLToPath} from "node:url";
 
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 import {parseIssueBranch} from "../../_shared/scripts/issue-branch.mjs";
+import {resolveRepositoryRoot} from "../../_shared/scripts/repo-root.mjs";
 
 const scriptDir = fileURLToPath(new URL(".", import.meta.url));
-const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 
-export function createExecutor({cwd = repoRoot} = {}) {
+export function createExecutor({cwd = resolveRepositoryRoot()} = {}) {
     return (command, args, options = {}) => spawnSync(command, args, {
         cwd,
         encoding: "utf-8",
@@ -147,7 +147,7 @@ function matchPullRequestUrl(output) {
     return match ? match[0] : "";
 }
 
-export function runIssueReview(argv, {cwd = repoRoot, execCommand = createExecutor({cwd}), reviewersFile = join(scriptDir, "../default-reviewers.txt")} = {}) {
+export function runIssueReview(argv, {cwd = resolveRepositoryRoot(), execCommand = createExecutor({cwd}), reviewersFile = join(scriptDir, "../default-reviewers.txt")} = {}) {
     const parsed = parseArgs(argv);
     if (parsed.error) {
         return {code: 2, stderr: `${parsed.error}\nUsage: gh-issue-review.mjs [--issue-number <number>] [--reviewer <login>] [--template <path>] [--owner <owner>] [--repo <repo>] [--base <branch>]\n`};

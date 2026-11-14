@@ -28,6 +28,7 @@ shared_files:
   - _shared/references/symfony-ux-live-components.md
   - _shared/references/user-facing-behavior-assessment.md
   - _shared/scripts/change-inventory.mjs
+  - _shared/scripts/repo-root.mjs
   - _shared/scripts/playwright-access-prepare.sh
   - _shared/scripts/playwright-preflight.sh
   - _shared/scripts/playwright-auth-bootstrap.sh

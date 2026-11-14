@@ -5,6 +5,7 @@ import path from "node:path";
 import {execFileSync} from "./file-process.mjs";
 
 import {isMainModule} from "./is-main-module.mjs";
+import {requireRepositoryRoot} from "./repo-root.mjs";
 import {formatSecretValidationErrors} from "./secret-detector.mjs";
 
 const REQUIRED_KEYS = [
@@ -71,13 +72,8 @@ function canonicalUntrackedHash({cwd, execFile}) {
     return representation.digest("hex");
 }
 
-function resolveRepositoryRoot(cwd, execFile = execFileSync) {
-    const output = gitOutput(["rev-parse", "--show-toplevel"], {cwd, execFile}).trim();
-    return output ? path.resolve(output) : path.resolve(cwd);
-}
-
 export function getWorktreeFingerprint({cwd = process.cwd(), execFile = execFileSync} = {}) {
-    const context = {cwd: resolveRepositoryRoot(cwd, execFile), execFile};
+    const context = {cwd: requireRepositoryRoot(cwd), execFile};
     const staged_sha256 = canonicalDiffHash([
         "diff", "--cached", "--binary", "--full-index", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--",
     ], context);

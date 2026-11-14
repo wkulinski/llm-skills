@@ -2,6 +2,7 @@ import {spawnSync} from "../../../../_shared/scripts/file-process.mjs";
 import {existsSync, readFileSync} from "node:fs";
 import path from "node:path";
 
+import {requireRepositoryRoot} from "../../../../_shared/scripts/repo-root.mjs";
 import {SNAPSHOT_VERSION} from "./snapshot.mjs";
 import {hashBuffer} from "../shared/hashing.mjs";
 
@@ -13,11 +14,7 @@ export function run(command, args, options = {}) {
 }
 
 export function getRepoRoot() {
-    const result = run("git", ["rev-parse", "--show-toplevel"]);
-    if (result.status !== 0) {
-        throw new Error("Not a git repository (git rev-parse failed).");
-    }
-    return result.stdout.trim();
+    return requireRepositoryRoot();
 }
 
 export function gitLines(repoRoot, args) {

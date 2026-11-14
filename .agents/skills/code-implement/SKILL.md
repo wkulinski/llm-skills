@@ -27,6 +27,7 @@ shared_files:
     - _shared/scripts/context-handoff.mjs
     - _shared/scripts/context-manifest.mjs
     - _shared/scripts/artifact-path.mjs
+    - _shared/scripts/repo-root.mjs
     - _shared/scripts/context-scout-run.mjs
     - _shared/scripts/context-scout-report-builder.mjs
     - _shared/scripts/context-scout-report.mjs

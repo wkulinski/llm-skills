@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 import {spawnSync} from "../../_shared/scripts/file-process.mjs";
+import {requireRepositoryRoot} from "../../_shared/scripts/repo-root.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 
 const skillDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const skillsRoot = path.resolve(skillDir, "..");
-const repoRoot = findRepoRoot();
+const repoRoot = requireRepositoryRoot();
 const args = parseOptions(process.argv.slice(2));
 const phpactor = resolveTool("phpactor");
 const rpcRequest = rewriteRequestPaths(buildRequest(args), phpactor);
@@ -384,17 +385,6 @@ function resolveTool(tool) {
         throw new Error(`Unable to resolve tool: ${tool}`);
     }
     return [resolved.stdout.trim()];
-}
-
-function findRepoRoot() {
-    const gitResult = spawnSync("git", ["rev-parse", "--show-toplevel"], {
-        cwd: process.cwd(),
-        encoding: "utf8",
-    });
-    if (gitResult.status !== 0) {
-        throw new Error("Not inside a git repository");
-    }
-    return gitResult.stdout.trim();
 }
 
 function absolutePath(filePath) {

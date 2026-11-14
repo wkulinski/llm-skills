@@ -15,6 +15,7 @@ shared_files:
   - _shared/references/cqrs-monolith-standard-overrides.md
   - _shared/scripts/is-main-module.mjs
   - _shared/scripts/artifact-path.mjs
+  - _shared/scripts/repo-root.mjs
   - _shared/scripts/secret-detector.mjs
   - _shared/scripts/task-plan/publication.mjs
   - _shared/scripts/task-plan/atomic-file.mjs

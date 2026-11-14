@@ -6,6 +6,7 @@ description: >-
   move/copy/rename, transformacji klas lub AST.
 shared_files:
   - _shared/scripts/file-process.mjs
+  - _shared/scripts/repo-root.mjs
   - _shared/scripts/env-load.sh
   - _shared/references/symbolic-navigation-and-editing-policy.md
 ---

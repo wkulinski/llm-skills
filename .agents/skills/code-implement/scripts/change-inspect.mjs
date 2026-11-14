@@ -2,6 +2,7 @@
 import {execFileSync} from "../../_shared/scripts/file-process.mjs";
 
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
+import {requireRepositoryRoot} from "../../_shared/scripts/repo-root.mjs";
 
 export function splitGitLines(output) {
     return String(output ?? "")
@@ -156,7 +157,7 @@ async function main(argv) {
         return 2;
     }
 
-    const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {encoding: "utf-8"}).trim();
+    const repoRoot = requireRepositoryRoot();
     process.stdout.write(runChangeInspect({cwd: repoRoot, thresholdArg}));
     return 0;
 }

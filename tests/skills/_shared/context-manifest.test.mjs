@@ -154,37 +154,44 @@ describe("context manifest", () => {
     });
 
     it("enriches missing repository metadata from git", () => {
-        const calls = [];
-        const manifest = enrichContextManifest({
-            ...validManifest,
-            repository: "",
-            branch: "",
-            head: "",
-        }, {
-            execFile: (_command, args) => {
-                calls.push(args.join(" "));
-                if (args[0] === "remote") { return "git@github.com:acme/project.git\n"; }
-                if (args[0] === "branch") { return "feature/context-routing\n"; }
-                if (args[0] === "rev-parse" && args[1] === "HEAD") { return "abc123\n"; }
-                if (args[0] === "rev-parse" && args[1] === "--show-toplevel") { return "/repo/root\n"; }
-                return "";
-            },
-            now: new Date("2026-07-14T12:00:00.000Z"),
-        });
+        const root = mkdtempSync(path.join(os.tmpdir(), "context-manifest-enrich-"));
+        try {
+            mkdirSync(path.join(root, ".git"));
+            const calls = [];
+            const manifest = enrichContextManifest({
+                ...validManifest,
+                repository: "",
+                branch: "",
+                head: "",
+            }, {
+                cwd: root,
+                execFile: (_command, args, options) => {
+                    calls.push({args: args.join(" "), cwd: options.cwd});
+                    if (args[0] === "remote") { return "git@github.com:acme/project.git\n"; }
+                    if (args[0] === "branch") { return "feature/context-routing\n"; }
+                    if (args[0] === "rev-parse" && args[1] === "HEAD") { return "abc123\n"; }
+                    return "";
+                },
+                now: new Date("2026-07-14T12:00:00.000Z"),
+            });
 
-        expect(manifest).toMatchObject({
-            repository: "acme/project",
-            branch: "feature/context-routing",
-            head: "abc123",
-            generated_at: "2026-07-14T12:00:00.000Z",
-        });
-        expect(calls).toHaveLength(7);
-        expect(manifest.worktree).toEqual({
-            staged_sha256: EMPTY_SHA256,
-            unstaged_sha256: EMPTY_SHA256,
-            untracked_sha256: EMPTY_SHA256,
-            combined_sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
-        });
+            expect(manifest).toMatchObject({
+                repository: "acme/project",
+                branch: "feature/context-routing",
+                head: "abc123",
+                generated_at: "2026-07-14T12:00:00.000Z",
+            });
+            expect(calls).toHaveLength(6);
+            expect(calls.every((call) => call.cwd === root)).toBe(true);
+            expect(manifest.worktree).toEqual({
+                staged_sha256: EMPTY_SHA256,
+                unstaged_sha256: EMPTY_SHA256,
+                untracked_sha256: EMPTY_SHA256,
+                combined_sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+            });
+        } finally {
+            rmSync(root, {force: true, recursive: true});
+        }
     });
 
     it("hashes empty, unstaged, staged and non-ignored untracked worktrees deterministically", () => {
