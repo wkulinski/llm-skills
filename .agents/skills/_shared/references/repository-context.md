@@ -26,7 +26,9 @@ by the scout playbook, not by the session directory.
 
 ## Lifecycle
 
-1. `prepare` validates the immutable inputs, declared required paths/anchors and
+1. Before `prepare`, the main agent records tool isolation/readiness evidence
+   and known coverage gaps in handoff constraints under `context-subagent-contract.md`.
+   The scout does not diagnose runtime. `prepare` validates the immutable inputs, declared required paths/anchors and
    manifest. There are no file, symbol, command, step or report-length quotas.
 2. `claim` returns a one-time token and `dispatch` for one `context-scout`.
    Delegate the prompt verbatim and retain the agent/session ID. A duplicate

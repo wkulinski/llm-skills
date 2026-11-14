@@ -32,8 +32,16 @@ użyj wyłącznie odczytowej powłoki według granic poniżej.
   próby przez natywne narzędzie `write` albo `apply_patch`, udostępnione w profilu,
   pod dokładną ścieżką przekazaną przez kontroler.
 
-Naruszenie którejkolwiek granicy kończy próbę statusem `BLOCKED`; nie próbuj
-naprawiać orkiestracji ani uruchamiać kolejnej próby.
+Naruszenie twardych granic, w tym odczyt spoza dozwolonego zakresu, mutacja albo
+utrata tożsamości projektu, kończy próbę statusem `BLOCKED`; nie próbuj naprawiać
+orkiestracji ani uruchamiać kolejnej próby. Przed zapisem raportu popraw w tej samej próbie błąd argumentu,
+składni lub ścieżki polecenia odczytowego, jeżeli potwierdzony cwd i zakres
+odczytu pozostały w B (lub dozwolonych instrukcjach A), bez mutacji. Dotyczy to
+także względnej ścieżki użytej przy poprawnym cwd B: ponów zawężony odczyt
+z absolutną ścieżką B. Zachowaj już potwierdzone dowody. Nie rozszerzaj
+uprawnień, nie zmieniaj snapshotu, nie naprawiaj brakujących helperów i nie
+rozpoczynaj nowego scouta. Ta korekta wywołania przed zakończeniem discovery
+nie jest ponowieniem discovery po walidacji raportu.
 
 ## Walidacja wejścia
 
@@ -67,6 +75,12 @@ metoda nie jest dostępna, zapisz minimalny `BLOCKED` z dokładną przyczyną
 według `context-scout-report-protocol.md`; nie rozpoczynaj discovery.
 Uprawnienia klienta mogą egzekwować część granic; pozostałe są kontraktem
 agenta, nie techniczną gwarancją izolacji powłoki.
+Definicja roli OpenCode nie nadaje automatycznie tych samych uprawnień agentowi
+generycznemu w innym kliencie. Zachowaj te same granice read-only niezależnie
+od mechanizmu delegacji. Serenę sprawdzaj według
+`<skills_root>/_shared/references/symbolic-navigation-and-editing-policy.md`,
+z dowodami prywatnego stanu B przekazanymi przez kontroler; nie wymagaj
+operacji nieobecnej w katalogu bieżącego backendu.
 Nie czytaj ponownie źródeł z `already_read` bez konkretnego uzasadnienia
 powiązanego z kryterium lub ryzykiem.
 
