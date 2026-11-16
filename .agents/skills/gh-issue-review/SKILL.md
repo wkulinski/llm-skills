@@ -37,15 +37,16 @@ Zautomatyzować zlecenie review: push brancha na origin, utworzenie PR do domyś
      - `--template <ścieżka>` (gdy istnieje wiele templatek PR)
      - `--base <branch>` (opcjonalnie; domyślnie domyślna gałąź repo)
 3. Skrypt:
+   - działa w katalogu bieżącego procesu (`process.cwd()`) i odmawia pracy, gdy bieżąca gałąź nie pasuje do `issue/<ID>-*`, jest gałęzią bazową lub HEAD jest odłączony (kod `14`; bez flagi obejścia),
    - fetchuje `origin/<base>`, robi rebase (konflikty → przerwij i dopytaj),
-   - wypycha branch komendą `git push origin HEAD --force`,
+   - wypycha branch komendą `git push --force-with-lease --set-upstream origin HEAD:refs/heads/<branch>`; nieudany push (kod `43`) przerywa przed utworzeniem PR,
    - jeśli istnieje **otwarty** PR dla brancha → używa go i tylko dopycha reviewera,
    - jeśli PR nie istnieje lub jest zamknięty/merge → tworzy nowy PR do wybranej gałęzi bazowej,
    - jeśli dodanie reviewera do istniejącego PR się nie uda, tylko to odnotowuje i kontynuuje.
 4. Po powodzeniu skryptu uruchom **osobno** `$gh-issue-status-set`, aby ustawić status **In review**:
    - Preferuj przekazanie numeru issue:
      - jeśli użyto `--issue-number`, przekaż ten numer,
-     - w przeciwnym razie użyj numeru ustalonego przez skrypt (branch z wspólnego helpera, potem subject).
+     - w przeciwnym razie użyj numeru z nazwy gałęzi `issue/<ID>-*`.
    - Jeśli nie da się jednoznacznie ustalić numeru issue, pozwól `$gh-issue-status-set` użyć własnych heurystyk i ewentualnie dopytać.
    - Jeśli ustawienie statusu się nie powiedzie: nie ukrywaj błędu, zwróć użytkownikowi jawny komunikat (status nieustawiony + przyczyna), ale pozostaw informację, że push/PR zostały wykonane.
 
@@ -84,7 +85,7 @@ Zautomatyzować zlecenie review: push brancha na origin, utworzenie PR do domyś
 ## Kody wyjścia skryptu i retry
 Po błędzie zawsze: odczytaj komunikat skryptu, spróbuj samodzielnie ustalić brakujące dane (z repo/GitHub), a następnie **uruchom skrypt ponownie** z uzupełnionymi parametrami. Jeśli nie da się tego ustalić, dopytaj użytkownika i po otrzymaniu danych ponownie uruchom skrypt.
 
-- `3` nie można ustalić numeru issue → spróbuj ustalić numer na podstawie kontekstu rozmowy/brancha; jeśli nie działa, dopytaj i uruchom ponownie z `--issue-number`.
+- `14` gałąź nie jest gałęzią issue (`issue/<ID>-*`), jest gałęzią bazową, HEAD jest odłączony lub `--issue-number` nie zgadza się z gałęzią → **nie szukaj obejścia**: uruchom skrypt z worktree/gałęzi issue albo zmień nazwę gałęzi (`git branch -m`).
 - `13` issue o podanym numerze nie istnieje lub jest zamknięte → poinformuj użytkownika i poproś o poprawny `--issue-number` (sprawdź, czy issue nie zostało zamknięte).
 - `21` wielu assignees → wybierz reviewera tylko jeśli użytkownik podał preferencję; w przeciwnym razie dopytaj i uruchom ponownie z `--reviewer`.
 - `22` brak reviewera → jeśli istnieje lista domyślnych reviewerów, użyj pierwszego; w przeciwnym razie dopytaj i uruchom ponownie z `--reviewer`.
@@ -92,7 +93,8 @@ Po błędzie zawsze: odczytaj komunikat skryptu, spróbuj samodzielnie ustalić 
 - `32` wskazana templatka nie istnieje → popraw ścieżkę i uruchom ponownie z `--template`.
 - `12` brak `origin/<base>` → sprawdź zdalne branche lub wskaż poprawne `--base`.
 - `42` konflikt podczas rebase → poproś o ręczne rozwiązanie konfliktów i uruchom ponownie po `git rebase --continue`.
-- `41` nie udało się utworzyć PR → sprawdź komunikat i spróbuj ponownie po korekcie danych.
+- `43` push nie powiódł się (np. odrzucony `--force-with-lease`, bo zdalna gałąź ma cudze commity) → pokaż komunikat, zsynchronizuj z origin; nie wymuszaj ręcznie `--force`.
+- `41` nie udało się utworzyć PR → komunikat zawiera stderr z `gh`; sprawdź go i spróbuj ponownie po korekcie danych.
 - Inne błędy → odczytaj komunikat i uzupełnij parametry, po czym uruchom skrypt ponownie.
 
 ## Format odpowiedzi
