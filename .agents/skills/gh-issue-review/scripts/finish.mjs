@@ -142,6 +142,28 @@ function createTemporaryBody({branch, baseRef, issueNumber, issueTitle, execComm
     return {bodyFile, tmpDir};
 }
 
+/**
+ * Guards rebase and force-push: only an issue branch in the working directory
+ * may be rewritten. Returns an error message, or "" when the branch is fine.
+ */
+function checkIssueBranch({baseBranch, branch, cwd, issueNumber}) {
+    const where = `Current branch: ${branch || "(unknown)"}, working directory: ${cwd}.`;
+    if (!branch || branch === "HEAD") {
+        return `Detached HEAD; refusing to rebase and push. ${where}\nCheck out the issue branch (issue/<ID>-*) and rerun.\n`;
+    }
+    if (branch === baseBranch) {
+        return `Current branch is the base branch '${baseBranch}'; refusing to rebase and force-push it. ${where}\nRun the script from the issue worktree/branch (issue/<ID>-*).\n`;
+    }
+    const branchIssue = parseIssueBranch(branch, {execCommand: () => ""});
+    if (!branchIssue) {
+        return `Branch '${branch}' does not match issue/<ID>-*; refusing to rebase and force-push. ${where}\nRun from the issue worktree or rename the branch (git branch -m issue/<ID>-<slug>).\n`;
+    }
+    if (issueNumber && issueNumber !== branchIssue) {
+        return `--issue-number ${issueNumber} does not match branch '${branch}' (issue ${branchIssue}). ${where}\n`;
+    }
+    return "";
+}
+
 function matchPullRequestUrl(output) {
     const match = String(output ?? "").match(/https:\/\/github\.com\/[^ ]+\/pull\/[0-9]+/);
     return match ? match[0] : "";
@@ -173,18 +195,11 @@ export function runIssueReview(argv, {cwd = resolveRepositoryRoot(), execCommand
         }
 
         const branch = run("git", ["rev-parse", "--abbrev-ref", "HEAD"], execCommand).stdout.trim();
-        const subject = run("git", ["log", "-1", "--pretty=%s"], execCommand).stdout.trim();
-
-        if (!issueNumber) {
-            issueNumber = parseIssueBranch(branch, {execCommand}) || "";
+        const guardError = checkIssueBranch({baseBranch, branch, cwd, issueNumber});
+        if (guardError) {
+            return {code: 14, stderr: guardError};
         }
-        if (!issueNumber) {
-            const match = subject.match(/#([0-9]+)/);
-            issueNumber = match ? match[1] : "";
-        }
-        if (!issueNumber) {
-            return {code: 3, stderr: "Cannot determine issue number. Provide --issue-number or use branch name issue/<ID>-*.\n"};
-        }
+        issueNumber = parseIssueBranch(branch, {execCommand});
 
         const issueView = run("gh", ["issue", "view", issueNumber, "--json", "state,title", "-q", '.state + "\t" + .title'], execCommand);
         if (!issueView.stdout.trim()) {
@@ -232,7 +247,10 @@ export function runIssueReview(argv, {cwd = resolveRepositoryRoot(), execCommand
             return {code: 42, stderr: "Rebase failed. Resolve conflicts, run 'git rebase --continue', then rerun this script.\n"};
         }
 
-        run("git", ["push", "origin", "HEAD", "--force"], execCommand);
+        result = run("git", ["push", "--force-with-lease", "--set-upstream", "origin", `HEAD:refs/heads/${branch}`], execCommand);
+        if (result.code !== 0) {
+            return {code: 43, stderr: `Push failed (exit ${result.code}); PR not created.\n${result.stderr}`};
+        }
 
         const existingPrInfo = run("gh", ["pr", "view", "--json", "state,number,url", "-q", '.state + "\t" + (.number|tostring) + "\t" + .url'], execCommand).stdout.trim();
         if (existingPrInfo) {
@@ -280,20 +298,11 @@ export function runIssueReview(argv, {cwd = resolveRepositoryRoot(), execCommand
             }
 
             const reviewerFlag = reviewer ? ["--reviewer", reviewer] : [];
-            const createWithJson = run("gh", ["pr", "create", "--base", baseBranch, "--head", branch, "--title", issueTitle ? `#${issueNumber} ${issueTitle}` : humanizeBranchTitle(branch), "--body-file", bodyFile, ...reviewerFlag, "--json", "url", "-q", ".url"], execCommand);
-            prUrl = createWithJson.stdout.trim();
+            const create = run("gh", ["pr", "create", "--base", baseBranch, "--head", branch, "--title", prTitle, "--body-file", bodyFile, ...reviewerFlag], execCommand);
+            prUrl = create.code === 0 ? matchPullRequestUrl(`${create.stdout}\n${create.stderr}`) : "";
             if (!prUrl) {
-                const stderr = createWithJson.stderr.trim();
-                if (/unknown flag: --json/i.test(stderr)) {
-                    const fallback = run("gh", ["pr", "create", "--base", baseBranch, "--head", branch, "--title", issueTitle ? `#${issueNumber} ${issueTitle}` : humanizeBranchTitle(branch), "--body-file", bodyFile, ...reviewerFlag], execCommand);
-                    prUrl = matchPullRequestUrl(`${fallback.stdout}\n${fallback.stderr}`);
-                } else if (stderr) {
-                    return {code: 41, stderr: `${stderr}\n`};
-                }
-            }
-
-            if (!prUrl) {
-                return {code: 41, stderr: "Failed to create PR.\n"};
+                const details = `${create.stderr}${create.stdout}`.trim();
+                return {code: 41, stderr: `Failed to create PR${details ? `:\n${details}` : "."}\n`};
             }
         }
 
