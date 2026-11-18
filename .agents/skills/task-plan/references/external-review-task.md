@@ -51,8 +51,9 @@ review requires provenance for new findings and keeps recurring IDs.
 
 ## Result
 
-`report_markdown` is the review report in the `$code-review` output format for
-the `plan` target. `payload` is:
+`report_markdown` is the validated Markdown for the `plan` target, using
+`<skills_root>/_shared/references/review-report-format.md`. The example below
+shows the `payload` that carries the draft's findings, resolutions and verdict.
 
 ```json
 {

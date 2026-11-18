@@ -93,6 +93,49 @@ describe("reviewer in decide", () => {
     });
 });
 
+function planMarkdown({verdict = "PLAN DISCUSS", findings = []}) {
+    const beginning = findings.length ? `#### F1 [${findings[0].severity}] Missing verification — plan.md:12
+
+- **Behavior:** WP1 omits a check for its acceptance criterion.
+- **Impact:** The plan could be executed without evidence of its result.
+- **Evidence:** WP1's verification contains only a build.
+- **Fix direction:** Check the observable acceptance criterion.
+- **Confidence:** high
+- **Actionable:** true` : "No findings.";
+    return `${beginning}
+
+### Target
+
+- **Type:** plan
+- **Artifact and revision:** plan.md rev. 1.
+- **Scope:** The current revision in its entirety.
+- **Requirements:** WP1 must verify its acceptance criterion.
+
+### Coverage
+
+- REVIEWED — traced the source requirement and verification in WP1.
+- **Omitted axes:** Browser lifecycle because WP1 is a CLI change.
+
+### Plan alignment
+
+The source requirement is linked to the WP1 acceptance criterion.
+
+### Verification
+
+- **Checks:** Source comparison only.
+- **Gaps:** No runtime checks needed to read the plan.
+
+### Verdict
+
+${verdict} — See the checks and evidence for WP1.
+
+### Summary and next step
+
+- **Summary:** ${findings.length ? "A verification issue remains." : "No findings."}
+- **Next step:** The plan owner should apply the decision from this review.
+`;
+}
+
 function withSession(callback) {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "plan-accept-")));
     try {
@@ -108,11 +151,11 @@ function withSession(callback) {
         const jobPath = path.resolve(root, prepared.job_path);
         const inspect = {Id: "session", Provider: "opencode", Model: "deepseek", Thinking: "high", Cwd: root};
         const bind = () => bindSession({jobPath, inspect});
-        const accept = payload => {
+        const accept = (payload, reportMarkdown = planMarkdown(payload)) => {
             const job = JSON.parse(fs.readFileSync(jobPath));
             return acceptPlanReview({jobPath, inspect, request: REQUEST, requestSha256: requestSha(REQUEST),
                 envelopeText: JSON.stringify({version: 1, job_id: job.job_id, binding_sha256: job.binding_sha256,
-                    status: "COMPLETE", report_markdown: "F1: evidence and repair details.", payload})});
+                    status: "COMPLETE", report_markdown: reportMarkdown, payload})});
         };
         callback({jobPath, bind, accept});
     } finally { fs.rmSync(root, {recursive: true, force: true}); }
@@ -134,6 +177,32 @@ describe("plan session acceptance", () => {
             expect(accept({})).toMatchObject({reason: "REPORT_PAYLOAD_INVALID", next: {action: "self", reason: "ATTEMPTS_EXHAUSTED"}});
         });
     });
+    it("rejects shortened Markdown before accepting the result, then accepts a complete report", () => {
+        const payload = {verdict: "PLAN READY", findings: [], previous_resolutions: [], coverage: COVERAGE};
+        withSession(({jobPath, bind, accept}) => {
+            bind();
+            const rejected = accept(payload, "PLAN READY — The checks passed.");
+            expect(rejected).toMatchObject({reason: "REPORT_PAYLOAD_INVALID", next: {action: "launch", attempt: "2"},
+                details: expect.arrayContaining([expect.objectContaining({code: "INVALID_REPORT_MARKDOWN"})])});
+            expect(fs.existsSync(path.join(path.dirname(jobPath), "result.json"))).toBe(false);
+            bind();
+            expect(accept(payload)).toMatchObject({decision: "ACCEPTED", report_markdown: planMarkdown(payload)});
+        });
+    });
+
+    it("rejects a valid-looking Markdown report when the findings or verdict differ from the payload", () => {
+        const payload = {verdict: "PLAN CHANGES REQUESTED", findings: [{id: "F1", classification: "finding", severity: "MAJOR", actionable: true, repair_attempts: 0}],
+            previous_resolutions: [], coverage: COVERAGE};
+        withSession(({bind, accept}) => {
+            bind();
+            expect(accept(payload, planMarkdown({verdict: "PLAN BLOCKED", findings: [{severity: "MINOR"}]})))
+                .toMatchObject({reason: "REPORT_PAYLOAD_INVALID", details: expect.arrayContaining([
+                    expect.objectContaining({code: "REPORT_VERDICT_MISMATCH"}),
+                    expect.objectContaining({code: "REPORT_FINDINGS_MISMATCH"}),
+                ])});
+        });
+    });
+
     it.each(["PLAN DISCUSS", "PLAN BLOCKED", "PLAN CHANGES REQUESTED"])("accepts valid %s without trying another profile", verdict => {
         withSession(({bind, accept}) => {
             bind();
