@@ -14,6 +14,8 @@ shared_files:
   - code-review/references/plan-review.md
   - code-review/references/active-plan.md
   - code-review/references/re-review.md
+  - _shared/references/review-report-format.md
+  - _shared/scripts/review-report.mjs
   - _shared/references/task-plan-contract.md
   - _shared/references/skill-routing-policy.md
   - _shared/references/runtime-collaboration-guidelines.md
@@ -81,6 +83,7 @@ Read only the files required by the active step. Declared references are availab
 |---|---|
 | before investigating a risk, read or receive in context the checklist sections selected in Section 4: Correctness and propagation; Contracts and integrations; State, persistence, and data flow; Security and privacy; Reliability and concurrency; Reactivity, lifecycle and feedback loops; Performance; Architecture and maintainability; Tests and verification | `<skill_dir>/references/review-checklists.md` |
 | workflow routing and skill-selection guard before this skill starts | `<skills_root>/_shared/references/skill-routing-policy.md` |
+| every review: start, fill, validate, and deliver the Markdown report | `<skills_root>/_shared/references/review-report-format.md` |
 | repository reconnaissance, broad versus targeted reads, and scout lifecycle | `<skills_root>/_shared/references/repository-context.md` |
 | applicable-rules register semantics (source, scope, force, evidence, result) | `<skills_root>/_shared/references/rule-conformance-policy.md` |
 | every review: resolve the profile before review and read only the standards activated there; configuration errors stop the procedure | `<skills_root>/_shared/references/project-profiles.md` |
@@ -101,6 +104,11 @@ First classify the review target:
 
 - `code` — an implementation change or supplied code whose behavior is being evaluated;
 - `plan` — an existing task-plan Markdown document whose execution-readiness is being evaluated.
+
+Start the Markdown draft from the shared report format as soon as the target
+and prior finding IDs are known. Record the artifact, reviewed version and scope
+there. Add requirements, evidence and limits as the corresponding review steps
+establish them, and use this draft through finalization in Section 11.
 
 Creating a plan or revising a plan as its owner remains `$task-plan`. This skill's
 `plan` target is a separate read-only phase performed by the current coordinating
@@ -594,100 +602,16 @@ For a `plan` target, also apply "Plan verdicts" in `<skill_dir>/references/plan-
 
 ## 11. Output format
 
-Lead with findings. Do not bury defects under a long summary.
+Finalize the same Markdown draft opened in Section 1 using
+`<skills_root>/_shared/references/review-report-format.md`. The format and
+validation apply to both `code` and `plan` reviews, including a review performed
+inside `$task-plan`. The review and its evidence remain the responsibility of
+the reviewer.
 
-If there are no findings, say `No findings.` explicitly before the review
-details and repeat that status in the Summary. Still include the strongest
-remaining blind spot.
-
-For every finding:
-
-`F<n> [SEVERITY] Short title — path/to/file.ext:line`
-
-In a re-review, or whenever prior findings were supplied in the input, a kept or
-recurring finding keeps its prior ID. A new finding gets the next number after
-the highest prior ID. Never reuse an ID for a different failure mode.
-
-Then include:
-
-- **Behavior:** what happens
-- **Impact:** why it matters
-- **Evidence:** concrete path/contract/test/trace supporting the claim
-- **Fix direction:** concise direction, not a full implementation unless requested
-- **Confidence:** `high` — reproduced or traced deterministically; `medium` —
-  execution path confirmed without running it; `low` — depends on an unverified
-  assumption
-
-For `QUESTION`, replace **Fix direction** with **Needs decision**.
-
-When rejecting or reclassifying a material candidate affects the safety
-assessment, scope, or verdict, include a brief disposition in the review details:
-observation, decision, concrete reason, and evidence.
-
-Then provide:
-
-### Target
-
-`code` or `plan`, with the reviewed artifact and scope. For a supplied snapshot,
-also state its fingerprint and whether the review is complete or `INCOMPLETE`
-with the requested inputs.
-
-### Coverage
-
-A compact table/list of the Section 8 coverage entries and the one-line account
-of omitted axes, including any `NOT_COVERED` surfaces. For every high-risk area
-identified in Section 4, explicitly name the risks and paths checked and the
-remaining gap. Include the applicable-rules results for the reviewed scope when a register was
-produced, and the `Complexity/value gate` outcome when the gate was relevant.
-
-### Finding resolutions
-
-For a re-review, or whenever prior findings were supplied in the input, report one
-explicit resolution per prior ID instead of silently dropping it:
-
-- **resolved** — the prior finding no longer applies, with the evidence that
-  proves it;
-- **current** — it still applies, with its current severity and the evidence;
-- **accepted** — it remains by explicit user decision, with the decision
-  reference.
-
-A missing resolution is an incomplete review, not an implicit acceptance. The
-owner passes these resolutions to the `$task-plan` decision helper.
-
-### Plan alignment
-
-For a `code` review with an active plan, supplied by the caller or resolved from
-the pointer, state the plan path, mapped work package, plan-alignment outcome,
-and any unmapped acceptance criterion or scope/dependency concern. Otherwise say
-that no active plan was available or applicable.
-
-### Verification
-
-List the mechanical checks actually run, their results, and any relevant limits.
-Explicitly distinguish focused checks from full QA. If a relevant lint, test,
-build, safe reproduction, or Playwright checkpoint was not run, state why and
-report a `verification_gap`; do not turn an otherwise reviewable source area
-into `NOT_COVERED`. Full verification is handled by `$qa-run` unless the user
-explicitly requests otherwise.
-
-### Verdict
-
-`VERDICT — one-sentence reason`
-
-For a `plan` target, describe changes to the plan as the next action and route
-them to `$task-plan`; do not edit the plan from this skill.
-
-### Summary and next step
-
-State concisely:
-
-- the review activities completed, including traces, source reads, and commands
-  actually run;
-- the general assessment and finding status (`No findings` when none were
-  accepted);
-- the strongest remaining blind spot or verification gap;
-- the recommended next action, such as a focused check, `$qa-run`, plan
-  correction through `$task-plan`, clarification, or no further action.
+Run the validator, correct the reported omissions using available evidence,
+and repeat validation before delivery. Publish the checked Markdown unchanged.
+For a delegated plan review, use those same bytes as `report_markdown` in the
+existing result envelope.
 
 ## 12. Re-review after fixes
 

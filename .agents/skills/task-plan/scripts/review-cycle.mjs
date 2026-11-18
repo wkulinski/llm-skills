@@ -6,6 +6,7 @@ import path from "node:path";
 
 import {acceptResult} from "../../_shared/scripts/review-session-job.mjs";
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
+import {validateReviewReport} from "../../_shared/scripts/review-report.mjs";
 import {REVIEWER_LABEL_PATTERN} from "../../_shared/scripts/task-plan/validate.mjs";
 import {loadPlanFile, reviewerLabel} from "../../_shared/scripts/task-plan/store.mjs";
 import {validatePlanReviewCoverage} from "./review-coverage.mjs";
@@ -139,11 +140,45 @@ export function ingestExternalReview({result, request, requestSha256, reconcilia
     return decideReviewCycle(input);
 }
 
-/** Accept a plan report only when the normal decide protocol can consume it. */
+/** Accept the Markdown and the machine result together. */
 export function acceptPlanReview({jobPath, envelopeText, inspect, request, requestSha256}) {
     return acceptResult({jobPath, envelopeText, inspect,
-        validateReport: (result) => ingestExternalReview({result, request, requestSha256, acceptanceOnly: true}),
+        validateReport: (result) => {
+            const validation = ingestExternalReview({result, request, requestSha256, acceptanceOnly: true});
+            if (!validation.ok) {
+                return validation;
+            }
+            const previousIds = result.independent_full_review ? [] : (request.previous_findings ?? []).map(finding => finding.id);
+            return validatePlanReportMarkdown(result, previousIds);
+        },
     });
+}
+
+function validatePlanReportMarkdown({report_markdown, payload}, previousIds) {
+    const report = validateReviewReport(report_markdown, {target: "plan", previousIds});
+    const errors = report.errors.map(message => error("INVALID_REPORT_MARKDOWN", message));
+    if (!report.ok) {
+        return {ok: false, errors};
+    }
+    if (report.verdict !== payload.verdict) {
+        errors.push(error("REPORT_VERDICT_MISMATCH", "The Markdown verdict differs from the payload verdict."));
+    }
+    const findings = new Map(report.findings.map(finding => [finding.id, finding]));
+    if (findings.size !== payload.findings.length || payload.findings.some(finding => {
+        const entry = findings.get(finding.id);
+        return entry?.severity !== (finding.severity ?? finding.classification)
+            || entry.actionable !== finding.actionable
+            || entry.approvalAffecting !== (finding.approval_affecting === true);
+    })) {
+        errors.push(error("REPORT_FINDINGS_MISMATCH", "The Markdown findings differ from the payload findings."));
+    }
+    for (const resolution of payload.previous_resolutions ?? []) {
+        const entry = report.resolutions.get(resolution.id);
+        if (entry?.status !== resolution.status || (resolution.status === "current" && entry.severity !== resolution.current_severity)) {
+            errors.push(error("REPORT_RESOLUTION_MISMATCH", `The Markdown resolution for ${resolution.id} differs from the payload.`, resolution.id));
+        }
+    }
+    return {ok: errors.length === 0, errors};
 }
 
 /**

@@ -38,6 +38,8 @@ shared_files:
   - _shared/scripts/task-plan/publication.mjs
   - _shared/scripts/task-plan/validate.mjs
   - _shared/scripts/review-session-job.mjs
+  - _shared/scripts/review-report.mjs
+  - _shared/references/review-report-format.md
   - _shared/scripts/review-session-run.mjs
   - _shared/references/review-session-contract.md
   - _shared/references/playwright-cli-verification.md
@@ -413,6 +415,8 @@ problem pozostaje, pokaż blocker zamiast uruchamiać pętlę review lub restart
 
 Po wewnętrznym critical review, rozstrzygnięciu pytań blokujących oraz zapisie i
 walidacji kompletnego kandydata wykonaj zawsze `$code-review` z targetem `plan`.
+W każdej rundzie zastosuj wspólny szkic i walidację Markdown według
+`<skills_root>/_shared/references/review-report-format.md`.
 Następuje to przed pokazaniem użytkownikowi komunikatu `ready`. Pełny reviewer otrzymuje automatyczny widok całej treści merytorycznej planu bez
 historii ocen oraz source/context evidence. Delta-review otrzymuje też historię
 napraw. Przygotowanie widoku i rozliczenie ownera opisuje
@@ -461,8 +465,9 @@ schematem oraz przykładami w `<skills_root>/_shared/references/task-plan-contra
 warunków ich użycia i pochodzenia hashy. Helper sprawdza kompletność i spójność
 tych danych oraz zwraca dokładnie jedno działanie powiązane przez pole `plan` z
 przeglądaną rewizją. Nie ocenia prawdziwości ocen semantycznych ani nie utrwala
-stanu cyklu. Przy odbiorze używaj `review-cycle.mjs accept-session`, który sprawdza payload
-przed finalizacją próby; błędny payload uruchamia kolejny profil albo self-review.
+stanu cyklu. Przy odbiorze używaj `review-cycle.mjs accept-session`, który sprawdza
+Markdown i payload przed finalizacją próby. Odrzucony raport uruchamia kolejny
+profil albo self-review.
 Po review w osobnej sesji wejście buduje i rozstrzyga
 `review-cycle.mjs ingest` z przyjętego raportu i powiązanego żądania review;
 owner nie przepisuje wtedy ocen reviewera. Po niezależnym pełnym review owner
