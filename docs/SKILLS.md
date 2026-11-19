@@ -49,6 +49,7 @@ before installing. The alphabetical skill list is at the end.
 
 | Intent | Skill | Next step |
 | --- | --- | --- |
+| Learn from merged PR reviews and propose current documentation improvements | `$gh-review-learn` | source collection, historical/current assessment and proposals with persistent progress |
 | Reconcile documentation after substantial changes | `$docs-sync` | consolidated duplicates and consistent references |
 | List open TODO items from documentation | `$docs-todo` | task list without implementation |
 | Update the module atlas | `$module-atlas-sync` | current map of module roles, entrypoints, relationships and APIs |
@@ -127,6 +128,7 @@ remaining skills are independent opt-in entrypoints.
 - `$gh-issue-start`
 - `$gh-issue-status-set`
 - `$gh-issues-triage`
+- `$gh-review-learn`
 - `$git-commit`
 - `$handoff-refresh`
 - `$module-atlas-sync`
