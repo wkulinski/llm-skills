@@ -7,7 +7,7 @@ import {execFileSync} from "../../_shared/scripts/file-process.mjs";
 import {requireRepositoryRoot} from "../../_shared/scripts/repo-root.mjs";
 import {assertArtifactPath, resolveArtifactCacheRoot} from "../../_shared/scripts/artifact-path.mjs";
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
-import {RULES, canonicalJson, fingerprint, sourceFingerprint, pendingReasons, validateSources, validateLock, validatePrepared} from "./contracts.mjs";
+import {RULES, SCHEMA_VERSION, canonicalJson, fingerprint, sourceFingerprint, pendingReasons, validateSources, validateLock, validatePrepared, upgradeLock, assertBatchSources} from "./contracts.mjs";
 
 const fail = (code, message) => Object.assign(new Error(message), {code});
 const bytesHash = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -180,6 +180,7 @@ export function prepare({sources, lock = null, lockBytes = null, cwd = process.c
         validateLock(lock, sources.repository);
         if (lockBytes === null || canonicalJson(JSON.parse(lockBytes.toString("utf8"))) !== canonicalJson(lock)) { throw fail("LOCK_CONFLICT", "Expected exact bytes of the loaded lock"); }
     } else if (lockBytes !== null) { throw fail("LOCK_CONFLICT", "Lock bytes supplied without lock"); }
+    assertBatchSources(lock?.activeBatch, sources, lock?.entries);
     if (prs && (!Array.isArray(prs) || prs.some((n) => !Number.isSafeInteger(n) || n < 1 || !sources.prs.some((pr) => pr.number === n)))) { throw fail("INVALID_BATCH", "Unknown or invalid PR selection"); }
     const context = buildContext({cwd: root, git, cacheRoot});
     const projectSha = gitText(git, ["rev-parse", "HEAD"]).trim();
@@ -201,7 +202,17 @@ export function prepare({sources, lock = null, lockBytes = null, cwd = process.c
             queue.push({...item, previous: previous ? structuredClone(previous) : null, contextChanges: changes(oldContext, context), materials: [...history(git, pr, sourceItems), ...previousDocuments(root, previous)]});
         }
     }
-    const output = {schemaVersion: 1, kind: "prepared", repository: sources.repository, rules: {...RULES}, projectSha, expectedLockHash: lockBytes === null ? null : bytesHash(lockBytes), context, items: queue, totalPending: inventory.filter((i) => i.status === "pending").length, inventory, remaining: inventory.filter((i) => i.status === "pending" && !queue.some((q) => q.prId === i.prId)), sourceRead: sources.read, documentationDiscovery: {path: "AGENTS.md", instruction: "Read consumer docs_map and source-of-truth documents before proposing destinations; runtime is not inspected"}};
+    const snapshot = lock ? upgradeLock(lock) : {entries: [], documentationChanges: [], activeBatch: null, activeDelivery: null, lastDelivery: null};
+    const queueEntry = (entry) => ({prId: entry.prId, sourceFreshness: sources.prs.some((pr) => pr.id === entry.prId) && sources.read.completeness === "complete" ? "refreshed" : "unchecked"});
+    const queues = {
+        new: inventory.filter((item) => item.reasons.includes("new")).map((item) => ({prId: item.prId, sourceFreshness: "refreshed"})),
+        unresolved: snapshot.entries.filter((entry) => entry.analysis !== "complete").map(queueEntry),
+        reassessment: snapshot.entries.filter((entry) => entry.contextFingerprint !== context.fingerprint || canonicalJson(entry.rules) !== canonicalJson(RULES) || inventory.some((item) => item.prId === entry.prId && item.reasons.includes("sources_changed"))).map(queueEntry),
+        delivery: snapshot.entries.filter((entry) => entry.delivery === "delivery_pending").map(queueEntry),
+    };
+    const output = {schemaVersion: SCHEMA_VERSION, kind: "prepared", repository: sources.repository, rules: {...RULES}, projectSha, expectedLockHash: lockBytes === null ? null : bytesHash(lockBytes), context, items: queue, totalPending: inventory.filter((i) => i.status === "pending").length, inventory, remaining: inventory.filter((i) => i.status === "pending" && !queue.some((q) => q.prId === i.prId)), sourceRead: sources.read, documentationDiscovery: {path: "AGENTS.md", instruction: "Read consumer docs_map and source-of-truth documents before proposing destinations; runtime is not inspected"},
+        documentationChanges: snapshot.documentationChanges, previousEntries: snapshot.entries, activeBatch: snapshot.activeBatch, activeDelivery: snapshot.activeDelivery, lastDelivery: snapshot.lastDelivery,
+        batchId: sources.batchId ?? null, lastBatch: lock?.lastBatch ?? null, queues};
     validatePrepared(output, sources);
     atomicJson(path.join(cacheRoot, "gh-review-learn", "contexts", `${context.fingerprint}.json`), context);
     return output;
