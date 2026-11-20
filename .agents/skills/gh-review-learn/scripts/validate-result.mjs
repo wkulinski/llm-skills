@@ -26,6 +26,36 @@ export function documentHash(root, name) {
     }
     return hashBytes(fs.readFileSync(path.join(root, name)));
 }
+export function inspectDelivery(operation, root) {
+    return operation.documents.map((doc) => {
+        const actualHash = documentHash(root, doc.path);
+        return {...doc, actualHash, state: actualHash === doc.afterHash ? "expected" : actualHash === doc.beforeHash ? "base" : "conflict"};
+    });
+}
+export function unconfirmedDelivery(operation, root) {
+    const observed = operation.documents.map((doc) => {
+        try { return inspectDelivery({documents: [doc]}, root)[0]; }
+        catch { return {...doc, state: "unreadable"}; }
+    });
+    const changedFiles = observed.filter((doc) => doc.state === "unreadable" || doc.actualHash !== doc.beforeHash).map((doc) => doc.path);
+    return {event: changedFiles.length ? "progress_unconfirmed" : "not_applied", operationId: operation.operationId,
+        changedFiles, observed, newlyApplied: [], progressConfirmed: false};
+}
+export function checkDeliveryContext({operation, cwd, cacheRoot = resolveArtifactCacheRoot(cwd)}) {
+    if (fingerprint(operation.inputContext.files) !== operation.inputContext.fingerprint) { throw fail("CONTEXT_CONFLICT", "Delivery baseline digest differs"); }
+    const observed = inspectDelivery(operation, cwd);
+    const current = buildContext({cwd, cacheRoot, extraPaths: operation.documents.map((doc) => doc.path)});
+    const before = new Map(operation.inputContext.files.map((file) => [file.path, file]));
+    const after = new Map(current.files.map((file) => [file.path, file]));
+    for (const name of new Set([...before.keys(), ...after.keys()])) {
+        if (canonicalJson(before.get(name) ?? null) === canonicalJson(after.get(name) ?? null)) { continue; }
+        const doc = observed.find((item) => item.path === name);
+        const old = before.get(name); const actual = after.get(name);
+        if (!doc || doc.state !== "expected" || actual?.hash !== doc.afterHash || actual.mode !== (old?.missing ? "100644" : old?.mode ?? "100644")) { throw fail("CONTEXT_CONFLICT", `Unexpected change since delivery intent: ${name}`); }
+    }
+    if (observed.some((doc) => doc.state === "conflict") || (observed.some((doc) => doc.state === "base") && observed.some((doc) => doc.state === "expected"))) { throw fail("DOCUMENT_CONFLICT", "Delivery documents contain mixed or unknown bytes; reassess before confirmation"); }
+    return {context: current, observed, state: observed.every((doc) => doc.state === "base") ? "not_applied" : "expected"};
+}
 function registerOutput(outputs, doc) {
     const existing = outputs.get(doc.path);
     if (existing && canonicalJson(existing) !== canonicalJson(doc)) { throw fail("DOCUMENT_CONFLICT", `Conflicting output manifests: ${doc.path}`); }
@@ -42,6 +72,7 @@ export function checkResult({sources, prepared, result, cwd = process.cwd(), cac
     if (!match || match[1].toLowerCase() !== sources.repository.name.toLowerCase()) { throw fail("REPOSITORY_CONFLICT", "Consumer origin differs from source repository"); }
     const outputs = new Map();
     for (const entry of result.entries) {
+        const appliedPaths = new Set((result.documentationChanges ?? []).filter((change) => change.status === "applied" && entry.documentationChangeIds?.includes(change.id)).map((change) => change.path));
         verifyEvidenceBytes(entry, sources, {git, readWorktree: (name) => documentHash(root, name)});
         const input = prepared.items.find((item) => item.prId === entry.prId);
         const decisions = entry.materialDispositions;
@@ -59,9 +90,10 @@ export function checkResult({sources, prepared, result, cwd = process.cwd(), cac
             const actual = documentHash(root, doc.path);
             const baseline = prepared.context.files.find((file) => file.path === doc.path);
             if (doc.beforeHash !== (baseline && !baseline.missing ? baseline.hash : null)) { throw fail("DOCUMENT_CONFLICT", `Document baseline differs: ${doc.path}`); }
-            const expected = entry.delivery === "applied" ? doc.afterHash : doc.beforeHash;
+            const applied = entry.delivery === "applied" || appliedPaths.has(doc.path);
+            const expected = applied ? doc.afterHash : doc.beforeHash;
             if (actual !== expected) { throw fail("DOCUMENT_CONFLICT", `Actual document bytes differ: ${doc.path}`); }
-            if (entry.delivery === "applied") {
+            if (applied) {
                 registerOutput(outputs, doc);
             }
         }
@@ -81,13 +113,14 @@ export function loadArguments(argv, cwd) {
     const args = {};
     for (let index = 0; index < argv.length; index += 1) {
         const name = argv[index];
-        if (name === "--dry-run" && !args[name]) { args[name] = true; continue; }
+        if (["--dry-run", "--begin-delivery", "--confirm-delivery", "--abandon-delivery"].includes(name) && !args[name]) { args[name] = true; continue; }
         if (!["--sources", "--prepared", "--result", "--lock"].includes(name) || Object.hasOwn(args, name) || !argv[index + 1] || argv[index + 1].startsWith("--")) { throw fail("INVALID_ARGUMENT", `Invalid argument: ${name}`); }
         args[name] = argv[++index];
     }
     const root = requireRepositoryRoot(cwd);
     if (args["--lock"] && path.resolve(root, args["--lock"]) !== path.join(root, "review-learning.lock.json")) { throw fail("INVALID_PATH", "Lock must be consumer review-learning.lock.json"); }
-    const options = {cwd: root, dryRun: Boolean(args["--dry-run"])};
+    if (["--begin-delivery", "--confirm-delivery", "--abandon-delivery"].filter((flag) => args[flag]).length > 1) { throw fail("INVALID_ARGUMENT", "Choose one delivery operation"); }
+    const options = {cwd: root, dryRun: Boolean(args["--dry-run"]), beginDelivery: Boolean(args["--begin-delivery"]), confirmDelivery: Boolean(args["--confirm-delivery"]), abandonDelivery: Boolean(args["--abandon-delivery"])};
     for (const name of ["sources", "prepared", "result"]) {
         if (!args[`--${name}`]) { throw fail("INVALID_ARGUMENT", `--${name} is required`); }
         options[name] = JSON.parse(fs.readFileSync(assertArtifactPath(path.resolve(root, args[`--${name}`]), name, root), "utf8"));
@@ -95,7 +128,7 @@ export function loadArguments(argv, cwd) {
     return options;
 }
 export function errorResponse(error) {
-    return {code: 1, stdout: `${JSON.stringify({status: "error", data: {conflicts: /CONFLICT/.test(error.code) ? 1 : 0}, errors: [{code: error.code ?? "RESULT_ERROR", scope: "result", message: error.message}]})}\n`, stderr: `${error.message}\n`};
+    return {code: 1, stdout: `${JSON.stringify({status: "error", data: {conflicts: /CONFLICT/.test(error.code) ? 1 : 0, ...(error.delivery ? {delivery: error.delivery} : {})}, errors: [{code: error.code ?? "RESULT_ERROR", scope: "result", message: error.message}]})}\n`, stderr: `${error.message}\n`};
 }
 export function main(argv = process.argv.slice(2), {cwd = process.cwd()} = {}) {
     if (argv.length === 1 && ["--help", "-h"].includes(argv[0])) { return {code: 0, stdout: "Usage: validate-result.mjs --sources path --prepared path --result path [--lock review-learning.lock.json]\nValidate coverage, references and actual document/context bytes. Does not refresh GitHub or write files.\n"}; }

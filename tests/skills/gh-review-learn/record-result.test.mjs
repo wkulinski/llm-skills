@@ -5,8 +5,10 @@ import os from "node:os";
 import {execFileSync} from "../../../.agents/skills/_shared/scripts/file-process.mjs";
 import {RULES, SOURCE_FIELDS} from "../../../.agents/skills/gh-review-learn/scripts/contracts.mjs";
 import {prepare} from "../../../.agents/skills/gh-review-learn/scripts/prepare.mjs";
-import {recordResult, main as recordMain} from "../../../.agents/skills/gh-review-learn/scripts/record-result.mjs";
+import {recordResult, beginDelivery, confirmDelivery, main as recordMain} from "../../../.agents/skills/gh-review-learn/scripts/record-result.mjs";
 import {checkResult, hashBytes, main as validateMain} from "../../../.agents/skills/gh-review-learn/scripts/validate-result.mjs";
+import {withConsumerLock} from "../../../.agents/skills/gh-review-learn/scripts/lock-store.mjs";
+import {collect} from "../../../.agents/skills/gh-review-learn/scripts/collect.mjs";
 
 const directories = [];
 afterEach(() => { for (const d of directories.splice(0)) { fs.rmSync(d, {recursive: true, force: true}); } });
@@ -45,8 +47,294 @@ function proposal(f, delivery = "delivery_pending", name = "README.md") {
     f.entry.documents = [{path: name, beforeHash: before, afterHash: hashBytes("New rules\n")}];
     if (delivery === "applied") { f.entry.finalDocumentsReviewed = true; fs.writeFileSync(path.join(f.root, name), "New rules\n"); }
 }
+function individualProposal(f) {
+    proposal(f);
+    const assessment = {id: "A1", sources: [{id: f.entry.prId, quote: "Reviewable"}], historical: "unresolved", currency: "no_evidence", rationale: "Requires further evidence", verificationScope: "Git; runtime unchecked", evidence: [],
+        verification: {original: {status: "unavailable", sourceId: f.entry.prId, evidence: [], rationale: "Unavailable"}, response: {sourceIds: [], relation: "none", appliesToSha: null}, correction: {status: "unavailable", evidence: [], rationale: "Unavailable"}, current: {status: "unavailable", evidence: [], rationale: "Unavailable"}}};
+    f.entry.analysis = "needs_decision";
+    f.entry.assessments = [assessment];
+    f.entry.dispositions = [{sourceId: f.entry.prId, status: "unresolved", rationale: "Retain the unresolved evidence", assessmentIds: ["A1"]}];
+    f.entry.documentationChangeIds = ["C1"];
+    f.options.result.schemaVersion = 2;
+    f.options.result.documentationChanges = [{id: "C1", revision: 1, ...f.entry.documents[0], section: "Rules", description: "Require inspection of resulting bytes", rationale: "The proposal needs a durable description", references: [{prId: f.entry.prId, assessmentId: "A1"}], status: "proposed"}];
+}
+function refreshPrepared(f) {
+    const lockBytes = fs.readFileSync(f.target);
+    f.options.prepared = prepare({...f.options, lock: JSON.parse(lockBytes), lockBytes});
+    return f.options.prepared;
+}
+function intentFor(f, {operationId = "delivery-1", ids = ["C1"], text = "New rules\n"} = {}) {
+    const changes = f.options.result.documentationChanges.filter((change) => ids.includes(change.id));
+    const paths = [...new Set(changes.map((change) => change.path))];
+    return {operationId, userDecisionRef: "user-message:apply-selection", changes: changes.map(({id, revision}) => ({id, revision})),
+        documents: paths.map((name) => ({path: name, beforeHash: fs.existsSync(path.join(f.root, name)) ? hashBytes(fs.readFileSync(path.join(f.root, name))) : null, afterHash: hashBytes(text), afterBytes: Buffer.from(text).toString("base64")}))};
+}
 
 describe("review result recording", () => {
+    it("abandons a conflicted delivery without losing edits, then reassesses and confirms a new operation", async () => {
+        const f = fixture(); individualProposal(f); await recordResult(f.options); refreshPrepared(f);
+        const intent = intentFor(f); await beginDelivery({...f.options, intent}); refreshPrepared(f);
+        fs.writeFileSync(path.join(f.root, "README.md"), "Unconfirmed edit\n"); f.pr.body = "Reviewable revised source";
+        await expect(confirmDelivery({...f.options, operationId: intent.operationId, finalDocumentsReviewed: true})).rejects.toMatchObject({code: "CONTEXT_CONFLICT"});
+        const before = fs.readFileSync(f.target); const priorChanges = JSON.parse(before).documentationChanges;
+        const args = [];
+        for (const name of ["sources", "prepared", "result"]) {
+            const file = path.join(f.options.cacheRoot, `${name}.json`);
+            fs.writeFileSync(file, JSON.stringify(name === "result" ? {delivery: {operationId: intent.operationId, userDecisionRef: "user:abandon-delivery"}} : f.options[name]));
+            args.push(`--${name}`, file);
+        }
+        const call = (extra = []) => recordMain([...args, "--abandon-delivery", ...extra], {cwd: f.root});
+        expect((await call(["--dry-run"])).code).toBe(0); expect(fs.readFileSync(f.target)).toEqual(before);
+        const abandoned = await call(); expect(abandoned.code).toBe(0);
+        const data = JSON.parse(abandoned.stdout).data;
+        expect(data).toMatchObject({abandoned: true, event: "progress_unconfirmed", changedFiles: ["README.md"], newlyApplied: []});
+        expect(data.report.introduction).toBe("Dokumentacja została zmieniona, ale zapis postępu nie został potwierdzony");
+        const lock = JSON.parse(fs.readFileSync(f.target)); expect(lock.activeDelivery).toBeNull();
+        expect(lock.documentationChanges).toEqual(priorChanges); expect(lock.lastDelivery).toBeNull();
+        expect(lock.lastAbandonedDelivery).toMatchObject({operationId: intent.operationId, userDecisionRef: "user:abandon-delivery", originalDecisionRef: intent.userDecisionRef,
+            observed: [{path: "README.md", actualHash: hashBytes("Unconfirmed edit\n"), state: "conflict"}]});
+        expect(fs.readFileSync(path.join(f.root, "README.md"), "utf8")).toBe("Unconfirmed edit\n");
+        const bytes = fs.readFileSync(f.target); const mtime = fs.statSync(f.target).mtimeMs;
+        expect(JSON.parse((await call()).stdout).data.changed).toBe(false);
+        expect(fs.readFileSync(f.target)).toEqual(bytes); expect(fs.statSync(f.target).mtimeMs).toBe(mtime);
+        await expect(beginDelivery({...f.options, intent})).rejects.toMatchObject({code: "DELIVERY_CONFLICT"});
+        const recollected = await collect({repo: "example/project", transport: f.options.transport, lock});
+        const resumed = {...f, options: {...f.options, sources: recollected.sources}};
+        const prepared = refreshPrepared(resumed);
+        Object.assign(f.entry, {contextFingerprint: prepared.context.fingerprint, sourceFingerprint: prepared.items[0].sourceFingerprint,
+            materialDispositions: prepared.items[0].materials.map((item) => ({id: item.id, status: "used", rationale: "Reassessed after explicit abandonment"})),
+            documents: [{path: "README.md", beforeHash: hashBytes("Unconfirmed edit\n"), afterHash: hashBytes("Revised rules\n")}]});
+        Object.assign(f.options.result, {expectedLockHash: prepared.expectedLockHash, inputContextFingerprint: prepared.context.fingerprint});
+        Object.assign(f.options.result.documentationChanges[0], {...f.entry.documents[0], revision: 2, description: "Revised proposal after source conflict"});
+        await recordResult(resumed.options); refreshPrepared(resumed);
+        const nextIntent = intentFor(resumed, {operationId: "delivery-2", text: "Revised rules\n"});
+        await beginDelivery({...resumed.options, intent: nextIntent}); refreshPrepared(resumed);
+        fs.writeFileSync(path.join(f.root, "README.md"), "Revised rules\n");
+        expect((await confirmDelivery({...resumed.options, operationId: nextIntent.operationId, finalDocumentsReviewed: true})).event).toBe("confirmed");
+        expect(JSON.parse(fs.readFileSync(f.target)).lastAbandonedDelivery).toEqual(lock.lastAbandonedDelivery);
+    });
+    it("reports edits and unconfirmed progress when confirmation cannot acquire the writer guard", async () => {
+        const f = fixture(); individualProposal(f); await recordResult(f.options); refreshPrepared(f);
+        const intent = intentFor(f); await beginDelivery({...f.options, intent}); refreshPrepared(f);
+        const before = fs.readFileSync(f.target);
+        f.options.result = {delivery: {operationId: intent.operationId, finalDocumentsReviewed: true}};
+        fs.writeFileSync(path.join(f.root, "README.md"), "New rules\n");
+        const guard = `${f.target}.write-lock`; fs.writeFileSync(guard, "another writer");
+        const args = [];
+        for (const name of ["sources", "prepared", "result"]) {
+            const file = path.join(f.options.cacheRoot, `${name}.json`); fs.writeFileSync(file, JSON.stringify(f.options[name])); args.push(`--${name}`, file);
+        }
+        const response = await recordMain([...args, "--confirm-delivery"], {cwd: f.root, transport: f.options.transport});
+        const value = JSON.parse(response.stdout);
+        expect(response.code).not.toBe(0); expect(value.errors[0].code).toBe("LOCK_CONFLICT");
+        expect(value.data.delivery).toMatchObject({event: "progress_unconfirmed", changedFiles: ["README.md"], newlyApplied: [], progressConfirmed: false});
+        expect(value.data.report.introduction).toBe("Dokumentacja została zmieniona, ale zapis postępu nie został potwierdzony");
+        expect(value.data.report.changedFiles).toEqual(["README.md"]);
+        expect(fs.readFileSync(f.target)).toEqual(before); expect(fs.readFileSync(guard, "utf8")).toBe("another writer");
+        fs.unlinkSync(guard);
+        expect((await recordMain([...args, "--confirm-delivery"], {cwd: f.root, transport: f.options.transport})).code).toBe(0);
+    });
+    it("recovers confirmation after rename failure and cache loss without reapplying document edits", async () => {
+        const f = fixture(); individualProposal(f); await recordResult(f.options); refreshPrepared(f);
+        const intent = intentFor(f); await beginDelivery({...f.options, intent}); refreshPrepared(f);
+        const intentBytes = fs.readFileSync(f.target);
+        expect(fs.readFileSync(path.join(f.root, "README.md"), "utf8")).toBe("Old rules\n");
+        fs.writeFileSync(path.join(f.root, "README.md"), "New rules\n");
+        const options = {...f.options, operationId: intent.operationId, finalDocumentsReviewed: true};
+        await expect(confirmDelivery({...options, fsOps: {...fs, renameSync: () => { throw new Error("injected failure after edits"); }}})).rejects.toMatchObject({code: "WRITE_FAILED", delivery: {event: "progress_unconfirmed", changedFiles: ["README.md"], newlyApplied: []}});
+        expect(fs.readFileSync(f.target)).toEqual(intentBytes);
+        expect(JSON.parse(intentBytes).documentationChanges[0].status).toBe("proposed");
+        fs.rmSync(f.options.cacheRoot, {recursive: true, force: true});
+        const confirmed = await confirmDelivery(options);
+        expect(confirmed.event).toBe("confirmed"); expect(confirmed.diffAvailable).toBe(false);
+        expect(fs.readFileSync(path.join(f.root, "README.md"), "utf8")).toBe("New rules\n");
+        expect(JSON.parse(fs.readFileSync(f.target)).activeDelivery).toBeNull();
+        expect((await confirmDelivery(options)).event).toBe("previously_confirmed");
+    });
+    it("rejects unknown document bytes, undeclared changes and changed sources relative to the durable intent", async () => {
+        const f = fixture(); individualProposal(f); await recordResult(f.options); refreshPrepared(f);
+        const intent = intentFor(f); await beginDelivery({...f.options, intent}); refreshPrepared(f);
+        const bytes = fs.readFileSync(f.target); const options = {...f.options, operationId: intent.operationId, finalDocumentsReviewed: true};
+        fs.writeFileSync(path.join(f.root, "README.md"), "Unknown edit\n");
+        await expect(confirmDelivery(options)).rejects.toMatchObject({code: "CONTEXT_CONFLICT", delivery: {event: "progress_unconfirmed"}});
+        // Even preparing again after the unknown edit cannot replace the durable baseline.
+        refreshPrepared(f);
+        await expect(confirmDelivery({...options, prepared: f.options.prepared})).rejects.toMatchObject({code: "CONTEXT_CONFLICT"});
+        fs.writeFileSync(path.join(f.root, "README.md"), "New rules\n");
+        fs.appendFileSync(path.join(f.root, "code.mjs"), "undeclared edit\n");
+        await expect(confirmDelivery(options)).rejects.toMatchObject({code: "CONTEXT_CONFLICT"});
+        fs.writeFileSync(path.join(f.root, "code.mjs"), "fixed\n");
+        f.pr.body = "Source edited after intent";
+        await expect(confirmDelivery(options)).rejects.toMatchObject({code: "SOURCE_CONFLICT"});
+        expect(fs.readFileSync(f.target)).toEqual(bytes);
+    });
+    it("keeps intent unapplied for baseline files, dry runs, and concurrent operation attempts", async () => {
+        const f = fixture(); individualProposal(f); await recordResult(f.options); refreshPrepared(f);
+        const intent = intentFor(f); const before = fs.readFileSync(f.target);
+        expect((await beginDelivery({...f.options, intent, dryRun: true})).event).toBe("dry_run");
+        expect(fs.readFileSync(f.target)).toEqual(before);
+        expect(fs.existsSync(path.join(f.options.cacheRoot, "gh-review-learn/deliveries/delivery-1"))).toBe(false);
+        await beginDelivery({...f.options, intent}); refreshPrepared(f);
+        const bytes = fs.readFileSync(f.target);
+        expect((await confirmDelivery({...f.options, operationId: intent.operationId, finalDocumentsReviewed: true})).event).toBe("not_applied");
+        await expect(beginDelivery({...f.options, intent: {...intent, operationId: "another-operation"}})).rejects.toMatchObject({code: "DELIVERY_CONFLICT"});
+        fs.writeFileSync(path.join(f.root, "README.md"), "New rules\n");
+        await expect(confirmDelivery({...f.options, operationId: intent.operationId})).rejects.toMatchObject({code: "INVALID_STATE"});
+        expect((await confirmDelivery({...f.options, operationId: intent.operationId, finalDocumentsReviewed: true, dryRun: true})).newlyApplied).toEqual([]);
+        expect(fs.readFileSync(f.target)).toEqual(bytes);
+    });
+    it("rejects partially edited selected sets instead of silently completing them", async () => {
+        const f = fixture(); individualProposal(f);
+        const second = {...structuredClone(f.options.result.documentationChanges[0]), id: "C2", path: "second.md", beforeHash: null};
+        f.options.result.documentationChanges.push(second); f.entry.documentationChangeIds.push("C2");
+        f.entry.documents.push({path: "second.md", beforeHash: null, afterHash: second.afterHash});
+        await recordResult(f.options); refreshPrepared(f);
+        const intent = intentFor(f, {ids: ["C1", "C2"]}); await beginDelivery({...f.options, intent}); refreshPrepared(f);
+        const bytes = fs.readFileSync(f.target); fs.writeFileSync(path.join(f.root, "README.md"), "New rules\n");
+        await expect(confirmDelivery({...f.options, operationId: intent.operationId, finalDocumentsReviewed: true})).rejects.toMatchObject({code: "DOCUMENT_CONFLICT"});
+        expect(fs.existsSync(path.join(f.root, "second.md"))).toBe(false); expect(fs.readFileSync(f.target)).toEqual(bytes);
+    });
+    it("requires confirmation for new applied states instead of accepting analysis as delivery", async () => {
+        const f = fixture(); individualProposal(f); await recordResult(f.options);
+        const bytes = fs.readFileSync(f.target);
+        f.entry.delivery = "applied"; f.entry.finalDocumentsReviewed = true;
+        Object.assign(f.options.result.documentationChanges[0], {status: "applied", finalDocumentsReviewed: true});
+        fs.writeFileSync(path.join(f.root, "README.md"), "New rules\n");
+        await expect(recordResult(f.options)).rejects.toMatchObject({code: "DELIVERY_REQUIRED"});
+        expect(fs.readFileSync(f.target)).toEqual(bytes);
+    });
+    it("runs begin, refreshed preparation and confirmation through the public CLI", async () => {
+        const f = fixture(); individualProposal(f); await recordResult(f.options); refreshPrepared(f);
+        const intent = intentFor(f); const paths = {};
+        fs.mkdirSync(f.options.cacheRoot, {recursive: true});
+        for (const name of ["sources", "prepared", "result"]) { paths[name] = path.join(f.options.cacheRoot, `${name}.json`); }
+        const args = () => Object.entries(paths).flatMap(([name, file]) => [`--${name}`, file]);
+        const inputs = (delivery) => { fs.writeFileSync(paths.sources, JSON.stringify(f.options.sources)); fs.writeFileSync(paths.prepared, JSON.stringify(f.options.prepared)); fs.writeFileSync(paths.result, JSON.stringify({delivery})); };
+        inputs(intent);
+        const begun = await recordMain([...args(), "--begin-delivery"], {cwd: f.root, transport: f.options.transport});
+        expect(JSON.parse(begun.stdout).data.event).toBe("intent_recorded");
+        refreshPrepared(f); inputs({operationId: intent.operationId, finalDocumentsReviewed: true});
+        fs.writeFileSync(path.join(f.root, "README.md"), "New rules\n");
+        const confirmed = await recordMain([...args(), "--confirm-delivery"], {cwd: f.root, transport: f.options.transport});
+        expect(JSON.parse(confirmed.stdout).data.event).toBe("confirmed");
+        expect(JSON.parse(confirmed.stdout).data.report.progress.refreshedPrIds).toEqual(["PR1"]);
+        const replay = await recordMain([...args(), "--confirm-delivery"], {cwd: f.root, transport: f.options.transport});
+        expect(JSON.parse(replay.stdout).data.report.progress.refreshedPrIds).toEqual([]);
+        expect(JSON.parse(fs.readFileSync(f.target)).documentationChanges[0].status).toBe("applied");
+    });
+    it("persists one proposal shared by assessments from two PRs and reopens it after cache loss", async () => {
+        const f = fixture();
+        const pr2 = {...f.pr, number: 2, node_id: "PR2", html_url: "https://example.test/pr/2"};
+        f.options.sources.prs.push({...f.options.sources.prs[0], id: "PR2", number: 2});
+        f.options.sources.sources.push({...f.options.sources.sources[0], id: "PR2", prId: "PR2", url: pr2.html_url});
+        const transport = f.options.transport;
+        f.options.transport = (request) => request.endpoint?.includes("/pulls?") ? Promise.resolve({body: [f.pr, pr2], headers: {}}) : transport(request);
+        f.options.prepared = prepare(f.options);
+        individualProposal(f);
+        const second = structuredClone(f.entry);
+        second.prId = "PR2"; second.sourceFingerprint = f.options.prepared.items.find((item) => item.prId === "PR2").sourceFingerprint;
+        second.dispositions[0].sourceId = "PR2"; second.assessments[0].sources[0].id = "PR2"; second.assessments[0].verification.original.sourceId = "PR2";
+        f.options.result.entries.push(second);
+        f.options.result.documentationChanges[0].references.push({prId: "PR2", assessmentId: "A1"});
+        await recordResult(f.options);
+        const bytes = fs.readFileSync(f.target); const lock = JSON.parse(bytes);
+        expect(lock.documentationChanges).toHaveLength(1);
+        expect(lock.documentationChanges[0].references).toHaveLength(2);
+        expect(lock.entries.map((entry) => entry.documentationChangeIds)).toEqual([["C1"], ["C1"]]);
+        fs.rmSync(f.options.cacheRoot, {recursive: true, force: true});
+        const input = prepare({...f.options, lock, lockBytes: bytes});
+        expect(input.documentationChanges).toEqual(lock.documentationChanges);
+        expect(input.documentationChanges[0].description).toContain("resulting bytes");
+        const invalid = structuredClone(f.options.result); invalid.documentationChanges[0].references[1].assessmentId = "foreign";
+        await expect(recordResult({...f.options, result: invalid})).rejects.toMatchObject({code: "UNKNOWN_REFERENCE"});
+        expect(fs.readFileSync(f.target)).toEqual(bytes);
+    });
+    it("stores applied and proposed states separately while PR delivery remains pending", async () => {
+        const f = fixture(); individualProposal(f);
+        const pending = {...structuredClone(f.options.result.documentationChanges[0]), id: "C2", path: "README.md", afterHash: hashBytes("Both rules\n")};
+        f.options.result.documentationChanges.push(pending);
+        f.entry.documentationChangeIds.push("C2");
+        f.entry.documents[0].afterHash = pending.afterHash;
+        await recordResult(f.options); refreshPrepared(f);
+        const intent = intentFor(f); await beginDelivery({...f.options, intent}); refreshPrepared(f);
+        fs.writeFileSync(path.join(f.root, "README.md"), "New rules\n");
+        await confirmDelivery({...f.options, operationId: intent.operationId, finalDocumentsReviewed: true});
+        const lock = JSON.parse(fs.readFileSync(f.target));
+        expect(lock.entries[0].delivery).toBe("delivery_pending");
+        expect(lock.documentationChanges.map((change) => change.status)).toEqual(["applied", "proposed"]);
+        expect(lock.lastDelivery.documents[0].afterHash).toBe(hashBytes("New rules\n"));
+        const bytes = fs.readFileSync(f.target); const mtime = fs.statSync(f.target).mtimeMs;
+        expect((await confirmDelivery({...f.options, operationId: intent.operationId})).event).toBe("previously_confirmed");
+        expect(fs.readFileSync(f.target)).toEqual(bytes); expect(fs.statSync(f.target).mtimeMs).toBe(mtime);
+    });
+    it("reads V1 without migration, then preserves historical data on the first explicit write", async () => {
+        const f = fixture(); proposal(f);
+        const legacy = {schemaVersion: 1, kind: "lock", repository: f.options.sources.repository, rules: RULES, entries: [{...f.entry, sourceIds: ["PR1"]}]};
+        delete legacy.entries[0].materialDispositions;
+        const bytes = Buffer.from(JSON.stringify(legacy)); fs.writeFileSync(f.target, bytes);
+        const mtime = fs.statSync(f.target).mtimeMs;
+        const input = prepare({...f.options, lock: legacy, lockBytes: bytes});
+        expect(fs.readFileSync(f.target)).toEqual(bytes); expect(fs.statSync(f.target).mtimeMs).toBe(mtime);
+        expect(input.items[0].reasons).toEqual(["delivery_pending"]);
+        f.options.prepared = input; f.options.result.expectedLockHash = input.expectedLockHash;
+        f.entry.materialDispositions = input.items[0].materials.map((item) => ({id: item.id, status: "used", rationale: "Checked historical and current documents"}));
+        await recordResult({...f.options, dryRun: true});
+        expect(fs.readFileSync(f.target)).toEqual(bytes);
+        await recordResult(f.options);
+        const next = JSON.parse(fs.readFileSync(f.target));
+        expect(next.schemaVersion).toBe(2); expect(next.rules).toEqual(legacy.rules);
+        expect(next.entries[0]).toMatchObject(legacy.entries[0]);
+        expect(next.entries[0].historicalDocumentation).toEqual({schemaVersion: 1, details: "unavailable"});
+        expect(next.documentationChanges).toEqual([]);
+    });
+    it("requires new content to reopen at a new revision and keeps old bytes on failure", async () => {
+        const f = fixture(); individualProposal(f); await recordResult(f.options);
+        const bytes = fs.readFileSync(f.target); const lock = JSON.parse(bytes);
+        f.options.prepared = prepare({...f.options, lock, lockBytes: bytes});
+        f.entry.materialDispositions = f.options.prepared.items[0].materials.map((item) => ({id: item.id, status: "used", rationale: "Rechecked proposal documents"}));
+        f.options.result.expectedLockHash = hashBytes(bytes);
+        f.options.result.documentationChanges[0].description = "Different target content";
+        await expect(recordResult(f.options)).rejects.toMatchObject({code: "REVISION_CONFLICT"});
+        expect(fs.readFileSync(f.target)).toEqual(bytes);
+        f.options.result.documentationChanges[0].revision = 2;
+        await recordResult(f.options);
+        expect(JSON.parse(fs.readFileSync(f.target)).documentationChanges[0].revision).toBe(2);
+    });
+    it("rejects analysis that erases a confirmed decision or its provenance", async () => {
+        const f = fixture(); individualProposal(f); await recordResult(f.options); refreshPrepared(f);
+        const intent = intentFor(f); await beginDelivery({...f.options, intent}); refreshPrepared(f);
+        fs.writeFileSync(path.join(f.root, "README.md"), "New rules\n");
+        await confirmDelivery({...f.options, operationId: intent.operationId, finalDocumentsReviewed: true});
+        fs.writeFileSync(path.join(f.root, "NOTES.md"), "Context changed\n"); f.git(["add", "NOTES.md"]);
+        const prepared = refreshPrepared(f); const bytes = fs.readFileSync(f.target); const lock = JSON.parse(bytes);
+        const entry = {...lock.entries[0], contextFingerprint: prepared.context.fingerprint,
+            documents: [{path: "README.md", beforeHash: hashBytes("New rules\n"), afterHash: hashBytes("New rules\n")}],
+            materialDispositions: prepared.items[0].materials.map((item) => ({id: item.id, status: "used", rationale: "Reassessed current context"}))};
+        const result = {...f.options.result, expectedLockHash: prepared.expectedLockHash, inputContextFingerprint: prepared.context.fingerprint, entries: [entry], documentationChanges: lock.documentationChanges};
+        for (const status of ["proposed", "declined"]) {
+            const invalid = structuredClone(result); const change = invalid.documentationChanges[0];
+            Object.assign(change, {status}); delete change.appliedOperationId; delete change.appliedAt; delete change.finalDocumentsReviewed;
+            if (status === "declined") { change.userDecisionRef = "user:decline"; }
+            invalid.entries[0].delivery = status === "proposed" ? "delivery_pending" : "declined";
+            await expect(recordResult({...f.options, result: invalid})).rejects.toMatchObject({code: "REVISION_CONFLICT"});
+            expect(fs.readFileSync(f.target)).toEqual(bytes);
+        }
+        const invalid = structuredClone(result); delete invalid.documentationChanges[0].appliedOperationId;
+        await expect(recordResult({...f.options, result: invalid})).rejects.toMatchObject({code: "REVISION_CONFLICT"});
+        expect(fs.readFileSync(f.target)).toEqual(bytes);
+        expect((await recordResult({...f.options, result})).changed).toBe(true);
+        expect(JSON.parse(fs.readFileSync(f.target)).documentationChanges[0]).toEqual(lock.documentationChanges[0]);
+    });
+    it("protects the stored revision baseline even when a writer edits its working snapshot", async () => {
+        const f = fixture(); individualProposal(f); await recordResult(f.options);
+        const bytes = fs.readFileSync(f.target);
+        await expect(withConsumerLock({cwd: f.root, repository: f.options.sources.repository}, ({current, commit}) => {
+            current.documentationChanges[0].description = "Changed without incrementing the revision";
+            return commit(current, {expectedLockHash: hashBytes(bytes)});
+        })).rejects.toMatchObject({code: "REVISION_CONFLICT"});
+        expect(fs.readFileSync(f.target)).toEqual(bytes);
+        expect(fs.existsSync(`${f.target}.write-lock`)).toBe(false);
+    });
     it("records pending proposals with no document edits and repeats without writes", async () => {
         const f = fixture(); proposal(f);
         expect((await recordResult(f.options)).changed).toBe(true);
@@ -92,13 +380,17 @@ describe("review result recording", () => {
         await expect(recordResult({...f.options, result: changed})).rejects.toMatchObject({code: "LOCK_CONFLICT"});
     });
     it("recovers after document edits, fingerprints final bytes and remains current after commit", async () => {
-        const f = fixture(); proposal(f, "applied", "new-doc.md");
-        await recordResult(f.options);
+        const f = fixture(); individualProposal(f); proposal(f, "delivery_pending", "new-doc.md");
+        Object.assign(f.options.result.documentationChanges[0], f.entry.documents[0]);
+        await recordResult(f.options); refreshPrepared(f);
+        const intent = intentFor(f); await beginDelivery({...f.options, intent}); refreshPrepared(f);
+        fs.writeFileSync(path.join(f.root, "new-doc.md"), "New rules\n");
+        await confirmDelivery({...f.options, operationId: intent.operationId, finalDocumentsReviewed: true});
         const lockBytes = fs.readFileSync(f.target); const lock = JSON.parse(lockBytes);
         expect(lock.entries[0].contextFingerprint).not.toBe(f.options.prepared.context.fingerprint);
-        expect((await recordResult(f.options)).changed).toBe(false);
+        expect((await confirmDelivery({...f.options, operationId: intent.operationId})).event).toBe("previously_confirmed");
         f.git(["add", "new-doc.md", "review-learning.lock.json"]); f.git(["commit", "-m", "apply docs and learning"]);
-        expect(prepare({sources: f.options.sources, lock, lockBytes, cwd: f.root, cacheRoot: f.options.cacheRoot}).items).toEqual([]);
+        expect(prepare({sources: f.options.sources, lock, lockBytes, cwd: f.root, cacheRoot: f.options.cacheRoot}).items[0].reasons).not.toContain("context_changed");
         const diff = f.git(["show", "--stat", "HEAD"]); expect(diff).toContain("new-doc.md"); expect(diff).toContain("review-learning.lock.json");
     });
     it("rejects undeclared changes, false output hashes and missing final-document review", async () => {
@@ -173,7 +465,7 @@ describe("review result recording", () => {
         const report = await recordResult(f.options);
         expect(report.missingEvidence).toBe(1);
         const lock = JSON.parse(fs.readFileSync(f.target));
-        expect(lock.entries[0].assessments[0].sources).toEqual([{id: "PR1", start: 0, end: 10}]);
+        expect(lock.entries[0].assessments[0].sources).toEqual([{id: "PR1", start: 0, end: 10, url: f.pr.html_url}]);
         expect(lock.entries[0].assessments[0].verification).toEqual(f.entry.assessments[0].verification);
         expect(fs.readFileSync(f.target, "utf8")).not.toContain("Reviewable");
         expect((await recordResult(f.options)).changed).toBe(false);
@@ -222,11 +514,11 @@ describe("review result recording", () => {
         expect((await recordResult(f.options)).changed).toBe(true);
         expect((await recordResult(f.options)).changed).toBe(false);
         const lock = JSON.parse(fs.readFileSync(f.target));
-        expect(lock.entries[0].assessments[0].sources).toEqual([ref]);
+        expect(lock.entries[0].assessments[0].sources).toEqual([{...ref, url: comment.url}]);
         expect(lock.entries[0].sourceIds).not.toContain("COMMENT");
         fs.rmSync(f.options.cacheRoot, {recursive: true, force: true});
         refresh();
-        expect(f.options.prepared.items[0].previous.assessments[0].sources).toEqual([ref]);
+        expect(f.options.prepared.items[0].previous.assessments[0].sources).toEqual([{...ref, url: comment.url}]);
         expect((await recordResult(f.options)).changed).toBe(false);
     });
     it("runs both CLI helpers and validates a dry run using consumer artifacts", async () => {

@@ -156,3 +156,32 @@ Nie oznaczaj odmowy bez referencji jawnej decyzji użytkownika. Nie utożsamiaj
 zapisania analizy z zastosowaniem instrukcji. Ostateczne stany w raporcie
 wyprowadź z odczytu zapisanego locka; błąd zapisu oznacza, że roboczy wynik
 nie stał się trwałym postępem.
+
+
+## 5. Partie i rzeczywiste dostarczenie
+
+Jednostką nowej analizy jest zmergowany PR ze wszystkimi dyskusjami. Inwentarz
+pełnej historii i materiały wybranych PR-ów są osobnymi odczytami. Partie po 20
+idą według mergedAt, numeru i stabilnego ID; data utworzenia PR-a nie wyznacza
+kolejności. Aktywną partię wznawiaj ze składem z locka, także po utracie cache.
+Zapisany needs_decision kończy pierwszą próbę analizy, lecz pozostawia jawną
+zaległość. Tak samo oczekujące zastosowanie nie zajmuje miejsca nowego PR-a.
+Zmiana kontekstu nadal wymaga ponownej oceny wcześniejszych ustaleń.
+
+Trwała propozycja to konkretny opis zasady, dokument, sekcja, uzasadnienie i
+referencje ocen. Jedna zmiana oparta na kilku PR-ach otrzymuje jeden rekord;
+łączenie wymaga sprawdzenia źródeł i jawnych powiązań. Zmiana treści już
+zastosowanej propozycji tworzy nową rewizję w stanie proposed.
+
+Polecenie analizy nie jest zgodą na zastosowanie. Po poleceniu zastosowania
+agent wybiera ID i rewizje oraz końcowe bajty wyłącznie tego zestawu, zapisuje
+zamiar przed edycją, odświeża token i ocenia cały końcowy zestaw dokumentów.
+Poprawność hashy nie dowodzi poprawności zasady: renderer nie ocenia jej
+semantycznej trafności, zakresu ani wyjątków. Te oceny pozostają po stronie agenta.
+
+Raport oddziela zdarzenie obecnego przebiegu od zastanego applied. Kolejność
+wyniku to rzeczywiste zmiany i ich pochodzenie, niezastosowane propozycje,
+ustalenia bez edycji, a dopiero potem zakres odczytu i kontynuacja. Pełny
+protokół komunikatów, diffów i liczników należy do referencji danych.
+Brak opisu historycznej edycji V1 pozostaje luką metadanych. Cache loss nie
+upoważnia do wymyślenia diffu ani do ponownego nakładania zgodnych edycji.

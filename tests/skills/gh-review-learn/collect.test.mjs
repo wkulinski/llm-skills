@@ -65,6 +65,16 @@ function lockFor(sources) {
 }
 
 describe("complete GitHub source collection", () => {
+    it("lists complete eligible history without fetching any PR discussion", async () => {
+        const {state, options} = fixture();
+        const {sources: inventory} = await collect({...options, inventoryOnly: true});
+        expect(inventory.kind).toBe("inventory");
+        expect(inventory.read.completeness).toBe("complete");
+        expect(inventory.prs.map((item) => item.number)).toEqual([1, 5]);
+        expect(inventory.sources).toEqual([]);
+        expect(state.calls.every((request) => request.type === "rest" && !/\/(reviews|comments)/.test(request.endpoint))).toBe(true);
+        await expect(collect({...options, inventoryOnly: true, prs: [1]})).rejects.toMatchObject({code: "INVALID_BATCH"});
+    });
     it("reads every REST page and each nested GraphQL connection with explicit ends", async () => {
         const {options} = fixture();
         const {sources} = await collect(options);

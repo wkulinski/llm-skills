@@ -7,7 +7,7 @@ import {execFileSync} from "../../_shared/scripts/file-process.mjs";
 import {resolveRepositoryRoot} from "../../_shared/scripts/repo-root.mjs";
 import {assertArtifactPath} from "../../_shared/scripts/artifact-path.mjs";
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
-import {RULES, SOURCE_FIELDS, assertRepository, fingerprint, sourceFingerprint, validateSources, validateLock} from "./contracts.mjs";
+import {RULES, SOURCE_FIELDS, assertRepository, fingerprint, sourceFingerprint, validateSources, validateLock, validateInventory, assertBatchSources} from "./contracts.mjs";
 
 const PAGE_INFO = "pageInfo{hasNextPage endCursor}";
 const AUTHOR = "author{login ... on Node{id}}";
@@ -76,7 +76,7 @@ export function createGhTransport({cwd = process.cwd(), run = execFileSync} = {}
 }
 
 /** A fresh traversal. Successful responses are checkpointed after each request. */
-async function traverse({transport, repo, branch, prs, boundary, now, checkpoint, onCheckpoint, reuse = false}) {
+async function traverse({transport, repo, branch, prs, boundary, now, checkpoint, onCheckpoint, reuse = false, inventoryOnly = false}) {
     const startedAt = now();
     const gaps = [];
     const coverage = [];
@@ -172,9 +172,10 @@ async function traverse({transport, repo, branch, prs, boundary, now, checkpoint
             }
         }
     }
-    const output = {schemaVersion: 1, kind: "sources", repository, rules: {...RULES}, read: {startedAt, finishedAt: null, boundary, targetSha, completeness: "partial", gaps}, prs: [], sources: []};
+    const output = {schemaVersion: 1, kind: inventoryOnly ? "inventory" : "sources", repository, rules: {...RULES}, read: {startedAt, finishedAt: null, boundary, targetSha, completeness: "partial", gaps}, prs: [], sources: []};
     for (const pr of selected) {
         output.prs.push({id: pr.node_id, number: pr.number, mergedAt: pr.merged_at, baseSha: pr.base.sha, headSha: pr.head.sha, mergeSha: pr.merge_commit_sha});
+        if (inventoryOnly) { continue; }
         output.sources.push(normalized("issue_comment", pr.node_id, restText(pr)));
         const reviews = await restList(`repos/${repo}/pulls/${pr.number}/reviews`, `PR:${pr.number}:reviews`);
         for (const review of reviews) {
@@ -201,7 +202,7 @@ async function traverse({transport, repo, branch, prs, boundary, now, checkpoint
     // Validation names dangling references and duplicates even on partial reads.
     output.read.finishedAt = now();
     output.read.completeness = gaps.length ? "partial" : "complete";
-    try { validateSources(output); } catch (error) {
+    try { (inventoryOnly ? validateInventory : validateSources)(output); } catch (error) {
         gaps.push({code: error.code ?? "INVALID_SOURCES", scope: "normalized-sources", message: error.message});
         output.read.completeness = "partial";
     }
@@ -219,21 +220,40 @@ export function compareSources(sources, lock) {
     });
 }
 
-export async function collect({transport, repo, branch, prs, lock, resume, onCheckpoint = async () => null, now = () => new Date().toISOString()}) {
+export async function collect({transport, repo, branch, prs, lock, resume, inventoryOnly = false, batchId, boundary, onCheckpoint = async () => null, now = () => new Date().toISOString()}) {
     assertResponse(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo), "Expected owner/repo");
-    const selection = {repo, branch: branch ?? null, prs: prs ? [...new Set(prs)].sort((a, b) => a - b) : null};
+    if (lock) { validateLock(lock); }
+    const batch = lock?.activeBatch;
+    let selectedPrs = prs; let selectedBranch = branch; let readBoundary = boundary;
+    if (!inventoryOnly && batch && !batchId) {
+        if (!prs?.length || repo !== batch.repository.name || (branch && branch !== batch.repository.branch)) { throw fail("BATCH_CONFLICT", "Resume the active batch, or explicitly select stored PRs for reassessment or delivery"); }
+        selectedBranch = batch.repository.branch;
+    } else if (!inventoryOnly && batch) {
+        if (batchId !== batch.id || repo !== batch.repository.name || (branch && branch !== batch.repository.branch)) { throw fail("BATCH_CONFLICT", "Resume the active batch before reading another scope"); }
+        const pending = batch.members.filter((pr) => !batch.recordedPrIds.includes(pr.id));
+        if (prs && prs.some((number) => !pending.some((pr) => pr.number === number))) { throw fail("BATCH_CONFLICT", "PR selection is outside the unfinished batch"); }
+        selectedPrs = prs ?? pending.map((pr) => pr.number); selectedBranch = batch.repository.branch; readBoundary = batch.boundary;
+    } else if (batchId) { throw fail("BATCH_CONFLICT", "No matching active batch"); }
+    if (inventoryOnly && prs) { throw fail("INVALID_BATCH", "An inventory must list the full eligible history"); }
+    const selection = {repo, branch: selectedBranch ?? null, prs: selectedPrs ? [...new Set(selectedPrs)].sort((a, b) => a - b) : null,
+        ...(inventoryOnly ? {inventoryOnly: true} : {}), ...(batchId ? {batchId} : {})};
     if (resume && (resume.version !== 1 || fingerprint(resume.selection) !== fingerprint(selection))) {
         throw fail("RESUME_CONFLICT", "Resume selection differs or checkpoint schema unsupported");
     }
-    const checkpoint = resume ? structuredClone(resume) : {version: 1, selection, boundary: now(), responses: {}};
-    const options = {transport, repo, branch, prs: selection.prs, boundary: checkpoint.boundary, now, checkpoint, onCheckpoint};
+    const checkpoint = resume ? structuredClone(resume) : {version: 1, selection, boundary: readBoundary ?? now(), responses: {}};
+    if (batchId && checkpoint.boundary !== batch.boundary) { throw fail("BATCH_CONFLICT", "Checkpoint boundary differs from active batch"); }
+    const options = {transport, repo, branch: selectedBranch, prs: selection.prs, boundary: checkpoint.boundary, now, checkpoint, onCheckpoint, inventoryOnly};
     let recovery = null;
     if (resume) {
         recovery = await traverse({...options, reuse: true});
         // A resumed mixed-age traversal is never accepted as fresh evidence.
     }
     const sources = await traverse(options);
-    sources.changes = compareSources(sources, lock);
+    if (batchId) {
+        sources.batchId = batchId;
+    }
+    if (!inventoryOnly) { assertBatchSources(batch, sources, lock?.entries); }
+    sources.changes = inventoryOnly ? [] : compareSources(sources, lock);
     checkpoint.lastRead = sources.read;
     await onCheckpoint(checkpoint);
     return {sources, checkpoint, recovery};
@@ -242,7 +262,8 @@ export async function collect({transport, repo, branch, prs, lock, resume, onChe
 /** Used by WP4: always fetch the batch again; neither cache nor PR updated_at substitutes for this. */
 export async function revalidateSources(previous, options) {
     if (previous.read.completeness !== "complete") { throw fail("INCOMPLETE_READ", "Cannot accept a partial source batch"); }
-    const {sources} = await collect({...options, repo: previous.repository.name, branch: previous.repository.branch, prs: previous.prs.map((pr) => pr.number), resume: null});
+    const {sources} = await collect({...options, repo: previous.repository.name, branch: previous.repository.branch, prs: previous.prs.map((pr) => pr.number), boundary: previous.read.boundary, resume: null});
+    if (previous.batchId) { sources.batchId = previous.batchId; }
     assertRepository(sources.repository, previous.repository);
     if (sources.read.completeness !== "complete") { throw fail("INCOMPLETE_READ", "Fresh source read is incomplete"); }
     if (fingerprint(sources.prs.map((pr) => pr.id).sort()) !== fingerprint(previous.prs.map((pr) => pr.id).sort()) || sourceFingerprint(sources.sources) !== sourceFingerprint(previous.sources)) {
@@ -253,16 +274,17 @@ export async function revalidateSources(previous, options) {
 
 export async function main(argv = process.argv.slice(2), {cwd = process.cwd(), transport} = {}) {
     if (argv.length === 1 && ["--help", "-h"].includes(argv[0])) {
-        return {code: 0, stdout: "Usage: collect.mjs [--repo owner/name] [--branch name] [--prs 1,2] [--resume checkpoint.json] --output cache/sources.json\nFull read of merged PR discussions; writes sources and <output>.checkpoint.json under consumer CACHE_PATH.\n"};
+        return {code: 0, stdout: "Usage: collect.mjs [--repo owner/name] [--branch name] [--inventory-only | --batch ID | --prs 1,2] [--resume checkpoint.json] --output cache/sources.json\nInventory lists all eligible merged PRs without discussions; --batch resumes stored membership. Default reads full discussions. Writes only consumer cache.\n"};
     }
     try {
         const args = {};
-        for (let index = 0; index < argv.length; index += 2) {
+        for (let index = 0; index < argv.length; index += 1) {
             const name = argv[index];
-            if (!["--repo", "--branch", "--prs", "--resume", "--output"].includes(name) || !argv[index + 1] || argv[index + 1].startsWith("--") || Object.hasOwn(args, name)) {
+            if (name === "--inventory-only" && !args[name]) { args[name] = true; continue; }
+            if (!["--repo", "--branch", "--prs", "--resume", "--output", "--batch"].includes(name) || !argv[index + 1] || argv[index + 1].startsWith("--") || Object.hasOwn(args, name)) {
                 throw fail("INVALID_ARGUMENT", `Invalid or duplicate argument: ${name}`);
             }
-            args[name] = argv[index + 1];
+            args[name] = argv[++index];
         }
         if (!args["--output"]) { throw fail("INVALID_ARGUMENT", "--output is required"); }
         if (args["--prs"] && !/^[1-9][0-9]*(,[1-9][0-9]*)*$/.test(args["--prs"])) { throw fail("INVALID_ARGUMENT", "--prs requires comma-separated positive PR numbers"); }
@@ -274,7 +296,7 @@ export async function main(argv = process.argv.slice(2), {cwd = process.cwd(), t
         const resume = args["--resume"] ? JSON.parse(fs.readFileSync(assertArtifactPath(path.resolve(root, args["--resume"]), "Resume", root), "utf8")) : null;
         const lockPath = path.join(root, "review-learning.lock.json");
         const lock = fs.existsSync(lockPath) ? JSON.parse(fs.readFileSync(lockPath, "utf8")) : null;
-        const {sources} = await collect({transport: gh, repo, branch: args["--branch"], prs: args["--prs"]?.split(",").map(Number), lock, resume, onCheckpoint: async (value) => writeCheckpoint(checkpointPath, value)});
+        const {sources} = await collect({transport: gh, repo, branch: args["--branch"], prs: args["--prs"]?.split(",").map(Number), inventoryOnly: Boolean(args["--inventory-only"]), batchId: args["--batch"], lock, resume, onCheckpoint: async (value) => writeCheckpoint(checkpointPath, value)});
         writeCheckpoint(output, sources);
         const complete = sources.read.completeness === "complete";
         return {code: complete ? 0 : 2, stdout: `${JSON.stringify({status: complete ? "complete" : "partial", data: {output, checkpoint: checkpointPath, prs: sources.prs.length, sources: sources.sources.length, read: sources.read}, errors: sources.read.gaps})}\n`};

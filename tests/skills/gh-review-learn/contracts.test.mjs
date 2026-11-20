@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {SCHEMA_VERSION, RULES, SOURCE_FIELDS, canonicalJson, canonicalSources, fingerprint, sourceFingerprint, validateSources, validatePrepared, validateResult, validateLock, pendingReasons} from "../../../.agents/skills/gh-review-learn/scripts/contracts.mjs";
+import {SOURCE_SCHEMA_VERSION, RULES, SOURCE_FIELDS, canonicalJson, canonicalSources, fingerprint, sourceFingerprint, validateSources, validatePrepared, validateResult, validateLock, pendingReasons, upgradeLock, deliveryState, validateChangeRevisions} from "../../../.agents/skills/gh-review-learn/scripts/contracts.mjs";
 
 const sha = "a".repeat(40);
 const digest = fingerprint("context");
@@ -12,7 +12,7 @@ function verification() {
     return {original: {status: "verified", sourceId: "S_1", sha, evidence: [{kind: "git_file", sha, path: "rule.mjs", hash: digest}], rationale: "Reviewed exact version"}, response: {sourceIds: [], relation: "none", appliesToSha: null}, correction: {status: "verified", fromSha: sha, toSha: before, evidence: [{kind: "git_diff", fromSha: sha, toSha: before, paths: ["rule.mjs"], hash: digest}, {kind: "git_file", sha: before, path: "rule.mjs", hash: digest}], rationale: "Compared correction"}, current: {status: "verified", sha, evidence: [{kind: "worktree_file", path: "docs/README.md", hash: digest}], rationale: "Read current documentation"}};
 }
 function fixture() {
-    const sources = {schemaVersion: SCHEMA_VERSION, kind: "sources", repository, rules: {...RULES}, read: {startedAt: "2026-11-19T00:00:00Z", finishedAt: "2026-11-19T00:01:00Z", targetSha: sha, completeness: "complete", gaps: []}, prs: [{id: "PR_1", number: 1, mergedAt: "2026-11-18T00:00:00Z", baseSha: sha, headSha: sha, mergeSha: sha}], sources: [source("S_1")]};
+    const sources = {schemaVersion: SOURCE_SCHEMA_VERSION, kind: "sources", repository, rules: {...RULES}, read: {startedAt: "2026-11-19T00:00:00Z", finishedAt: "2026-11-19T00:01:00Z", targetSha: sha, completeness: "complete", gaps: []}, prs: [{id: "PR_1", number: 1, mergedAt: "2026-11-18T00:00:00Z", baseSha: sha, headSha: sha, mergeSha: sha}], sources: [source("S_1")]};
     const prepared = {schemaVersion: 1, kind: "prepared", repository, rules: {...RULES}, projectSha: sha, expectedLockHash: null, context: {fingerprint: digest, files: [{path: "docs/README.md", mode: "100644", hash: digest}], environmentScope: "Tracked configuration only; runtime unchecked"}, items: [{prId: "PR_1", sourceFingerprint: sourceFingerprint(sources.sources), sourceIds: ["S_1"], reasons: ["new"], materials: [{id: "M1", status: "missing", provenance: "Git object unavailable"}]}], totalPending: 1};
     const assessments = ["First.", "Second.", "Third."].map((quote, index) => ({id: `A${index}`, sources: [{id: "S_1", quote}], verification: verification(), historical: "fixed", currency: "existing_coverage", rationale: "Covered by current guide", verificationScope: "tracked docs; runtime unchecked", evidence: [{path: "docs/README.md", hash: digest}]}));
     const entry = {rules: {...RULES}, prId: "PR_1", sourceFingerprint: prepared.items[0].sourceFingerprint, projectSha: sha, contextFingerprint: digest, sourceCompleteness: "complete", analysis: "complete", delivery: "delivery_pending", assessments, dispositions: [{sourceId: "S_1", status: "assessed", rationale: "Three observations", assessmentIds: assessments.map((a) => a.id)}], documents: [{path: "docs/README.md", beforeHash: digest, afterHash: fingerprint("new content")}], sourceIds: ["S_1"]};
@@ -21,8 +21,135 @@ function fixture() {
     return {sources, prepared, result, lock};
 }
 function throwsCode(fn, code) { expect(fn).toThrow(expect.objectContaining({code})); }
+function proposalLock() {
+    const lock = upgradeLock(fixture().lock);
+    const first = lock.entries[0];
+    delete first.historicalDocumentation;
+    first.documentationChangeIds = ["C1"];
+    const second = structuredClone(first); second.prId = "PR_2";
+    lock.entries.push(second);
+    lock.documentationChanges = [{id: "C1", revision: 1, path: "docs/README.md", section: "Verification", description: "Read the resulting bytes", rationale: "Two reviews exposed the same omission", beforeHash: digest, afterHash: fingerprint("new content"), status: "proposed", references: [{prId: first.prId, assessmentId: "A0"}, {prId: second.prId, assessmentId: "A1"}]}];
+    return lock;
+}
 
 describe("gh-review-learn data contracts", () => {
+    it("stores a shared proposal once and requires reciprocal, known assessment links", () => {
+        const lock = proposalLock();
+        expect(validateLock(lock)).toBe(lock);
+        expect(lock.documentationChanges).toHaveLength(1);
+        for (const mutate of [
+            (value) => { value.documentationChanges[0].references[1].assessmentId = "missing"; },
+            (value) => { value.documentationChanges[0].references[1].prId = "missing"; },
+            (value) => { value.entries[1].documentationChangeIds = []; },
+            (value) => { value.documentationChanges[0].references.pop(); },
+        ]) {
+            const invalid = structuredClone(lock); mutate(invalid);
+            throwsCode(() => validateLock(invalid), "UNKNOWN_REFERENCE");
+        }
+        lock.documentationChanges.push(structuredClone(lock.documentationChanges[0]));
+        throwsCode(() => validateLock(lock), "DUPLICATE_ID");
+    });
+    it("derives PR delivery from every proposal and retains individual decisions", () => {
+        const lock = proposalLock();
+        const applied = lock.documentationChanges[0];
+        applied.status = "applied"; applied.finalDocumentsReviewed = true;
+        const pending = {...structuredClone(applied), id: "C2", status: "proposed"}; delete pending.finalDocumentsReviewed;
+        lock.documentationChanges.push(pending);
+        for (const entry of lock.entries) { entry.documentationChangeIds.push("C2"); }
+        validateLock(lock);
+        expect(deliveryState(lock.documentationChanges)).toBe("delivery_pending");
+        lock.entries[0].delivery = "applied"; lock.entries[0].finalDocumentsReviewed = true;
+        throwsCode(() => validateLock(lock), "INVALID_STATE");
+        expect(deliveryState([])).toBe("not_required");
+        expect(deliveryState([applied])).toBe("applied");
+        for (const change of lock.documentationChanges) { change.status = "declined"; delete change.finalDocumentsReviewed; }
+        for (const entry of lock.entries) { entry.delivery = "declined"; }
+        expect(() => validateLock(lock)).toThrow();
+        for (const change of lock.documentationChanges) { change.userDecisionRef = "user-message:decline-selection"; }
+        validateLock(lock);
+        expect(deliveryState(lock.documentationChanges)).toBe("declined");
+    });
+    it("preserves completed decisions and their provenance at the same revision", () => {
+        for (const decision of [{status: "applied", finalDocumentsReviewed: true, appliedOperationId: "op1", appliedAt: "2026-11-20T00:00:00Z"}, {status: "declined", userDecisionRef: "user:decline"}]) {
+            const original = [{...proposalLock().documentationChanges[0], ...decision}];
+            expect(() => validateChangeRevisions(original, structuredClone(original))).not.toThrow();
+            for (const status of ["proposed", "applied", "declined"].filter((candidate) => candidate !== decision.status)) {
+                throwsCode(() => validateChangeRevisions(original, [{...original[0], status}]), "REVISION_CONFLICT");
+            }
+            for (const key of Object.keys(decision).filter((field) => field !== "status")) {
+                const next = structuredClone(original); delete next[0][key];
+                throwsCode(() => validateChangeRevisions(original, next), "REVISION_CONFLICT");
+            }
+            const revised = {...original[0], description: "Updated content", revision: 2, status: "proposed"};
+            for (const key of ["finalDocumentsReviewed", "appliedOperationId", "appliedAt", "userDecisionRef"]) { delete revised[key]; }
+            expect(() => validateChangeRevisions(original, [revised])).not.toThrow();
+        }
+    });
+    it("requires a new proposed revision after target content changes", () => {
+        const original = proposalLock().documentationChanges;
+        original[0].status = "applied"; original[0].finalDocumentsReviewed = true;
+        const next = structuredClone(original); next[0].afterHash = fingerprint("different content");
+        throwsCode(() => validateChangeRevisions(original, next), "REVISION_CONFLICT");
+        next[0].revision += 1;
+        throwsCode(() => validateChangeRevisions(original, next), "REVISION_CONFLICT");
+        next[0].status = "proposed"; delete next[0].finalDocumentsReviewed;
+        expect(() => validateChangeRevisions(original, next)).not.toThrow();
+        throwsCode(() => validateChangeRevisions(original, []), "CHANGE_CONFLICT");
+        const onlyRevision = structuredClone(original); onlyRevision[0].revision += 1;
+        throwsCode(() => validateChangeRevisions(original, onlyRevision), "REVISION_CONFLICT");
+    });
+    it("upgrades V1 on an explicit write without resetting assessments or analysis rules", () => {
+        const {lock} = fixture();
+        const bytes = JSON.stringify(lock);
+        validateLock(lock);
+        const upgraded = upgradeLock(lock);
+        expect(JSON.stringify(lock)).toBe(bytes);
+        expect(upgraded.entries[0]).toMatchObject(lock.entries[0]);
+        expect(upgraded.entries[0].historicalDocumentation).toEqual({schemaVersion: 1, details: "unavailable"});
+        expect(upgraded.documentationChanges).toEqual([]);
+        expect(upgraded.rules).toEqual(lock.rules);
+        expect(pendingReasons(upgraded.entries[0], {sourceFingerprint: lock.entries[0].sourceFingerprint, contextFingerprint: digest, rules: RULES})).toEqual(["delivery_pending"]);
+        validateLock(upgraded);
+    });
+    it.each(["applied", "declined", "not_required"])("retains historical %s delivery without manufacturing individual proposals", (delivery) => {
+        const {lock} = fixture();
+        lock.entries[0].delivery = delivery;
+        if (delivery === "applied") { lock.entries[0].finalDocumentsReviewed = true; }
+        if (delivery === "declined") { lock.entries[0].userDecisionRef = "user-message:old-decision"; }
+        if (delivery === "not_required") { lock.entries[0].documents = []; }
+        const copy = structuredClone(lock);
+        const next = upgradeLock(lock);
+        expect(next.entries[0]).toMatchObject(copy.entries[0]);
+        expect(next.documentationChanges).toEqual([]);
+        expect(lock).toEqual(copy);
+        validateLock(next);
+    });
+    it("keeps the source schema at V1 while V2 result validates all canonical references", () => {
+        const {sources, prepared, result} = fixture();
+        result.schemaVersion = 2;
+        result.entries[0].documentationChangeIds = ["C1"];
+        const change = proposalLock().documentationChanges[0];
+        result.documentationChanges = [{...change, references: [change.references[0]]}];
+        validateResult(result, prepared, sources);
+        result.documentationChanges[0].references[0].assessmentId = "unknown";
+        throwsCode(() => validateResult(result, prepared, sources), "UNKNOWN_REFERENCE");
+        sources.schemaVersion = 2;
+        throwsCode(() => validateSources(sources), "UNSUPPORTED_SCHEMA");
+    });
+    it("validates active batch, delivery intent and a compact receipt independently", () => {
+        const lock = proposalLock();
+        lock.activeBatch = {id: "batch-1", limit: 20, prIds: ["PR_1", "PR_2"], scopeFingerprint: digest, boundary: "2026-11-19T00:00:00Z", selectedAt: "2026-11-19T00:01:00Z"};
+        lock.activeDelivery = {operationId: "operation-1", userDecisionRef: "user-message:42", changes: [{id: "C1", revision: 1}], documents: lock.entries[0].documents, startedAt: "2026-11-19T01:00:00Z", inputContext: fixture().prepared.context, sourceFingerprints: lock.entries.map((entry) => ({prId: entry.prId, sourceFingerprint: entry.sourceFingerprint}))};
+        validateLock(lock);
+        lock.activeDelivery.changes[0].revision = 2;
+        throwsCode(() => validateLock(lock), "UNKNOWN_REFERENCE");
+        lock.activeDelivery = null;
+        lock.lastDelivery = {operationId: "past-operation", userDecisionRef: "user-message:40", changes: [{id: "C1", revision: 1}], documents: lock.entries[0].documents, confirmedAt: "2026-11-19T00:01:00Z", contextFingerprint: digest};
+        lock.documentationChanges[0].revision = 2;
+        validateLock(lock); // Past receipt does not apply the new revision.
+        lock.activeBatch.prIds.push("PR_1");
+        throwsCode(() => validateLock(lock), "DUPLICATE_ID");
+    });
     it("uses canonical fields and ID ordering independent of pages and transport metadata", () => {
         const a = source("S_2", {replyToId: "S_1", kind: "review_comment"});
         const b = source("S_1");
@@ -81,7 +208,7 @@ describe("gh-review-learn data contracts", () => {
             throwsCode(() => validateLock(lock, {...repository, [field]: "other"}), "REPOSITORY_CONFLICT");
         }
         expect(JSON.stringify(lock)).toBe(before);
-        lock.schemaVersion = 2;
+        lock.schemaVersion = 3;
         throwsCode(() => validateLock(lock), "UNSUPPORTED_SCHEMA");
     });
     it("requires decision references, final document review and safe relative paths", () => {

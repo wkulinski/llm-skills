@@ -1,7 +1,8 @@
 import {validateVerification, validateHistoryCoverage} from "./verification.mjs";
 import {createHash} from "node:crypto";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+export const SOURCE_SCHEMA_VERSION = 1;
 export const RULES = Object.freeze({normalization: 1, analysis: 4});
 export const STATES = Object.freeze({
     completeness: ["complete", "partial"],
@@ -40,7 +41,7 @@ function unique(items, key = "id") {
 }
 function envelope(value, kind) {
     object(value);
-    assert(value.schemaVersion === SCHEMA_VERSION, "UNSUPPORTED_SCHEMA", "Unsupported schema version");
+    assert((["sources", "inventory"].includes(kind) ? [SOURCE_SCHEMA_VERSION] : [1, SCHEMA_VERSION]).includes(value.schemaVersion), "UNSUPPORTED_SCHEMA", "Unsupported schema version");
     assert(value.kind === kind, "INVALID_FORMAT", `Expected ${kind}`);
     repository(value.repository);
 }
@@ -142,6 +143,27 @@ export function validateSources(value) {
     }
     return value;
 }
+export function validateInventory(value) {
+    envelope(value, "inventory");
+    validateSources({...value, kind: "sources", sources: []});
+    string(value.read.boundary);
+    return value;
+}
+export function assertBatchSources(batch, sources, entries = []) {
+    if (batch && !sources.batchId) {
+        assertRepository(sources.repository, batch.repository);
+        assert(sources.prs.every((pr) => entries.some((stored) => stored.prId === pr.id)), "BATCH_CONFLICT", "Only stored PRs can be reassessed outside the active batch");
+        return;
+    }
+    assert((sources.batchId ?? null) === (batch?.id ?? null), "BATCH_CONFLICT", "Resume the active batch before preparing or recording analysis");
+    if (!batch) { return; }
+    assertRepository(sources.repository, batch.repository);
+    assert(sources.read.boundary === batch.boundary, "BATCH_CONFLICT", "Batch read boundary differs");
+    for (const pr of sources.prs) {
+        assert(batch.prIds.includes(pr.id) && !batch.recordedPrIds.includes(pr.id), "BATCH_CONFLICT", "PR is outside the unfinished batch");
+        assert(canonicalJson(batch.members.find((item) => item.id === pr.id)) === canonicalJson(pr), "BATCH_CONFLICT", "Batch member metadata changed");
+    }
+}
 function documentPath(path) {
     string(path);
     assert(!path.startsWith("/") && !path.includes("\\") && !path.split("/").some((part) => ["", ".", "..", ".git"].includes(part)) && !/^[a-z]:/i.test(path), "INVALID_PATH", "Expected a repository-relative document path");
@@ -165,10 +187,170 @@ function context(value) {
     }
     string(value.environmentScope);
 }
+/** A format upgrade is explicit and lossless; reading never migrates a file. */
+export function upgradeLock(value) {
+    validateLock(value);
+    const next = structuredClone(value);
+    if (next.schemaVersion === 1) {
+        next.schemaVersion = SCHEMA_VERSION;
+        next.documentationChanges = [];
+        next.activeBatch = null;
+        next.activeDelivery = null;
+        next.lastDelivery = null;
+        for (const item of next.entries) {
+            item.documentationChangeIds = [];
+            item.historicalDocumentation = {schemaVersion: 1, details: "unavailable"};
+        }
+    }
+    return next;
+}
+export function deliveryState(changes) {
+    if (changes.some((change) => change.status === "proposed")) { return "delivery_pending"; }
+    if (changes.some((change) => change.status === "applied")) { return "applied"; }
+    return changes.length ? "declined" : "not_required";
+}
+function targetContent(change) {
+    return {path: change.path, section: change.section, description: change.description, beforeHash: change.beforeHash, afterHash: change.afterHash};
+}
+export function validateChangeRevisions(previous, changes) {
+    for (const old of previous) {
+        const next = changes.find((change) => change.id === old.id);
+        assert(next, "CHANGE_CONFLICT", "A stored proposal cannot disappear");
+        const changed = canonicalJson(targetContent(old)) !== canonicalJson(targetContent(next));
+        if (changed) {
+            assert(next.revision === old.revision + 1 && next.status === "proposed", "REVISION_CONFLICT", "Changed content requires a new proposed revision");
+        } else {
+            assert(next.revision === old.revision, "REVISION_CONFLICT", "Unchanged content must keep its revision");
+            if (["applied", "declined"].includes(old.status)) {
+                assert(next.status === old.status, "REVISION_CONFLICT", "A completed decision cannot change without a new proposed revision");
+                assert(["appliedOperationId", "appliedAt", "finalDocumentsReviewed", "userDecisionRef"].every((key) => next[key] === old[key]), "REVISION_CONFLICT", "A completed decision must preserve its provenance");
+            }
+        }
+    }
+    for (const change of changes.filter((item) => !previous.some((old) => old.id === item.id))) {
+        assert(change.revision === 1, "REVISION_CONFLICT", "A new proposal starts at revision 1");
+    }
+}
+export function validateDocumentationChanges(changes, entries) {
+    const ids = unique(changes);
+    unique(entries, "prId");
+    for (const change of changes) {
+        assert(Number.isSafeInteger(change.revision) && change.revision > 0, "INVALID_FORMAT", "Invalid proposal revision");
+        documentPath(change.path);
+        assert(change.path !== "review-learning.lock.json", "INVALID_PATH", "Lock is not a documentation destination");
+        for (const key of ["section", "description", "rationale"]) { string(change[key]); }
+        if (change.beforeHash !== null) { hash(change.beforeHash); }
+        hash(change.afterHash);
+        member(change.status, ["proposed", "applied", "declined"]);
+        if (change.status === "declined") { string(change.userDecisionRef); }
+        if (change.status === "applied") { assert(change.finalDocumentsReviewed === true, "INVALID_STATE", "Applied proposal needs final document review"); }
+        if (change.status === "proposed") {
+            assert(["userDecisionRef", "finalDocumentsReviewed", "appliedOperationId", "appliedAt"].every((key) => !Object.hasOwn(change, key)), "INVALID_STATE", "A proposal cannot inherit a delivery decision");
+        }
+        list(change.references);
+        assert(change.references.length > 0, "UNKNOWN_REFERENCE", "Proposal needs an assessment reference");
+        const references = new Set();
+        for (const ref of change.references) {
+            string(ref.prId); string(ref.assessmentId);
+            const key = canonicalJson([ref.prId, ref.assessmentId]);
+            assert(!references.has(key), "DUPLICATE_ID", "Duplicate assessment reference"); references.add(key);
+            const pr = entries.find((item) => item.prId === ref.prId);
+            assert(pr?.assessments.some((item) => item.id === ref.assessmentId) && pr.documentationChangeIds?.includes(change.id), "UNKNOWN_REFERENCE", "Unknown or unrelated assessment reference");
+        }
+    }
+    for (const pr of entries) {
+        list(pr.documentationChangeIds);
+        unique(pr.documentationChangeIds.map((id) => ({id})));
+        for (const id of pr.documentationChangeIds) {
+            assert(ids.has(id) && changes.find((change) => change.id === id).references.some((ref) => ref.prId === pr.prId), "UNKNOWN_REFERENCE", "Unknown or unrelated proposal");
+        }
+        if (pr.historicalDocumentation) {
+            assert(pr.historicalDocumentation.schemaVersion === 1 && pr.historicalDocumentation.details === "unavailable" && pr.documentationChangeIds.length === 0, "INVALID_STATE", "Historical entry cannot invent proposal details");
+            continue;
+        }
+        const related = changes.filter((change) => pr.documentationChangeIds.includes(change.id));
+        assert(pr.delivery === deliveryState(related), "INVALID_STATE", "PR delivery differs from individual proposals");
+        const paths = new Set(related.map((change) => change.path));
+        assert(pr.documents.length === paths.size && pr.documents.every((doc) => paths.has(doc.path)), "DOCUMENT_CONFLICT", "PR document manifest differs from proposals");
+    }
+    return changes;
+}
+function operationSelection(operation, changes) {
+    string(operation.operationId);
+    string(operation.userDecisionRef);
+    unique(operation.changes);
+    assert(operation.changes.length > 0, "INVALID_STATE", "Delivery needs a selected proposal");
+    for (const item of operation.changes) {
+        assert(changes.some((change) => change.id === item.id && change.revision === item.revision), "UNKNOWN_REFERENCE", "Unknown delivery proposal revision");
+    }
+    documents(operation.documents);
+    assert(operation.documents.length > 0, "INVALID_STATE", "Delivery needs a document manifest");
+    const paths = new Set(operation.changes.map((item) => changes.find((change) => change.id === item.id).path));
+    assert(operation.documents.length === paths.size && operation.documents.every((doc) => paths.has(doc.path)), "DOCUMENT_CONFLICT", "Delivery manifest differs from selected proposals");
+}
+function validateOperations(value, entries) {
+    if (value.lastAbandonedDelivery) {
+        const abandoned = value.lastAbandonedDelivery;
+        string(abandoned.operationId); string(abandoned.userDecisionRef); string(abandoned.originalDecisionRef); string(abandoned.abandonedAt);
+        documents(abandoned.documents); unique(abandoned.changes); unique(abandoned.observed, "path");
+        assert(abandoned.changes.length > 0 && abandoned.documents.length > 0, "INVALID_STATE", "Abandoned delivery needs selected changes and documents");
+        for (const ref of abandoned.changes) {
+            assert(Number.isSafeInteger(ref.revision) && ref.revision > 0 && value.documentationChanges.some((change) => change.id === ref.id && change.revision >= ref.revision), "UNKNOWN_REFERENCE", "Unknown abandoned delivery revision");
+        }
+        assert(abandoned.observed.length === abandoned.documents.length && abandoned.observed.every((doc) => abandoned.documents.some((item) => item.path === doc.path)), "DOCUMENT_CONFLICT", "Abandoned delivery observation differs from its manifest");
+    }
+    for (const field of ["activeBatch", "activeDelivery", "lastDelivery"]) {
+        assert(Object.hasOwn(value, field), "INVALID_FORMAT", `Missing ${field}`);
+        if (value[field] !== null) { object(value[field]); }
+    }
+    if (value.activeBatch) {
+        const batch = value.activeBatch;
+        string(batch.id); string(batch.boundary); string(batch.selectedAt); hash(batch.scopeFingerprint);
+        assert(Number.isSafeInteger(batch.limit) && batch.limit > 0, "INVALID_FORMAT", "Invalid batch limit");
+        list(batch.prIds);
+        unique(batch.prIds.map((id) => ({id})));
+        assert(batch.prIds.length > 0 && batch.prIds.length <= batch.limit, "INVALID_STATE", "Invalid batch selection");
+        if (batch.members) {
+            repository(batch.repository); assertRepository(batch.repository, value.repository);
+            unique(batch.members);
+            assert(canonicalJson(batch.prIds) === canonicalJson(batch.members.map((pr) => pr.id)), "INVALID_STATE", "Batch membership differs");
+            assert(canonicalJson(batch.prNumbers) === canonicalJson(batch.members.map((pr) => pr.number)), "INVALID_STATE", "Batch numbers differ");
+            unique(batch.recordedPrIds.map((id) => ({id})));
+            assert(batch.recordedPrIds.every((id) => batch.prIds.includes(id) && entries.some((stored) => stored.prId === id)), "UNKNOWN_REFERENCE", "Unknown recorded batch member");
+        }
+    }
+    if (value.activeDelivery) {
+        const operation = value.activeDelivery;
+        operationSelection(operation, value.documentationChanges);
+        string(operation.startedAt); context(operation.inputContext);
+        unique(operation.sourceFingerprints, "prId");
+        const selected = value.documentationChanges.filter((change) => operation.changes.some((item) => item.id === change.id));
+        assert(selected.every((change) => change.status === "proposed"), "INVALID_STATE", "Active delivery must select pending proposals");
+        const prIds = new Set(selected.flatMap((change) => change.references.map((ref) => ref.prId)));
+        assert(operation.sourceFingerprints.length === prIds.size, "UNKNOWN_REFERENCE", "Delivery source coverage differs");
+        for (const item of operation.sourceFingerprints) {
+            hash(item.sourceFingerprint);
+            assert(prIds.has(item.prId) && entries.some((stored) => stored.prId === item.prId && stored.sourceFingerprint === item.sourceFingerprint), "UNKNOWN_REFERENCE", "Unknown delivery source fingerprint");
+        }
+    }
+    if (value.lastDelivery) {
+        // A receipt describes a past revision; later revisions may supersede it.
+        const receipt = value.lastDelivery;
+        string(receipt.operationId); string(receipt.userDecisionRef); string(receipt.confirmedAt); hash(receipt.contextFingerprint);
+        unique(receipt.changes);
+        assert(receipt.changes.length > 0, "INVALID_STATE", "Receipt needs selected proposals");
+        for (const item of receipt.changes) {
+            assert(Number.isSafeInteger(item.revision) && item.revision > 0 && value.documentationChanges.some((change) => change.id === item.id && change.revision >= item.revision), "UNKNOWN_REFERENCE", "Unknown receipt revision");
+        }
+        documents(receipt.documents);
+        assert(receipt.documents.length > 0, "INVALID_STATE", "Receipt needs document hashes");
+    }
+}
 export function validatePrepared(value, sources) {
     envelope(value, "prepared");
     validateSources(sources);
     assertRepository(value.repository, sources.repository);
+    assert((value.batchId ?? null) === (sources.batchId ?? null), "BATCH_CONFLICT", "Prepared batch differs from source batch");
     rules(value.rules);
     assert(canonicalJson(value.rules) === canonicalJson(sources.rules), "RULES_CONFLICT", "Prepared rules differ from sources");
     sha(value.projectSha);
@@ -191,6 +373,11 @@ export function validatePrepared(value, sources) {
         }
     }
     assert(Number.isInteger(value.totalPending) && value.totalPending >= ids.size, "INVALID_FORMAT", "Invalid pending count");
+    if (value.schemaVersion === 2) {
+        validateLock({schemaVersion: 2, kind: "lock", repository: value.repository, rules: value.rules,
+            entries: value.previousEntries, documentationChanges: value.documentationChanges,
+            activeBatch: value.activeBatch, activeDelivery: value.activeDelivery, lastDelivery: value.lastDelivery});
+    }
     return value;
 }
 function assessment(value, sourceIds) {
@@ -208,7 +395,7 @@ function assessment(value, sourceIds) {
         assert((typeof ref.quote === "string" && ref.quote.length > 0) || (Number.isInteger(ref.start) && Number.isInteger(ref.end) && ref.start >= 0 && ref.end > ref.start), "INVALID_REFERENCE", "Expected quote or text range");
     }
 }
-function entry(value, sourceIds) {
+function entry(value, sourceIds, individual = false) {
     rules(value.rules);
     string(value.prId);
     hash(value.sourceFingerprint);
@@ -242,13 +429,14 @@ function entry(value, sourceIds) {
     if (["delivery_pending", "applied"].includes(value.delivery)) {
         assert(value.documents.length > 0, "INVALID_STATE", "Delivery requires documents");
     }
-    if (value.delivery === "declined") { string(value.userDecisionRef); }
+    if (value.delivery === "declined" && (!individual || value.historicalDocumentation)) { string(value.userDecisionRef); }
     if (value.delivery === "applied") { assert(value.finalDocumentsReviewed === true, "INVALID_STATE", "Final document review required"); }
 }
 export function validateResult(value, prepared, sources) {
     envelope(value, "result");
     validatePrepared(prepared, sources);
     assertRepository(value.repository, prepared.repository);
+    assert((value.batchId ?? null) === (prepared.batchId ?? null), "BATCH_CONFLICT", "Result batch differs from prepared batch");
     assert(canonicalJson(value.rules) === canonicalJson(prepared.rules), "RULES_CONFLICT", "Rules differ");
     assert(value.expectedLockHash === prepared.expectedLockHash, "LOCK_CONFLICT", "Lock token differs");
     assert(value.inputContextFingerprint === prepared.context.fingerprint, "CONTEXT_CONFLICT", "Input context differs");
@@ -260,8 +448,16 @@ export function validateResult(value, prepared, sources) {
         assert(input, "UNKNOWN_REFERENCE", "PR outside prepared batch");
         assert(item.sourceFingerprint === input.sourceFingerprint && item.projectSha === prepared.projectSha && item.contextFingerprint === prepared.context.fingerprint, "SNAPSHOT_CONFLICT", "Result snapshot differs");
         assert(item.sourceCompleteness === sources.read.completeness, "INCOMPLETE_READ", "Result completeness differs from collection");
-        entry(item, new Set(input.sourceIds));
+        entry(item, new Set(input.sourceIds), value.schemaVersion === 2);
         if (item.rules.analysis >= 2) { validateHistoryCoverage(item, input, sources); }
+        if (value.schemaVersion === 2 && item.historicalDocumentation) {
+            assert(prepared.previousEntries?.some((old) => old.prId === item.prId && canonicalJson(old.historicalDocumentation ?? null) === canonicalJson(item.historicalDocumentation)), "INVALID_STATE", "New results cannot invent historical metadata");
+        }
+    }
+    if (value.schemaVersion === 2) {
+        const entries = [...(prepared.previousEntries ?? []).filter((old) => !value.entries.some((item) => item.prId === old.prId)), ...value.entries];
+        validateDocumentationChanges(value.documentationChanges, entries);
+        validateChangeRevisions(prepared.documentationChanges ?? [], value.documentationChanges);
     }
     return value;
 }
@@ -272,7 +468,11 @@ export function validateLock(value, expectedRepository) {
     unique(value.entries, "prId");
     for (const item of value.entries) {
         unique(item.sourceIds.map((id) => ({id})));
-        entry(item, new Set(item.sourceIds));
+        entry(item, new Set(item.sourceIds), value.schemaVersion === 2);
+    }
+    if (value.schemaVersion === 2) {
+        validateDocumentationChanges(value.documentationChanges, value.entries);
+        validateOperations(value, value.entries);
     }
     return value;
 }

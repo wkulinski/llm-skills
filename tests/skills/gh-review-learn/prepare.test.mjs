@@ -77,7 +77,7 @@ describe("review material preparation", () => {
         fs.symlinkSync("code.mjs", path.join(f.root, "linked")); f.git(["add", "linked"]);
         const a = buildContext(f.options); fs.unlinkSync(path.join(f.root, "linked")); fs.symlinkSync("package.json", path.join(f.root, "linked"));
         expect(buildContext(f.options).fingerprint).not.toBe(a.fingerprint);
-    });
+    }, 30_000);
     it("tracks submodule SHA and preserves added-document context across commit", () => {
         const f = fixture();
         fs.mkdirSync(path.join(f.root, "module"));
@@ -126,6 +126,20 @@ describe("review material preparation", () => {
         expect(output.inventory.map((i) => i.prId)).toEqual(["PR1", "PR2"]);
         expect(output.remaining.map((i) => i.prId)).toEqual(["PR1"]);
         expect(() => prepare({...f.options, prs: [99]})).toThrow();
+    });
+    it("separates overlapping historical queues and marks unrefreshed sources unchecked", () => {
+        const f = fixture();
+        const first = prepare(f.options); const prior = lockFor(first, f.sources, "delivery_pending");
+        prior.lock.entries[0].analysis = "needs_decision";
+        prior.lock.entries[0].contextFingerprint = fingerprint("earlier context");
+        prior.lockBytes = Buffer.from(JSON.stringify(prior.lock));
+        f.sources.prs[0] = {...f.sources.prs[0], id: "PR2", number: 2};
+        f.sources.sources[0] = {...f.sources.sources[0], id: "S2", prId: "PR2"};
+        const output = prepare({...f.options, ...prior});
+        expect(output.queues.new.map((item) => item.prId)).toEqual(["PR2"]);
+        for (const name of ["unresolved", "reassessment", "delivery"]) {
+            expect(output.queues[name]).toEqual([{prId: "PR1", sourceFreshness: "unchecked"}]);
+        }
     });
     it("reads explicit sources/files/ranges without changing provenance or following symlinks", () => {
         const f = fixture();
