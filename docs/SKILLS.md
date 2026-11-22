@@ -62,7 +62,7 @@ before installing. The alphabetical skill list is at the end.
 | Start work on an issue | `$gh-issue-start` | branch, In progress status and assignee |
 | Send an issue for review | `$gh-issue-review` | push, PR, In review status and optional reviewer |
 | Set an issue status in GitHub Projects v2 | `$gh-issue-status-set` | update status using a branch or issue number |
-| Prepare or refresh a filtered GitHub issues table | `$gh-issues-triage` | current statuses, assignees, test feedback and package relationships; read-only |
+| Prepare or refresh a filtered GitHub issues report | `$gh-issues-triage` | categorized pending issues with a recommendation, blocked issues and skipped status groups; read-only |
 
 ### Diagnostics
 
