@@ -76,6 +76,15 @@ Notes:
 - Resolve documentation paths from the consumer project B, including when it differs from the session directory. `COMMIT_MESSAGE_DIR` may remain absolute.
 - Configure `CACHE_PATH` in B's active env, not in `docs_map`; a legacy map entry is ignored. Obtain its absolute path through the shared `artifact-path.mjs cache-root` helper running in B.
 
+## Zrozumiała komunikacja
+
+Przed pierwszą odpowiedzią dla użytkownika odczytaj i stosuj
+[sekcję „2.1. Zrozumiała komunikacja z użytkownikiem”](.agents/skills/_shared/references/runtime-collaboration-guidelines.md#21-zrozumiała-komunikacja-z-użytkownikiem).
+Obowiązek dotyczy agenta przygotowującego odpowiedź, niezależnie od aktywnego
+skilla i wykonania refreshu przez subagenta. Jeśli bieżąca wersja sekcji została
+już wczytana w jego kontekście, nie odczytuj jej ponownie. Sam odczyt tej sekcji
+nie wymaga uruchamiania pełnego `$context-refresh`.
+
 ## Role agentów i lifecycle kontekstu
 
 Agent główny odpowiada za rozmowę z użytkownikiem, interpretację issue, kryteria

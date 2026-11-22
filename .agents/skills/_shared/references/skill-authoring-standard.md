@@ -112,14 +112,19 @@ Reguły wydzielania do referencji:
 
 Wymiar obowiązuje każdy artefakt objęty standardem.
 
+Przy ocenie, czy instrukcja przekazuje kontekst potrzebny odbiorcy, stosuj
+sekcję [„2.1. Zrozumiała komunikacja z użytkownikiem”](./runtime-collaboration-guidelines.md#21-zrozumiała-komunikacja-z-użytkownikiem).
+
 - Bez powtórzeń: ta sama reguła, definicja albo lista nie występuje w dwóch
   miejscach artefaktu, także wyrażona innymi słowami. Jedno kanoniczne miejsce
   między dokumentami opisuje wymiar 5.
 - Bez błędów: ścieżki, komendy, nazwy sekcji, symbole i odwołania są poprawne.
   Pokrycie twierdzeń o zachowaniu opisuje wymiar 6.
-- Bez szumu: każde zdanie zmienia decyzję albo działanie agenta. Szumem są
-  ogólniki, uzasadnienia bez skutku, historia zmian, powtórzone podsumowania
-  i wiedza, którą model ma bez instrukcji.
+- Bez szumu: każdy fragment ma rozpoznawalną funkcję — przekazuje wymaganie,
+  wyjaśnia jego sens, dostarcza potrzebnego kontekstu, pokazuje przykład albo
+  pomaga uniknąć błędnej interpretacji. Usuwaj treść bez takiej funkcji, nie
+  objaśnienia potrzebne do zrozumienia instrukcji. Nie uznawaj znajomości
+  ogólnego tematu przez model za dowód, że zna on intencję konkretnej reguły.
 - Bez niejasności: zdanie ma jedną interpretację, warunek jest obserwowalny,
   wynik albo status jest nazwany, termin ma jedno znaczenie w całym artefakcie,
   a sformułowania typu „gdzie zasadne” albo „w razie potrzeby” mają kryterium.

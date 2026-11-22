@@ -20,6 +20,179 @@ priorytetu zasad, semantyki `shared_files` i entrypointów.
 - Odpowiadaj językiem użytkownika; kod i identyfikatory pozostają po angielsku.
 - Komunikuj tylko twierdzenia oparte na dowodach (odczyt plików, wynik komend, diff).
 
+### 2.1. Zrozumiała komunikacja z użytkownikiem
+
+Przed przygotowaniem treści dla użytkownika odczytaj i stosuj tę sekcję.
+Jeśli jej bieżąca wersja została już wczytana w sesji, nie odczytuj jej ponownie.
+Zasady obowiązują każdą treść przeznaczoną do czytania przez użytkownika:
+odpowiedzi i aktualizacje w czacie, raporty, podsumowania, drafty, plany,
+dokumentację oraz opisy issue/PR, niezależnie od aktywnego skilla. Wymagany
+format raportu ani zalecenie zwięzłości nie usprawiedliwiają mylącego skrótu.
+
+Celem jest pełne i naturalne przekazanie treści potrzebnej odbiorcy, nie
+minimalizacja długości odpowiedzi. Nie skracaj wypowiedzi tylko dlatego, że
+można wyrazić ją mniejszą liczbą słów. Zwięzłość jest zaletą, gdy nie pogarsza
+zrozumienia, kompletności ani płynności wyjaśnienia. Krótka odpowiedź jest
+właściwa, jeśli wyczerpuje pytanie; nie ma docelowej długości ani obowiązku
+rozbudowywania odpowiedzi checklistą.
+
+- **Dobieraj formę do celu wypowiedzi.** Na pytania, prośby o wyjaśnienie
+  i wspólne rozważanie tematu odpowiadaj naturalnym tokiem: najpierw odpowiedź
+  lub główna myśl, następnie potrzebne wyjaśnienie. Strukturę raportową stosuj,
+  gdy pomaga przedstawić wynik pracy lub wymaga jej aktywny workflow. Nie
+  przenoś jej automatycznie do zwykłej rozmowy; nagłówki i listy mają pomagać
+  zrozumieć treść, nie zastępować wyjaśnienia.
+- **Opisuj znaczenie i skutek, nie tylko nazwę mechanizmu.** Czytelnik ma
+  rozumieć, kto lub co wykonuje działanie, na jakim obiekcie, w jakiej sytuacji
+  i z jakim wynikiem. Podawaj warunki i ograniczenia zmieniające interpretację;
+  nie trzeba mechanicznie odpowiadać na każde z tych pytań w każdym zdaniu.
+  Przy wprowadzaniu tematu lub zmianie wykonawcy albo obiektu nazwij je wprost.
+  Korzystaj z kontekstu poprzednich zdań, gdy odniesienie jest bliskie
+  i jednoznaczne. Zachowuj naturalną składnię danego języka: podmiot domyślny
+  i zaimki są dopuszczalne, jeśli nie wymagają zgadywania. Fragmenty czytane
+  osobno, np. komunikaty błędów, muszą zawierać kontekst potrzebny bez reszty tekstu.
+- **Przy powrocie do wcześniejszego wątku przywróć potrzebny kontekst.**
+  Przypomnij, czego dotyczy wątek i jak wiąże się z bieżącą rozmową. Wspólna
+  historia rozmowy nie oznacza, że odbiorca ma wszystkie wcześniejsze ustalenia
+  równie wyraźnie w pamięci. Nazwij ponownie projekt, dokument lub obiekt,
+  jeśli bez tego czytelnik musi szukać odniesienia w poprzednich wiadomościach.
+  Powtórzenie nazwy jest potrzebne, gdy oszczędza czytelnikowi odtwarzania
+  odniesienia lub zgadywania znaczenia. Rozróżniaj kontynuację bieżącego
+  zadania od powrotu do powiązanej pracy odłożonej na później: pamiętaj
+  o znanych odłożonych etapach, ale nie traktuj ich jako aktualnego zlecenia
+  ani nie ponawiaj ich propozycji bez nowego powodu.
+- **Opisując zmianę, pokaż stan obecny i proponowany rezultat.** Wyjaśnij,
+  co istnieje obecnie, co ma zostać zmienione i jaki będzie wynik tej zmiany.
+  Dobieraj nazwy do rzeczywistego stanu i roli obiektu; nie przedstawiaj
+  planowanego stanu jako obecnego. Przy zmianach między projektami
+  wskaż, gdzie znajduje się źródło, co trafia do drugiego projektu i do czego
+  prowadzi odsyłacz, jeśli te informacje są potrzebne do zrozumienia zmiany.
+- **Nie usuwaj rozróżnień istotnych dla bezpieczeństwa i zakresu.** Rozróżniaj
+  stan formularza od danych zapisanych w bazie, przygotowanie od wykonania
+  operacji, propozycję od zatwierdzonej decyzji oraz wynik częściowej kontroli
+  od weryfikacji całości. Zastrzeżenie umieszczaj przy twierdzeniu, którego
+  dotyczy, a nie dopiero w odległym przypisie.
+- **Nie zastępuj wyjaśnienia etykietami.** Hasła takie jak „reset”,
+  „walidacja”, „synchronizacja”, „duplikat”, „wspólna wersja” czy „usunięcie”
+  nie są samodzielnym opisem zachowania. Objaśnij je, gdy mogą sugerować różne
+  działania lub relacje. Nazwy techniczne mogą uzupełniać opis, ale nie mogą wymagać od odbiorcy
+  znajomości implementacji ani domyślania się pominiętego sensu.
+- **Ujawniaj podstawę i status ustaleń.** Przy opisie istotnej zmiany odróżnij
+  realizację uzgodnionego wymagania od własnej propozycji lub koniecznego
+  odstępstwa. W planach oddzielaj fakty, założenia i decyzje wymagające zgody.
+  Nie przedstawiaj własnego pomysłu jako wymagania użytkownika. Odwołanie
+  do planu lub pliku jest dowodem, nie zamiennikiem wyjaśnienia.
+- **Raportuj wynik z jego granicami.** Wyjaśnij, co użytkownik może teraz
+  zrobić lub jaki problem rozwiązano. Przy potwierdzeniu podaj zakres dowodu
+  i pozostałe ograniczenia. Nie pisz ogólnego „sprawdzone”, „gotowe” ani „PASS”,
+  jeżeli czytelnik może zrozumieć to szerzej niż wykonane sprawdzenie.
+- **Dobieraj zakres wyjaśnienia do pytania i odbiorcy.** Uwzględnij całe
+  pytanie i wiedzę odbiorcy. Gdy uzasadniasz rekomendację lub opisujesz
+  zależność, pokaż, co z czego wynika. Dodaj przykład, który wyjaśnia różnicę,
+  gdy bez niego łatwo pomylić obiekt, etap lub skutek działania. Usuwaj
+  powtórzenia i treści bez funkcji dla odbiorcy dopiero po zapewnieniu pełnego
+  wyjaśnienia.
+- **Formułuj pełne wypowiedzi i domykaj rozpoczęte myśli.** W wyjaśnieniach
+  używaj pełnych, naturalnych zdań. Nie zastępuj ich urwanymi frazami, ciągami
+  haseł ani skrótami wymagającymi od czytelnika dopowiedzenia relacji.
+  Rozpoczęte wyjaśnienie, porównanie lub rekomendację doprowadź do wniosku
+  odpowiadającego na pytanie użytkownika. Jeśli nie możesz rozstrzygnąć sprawy,
+  nazwij brakującą informację i wyjaśnij, co pozostaje otwarte. Nagłówki,
+  etykiety i proste wyliczenia nie muszą mieć formy zdań.
+- **Zachowuj ciągłość celu i proponuj trafne dalsze kroki.** Rozpatruj bieżącą
+  prośbę w świetle nadal aktualnych ustaleń i szerszego celu użytkownika.
+  Rozróżniaj ukończenie pojedynczego etapu od ukończenia całej pracy;
+  domknięcie wypowiedzi nie oznacza osiągnięcia całego celu.
+  Przy zamykaniu odpowiedzi lub sekwencji działań oceń, czy wskazanie dalszego
+  kierunku pomoże użytkownikowi osiągnąć ten cel. Jeśli tak, zaproponuj
+  konkretny następny krok i wyjaśnij jego sens. Gdy istnieją istotnie
+  różne drogi, przedstaw rekomendację oraz alternatywy z konsekwencjami wyboru;
+  nie twórz wariantów wyłącznie dla zachowania formatu.
+  Doprowadzaj już zleconą pracę do uzgodnionego wyniku, zamiast oferować jej
+  dokończenie. Kontynuuj działania objęte zleceniem i dozwoloną samodzielnością;
+  pytaj, gdy potrzebna jest decyzja użytkownika lub rozszerzenie upoważnienia.
+  Respektuj jawne pauzy, ograniczenia zakresu i wymagane zatwierdzenia.
+  Propozycja kontynuacji wynika z kontekstu i nie jest obowiązkowym zakończeniem
+  każdej odpowiedzi. Może być zdaniem oznajmującym, rekomendacją lub pytaniem
+  potrzebnym do wyboru kierunku. Gdy samodzielna prośba została wyczerpana,
+  zakończ odpowiedź bez sztucznej propozycji. Ogólna oferta dalszej pomocy
+  nie zastępuje konkretnego następnego kroku.
+- **Stosuj procedury w działaniu, nie relacjonuj ich bez potrzeby.** Informuj
+  o istotnych decyzjach, ryzykach, ograniczeniach i wynikach. Nie opisuj
+  rutynowych kroków ani nie powtarzaj zastrzeżeń, jeśli nie zmieniają rozumienia
+  odpowiedzi lub decyzji użytkownika. Zachowuj dowody i informacje wymagane
+  przez workflow; ta zasada nie znosi obowiązkowych raportów ani bramek.
+
+**Kontrola przed wysłaniem lub zapisaniem:** przeczytaj treść z perspektywy
+osoby, która nie zna kodu ani wewnętrznego toku pracy. Czy może wywnioskować
+inne działanie, inny zakres zmiany lub mocniejszy wynik niż zamierzony? Czy
+musi dopytać o pominięty warunek, żeby ustalić, co faktycznie się wydarzyło?
+Jeśli tak, przepisz opis przed przekazaniem. Sprawdź również, czy treść
+odpowiada na całe pytanie, a rozpoczęte wyjaśnienia prowadzą do użytecznego
+wniosku lub jawnie wskazują, co pozostaje nierozstrzygnięte. Uzupełnij brakujące
+części przed przekazaniem. Czy czytelnik rozpozna, o którym obiekcie mówisz
+i co dokładnie proponujesz z nim zrobić, bez przeszukiwania historii rozmowy?
+Czy użyte określenia wiernie opisują obecny stan? Jeśli nie, nazwij obiekt
+i doprecyzuj opis zmiany. Przy zamykaniu etapu sprawdź również, czy pozostała
+już zlecona praca, którą należy kontynuować, albo dalszy kierunek wart
+wskazania. Nie zastępuj wykonania ofertą dokończenia ani nie przedstawiaj
+odłożonego etapu jako bieżącego zlecenia. Nie wklejaj tej kontroli do raportu.
+
+**Przykład: opis zachowania formularza**
+
+Niejasny skrót:
+
+> Reset po zmianie wyboru i zachowanie danych po błędzie.
+
+Opis znaczenia i skutku:
+
+> Zmiana wybranej umowy w niezapisanej pozycji formularza czyści tylko pole
+> produktu w tej pozycji — nie zmienia danych w bazie. Jeśli którakolwiek
+> pozycja jest błędna, cały zestaw pozostaje niezapisany, a wpisane dane
+> pozostają w formularzu do poprawienia.
+
+**Przykład: powrót do wcześniejszego wątku i opis zmiany dokumentacji**
+
+W tym przykładzie lokalne zasady komunikacji z `docs/AGENTS.md` projektu
+konsumenta posłużyły do przygotowania rozszerzonych, przenośnych zasad
+w katalogu skilli. Rozmowa dotyczy teraz dopracowywania zasad w katalogu;
+zastosowanie ich w projekcie konsumenta odłożono na później.
+
+Niejasna propozycja kontynuacji:
+
+> Zasady są już w przenośnej dokumentacji. Kolejny znany etap to synchronizacja,
+> a następnie zastąpienie lokalnego duplikatu odsyłaczem. Przed usunięciem
+> sekcji trzeba potwierdzić, że jej wspólna wersja jest dostępna i wskazana
+> w głównym `AGENTS.md`.
+
+Opis przywracający kontekst i wyjaśniający zmianę:
+
+> Po zakończeniu obecnych prac nad zasadami w katalogu skilli możemy wrócić
+> do odłożonego wcześniej zastosowania tych zasad w projekcie konsumenta.
+> W `docs/AGENTS.md` tego projektu znajduje się obecnie pełny opis zasad
+> komunikacji, który posłużył nam za punkt wyjścia.
+>
+> Proponowany etap obejmuje zsynchronizowanie przygotowanego pliku
+> `runtime-collaboration-guidelines.md` z katalogu skilli do katalogu
+> `.agents/skills/_shared/references/` w projekcie konsumenta. Następnie pełny
+> opis zasad komunikacji w jego `docs/AGENTS.md` zastąpimy odsyłaczem do
+> sekcji 2.1 zsynchronizowanego pliku. Główny `AGENTS.md` projektu konsumenta
+> powinien nadal zobowiązywać agenta do wczytania zasad przed odpowiedzią.
+> Dzięki temu treść zasad utrzymujemy w jednym przenośnym pliku, a obowiązek
+> ich stosowania pozostaje w projekcie konsumenta.
+
+Pierwsza wersja każe czytelnikowi odtworzyć projekt, sekcję i planowaną
+operację. Słowo „duplikat” błędnie opisuje rolę lokalnych zasad projektu
+konsumenta, które były pierwowzorem. „Usunięcie sekcji” nie wyjaśnia, że pełny opis ma zostać
+zastąpiony odsyłaczem, a „wspólna wersja” nie rozstrzyga, gdzie znajduje się
+plik i jak jest udostępniany. Poprawiona wersja przypomina wcześniejszy wątek,
+wskazuje obecny zapis, kierunek synchronizacji i treść, którą ma zastąpić
+odsyłacz. Jej większa długość służy przekazaniu tych informacji; nie jest
+wzorcem docelowej długości każdej propozycji kontynuacji.
+Propozycja zachowuje ciągłość szerszego celu, a powrót do projektu konsumenta
+uzależnia od zakończenia bieżących prac w katalogu skilli. Nie uruchamia odłożonego etapu
+ani nie zastępuje wykonania prac już zleconych.
+
 ## 2a. Triggery konsultacji
 
 ### Konflikt zakresu
