@@ -20,6 +20,14 @@ Use ./.agents/skills/_shared/references/skill-structure-contract.md for skill
 path resolution and instruction priority. Follow the selected SKILL.md and
 project rules. Runtime configuration comes from this project, not the catalog.
 
+## Communication
+Before the first reply to the user, read and apply section
+"2.1. Zrozumiała komunikacja z użytkownikiem" of
+./.agents/skills/_shared/references/runtime-collaboration-guidelines.md,
+regardless of the active skill. Reading it does not require a full
+`$context-refresh`; do not re-read it when its current version is already
+in context.
+
 ## Documentation paths
 ```
 
