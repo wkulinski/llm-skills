@@ -1,9 +1,12 @@
-# Kontrakty danych gh-review-learn V1 i V2
+# Kontrakty danych gh-review-learn i trwały magazyn JSON V4
 
 Właścicielem formatu i walidacji jest `../scripts/contracts.mjs`. Wszystkie
 artefakty są JSON UTF-8, mają `schemaVersion`, `kind`, `repository`.
-Źródła GitHuba pozostają w V1. Nowe przygotowanie, wynik i lock używają V2;
-czytniki nadal przyjmują V1. Zmiana formatu nie podnosi `rules.analysis`.
+Źródła GitHuba pozostają w V1. Przygotowanie i wynik używają V2;
+logiczny lock nadal ma kontrakt V1/V2, a nowe zapisy na dysku używają
+manifestu V4 i trwałych plików JSON. V1/V2 są czytelne bez migracji;
+porzucony skompresowany V3 przyjmuje wyłącznie jawny migrator.
+Zmiana przechowywania nie podnosi `rules.analysis`.
 `repository` zawiera stabilne GraphQL `id`, bieżące `name` (`owner/name`) i
 `branch`. Zmiana dowolnego pola oznacza `REPOSITORY_CONFLICT`, bez zapisu.
 Nieobsługiwany schemat daje `UNSUPPORTED_SCHEMA`. `rules` zawiera dodatnie
@@ -41,14 +44,17 @@ ich ścieżki, po jednym wpisie na plik. Przy mieszanych stanach hash końcowy
 manifestu opisuje faktycznie zastosowany zestaw dla pliku, a nie wszystkie
 propozycje. Pending na innym pliku nie wymaga jego edycji.
 
-Przygotowanie V2 udostępnia `documentationChanges` oraz `previousEntries`
-(wpisy locka), aby wynik obejmujący tylko część PR-ów mógł walidować wspólne
-referencje. Wynik V2 zawiera pełne `documentationChanges`; nie może zgubić
+Przygotowanie V2 udostępnia `documentationChanges`. Dla magazynu V4 zapisuje
+`previousState`: referencję do trwałej kopii dokładnych bajtów manifestu,
+której hash musi odpowiadać `expectedLockHash`. Czytnik udostępnia
+`previousEntries` oraz `items[].previous` na żądanie, bez ich serializacji
+do prepared. Starsze przygotowania inline pozostają czytelne. Wspólne
+referencje propozycji są walidowane również poza wybraną partią. Wynik V2 zawiera pełne `documentationChanges`; nie może zgubić
 propozycji spoza bieżącego wyboru. Zapis dodatkowo porównuje rewizje z lockiem
 odczytanym pod wyłączną blokadą, a nie wyłącznie z cache przygotowania.
 
-`validateLock` ani `prepare` nie zmieniają bajtów locka V1. `upgradeLock`
-tworzy wyłącznie kopię w pamięci; pierwszy jawny zapis przechodzi do V2.
+`validateLock` ani `prepare` nie zmieniają bajtów starego locka. `upgradeLock`
+tworzy wyłącznie logiczną kopię V2 w pamięci; pierwszy jawny zapis używa V4 na dysku.
 Wszystkie wcześniejsze oceny, źródła, hashe, wersje reguł i stany pozostają.
 Wpisy V1 otrzymują `documentationChangeIds: []` oraz
 `historicalDocumentation: {"schemaVersion": 1, "details": "unavailable"}`.
@@ -57,6 +63,95 @@ nie dowód nowej edycji. Nie tworzy się fikcyjnych propozycji. Odczytanie V1
 nie jest samo w sobie powodem ponownej analizy. Nadal obsługiwany wynik V1
 zapisuje się jako historyczny wpis bez szczegółów; nowy wynik V2 nie może
 sam nadać tej etykiety nowemu PR-owi.
+
+## Trwały magazyn JSON V4 i migracja
+
+`review-learning.lock.json` jest małym manifestem: tożsamość repozytorium,
+wersja, referencje indeksu i stanu, podsumowanie, inwentarz i poprzedni manifest.
+Trwałe dane należą do katalogu `review-learning/` w korzeniu konsumenta B:
+
+| Katalog | Dane |
+| --- | --- |
+| `indexes/` | Krótkie rekordy PR: tożsamość, statusy, reguły, liczniki, referencja aktualnej oceny. |
+| `analyses/` | Niezmienne rewizje ocen PR; każda wskazuje wcześniejszą rewizję i podstawy analizy. |
+| `sources/`, `collections/` | Dokładne wersje znormalizowanych dyskusji i ich pochodzenie. |
+| `evidence/`, `evidence-bytes/` | Wspólne opisy dowodów i wykorzystane dokładne bajty. |
+| `rule-sets/`, `contexts/` | Wspólne wersje reguł i manifesty kontekstu. |
+| `documentation-changes/`, `operations/` | Propozycje, decyzje, zamiary i potwierdzenia. |
+| `history/`, `manifests/`, `inventories/` | Podstawy ocen, wcześniejsze stany i datowane inwentarze. |
+| `delivery-bytes/`, `deliveries/`, `patches/`, `patch-bytes/` | Trwałe materiały zmian dokumentacji. |
+| `backups/` | Dokładne oryginalne bajty sprzed jawnej migracji. |
+
+Referencja `{path, hash, byteLength, encoding}` wskazuje rekord po SHA-256.
+`$learningRef` w zapisanym JSON zastępuje powielane źródło, dowód, kontekst,
+reguły lub propozycję. Program sprawdza ścieżkę, typ, długość i hash;
+symlinki i wyjście poza magazyn są błędem. JSON pozostaje czytelny, bez
+kompresji. Surowe bajty dowodów są osobnymi plikami, bez kopii w base64.
+Nie powstaje osobny plik na każde pole czy wartość skalarną.
+
+`readLearningLock` odczytuje fizyczny format i udostępnia logiczny kontrakt
+V1/V2; `validateLock` waliduje ten logiczny kontrakt, bez operacji plikowych.
+Indeks pozwala policzyć i wybrać PR-y bez otwierania pełnych analiz. Narzędzie
+odczytuje szczegóły wskazanego PR-a na żądanie; walidacja propozycji korzysta
+z indeksu ID ocen. Porównania zapisu są wykonywane per PR i per rekord stanu,
+bez serializacji całej historii. Indeks nadal rośnie proporcjonalnie do liczby
+PR-ów; pełny audyt i raport wszystkich ustaleń mają koszt proporcjonalny do
+odczytanego zakresu. Największy pojedynczy rekord nadal musi mieścić się w
+ograniczeniach JSON/Node. Nie jest to deklaracja nieograniczonej skali.
+
+Pod wspólną blokadą writer zapisuje niezmienne pliki, a na końcu atomowo
+podmienia manifest. Awaria przed podmianą pozostawia poprzedni stan; mogą
+zostać niepodłączone rekordy. Poprzednie rewizje i stany operacji pozostają
+osiągalne. Identyczne ponowienie nie zmienia plików ani czasu analizy.
+Cały katalog magazynu i manifest należy wersjonować lub archiwizować razem.
+`buildContext` wyklucza je z oceny kodu, także gdy są śledzone przez Git.
+
+Przed odchudzeniem starego locka wykonaj:
+
+```bash
+node <skill_dir>/scripts/compact-lock.mjs --dry-run
+node <skill_dir>/scripts/compact-lock.mjs
+node <skill_dir>/scripts/status.mjs --verify
+```
+
+Migrator przyjmuje V1/V2/V3, zachowuje oryginał w
+`review-learning/backups/<sha256>.lock.json` i porównuje logiczną zawartość.
+Odzyskuje dostępne wersje źródeł z dotychczasowych danych roboczych,
+wykorzystane dowody z dokładnych obiektów Git lub zgodnych bajtów worktree,
+manifesty kontekstu oraz materiały zmian dokumentacji. Nie podstawia nowszych
+wersji pod historyczne hashe. Braki zapisuje w `history.gaps`; zachowanie
+oceny nie stanowi dowodu odzyskania jej wszystkich podstaw. Odczyt V3 jest
+ograniczony do migracji, a normalne zapisy nie używają pakowania/rozpakowywania.
+Ponowienie migracji V4 jest no-op. Opcjonalne `--recover-history` uzupełnia
+wyłącznie braki dokładnymi bajtami odzyskanymi z dawnych artefaktów i zachowuje
+zdarzenia operacji; nie zmienia ocen, dat ich wykonania ani decyzji. Kolejne
+identyczne odzyskanie jest no-op. Migracja nie analizuje ponownie PR-ów,
+nie odświeża ich ocen ani nie nadaje nowych zgód na zastosowanie.
+
+Migracja zmienia token bajtów locka: ponów `prepare`. Stare narzędzia nie
+rozumieją V4; wszystkie operacje konsumenta kieruj do nowej wersji czytników.
+Kopii awaryjnej nie przywracaj nad nowszym postępem bez porównania i decyzji.
+
+Po usunięciu cache, bez GitHuba i historycznych obiektów Git, można odczytać
+stan, skład partii, zapisane źródła, dowody i decyzje oraz istniejące luki.
+Cache zawiera wyłącznie przygotowanie do nowej analizy i odtwarzalne materiały
+robocze; jego pełne diffy i drzewa niewykorzystane jako dowody nie są historią.
+Nowy zapis oceny zachowuje dokładne źródła i dowody przed publikacją manifestu.
+
+Szybki odczyt stanu nie wymaga cache ani sieci:
+
+```bash
+node <skill_dir>/scripts/status.mjs
+node <skill_dir>/scripts/status.mjs --list
+node <skill_dir>/scripts/status.mjs --pr 493 --history
+```
+
+Status rozróżnia unikalne PR-y, kompletność, nierozstrzygnięcia, reguły
+wymagające ponownej oceny, zastosowania i postęp aktywnej partii.
+`lastAnalysis` oznacza zapis analizy (wspólny czas może obejmować wiele PR-ów),
+a `latestAnalyzedByMerge` kolejność scalenia. Nie odgaduje daty starej analizy
+z numeru PR-a, mtime ani czasu migracji; brak daty jest jawny. `newRemaining`
+odnosi się wyłącznie do pełnego inwentarza z `inventoryReadAt`.
 
 ## Rezerwacje partii i zastosowania w V2
 
@@ -76,15 +171,15 @@ jedną operację; nie powstaje druga baza postępu.
   obejmuje dokładnie wybrane ścieżki i ich hashe dla tego zestawu.
   `inputContext` ma format `context`, a `sourceFingerprints` zawiera
   `{prId, sourceFingerprint}` dokładnie powiązanych PR-ów. `sourcePrs` wiąże
-  również ich wersje Git, a opcjonalny `diffHash` chroni artefakt cache.
+  również ich wersje Git, a opcjonalny `diffHash` chroni trwały artefakt.
 - `lastDelivery`: `{operationId, userDecisionRef, changes, documents,
   confirmedAt, contextFingerprint, sourceFingerprints, sourcePrs, diffHash}`. To jedno zwięzłe potwierdzenie;
   może wskazywać starszą rewizję obecnego rekordu, bez przeniesienia
   zastosowania na jego późniejszą rewizję.
 
 Te schematy są podstawą kolejnych operacji partii i potwierdzenia zastosowania.
-Sam obiekt zamiaru nie oznacza zastosowania. Dokładny diff i snapshot bajtów
-pozostają w cache, a po ich utracie nie rekonstruuje się ich z hashy.
+Sam obiekt zamiaru nie oznacza zastosowania. Dokładny diff i snapshoty bajtów
+pozostają w trwałym magazynie; starsze nieodzyskane materiały mają jawne luki.
 
 `lock-store.mjs` jest jedynym właścicielem zapisu: `withConsumerLock` trzyma
 wyłączną blokadę także przez asynchroniczne odświeżenie źródeł. Pod blokadą
@@ -112,6 +207,8 @@ są rozwiązywane względem repo konsumenta B; skrypty należą do instalacji A.
 | `validate-result.mjs` | `--sources path`, `--prepared path`, `--result path`, `--lock path` (opcjonalny domyślny lock B) |
 | `record-result.mjs` | te same wejścia co walidator; opcjonalnie `--begin-delivery` albo `--confirm-delivery` oraz `--dry-run`; tryby dostarczenia czytają `result.delivery` |
 | `batch.mjs` | `select --inventory path --batch-size N` albo `resume [--batch ID]` |
+| `status.mjs` | bez argumentów: podsumowanie; `--list`, `--pr NUMBER_OR_ID [--history]` lub `--verify` |
+| `compact-lock.mjs` | bez argumentów: jawna migracja; `--dry-run`: podgląd zakresu bez zapisu |
 | `report.mjs` | `--output path`; opcjonalnie `--sources path`, `--prepared path`, `--inventory path`, `--event path` |
 
 Stdout: dokładnie jeden JSON `{status, data, errors}`; `status` ma wartości
@@ -173,7 +270,7 @@ lub null przy braku), `context`, `items`, `totalPending` (także poza partią).
 tryby to `100644|100755|120000|160000`. Hash obejmuje bajty pliku, tekst celu
 symlinka albo SHA submodułu. Manifest sortuje się po path przed fingerprintem.
 Fingerprint kontekstu zależy od zbioru ścieżek, trybów i hashy, nie SHA commita.
-Wyłącza lock, `.git` i rozwiązany cache. Runtime nieodczytany jest jawną luką
+Wyłącza lock, trwały katalog `review-learning/`, `.git` i rozwiązany cache. Runtime nieodczytany jest jawną luką
 `environmentScope`; nie czyta się lokalnych sekretów.
 `items`: `{prId, sourceFingerprint, sourceIds, reasons, materials}`.
 Materiał ma `id`, `status: available|missing`, `provenance` i dalsze dane
@@ -213,7 +310,7 @@ Poprawny hash nie dowodzi poprawnego wniosku.
 plik. Ścieżka jest względna B, bez traversal. Pending i applied wymagają
 niepustego manifestu dokumentów. Kontrolę realpath/symlinków, końcowych bajtów,
 zmian poza manifestem i odświeżonych źródeł przeprowadza confirm-delivery.
-Dokładny diff pozostaje w cache; manifest nie jest drugą bazą treści instrukcji.
+Dokładny diff zmian pozostaje w trwałym magazynie; manifest nie jest drugą bazą treści instrukcji.
 
 ## Dowody historii (od analysis 2)
 
@@ -336,11 +433,12 @@ jawny błąd. Nie są odczytywane nieśledzone pliki lokalnych sekretów.
 `extraPaths` pozwala uwzględnić nowy dokument w końcowym manifeście;
 późniejsze śledzenie tych samych bajtów i commit nie zmieniają fingerprintu.
 
-Konteksty cache są przechowywane jako
+Konteksty robocze są przechowywane jako
 `<CACHE_PATH>/gh-review-learn/contexts/<fingerprint>.json`. `contextChanges`
 przedstawia różnice ścieżek, trybów i hashy względem poprzedniej oceny.
-Przy utracie cache zwraca `available: false`, nazwany powód i pełen aktualny
-manifest. Nie udaje odtworzenia nieznanych dirty bajtów z dawnego SHA.
+Dla V4 poprzedni kontekst jest trwały. Gdy historycznego kontekstu brakuje,
+zwraca `available: false`, nazwany powód i referencję do aktualnego
+manifestu. Nie udaje odtworzenia nieznanych dirty bajtów z dawnego SHA.
 Porównanie fingerprintów i odbudowa materiałów nie zależą od tego cache.
 
 Przygotowany wynik rozszerzają `inventory`, `remaining`, `sourceRead` i
@@ -350,7 +448,16 @@ poza jawną partią `--prs`. Każdy wybrany element dostaje `previous` z locka,
 `contextChanges` oraz `materials`. Oczekujące dostarczenie pozostaje pracą
 nawet po ukończeniu analizy, a zmiana kontekstu nie modyfikuje poprzedniej oceny.
 
-Materiały mają stabilne `id`, `kind`, `provenance`, `status` i dane:
+Materiały mają stabilne `id`, `kind`, `provenance`, `status` i dane.
+CLI przygotowuje `materialStorageVersion: 1`: payloady są osobnymi artefaktami
+adresowanymi SHA-256 w `<CACHE_PATH>/gh-review-learn/materials/`, a każdy
+materiał zawiera `artifact: {path, hash, byteLength, encoding: raw|json}`.
+Ścieżka jest względna wobec konsumenta. `raw` zachowuje dokładne bajty pliku
+lub diffu; `json` przechowuje wykaz plików. Dane nie są obcinane. Każdy source,
+rola i wersja zachowuje osobne ID materiału, ale ten sam payload jest zapisany
+raz. Identyczne pary SHA nie powodują ponownego pobierania tego samego diffu.
+Nie tworzymy wielkiego JSON z powielonym tekstem i base64. Poniżej opisano
+również starszą reprezentację inline, nadal obsługiwaną przez nowe czytniki:
 
 - `commit_inventory`: dokładny SHA, role `base|pr_head|reviewed|original_reviewed|merged`
   oraz pełny wykaz drzewa (path, mode, typ, OID).
@@ -387,6 +494,28 @@ SHA; bajty w base64 zachowują także dane binarne. Tekstowy zakres nie ogranicz
 pełnych bajtów w polu `bytes`. Pomoc CLI działa bez repo i sieci.
 Brak historycznych materiałów daje CLI `partial`/exit 2, przy zachowaniu całego
 inwentarza i dostępnych dowodów. Semantyczne rozstrzygnięcie luk należy do agenta.
+
+Odczyt nowego lub starego materiału bez zmiany jego pochodzenia:
+
+```bash
+node <skill_dir>/scripts/prepare.mjs --prepared <CACHE_PATH>/gh-review-learn/prepared.json --read-material MATERIAL_ID --pr 123 --start 0 --end 500
+```
+
+`--pr` rozstrzyga niejednoznaczne ID obecne w kilku PR-ach. Zakres dotyczy
+UTF-16; przy częściowym odczycie zwracany jest tekst zakresu, a nie base64
+całego payloadu. Pełny odczyt zwraca także dokładne bajty w base64. Jawny
+`--read-file --sha` nadal czyta wskazany obiekt Git. Publiczne `prepare()`
+domyślnie zachowuje inline dla istniejących importerów; dla nowych dużych
+wywołań API ustaw `externalizeMaterials: true`, tak jak CLI.
+
+Artefakty powstają atomowo przed publikacją manifestu. Czytniki odrzucają
+wyjście poza katalog materiałów konsumenta, symlinki, brak pliku oraz zmianę
+długości lub hasha. `checkResult` i operacje dostarczenia weryfikują artefakty
+przed użyciem prepared; `used`/`not_needed` nie omija kontroli integralności.
+Raport czytający tylko metadane nie musi ładować materiałów. Po utracie cache
+odtwórz materiały przez `prepare` z dokładnych SHA; nie podstawiaj wersji
+zastępczych. Limit przechwytywania pojedynczego wyjścia Git (64 MiB) nadal
+obowiązuje: przekroczenie daje jawny brak, nie przycięty dowód.
 
 ## Walidacja i zapis analizy
 
@@ -425,8 +554,8 @@ zmienia agent na polecenie użytkownika. Błąd nie wycofuje dokonanej wcześnie
 edycji dokumentów. Potwierdzenie wznawia się z tym samym trwałym zamiarem;
 nowy prepare nie zastępuje jego bazowego kontekstu snapshotem po edycji.
 
-Lock przechowuje tylko pola kontraktu wpisów. Oceny zachowują referencje jako
-zakresy tekstu i URL-e źródeł, bez kopii komentarzy: cytat musi wskazywać jedno dokładne
+Oceny zachowują referencje jako zakresy tekstu i URL-e źródeł. Dokładne wersje
+komentarzy są zapisane raz w trwałych źródłach: cytat musi wskazywać jedno dokładne
 wystąpienie albo agent podaje zakres. Inne wpisy pozostają bez zmian, z własnymi
 wersjami reguł i fingerprintami. Zmiana dokumentów nie odświeża ich ocen.
 
@@ -548,8 +677,8 @@ Także błąd przed wejściem w sekcję zapisu, np. zajęty guard, odtwarza stan
 z czytelnego locka i rzeczywistych plików zamiast raportować brak edycji.
 Błąd zwraca delivery.event: progress_unconfirmed i changedFiles; nie potwierdza
 applied. Wznów tę samą operację bez ponownej edycji po sprawdzeniu źródeł i
-plików. Po utracie cache kontrola używa trwałych hashy; brak diffu pozostaje
-jawny. Identyczne ponowienie potwierdzonego operationId zwraca
+plików. Po utracie cache kontrola używa trwałych hashy i zapisanych materiałów;
+braki starszych nieodzyskanych diffów pozostają jawne. Identyczne ponowienie potwierdzonego operationId zwraca
 previously_confirmed bez zmiany locka i jego mtime. Dry run nie zapisuje zamiaru,
 nie potwierdza zastosowania i nie tworzy zgody na edycję. Helper nigdy nie
 edytuje dokumentów ani nie wykonuje automatycznego rollbacku.
@@ -600,8 +729,8 @@ zmianami. Po edycji bez zapisanego potwierdzenia pierwsze zdanie brzmi
 „Dokumentacja została zmieniona, ale zapis postępu nie został potwierdzony”
 i pokazuje pliki. Powtórne potwierdzenie nazywa wcześniejsze zastosowanie.
 
-Dokładny diff jest odczytywany wyłącznie z cache po sprawdzeniu trwałego hasha.
-Po jego utracie pozostają opisy i hashe, a raport nazywa brak artefaktu.
+Dokładny diff jest odczytywany z trwałego magazynu po sprawdzeniu hasha.
+Brak starszego nieodzyskanego artefaktu pozostaje jawny.
 Gotowe polecenie wskazuje resume z ID aktywnej partii albo świeży inwentarz i
 następną partię o tym samym rozmiarze (np. 20). Koniec nowej historii dotyczy
 wyłącznie kompletnego odczytu, nie wcześniejszych zaległości. Raport nie zleca

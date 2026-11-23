@@ -9,7 +9,11 @@ import {recordResult, beginDelivery, confirmDelivery, main as recordMain} from "
 import {checkResult, hashBytes, main as validateMain} from "../../../.agents/skills/gh-review-learn/scripts/validate-result.mjs";
 import {withConsumerLock} from "../../../.agents/skills/gh-review-learn/scripts/lock-store.mjs";
 import {collect} from "../../../.agents/skills/gh-review-learn/scripts/collect.mjs";
+import {readLearningLock, readPrHistory, createLearningStore, verifyLearningStore} from "../../../.agents/skills/gh-review-learn/scripts/learning-store.mjs";
+import {decodeLock} from "../../../.agents/skills/gh-review-learn/scripts/storage.mjs";
+import {compactLock} from "../../../.agents/skills/gh-review-learn/scripts/compact-lock.mjs";
 
+const logical = (f, bytes = fs.readFileSync(f.target)) => structuredClone(decodeLock(JSON.parse(bytes), {cwd: f.root}));
 const directories = [];
 afterEach(() => { for (const d of directories.splice(0)) { fs.rmSync(d, {recursive: true, force: true}); } });
 function fixture() {
@@ -71,12 +75,36 @@ function intentFor(f, {operationId = "delivery-1", ids = ["C1"], text = "New rul
 }
 
 describe("review result recording", () => {
+    it("migrates an existing V2 active delivery without changing its intent and confirms with a refreshed lock token",async()=>{
+        const f=fixture();individualProposal(f);await recordResult(f.options);refreshPrepared(f);
+        const intent=intentFor(f);await beginDelivery({...f.options,intent});
+        const original=logical(f);
+        fs.writeFileSync(f.target,JSON.stringify(original));
+        refreshPrepared(f);const oldToken=f.options.prepared.expectedLockHash;
+        const migration=await compactLock({cwd:f.root});expect(migration.changed).toBe(true);
+        expect(logical(f)).toEqual(original);
+        refreshPrepared(f);expect(f.options.prepared.expectedLockHash).not.toBe(oldToken);
+        fs.writeFileSync(path.join(f.root,"README.md"),"New rules\n");
+        const receipt=await confirmDelivery({...f.options,operationId:intent.operationId,finalDocumentsReviewed:true});
+        expect(receipt.event).toBe("confirmed");
+        expect(receipt.receipt.userDecisionRef).toBe(intent.userDecisionRef);
+        expect(receipt.newlyApplied).toEqual(intent.changes);
+    });
+    it("rejects corrupt external materials even when all dispositions say not_needed",async()=>{
+        const f=fixture();f.options.prepared=prepare({...f.options,externalizeMaterials:true});
+        f.entry.materialDispositions=f.options.prepared.items[0].materials.map(m=>({id:m.id,status:"not_needed",rationale:"No finding requires this file"}));
+        const artifact=f.options.prepared.items[0].materials.find(m=>m.artifact).artifact;
+        fs.writeFileSync(path.join(f.root,artifact.path),"corrupted");
+        await expect(recordResult(f.options)).rejects.toMatchObject({code:"STORAGE_CONFLICT"});
+        expect(fs.existsSync(f.target)).toBe(false);
+        expect(fs.existsSync(f.target+".write-lock")).toBe(false);
+    });
     it("abandons a conflicted delivery without losing edits, then reassesses and confirms a new operation", async () => {
         const f = fixture(); individualProposal(f); await recordResult(f.options); refreshPrepared(f);
         const intent = intentFor(f); await beginDelivery({...f.options, intent}); refreshPrepared(f);
         fs.writeFileSync(path.join(f.root, "README.md"), "Unconfirmed edit\n"); f.pr.body = "Reviewable revised source";
         await expect(confirmDelivery({...f.options, operationId: intent.operationId, finalDocumentsReviewed: true})).rejects.toMatchObject({code: "CONTEXT_CONFLICT"});
-        const before = fs.readFileSync(f.target); const priorChanges = JSON.parse(before).documentationChanges;
+        const before = fs.readFileSync(f.target); const priorChanges = logical(f, before).documentationChanges;
         const args = [];
         for (const name of ["sources", "prepared", "result"]) {
             const file = path.join(f.options.cacheRoot, `${name}.json`);
@@ -89,7 +117,7 @@ describe("review result recording", () => {
         const data = JSON.parse(abandoned.stdout).data;
         expect(data).toMatchObject({abandoned: true, event: "progress_unconfirmed", changedFiles: ["README.md"], newlyApplied: []});
         expect(data.report.introduction).toBe("Dokumentacja została zmieniona, ale zapis postępu nie został potwierdzony");
-        const lock = JSON.parse(fs.readFileSync(f.target)); expect(lock.activeDelivery).toBeNull();
+        const lock = logical(f); expect(lock.activeDelivery).toBeNull();
         expect(lock.documentationChanges).toEqual(priorChanges); expect(lock.lastDelivery).toBeNull();
         expect(lock.lastAbandonedDelivery).toMatchObject({operationId: intent.operationId, userDecisionRef: "user:abandon-delivery", originalDecisionRef: intent.userDecisionRef,
             observed: [{path: "README.md", actualHash: hashBytes("Unconfirmed edit\n"), state: "conflict"}]});
@@ -111,7 +139,7 @@ describe("review result recording", () => {
         await beginDelivery({...resumed.options, intent: nextIntent}); refreshPrepared(resumed);
         fs.writeFileSync(path.join(f.root, "README.md"), "Revised rules\n");
         expect((await confirmDelivery({...resumed.options, operationId: nextIntent.operationId, finalDocumentsReviewed: true})).event).toBe("confirmed");
-        expect(JSON.parse(fs.readFileSync(f.target)).lastAbandonedDelivery).toEqual(lock.lastAbandonedDelivery);
+        expect(logical(f).lastAbandonedDelivery).toEqual(lock.lastAbandonedDelivery);
     });
     it("reports edits and unconfirmed progress when confirmation cannot acquire the writer guard", async () => {
         const f = fixture(); individualProposal(f); await recordResult(f.options); refreshPrepared(f);
@@ -143,12 +171,12 @@ describe("review result recording", () => {
         const options = {...f.options, operationId: intent.operationId, finalDocumentsReviewed: true};
         await expect(confirmDelivery({...options, fsOps: {...fs, renameSync: () => { throw new Error("injected failure after edits"); }}})).rejects.toMatchObject({code: "WRITE_FAILED", delivery: {event: "progress_unconfirmed", changedFiles: ["README.md"], newlyApplied: []}});
         expect(fs.readFileSync(f.target)).toEqual(intentBytes);
-        expect(JSON.parse(intentBytes).documentationChanges[0].status).toBe("proposed");
+        expect(logical(f, intentBytes).documentationChanges[0].status).toBe("proposed");
         fs.rmSync(f.options.cacheRoot, {recursive: true, force: true});
         const confirmed = await confirmDelivery(options);
-        expect(confirmed.event).toBe("confirmed"); expect(confirmed.diffAvailable).toBe(false);
+        expect(confirmed.event).toBe("confirmed"); expect(confirmed.diffAvailable).toBe(true);
         expect(fs.readFileSync(path.join(f.root, "README.md"), "utf8")).toBe("New rules\n");
-        expect(JSON.parse(fs.readFileSync(f.target)).activeDelivery).toBeNull();
+        expect(logical(f).activeDelivery).toBeNull();
         expect((await confirmDelivery(options)).event).toBe("previously_confirmed");
     });
     it("rejects unknown document bytes, undeclared changes and changed sources relative to the durable intent", async () => {
@@ -220,7 +248,7 @@ describe("review result recording", () => {
         expect(JSON.parse(confirmed.stdout).data.report.progress.refreshedPrIds).toEqual(["PR1"]);
         const replay = await recordMain([...args(), "--confirm-delivery"], {cwd: f.root, transport: f.options.transport});
         expect(JSON.parse(replay.stdout).data.report.progress.refreshedPrIds).toEqual([]);
-        expect(JSON.parse(fs.readFileSync(f.target)).documentationChanges[0].status).toBe("applied");
+        expect(logical(f).documentationChanges[0].status).toBe("applied");
     });
     it("persists one proposal shared by assessments from two PRs and reopens it after cache loss", async () => {
         const f = fixture();
@@ -237,7 +265,7 @@ describe("review result recording", () => {
         f.options.result.entries.push(second);
         f.options.result.documentationChanges[0].references.push({prId: "PR2", assessmentId: "A1"});
         await recordResult(f.options);
-        const bytes = fs.readFileSync(f.target); const lock = JSON.parse(bytes);
+        const bytes = fs.readFileSync(f.target); const lock = logical(f, bytes);
         expect(lock.documentationChanges).toHaveLength(1);
         expect(lock.documentationChanges[0].references).toHaveLength(2);
         expect(lock.entries.map((entry) => entry.documentationChangeIds)).toEqual([["C1"], ["C1"]]);
@@ -259,7 +287,7 @@ describe("review result recording", () => {
         const intent = intentFor(f); await beginDelivery({...f.options, intent}); refreshPrepared(f);
         fs.writeFileSync(path.join(f.root, "README.md"), "New rules\n");
         await confirmDelivery({...f.options, operationId: intent.operationId, finalDocumentsReviewed: true});
-        const lock = JSON.parse(fs.readFileSync(f.target));
+        const lock = logical(f);
         expect(lock.entries[0].delivery).toBe("delivery_pending");
         expect(lock.documentationChanges.map((change) => change.status)).toEqual(["applied", "proposed"]);
         expect(lock.lastDelivery.documents[0].afterHash).toBe(hashBytes("New rules\n"));
@@ -281,7 +309,8 @@ describe("review result recording", () => {
         await recordResult({...f.options, dryRun: true});
         expect(fs.readFileSync(f.target)).toEqual(bytes);
         await recordResult(f.options);
-        const next = JSON.parse(fs.readFileSync(f.target));
+        expect(JSON.parse(fs.readFileSync(f.target)).schemaVersion).toBe(4);
+        const next = logical(f);
         expect(next.schemaVersion).toBe(2); expect(next.rules).toEqual(legacy.rules);
         expect(next.entries[0]).toMatchObject(legacy.entries[0]);
         expect(next.entries[0].historicalDocumentation).toEqual({schemaVersion: 1, details: "unavailable"});
@@ -289,7 +318,7 @@ describe("review result recording", () => {
     });
     it("requires new content to reopen at a new revision and keeps old bytes on failure", async () => {
         const f = fixture(); individualProposal(f); await recordResult(f.options);
-        const bytes = fs.readFileSync(f.target); const lock = JSON.parse(bytes);
+        const bytes = fs.readFileSync(f.target); const lock = logical(f, bytes);
         f.options.prepared = prepare({...f.options, lock, lockBytes: bytes});
         f.entry.materialDispositions = f.options.prepared.items[0].materials.map((item) => ({id: item.id, status: "used", rationale: "Rechecked proposal documents"}));
         f.options.result.expectedLockHash = hashBytes(bytes);
@@ -298,7 +327,7 @@ describe("review result recording", () => {
         expect(fs.readFileSync(f.target)).toEqual(bytes);
         f.options.result.documentationChanges[0].revision = 2;
         await recordResult(f.options);
-        expect(JSON.parse(fs.readFileSync(f.target)).documentationChanges[0].revision).toBe(2);
+        expect(logical(f).documentationChanges[0].revision).toBe(2);
     });
     it("rejects analysis that erases a confirmed decision or its provenance", async () => {
         const f = fixture(); individualProposal(f); await recordResult(f.options); refreshPrepared(f);
@@ -306,7 +335,7 @@ describe("review result recording", () => {
         fs.writeFileSync(path.join(f.root, "README.md"), "New rules\n");
         await confirmDelivery({...f.options, operationId: intent.operationId, finalDocumentsReviewed: true});
         fs.writeFileSync(path.join(f.root, "NOTES.md"), "Context changed\n"); f.git(["add", "NOTES.md"]);
-        const prepared = refreshPrepared(f); const bytes = fs.readFileSync(f.target); const lock = JSON.parse(bytes);
+        const prepared = refreshPrepared(f); const bytes = fs.readFileSync(f.target); const lock = logical(f, bytes);
         const entry = {...lock.entries[0], contextFingerprint: prepared.context.fingerprint,
             documents: [{path: "README.md", beforeHash: hashBytes("New rules\n"), afterHash: hashBytes("New rules\n")}],
             materialDispositions: prepared.items[0].materials.map((item) => ({id: item.id, status: "used", rationale: "Reassessed current context"}))};
@@ -323,7 +352,7 @@ describe("review result recording", () => {
         await expect(recordResult({...f.options, result: invalid})).rejects.toMatchObject({code: "REVISION_CONFLICT"});
         expect(fs.readFileSync(f.target)).toEqual(bytes);
         expect((await recordResult({...f.options, result})).changed).toBe(true);
-        expect(JSON.parse(fs.readFileSync(f.target)).documentationChanges[0]).toEqual(lock.documentationChanges[0]);
+        expect(logical(f).documentationChanges[0]).toEqual(lock.documentationChanges[0]);
     });
     it("protects the stored revision baseline even when a writer edits its working snapshot", async () => {
         const f = fixture(); individualProposal(f); await recordResult(f.options);
@@ -339,7 +368,7 @@ describe("review result recording", () => {
         const f = fixture(); proposal(f);
         expect((await recordResult(f.options)).changed).toBe(true);
         const before = fs.readFileSync(f.target); const time = fs.statSync(f.target).mtimeMs;
-        expect(JSON.parse(before).entries[0].delivery).toBe("delivery_pending");
+        expect(logical(f, before).entries[0].delivery).toBe("delivery_pending");
         expect(fs.readFileSync(path.join(f.root, "README.md"), "utf8")).toBe("Old rules\n");
         expect((await recordResult(f.options)).changed).toBe(false);
         expect(fs.readFileSync(f.target)).toEqual(before); expect(fs.statSync(f.target).mtimeMs).toBe(time);
@@ -372,10 +401,10 @@ describe("review result recording", () => {
     });
     it("preserves unrelated entries and supports an identical stale-token retry", async () => {
         const f = fixture(); await recordResult(f.options);
-        const lock = JSON.parse(fs.readFileSync(f.target)); lock.entries.push({...lock.entries[0], prId: "OTHER"});
+        const lock = logical(f); lock.entries.push({...lock.entries[0], prId: "OTHER"});
         fs.writeFileSync(f.target, JSON.stringify(lock));
         expect((await recordResult(f.options)).changed).toBe(false);
-        expect(JSON.parse(fs.readFileSync(f.target)).entries).toHaveLength(2);
+        expect(logical(f).entries).toHaveLength(2);
         const changed = structuredClone(f.options.result); changed.entries[0].analysis = "pending";
         await expect(recordResult({...f.options, result: changed})).rejects.toMatchObject({code: "LOCK_CONFLICT"});
     });
@@ -386,7 +415,7 @@ describe("review result recording", () => {
         const intent = intentFor(f); await beginDelivery({...f.options, intent}); refreshPrepared(f);
         fs.writeFileSync(path.join(f.root, "new-doc.md"), "New rules\n");
         await confirmDelivery({...f.options, operationId: intent.operationId, finalDocumentsReviewed: true});
-        const lockBytes = fs.readFileSync(f.target); const lock = JSON.parse(lockBytes);
+        const lockBytes = fs.readFileSync(f.target); const lock = logical(f, lockBytes);
         expect(lock.entries[0].contextFingerprint).not.toBe(f.options.prepared.context.fingerprint);
         expect((await confirmDelivery({...f.options, operationId: intent.operationId})).event).toBe("previously_confirmed");
         f.git(["add", "new-doc.md", "review-learning.lock.json"]); f.git(["commit", "-m", "apply docs and learning"]);
@@ -415,11 +444,11 @@ describe("review result recording", () => {
     });
     it("keeps old bytes after atomic rename failure and releases the exclusive claim", async () => {
         const f = fixture(); await recordResult(f.options); const bytes = fs.readFileSync(f.target);
-        const prior = JSON.parse(bytes);
+        const prior = logical(f, bytes);
         f.options.prepared.expectedLockHash = hashBytes(bytes); f.options.result.expectedLockHash = hashBytes(bytes);
         f.entry.analysis = "pending";
         await expect(recordResult({...f.options, fsOps: {...fs, renameSync: () => { throw new Error("injected rename failure"); }}})).rejects.toMatchObject({code: "WRITE_FAILED"});
-        expect(JSON.parse(fs.readFileSync(f.target))).toEqual(prior);
+        expect(logical(f)).toEqual(prior);
         expect(fs.existsSync(`${f.target}.write-lock`)).toBe(false);
     });
     it("dry-run runs source refresh and all checks but preserves lock bytes and mtime", async () => {
@@ -455,7 +484,15 @@ describe("review result recording", () => {
         expect(fs.existsSync(f.target)).toBe(false);
         verification.original.evidence[0] = proof(before);
         await recordResult(f.options);
-        expect(JSON.parse(fs.readFileSync(f.target)).entries[0].assessments[0].verification).toEqual(verification);
+        expect(logical(f).entries[0].assessments[0].verification).toEqual(verification);
+        const history = readPrHistory(readLearningLock({cwd:f.root}), "PR1")[0].history;
+        expect(history.sources[0].body).toBe("Reviewable description"); expect(history.gaps).toEqual([]);
+        const store = createLearningStore({cwd:f.root});
+        for (const item of history.proofs) { expect(hashBytes(store.readBytes(item.artifact))).toBe(item.proof.hash); }
+        fs.rmSync(f.options.cacheRoot,{recursive:true,force:true});
+        fs.rmSync(path.join(f.root,".git/objects"),{recursive:true,force:true});
+        expect(verifyLearningStore(readLearningLock({cwd:f.root})).uniquePrs).toBe(1);
+        expect(readPrHistory(readLearningLock({cwd:f.root}),"PR1")[0].history.sources[0].body).toBe("Reviewable description");
     });
     it("persists unresolved evidence and source ranges without copying comment bodies", async () => {
         const f = fixture();
@@ -464,7 +501,7 @@ describe("review result recording", () => {
         f.entry.dispositions = [{sourceId: "PR1", status: "unresolved", rationale: "Awaiting evidence", assessmentIds: ["A1"]}];
         const report = await recordResult(f.options);
         expect(report.missingEvidence).toBe(1);
-        const lock = JSON.parse(fs.readFileSync(f.target));
+        const lock = logical(f);
         expect(lock.entries[0].assessments[0].sources).toEqual([{id: "PR1", start: 0, end: 10, url: f.pr.html_url}]);
         expect(lock.entries[0].assessments[0].verification).toEqual(f.entry.assessments[0].verification);
         expect(fs.readFileSync(f.target, "utf8")).not.toContain("Reviewable");
@@ -513,7 +550,7 @@ describe("review result recording", () => {
         f.entry.assessments.push(...saved);
         expect((await recordResult(f.options)).changed).toBe(true);
         expect((await recordResult(f.options)).changed).toBe(false);
-        const lock = JSON.parse(fs.readFileSync(f.target));
+        const lock = logical(f);
         expect(lock.entries[0].assessments[0].sources).toEqual([{...ref, url: comment.url}]);
         expect(lock.entries[0].sourceIds).not.toContain("COMMENT");
         fs.rmSync(f.options.cacheRoot, {recursive: true, force: true});

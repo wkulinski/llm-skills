@@ -6,6 +6,9 @@ import {createHash} from "node:crypto";
 import {execFileSync} from "../../../.agents/skills/_shared/scripts/file-process.mjs";
 import {RULES, SOURCE_FIELDS, fingerprint, sourceFingerprint, validatePrepared} from "../../../.agents/skills/gh-review-learn/scripts/contracts.mjs";
 import {prepare, buildContext, createGitReader, readSource, readGitFile, main} from "../../../.agents/skills/gh-review-learn/scripts/prepare.mjs";
+import {readPreparedMaterial, validateMaterialArtifacts} from "../../../.agents/skills/gh-review-learn/scripts/storage.mjs";
+import {compactLock} from "../../../.agents/skills/gh-review-learn/scripts/compact-lock.mjs";
+import {readLearningLock, snapshotOf} from "../../../.agents/skills/gh-review-learn/scripts/learning-store.mjs";
 
 const temporary = [];
 afterEach(() => { for (const directory of temporary.splice(0)) { fs.rmSync(directory, {recursive: true, force: true}); } });
@@ -35,6 +38,44 @@ function lockFor(output, sources, delivery = "not_required") {
     return {lock, lockBytes: Buffer.from(`${JSON.stringify(lock)}\n`)};
 }
 describe("review material preparation", () => {
+    it("prepares a new PR from the index without opening unrelated full analyses", async () => {
+        const f = fixture();
+        const prior = lockFor(prepare(f.options), f.sources);
+        const target = path.join(f.root, "review-learning.lock.json");
+        fs.writeFileSync(target, prior.lockBytes);
+        await compactLock({cwd: f.root});
+        const lock = readLearningLock({cwd: f.root});
+        const record = snapshotOf(lock).index.entries[0];
+        fs.unlinkSync(path.join(f.root, record.analysis.path));
+        f.sources.prs.push({...f.sources.prs[0], id: "PR2", number: 2});
+        const output = prepare({...f.options, lock, lockBytes: fs.readFileSync(target), prs: [2], externalizeMaterials: true});
+        expect(output.items.map((item) => item.prId)).toEqual(["PR2"]);
+        expect(output.previousEntries.map((entry) => entry.prId)).toEqual(["PR1"]);
+    });
+    it("keeps a 20-PR, repeated-review large-diff batch small without losing source-specific materials", () => {
+        const f=fixture(); const originalPr=f.sources.prs[0], originalSource=f.sources.sources[0];
+        f.sources.prs=Array.from({length:20},(_,i)=>({...originalPr,id:`PR${i}`,number:i+1}));
+        f.sources.sources=f.sources.prs.flatMap(pr=>Array.from({length:10},(_,i)=>({...originalSource,prId:pr.id,id:`S_${pr.id}_${i}`})));
+        const real=createGitReader(f.root), payload=Buffer.from("+same large diff\n".repeat(300000));let calls=0;
+        const output=prepare({...f.options,externalizeMaterials:true,git(args){ if(args[0]==="diff"){ calls++;return payload; }return real(args); }});
+        expect(output.items).toHaveLength(20);
+        expect(output.items.flatMap(x=>x.materials.filter(m=>m.role==="reviewed_to_pr_head"))).toHaveLength(200);
+        expect(new Set(output.items.flatMap(x=>x.materials.filter(m=>m.role==="reviewed_to_pr_head").map(m=>m.sourceId))).size).toBe(200);
+        expect(calls).toBe(4);
+        expect(JSON.stringify(output).length).toBeLessThan(2*1024*1024);
+        validatePrepared(output,f.sources);validateMaterialArtifacts(output,{cwd:f.root});
+        const material=output.items[0].materials.find(m=>m.role==="reviewed_to_pr_head");
+        expect(Buffer.from(readPreparedMaterial(output,material.id,{cwd:f.root,pr:1}).bytes,"base64")).toEqual(payload);
+        expect(material.bytes).toBeUndefined();expect(material.text).toBeUndefined();
+    },60000);
+    it("publishes artifact manifests through CLI and reads exact payloads with the new pointed reader",async()=>{
+        const f=fixture();fs.mkdirSync(f.cacheRoot,{recursive:true});
+        const sourcesPath=path.join(f.cacheRoot,"sources.json"),preparedPath=path.join(f.cacheRoot,"prepared.json");fs.writeFileSync(sourcesPath,JSON.stringify(f.sources));
+        expect((await main(["--sources",sourcesPath,"--output",preparedPath],{cwd:f.root})).code).toBe(0);
+        const output=JSON.parse(fs.readFileSync(preparedPath));expect(output.materialStorageVersion).toBe(1);
+        const response=await main(["--prepared",preparedPath,"--read-material",`file:${f.reviewed}:code.mjs`],{cwd:f.root});
+        expect(response.code).toBe(0);expect(JSON.parse(response.stdout).data.text).toBe("reviewed\n");
+    });
     it("uses exact review/head/merge objects and exposes actual fixes for a squash", () => {
         const f = fixture(); const output = prepare(f.options);
         validatePrepared(output, f.sources);

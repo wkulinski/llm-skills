@@ -38,6 +38,7 @@ const persistentDirectories = {
     "task-plan": "var/agent/task-plan",
     "plan-execute": "var/agent/plan-execute",
     "code-implement": "var/agent/code-implement",
+    "gh-review-learn": "review-learning",
 };
 
 function contains(root, candidate) {
@@ -117,6 +118,14 @@ export function resolvePersistentAgentRoot(name, cwd = process.cwd()) {
         throw storageError(`Unknown persistent storage: ${name}`);
     }
     return assertStorageLayout({cwd}).persistentRoots[name];
+}
+
+export function assertRepositoryDirectoryPath(directory, cwd = process.cwd()) {
+    const repositoryRoot = resolve(cwd);
+    const target = resolve(repositoryRoot, directory);
+    if (!contains(repositoryRoot, target)) { throw storageError("Directory must remain inside the consumer repository"); }
+    assertDirectoryAncestors(target, repositoryRoot);
+    return target;
 }
 
 export function assertRepositoryFilePath(filePath, cwd = process.cwd()) {

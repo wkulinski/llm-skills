@@ -21,7 +21,7 @@ shared_files:
 ## Cel i granice
 
 Przekształć historię review w aktualne propozycje instrukcji projektu.
-Dokumentacja konsumenta B pozostaje źródłem zasad, a `review-learning.lock.json`
+Dokumentacja konsumenta B pozostaje źródłem zasad, a `./review-learning.lock.json`
 przechowuje postęp. Instalacja A dostarcza helpery. Stosuj
 `<skills_root>/_shared/references/skill-structure-contract.md`.
 
@@ -153,8 +153,33 @@ ponownej oceny. Nie usuwaj zmian użytkownika. Jedna aktywna operacja blokuje
 rozpoczęcie innej. Szczegóły ręcznego rozwiązania blokady opisuje kontrakt danych.
 
 Lock V1 jest czytany bez przepisywania. Historyczny brak opisu pozostaje jawną
-luką, a wersja V2 sama nie unieważnia analiz. Po utracie cache pozostają opisy,
+luką, a wersja V2 sama nie unieważnia analiz. Dokładne materiały zmian są trwałe; starsze nieodzyskane mają jawne braki. Pozostają opisy,
 referencje i hashe; brak dokładnego diffu trzeba nazwać, nie odtwarzać z hashy.
+
+Duże przygotowania CLI przechowują pełne materiały raz, w osobnych artefaktach
+z hashami. Czytaj je przez `<skill_dir>/scripts/prepare.mjs --prepared <plik> --read-material <ID>`
+(opcjonalnie `--pr`, `--start`, `--end`), nie oczekuj inline `text`/`bytes`.
+Stare przygotowania inline pozostają czytelne. Brak lub zmiana artefaktu blokuje
+użycie przygotowania; jego odtworzenie nie usuwa postępu locka.
+
+Nowe zapisy używają V4: małego manifestu `./review-learning.lock.json` oraz
+trwałego katalogu `./review-learning/` w B. Oceny, wersje źródeł, wykorzystane
+dowody, konteksty, decyzje i historia operacji są poza cache, w zwykłym JSON
+oraz osobnych plikach dokładnych bajtów. Powtarzane dane mają jawne referencje.
+Zachowaj i wersjonuj manifest razem z całym magazynem.
+
+Szybki postęp: `node <skill_dir>/scripts/status.mjs`; lista PR-ów: `--list`;
+konkretny PR i rewizje: `--pr 493 --history`; audyt offline: `--verify`.
+Status rozróżnia liczbę unikalnych PR-ów, ostatni zapis analizy, kolejność
+scalenia i skład aktywnej partii. Nie odgaduje brakujących historycznych dat.
+
+Migracja V1/V2/V3: `<skill_dir>/scripts/compact-lock.mjs --dry-run`, potem
+`<skill_dir>/scripts/compact-lock.mjs`. Zachowuje oryginał i odzyskuje dostępne
+podstawy historycznych ocen; braki zapisuje jawnie. Opcjonalne
+`--recover-history` odzyskuje później odnalezione dokładne bajty i zdarzenia. V3 jest czytany wyłącznie
+podczas migracji; normalna obsługa nie używa kompresji. Narzędzia konsumenta
+muszą obsługiwać V4; po migracji ponów `prepare`, bo zmienia się token locka.
+Szczegóły i ścieżki opisuje `<skill_dir>/references/data-contract.md`.
 
 ## Raport i zakończenie
 

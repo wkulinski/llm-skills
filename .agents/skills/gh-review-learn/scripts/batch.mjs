@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import {readLearningLock} from "./learning-store.mjs";
 import path from "node:path";
 import {randomUUID} from "node:crypto";
-import {validateInventory, validateLock, upgradeLock, fingerprint, assertRepository, canonicalJson, RULES} from "./contracts.mjs";
+import {validateInventory, upgradeLock, fingerprint, assertRepository, canonicalJson, RULES} from "./contracts.mjs";
 import {withConsumerLock} from "./lock-store.mjs";
 import {hashBytes, fail, errorResponse} from "./validate-result.mjs";
 import {createGitReader} from "./prepare.mjs";
@@ -43,7 +44,7 @@ export async function selectBatch({inventory, batchSize, cwd = process.cwd(), fs
         const members = candidates.slice(0, batchSize);
         next.activeBatch = {id: randomUUID(), limit: batchSize, repository: inventory.repository, scopeFingerprint: fingerprint(inventory.repository), boundary: inventory.read.boundary, selectedAt: now(), inventoryReadAt: inventory.read.finishedAt,
             prIds: members.map((pr) => pr.id), prNumbers: members.map((pr) => pr.number), members, recordedPrIds: []};
-        commit(next, {expectedLockHash: bytes === null ? null : hashBytes(bytes)});
+        commit(next, {expectedLockHash: bytes === null ? null : hashBytes(bytes), inventory});
         return {...batchView(next.activeBatch, cacheRoot), changed: true, newRemaining: candidates.length - members.length, inventoryReadAt: inventory.read.finishedAt};
     });
 }
@@ -51,7 +52,7 @@ export function resumeBatch({cwd = process.cwd()} = {}) {
     const root = requireRepositoryRoot(cwd);
     const file = path.join(root, "review-learning.lock.json");
     if (!fs.existsSync(file) || fs.lstatSync(file).isSymbolicLink()) { throw fail("BATCH_CONFLICT", "No regular consumer lock to resume"); }
-    const lock = validateLock(JSON.parse(fs.readFileSync(file, "utf8")));
+    const lock = readLearningLock({cwd: root});
     if (!lock.activeBatch) { throw fail("BATCH_CONFLICT", "No active batch to resume"); }
     return batchView(lock.activeBatch, resolveArtifactCacheRoot(root));
 }

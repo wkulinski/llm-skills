@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import {readLearningLock, createLearningStore, durablePath} from "./learning-store.mjs";
+import {decodeLock} from "./storage.mjs";
 import path from "node:path";
 import {createHash} from "node:crypto";
 import {fileURLToPath} from "node:url";
-import {canonicalJson, RULES, validateLock, validateSources, validateInventory, assertRepository, sourceFingerprint} from "./contracts.mjs";
+import {canonicalJson, RULES, validateSources, validateInventory, assertRepository, sourceFingerprint} from "./contracts.mjs";
 import {unconfirmedDelivery} from "./validate-result.mjs";
 import {requireRepositoryRoot} from "../../_shared/scripts/repo-root.mjs";
 import {resolveArtifactCacheRoot, assertArtifactPath} from "../../_shared/scripts/artifact-path.mjs";
@@ -52,7 +54,8 @@ function buildProgress({lock, sources, prepared, inventory, event, scriptsDir, c
         newRemaining, inventoryReadAt: fullInventory ? inventory.read.finishedAt : null, continuation, nextCommand};
 }
 /** Pure: the operation event, not an applied flag in the lock, determines new edits. */
-export function buildReportModel({lock, sources = null, prepared = null, inventory = null, event = {}, diff = null, diffArtifact = null, root = "", scriptsDir = ".agents/skills/gh-review-learn/scripts", cacheRoot = "var/agent/cache"}) {
+export function buildReportModel({lock: storedLock, sources = null, prepared = null, inventory = null, event = {}, progressLock = null, diff = null, diffArtifact = null, root = "", scriptsDir = ".agents/skills/gh-review-learn/scripts", cacheRoot = "var/agent/cache"}) {
+    const lock = decodeLock(storedLock);
     const changes = lock.documentationChanges ?? [];
     const applied = event.event === "confirmed" ? changes.filter((change) => event.newlyApplied?.some((ref) => ref.id === change.id && ref.revision === change.revision) && change.status === "applied") : [];
     const changedFiles = event.changedFiles ?? [];
@@ -86,7 +89,7 @@ export function buildReportModel({lock, sources = null, prepared = null, invento
         abandonedDelivery: lock.lastAbandonedDelivery ?? null,
         diff: {inline: applied.length && diff !== null && diffLines <= 80 ? diff : null, artifact: applied.length ? diffArtifact : null, available: applied.length > 0 && diff !== null, lines: diffLines,
             gap: applied.length && diff === null ? "Brak dokładnego diffu w cache; zachowano trwałe opisy i hashe." : null},
-        progress: buildProgress({lock, sources, prepared, inventory, event, scriptsDir, cacheRoot}),
+        progress: buildProgress({lock: progressLock ?? lock, sources, prepared, inventory, event, scriptsDir, cacheRoot}),
     };
 }
 function sourceText(links) {
@@ -124,9 +127,14 @@ export function renderReport(model) {
     if (p.nextCommand) { lines.push("", "```bash", p.nextCommand, "```"); }
     return `${lines.join("\n")}\n`;
 }
-export function readReportDiff(cacheRoot, receipt) {
+export function readReportDiff(cacheRoot, receipt, root = process.cwd()) {
     if (!receipt?.diffHash || !/^[A-Za-z0-9_-]{1,128}$/.test(receipt.operationId)) { return {diff: null, diffArtifact: null}; }
-    const file = path.join(cacheRoot, "gh-review-learn", "deliveries", receipt.operationId, "changes.diff");
+    if (receipt.artifacts?.diff) {
+        const bytes = createLearningStore({cwd: root}).readBytes(receipt.artifacts.diff);
+        if (createHash("sha256").update(bytes).digest("hex") !== receipt.diffHash) { throw fail("STORAGE_CONFLICT", "Durable delivery diff differs"); }
+        return {diff: bytes.toString("utf8"), diffArtifact: path.join(root, receipt.artifacts.diff.path)};
+    }
+    const file = durablePath(root, `review-learning/deliveries/${receipt.operationId}/changes.diff`);
     if (!fs.existsSync(file)) { return {diff: null, diffArtifact: null}; }
     const bytes = fs.readFileSync(file);
     if (createHash("sha256").update(bytes).digest("hex") !== receipt.diffHash) { return {diff: null, diffArtifact: null}; }
@@ -144,13 +152,13 @@ export function main(argv = process.argv.slice(2), {cwd = process.cwd()} = {}) {
         if (!args["--output"]) { throw fail("INVALID_ARGUMENT", "--output is required"); }
         const root = requireRepositoryRoot(cwd); const cacheRoot = resolveArtifactCacheRoot(root);
         const read = (name) => args[`--${name}`] ? JSON.parse(fs.readFileSync(assertArtifactPath(path.resolve(root, args[`--${name}`]), name, root), "utf8")) : null;
-        const lock = validateLock(JSON.parse(fs.readFileSync(path.join(root, "review-learning.lock.json"), "utf8")));
+        const lock = readLearningLock({cwd: root});
         const sources = read("sources"); if (sources) { validateSources(sources); assertRepository(sources.repository, lock.repository); }
         const inventory = read("inventory"); if (inventory) { validateInventory(inventory); assertRepository(inventory.repository, lock.repository); }
         const prepared = read("prepared"); if (prepared) { assertRepository(prepared.repository, lock.repository); }
         const inputEvent = read("event"); let event = inputEvent?.data?.delivery ?? inputEvent?.data ?? inputEvent ?? {};
         if (lock.activeDelivery) { event = unconfirmedDelivery(lock.activeDelivery, root); }
-        const model = buildReportModel({lock, sources, prepared, inventory, event, root, cacheRoot, scriptsDir: path.dirname(fileURLToPath(import.meta.url)), ...readReportDiff(cacheRoot, event.receipt)});
+        const model = buildReportModel({lock, sources, prepared, inventory, event, root, cacheRoot, scriptsDir: path.dirname(fileURLToPath(import.meta.url)), ...readReportDiff(cacheRoot, event.receipt, root)});
         const output = assertArtifactPath(path.resolve(root, args["--output"]), "Report", root);
         fs.mkdirSync(path.dirname(output), {recursive: true, mode: 0o700}); fs.writeFileSync(output, renderReport(model), {mode: 0o600});
         return {code: 0, stdout: `${JSON.stringify({status: "complete", data: {output, report: model}, errors: []})}\n`};

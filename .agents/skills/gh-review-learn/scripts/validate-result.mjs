@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import {hydratePrepared} from "./learning-store.mjs";
+import {validateMaterialArtifacts} from "./storage.mjs";
 import path from "node:path";
 import {createHash} from "node:crypto";
 import {verifyEvidenceBytes} from "./verification.mjs";
@@ -12,7 +14,7 @@ import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
 export const fail = (code, message) => Object.assign(new Error(message), {code});
 export const hashBytes = (bytes) => createHash("sha256").update(bytes).digest("hex");
 export function documentHash(root, name) {
-    if (typeof name !== "string" || !name || path.isAbsolute(name) || name.includes("\\") || /^[a-z]:/i.test(name) || name.split("/").some((p) => ["", ".", "..", ".git"].includes(p)) || name === "review-learning.lock.json") {
+    if (typeof name !== "string" || !name || path.isAbsolute(name) || name.includes("\\") || /^[a-z]:/i.test(name) || name.split("/").some((p) => ["", ".", "..", ".git"].includes(p)) || name === "review-learning.lock.json" || name.startsWith("review-learning/")) {
         throw fail("INVALID_PATH", `Invalid document path: ${name}`);
     }
     const parts = name.split("/");
@@ -62,7 +64,9 @@ function registerOutput(outputs, doc) {
     outputs.set(doc.path, doc);
 }
 export function checkResult({sources, prepared, result, cwd = process.cwd(), cacheRoot = resolveArtifactCacheRoot(cwd), git = createGitReader(cwd)}) {
+    hydratePrepared(prepared, {cwd});
     validateResult(result, prepared, sources);
+    validateMaterialArtifacts(prepared, {cwd, cacheRoot});
     if (canonicalJson(result.rules) !== canonicalJson(RULES)) { throw fail("RULES_CONFLICT", "Result uses obsolete rules"); }
     if (sources.read.completeness !== "complete") { throw fail("INCOMPLETE_READ", "Complete source read is required before recording"); }
     if (fingerprint(prepared.context.files) !== prepared.context.fingerprint) { throw fail("CONTEXT_CONFLICT", "Prepared context manifest has an invalid digest"); }
@@ -125,6 +129,7 @@ export function loadArguments(argv, cwd) {
         if (!args[`--${name}`]) { throw fail("INVALID_ARGUMENT", `--${name} is required`); }
         options[name] = JSON.parse(fs.readFileSync(assertArtifactPath(path.resolve(root, args[`--${name}`]), name, root), "utf8"));
     }
+    hydratePrepared(options.prepared, {cwd: root});
     return options;
 }
 export function errorResponse(error) {

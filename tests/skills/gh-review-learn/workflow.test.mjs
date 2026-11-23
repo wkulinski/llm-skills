@@ -1,5 +1,6 @@
 import {expect, it} from "vitest";
 import fs from "node:fs";
+import {readLearningLock} from "../../../.agents/skills/gh-review-learn/scripts/learning-store.mjs";
 import path from "node:path";
 import os from "node:os";
 import {createHash} from "node:crypto";
@@ -12,7 +13,7 @@ it("runs public CLIs through 20/20/5 batches, cache loss, partial delivery and t
     const cache = path.join(root, "var/agent/cache");
     const server = path.join(root, "server.json");
     const git = (args) => execFileSync("git", args, {cwd: root, encoding: "utf8"}).trim();
-    const json = (file) => JSON.parse(fs.readFileSync(file));
+    const json = (file) => path.basename(file) === "review-learning.lock.json" ? readLearningLock({cwd: root}) : JSON.parse(fs.readFileSync(file));
     const write = (file, value) => fs.writeFileSync(file, JSON.stringify(value));
     try {
         git(["init", "-b", "main"]); git(["config", "user.name", "Test"]); git(["config", "user.email", "test@example.test"]);
