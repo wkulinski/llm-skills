@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import {archiveAnalysis} from "./learning-history.mjs";
+import {readLearningLock, storedEntryMetrics, sameLearningState, createLearningStore, durablePath} from "./learning-store.mjs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {buildReportModel, readReportDiff} from "./report.mjs";
@@ -11,6 +13,7 @@ import {createGhTransport, revalidateSources} from "./collect.mjs";
 import {requireRepositoryRoot} from "../../_shared/scripts/repo-root.mjs";
 import {resolveArtifactCacheRoot} from "../../_shared/scripts/artifact-path.mjs";
 import {isMainModule} from "../../_shared/scripts/is-main-module.mjs";
+import {validateMaterialArtifacts} from "./storage.mjs";
 
 function compactAssessment(assessment, sources, previous) {
     const refs = assessment.sources.map((ref) => {
@@ -40,11 +43,11 @@ function compactEntry(entry, input, context, sources, schemaVersion) {
 }
 function report(lock, sources, changed, dryRun, prepared) {
     return {event: dryRun ? "dry_run" : "analysis_recorded", recordedThisRun: changed ? prepared.items.length : 0, newAnalyses: changed ? prepared.items.filter((item) => !(prepared.previousEntries ?? []).some((entry) => entry.prId === item.prId)).length : 0,
-        changed, dryRun, completeness: sources.read.completeness, read: sources.read, refreshedPrIds: prepared.items.map((item) => item.prId), processedSources: sources.sources.length, missingMaterials: prepared.items.flatMap((i) => i.materials).filter((m) => m.status === "missing").length, deliveryPending: lock.entries.filter((e) => e.delivery === "delivery_pending").length, missingEvidence: lock.entries.flatMap((e) => e.assessments).filter((a) => a.currency === "no_evidence").length, conflicts: 0};
+        changed, dryRun, completeness: sources.read.completeness, read: sources.read, refreshedPrIds: prepared.items.map((item) => item.prId), processedSources: sources.sources.length, missingMaterials: prepared.items.flatMap((i) => i.materials).filter((m) => m.status === "missing").length, deliveryPending: lock.entries.filter((e) => e.delivery === "delivery_pending").length, missingEvidence: lock.entries.reduce((n, entry) => n + (storedEntryMetrics(entry)?.missingEvidence ?? entry.assessments.filter((a) => a.currency === "no_evidence").length), 0), conflicts: 0};
 }
-function operationPath(cacheRoot, operationId) {
+function operationPath(root, operationId) {
     if (typeof operationId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(operationId)) { throw fail("INVALID_ARGUMENT", "Expected a stable operation ID using letters, digits, hyphens or underscores"); }
-    return path.join(cacheRoot, "gh-review-learn", "deliveries", operationId);
+    return durablePath(root, `review-learning/deliveries/${operationId}`);
 }
 function documentDiff(git, before, after) {
     try { return git(["diff", "--no-index", "--binary", "--no-ext-diff", "--no-textconv", "--", before, after]).toString("utf8"); }
@@ -66,19 +69,20 @@ async function refreshDeliverySources(operation, sources, transport, root) {
     if (canonicalJson([...refreshed.prs].sort((a, b) => a.id.localeCompare(b.id))) !== canonicalJson([...selected.prs].sort((a, b) => a.id.localeCompare(b.id)))) { throw fail("SOURCE_CONFLICT", "PR version changed during source refresh"); }
     return refreshed;
 }
-function priorDelivery(receipt, cacheRoot) {
+function priorDelivery(receipt, cacheRoot, root) {
     return {event: "previously_confirmed", operationId: receipt.operationId, changed: false, newlyApplied: [], changedFiles: [], refreshedPrIds: [], receipt,
-        diffAvailable: readReportDiff(cacheRoot, receipt).diff !== null};
+        diffAvailable: readReportDiff(cacheRoot, receipt, root).diff !== null};
 }
 export async function beginDelivery({sources, prepared, intent, cwd = process.cwd(), cacheRoot = resolveArtifactCacheRoot(cwd), transport, dryRun = false, fsOps = fs}) {
     const root = requireRepositoryRoot(cwd);
-    const directory = operationPath(cacheRoot, intent?.operationId);
+    const directory = operationPath(root, intent?.operationId);
     validatePrepared(prepared, sources);
+    validateMaterialArtifacts(prepared, {cwd: root, cacheRoot});
     return withConsumerLock({cwd: root, repository: sources.repository, fsOps}, async ({current, commit}) => {
         if (!current || current.schemaVersion !== 2) { throw fail("DELIVERY_CONFLICT", "Record individual proposals before beginning delivery"); }
         if (current.lastDelivery?.operationId === intent.operationId) {
             if (!sameOperation(intent, current.lastDelivery)) { throw fail("DELIVERY_CONFLICT", "Operation ID already confirmed with different inputs"); }
-            return priorDelivery(current.lastDelivery, cacheRoot);
+            return priorDelivery(current.lastDelivery, cacheRoot, root);
         }
         if (current.activeDelivery) {
             if (!sameOperation(intent, current.activeDelivery)) { throw fail("DELIVERY_CONFLICT", "Resolve the active delivery before starting another"); }
@@ -118,27 +122,33 @@ export async function beginDelivery({sources, prepared, intent, cwd = process.cw
             }
             const diff = diffs.join("\n"); operation.diffHash = hashBytes(diff);
             fs.writeFileSync(path.join(directory, "changes.diff"), diff, {mode: 0o600});
-            fs.writeFileSync(path.join(directory, "snapshots.json"), JSON.stringify(snapshots), {mode: 0o600});
+            const store = createLearningStore({cwd: root});
+            operation.artifacts = {diff: store.putBytes("delivery-bytes", Buffer.from(diff)), snapshots: snapshots.map((snapshot) => ({path: snapshot.path,
+                before: snapshot.beforeBytes === null ? null : store.putBytes("delivery-bytes", Buffer.from(snapshot.beforeBytes, "base64")),
+                after: store.putBytes("delivery-bytes", Buffer.from(snapshot.afterBytes, "base64"))}))};
         }
         const saved = commit(next, {expectedLockHash: prepared.expectedLockHash, dryRun});
         return {event: dryRun ? "dry_run" : "intent_recorded", operationId: operation.operationId, changed: saved.changed, newlyApplied: [], changedFiles: [], read: refreshed.read, refreshedPrIds: refreshed.prs.map((pr) => pr.id)};
     });
 }
 export async function confirmDelivery({sources, prepared, operationId, finalDocumentsReviewed, cwd = process.cwd(), cacheRoot = resolveArtifactCacheRoot(cwd), transport, dryRun = false, fsOps = fs}) {
-    const root = requireRepositoryRoot(cwd); operationPath(cacheRoot, operationId);
+    const root = requireRepositoryRoot(cwd); operationPath(root, operationId);
     return withConsumerLock({cwd: root, repository: sources.repository, fsOps}, async ({current, commit}) => {
-        if (current?.lastDelivery?.operationId === operationId) { return priorDelivery(current.lastDelivery, cacheRoot); }
+        if (current?.lastDelivery?.operationId === operationId) { return priorDelivery(current.lastDelivery, cacheRoot, root); }
         const operation = current?.activeDelivery;
         if (!operation || operation.operationId !== operationId) { throw fail("DELIVERY_CONFLICT", "No matching durable delivery intent"); }
         try {
             validatePrepared(prepared, sources);
+            validateMaterialArtifacts(prepared, {cwd: root, cacheRoot});
             if (finalDocumentsReviewed !== true) { throw fail("INVALID_STATE", "Review the entire final document set before confirmation"); }
             const beforeRefresh = checkDeliveryContext({operation, cwd: root, cacheRoot});
             const refreshed = await refreshDeliverySources(operation, sources, transport, root);
             const checked = checkDeliveryContext({operation, cwd: root, cacheRoot});
             if (beforeRefresh.context.fingerprint !== checked.context.fingerprint) { throw fail("CONTEXT_CONFLICT", "Delivery files changed during source refresh"); }
             if (checked.state === "not_applied") { return {event: "not_applied", changed: false, newlyApplied: [], changedFiles: [], operationId, read: refreshed.read, refreshedPrIds: refreshed.prs.map((pr) => pr.id)}; }
-            const next = upgradeLock(current); const confirmedAt = new Date().toISOString();
+            const next = upgradeLock(current);
+            next.entries = next.entries.map((entry) => operation.sourceFingerprints.some((item) => item.prId === entry.prId) ? structuredClone(entry) : entry);
+            const confirmedAt = new Date().toISOString();
             for (const ref of operation.changes) {
                 Object.assign(next.documentationChanges.find((change) => change.id === ref.id && change.revision === ref.revision), {status: "applied", finalDocumentsReviewed: true, appliedOperationId: operationId, appliedAt: confirmedAt});
             }
@@ -150,11 +160,12 @@ export async function confirmDelivery({sources, prepared, operationId, finalDocu
             }
             next.activeDelivery = null;
             next.lastDelivery = {operationId, userDecisionRef: operation.userDecisionRef, changes: operation.changes, documents: operation.documents, confirmedAt, contextFingerprint: checked.context.fingerprint,
-                ...(operation.diffHash ? {diffHash: operation.diffHash} : {}), sourceFingerprints: operation.sourceFingerprints, sourcePrs: operation.sourcePrs};
-            const saved = commit(next, {expectedLockHash: prepared.expectedLockHash, dryRun});
+                ...(operation.diffHash ? {diffHash: operation.diffHash} : {}), ...(operation.artifacts ? {artifacts: operation.artifacts} : {}), sourceFingerprints: operation.sourceFingerprints, sourcePrs: operation.sourcePrs};
+            const contexts = Object.fromEntries(operation.sourceFingerprints.map((entry) => [entry.prId, checked.context]));
+            const saved = commit(next, {expectedLockHash: prepared.expectedLockHash, dryRun, contexts});
             return {event: dryRun ? "dry_run" : "confirmed", changed: saved.changed, operationId, newlyApplied: dryRun ? [] : operation.changes,
                 changedFiles: checked.observed.filter((doc) => doc.actualHash !== doc.beforeHash).map((doc) => doc.path), receipt: dryRun ? null : next.lastDelivery, read: refreshed.read, refreshedPrIds: refreshed.prs.map((pr) => pr.id),
-                diffAvailable: readReportDiff(cacheRoot, next.lastDelivery).diff !== null};
+                diffAvailable: readReportDiff(cacheRoot, next.lastDelivery, root).diff !== null};
         } catch (error) {
             error.delivery = unconfirmedDelivery(operation, root);
             throw error;
@@ -192,9 +203,18 @@ export async function recordResult({sources, prepared, result, cwd = process.cwd
                 next.activeBatch = null;
             }
         }
-        if (batchRetry && canonicalJson(next) !== canonicalJson(base)) { throw fail("BATCH_CONFLICT", "A closed batch only permits an identical retry"); }
+        if (batchRetry && !sameLearningState(next, base)) { throw fail("BATCH_CONFLICT", "A closed batch only permits an identical retry"); }
         if (current === null && replacements.length === 0) { return report(next, refreshed, false, dryRun, prepared); }
-        const saved = commit(next, {expectedLockHash: prepared.expectedLockHash, dryRun});
+        const histories = {};
+        if (!dryRun && !sameLearningState(current, next)) {
+            const analyzedAt = new Date().toISOString(); const git = createGitReader(root);
+            for (const entry of replacements) {
+                histories[entry.prId] = archiveAnalysis({entry, sources: refreshed, context: final.context, root, git, analyzedAt});
+                histories[entry.prId].materialDispositions = result.entries.find((item) => item.prId === entry.prId).materialDispositions;
+                histories[entry.prId].materialInventory = prepared.items.find((item) => item.prId === entry.prId).materials.map(({id, kind, provenance, status, reason}) => ({id, kind, provenance, status, ...(reason ? {reason} : {})}));
+            }
+        }
+        const saved = commit(next, {expectedLockHash: prepared.expectedLockHash, dryRun, histories});
         return report(saved.lock, refreshed, saved.changed, dryRun, prepared);
     });
 }
@@ -222,14 +242,16 @@ export async function main(argv = process.argv.slice(2), {cwd = process.cwd(), t
     const readLock = () => {
         const root = requireRepositoryRoot(cwd);
         const file = path.join(root, "review-learning.lock.json");
-        return fs.existsSync(file) ? validateLock(JSON.parse(fs.readFileSync(file, "utf8"))) : {schemaVersion: 2, repository: options.sources.repository, documentationChanges: [], entries: [], activeBatch: null};
+        return fs.existsSync(file) ? readLearningLock({cwd: root}) : {schemaVersion: 2, repository: options.sources.repository, documentationChanges: [], entries: [], activeBatch: null};
     };
     const modelFor = (event) => {
         const root = requireRepositoryRoot(cwd); const cacheRoot = resolveArtifactCacheRoot(root);
         const lock = readLock();
         const reportEvent = lock.activeDelivery ? unconfirmedDelivery(lock.activeDelivery, root) : event;
-        return buildReportModel({lock, sources: options.sources, prepared: options.prepared, event: reportEvent, root, cacheRoot,
-            scriptsDir: path.dirname(fileURLToPath(import.meta.url)), ...readReportDiff(cacheRoot, reportEvent.receipt)});
+        const reportPrs = new Set([...(options.prepared.items ?? []).map((item) => item.prId), ...lock.documentationChanges.flatMap((change) => change.references.map((ref) => ref.prId))]);
+        const scoped = {...lock, entries: lock.entries.filter((entry) => reportPrs.has(entry.prId))};
+        return buildReportModel({lock: scoped, progressLock: lock, sources: options.sources, prepared: options.prepared, event: reportEvent, root, cacheRoot,
+            scriptsDir: path.dirname(fileURLToPath(import.meta.url)), ...readReportDiff(cacheRoot, reportEvent.receipt, root)});
     };
     try {
         options = {...loadArguments(argv, cwd), transport};

@@ -1,5 +1,6 @@
 import {afterEach, describe, expect, it} from "vitest";
 import fs from "node:fs";
+import {readLearningLock} from "../../../.agents/skills/gh-review-learn/scripts/learning-store.mjs";
 import os from "node:os";
 import path from "node:path";
 import {execFileSync} from "../../../.agents/skills/_shared/scripts/file-process.mjs";
@@ -29,7 +30,7 @@ function fixture(count = 45) {
     };
     const target = path.join(root, "review-learning.lock.json");
     const cacheRoot = path.join(root, "var/agent/cache");
-    const lock = () => fs.existsSync(target) ? JSON.parse(fs.readFileSync(target, "utf8")) : null;
+    const lock = () => fs.existsSync(target) ? structuredClone(readLearningLock({cwd: root})) : null;
     const collectOptions = {repo: "example/project", now: () => "2026-11-19T00:00:00Z", transport};
     const inventory = async () => (await collect({...collectOptions, inventoryOnly: true})).sources;
     const record = async (batchId, prs) => {

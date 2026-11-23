@@ -208,7 +208,7 @@ describe("gh-review-learn data contracts", () => {
             throwsCode(() => validateLock(lock, {...repository, [field]: "other"}), "REPOSITORY_CONFLICT");
         }
         expect(JSON.stringify(lock)).toBe(before);
-        lock.schemaVersion = 3;
+        lock.schemaVersion = 99;
         throwsCode(() => validateLock(lock), "UNSUPPORTED_SCHEMA");
     });
     it("requires decision references, final document review and safe relative paths", () => {

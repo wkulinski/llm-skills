@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import {readLearningLock} from "./learning-store.mjs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {randomUUID} from "node:crypto";
@@ -209,9 +210,9 @@ async function traverse({transport, repo, branch, prs, boundary, now, checkpoint
     return {...output, coverage};
 }
 
-export function compareSources(sources, lock) {
+export function compareSources(sources, storedLock) {
+    const lock = storedLock ? validateLock(storedLock, sources.repository) : null;
     if (!lock) { return sources.prs.map((pr) => ({prId: pr.id, status: sources.read.completeness === "complete" ? "new" : "unknown_partial"})); }
-    validateLock(lock, sources.repository);
     return sources.prs.map((pr) => {
         const previous = lock.entries.find((entry) => entry.prId === pr.id);
         // Never infer removals from an incomplete read.
@@ -220,9 +221,9 @@ export function compareSources(sources, lock) {
     });
 }
 
-export async function collect({transport, repo, branch, prs, lock, resume, inventoryOnly = false, batchId, boundary, onCheckpoint = async () => null, now = () => new Date().toISOString()}) {
+export async function collect({transport, repo, branch, prs, lock: storedLock, resume, inventoryOnly = false, batchId, boundary, onCheckpoint = async () => null, now = () => new Date().toISOString()}) {
     assertResponse(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo), "Expected owner/repo");
-    if (lock) { validateLock(lock); }
+    const lock = storedLock ? validateLock(storedLock) : null;
     const batch = lock?.activeBatch;
     let selectedPrs = prs; let selectedBranch = branch; let readBoundary = boundary;
     if (!inventoryOnly && batch && !batchId) {
@@ -295,7 +296,7 @@ export async function main(argv = process.argv.slice(2), {cwd = process.cwd(), t
         const repo = args["--repo"] ?? (await gh({type: "rest", endpoint: "repos/{owner}/{repo}"})).body.full_name;
         const resume = args["--resume"] ? JSON.parse(fs.readFileSync(assertArtifactPath(path.resolve(root, args["--resume"]), "Resume", root), "utf8")) : null;
         const lockPath = path.join(root, "review-learning.lock.json");
-        const lock = fs.existsSync(lockPath) ? JSON.parse(fs.readFileSync(lockPath, "utf8")) : null;
+        const lock = fs.existsSync(lockPath) ? readLearningLock({cwd: root}) : null;
         const {sources} = await collect({transport: gh, repo, branch: args["--branch"], prs: args["--prs"]?.split(",").map(Number), inventoryOnly: Boolean(args["--inventory-only"]), batchId: args["--batch"], lock, resume, onCheckpoint: async (value) => writeCheckpoint(checkpointPath, value)});
         writeCheckpoint(output, sources);
         const complete = sources.read.completeness === "complete";

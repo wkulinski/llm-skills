@@ -1,5 +1,6 @@
 import {validateVerification, validateHistoryCoverage} from "./verification.mjs";
 import {createHash} from "node:crypto";
+import {isStoredEntry, storedEntryMetrics} from "./entry-state.mjs";
 
 export const SCHEMA_VERSION = 2;
 export const SOURCE_SCHEMA_VERSION = 1;
@@ -188,9 +189,10 @@ function context(value) {
     string(value.environmentScope);
 }
 /** A format upgrade is explicit and lossless; reading never migrates a file. */
-export function upgradeLock(value) {
-    validateLock(value);
-    const next = structuredClone(value);
+export function upgradeLock(storedValue) {
+    const value = validateLock(storedValue);
+    const {entries, ...header} = value;
+    const next = {...structuredClone(header), entries: value.schemaVersion === 1 ? structuredClone(entries) : [...entries]};
     if (next.schemaVersion === 1) {
         next.schemaVersion = SCHEMA_VERSION;
         next.documentationChanges = [];
@@ -237,7 +239,7 @@ export function validateDocumentationChanges(changes, entries) {
     for (const change of changes) {
         assert(Number.isSafeInteger(change.revision) && change.revision > 0, "INVALID_FORMAT", "Invalid proposal revision");
         documentPath(change.path);
-        assert(change.path !== "review-learning.lock.json", "INVALID_PATH", "Lock is not a documentation destination");
+        assert(change.path !== "review-learning.lock.json" && !change.path.startsWith("review-learning/"), "INVALID_PATH", "Lock is not a documentation destination");
         for (const key of ["section", "description", "rationale"]) { string(change[key]); }
         if (change.beforeHash !== null) { hash(change.beforeHash); }
         hash(change.afterHash);
@@ -255,7 +257,7 @@ export function validateDocumentationChanges(changes, entries) {
             const key = canonicalJson([ref.prId, ref.assessmentId]);
             assert(!references.has(key), "DUPLICATE_ID", "Duplicate assessment reference"); references.add(key);
             const pr = entries.find((item) => item.prId === ref.prId);
-            assert(pr?.assessments.some((item) => item.id === ref.assessmentId) && pr.documentationChangeIds?.includes(change.id), "UNKNOWN_REFERENCE", "Unknown or unrelated assessment reference");
+            assert((pr && (storedEntryMetrics(pr)?.assessmentIds ?? pr.assessments.map((item) => item.id)).includes(ref.assessmentId)) && pr.documentationChangeIds?.includes(change.id), "UNKNOWN_REFERENCE", "Unknown or unrelated assessment reference");
         }
     }
     for (const pr of entries) {
@@ -346,6 +348,16 @@ function validateOperations(value, entries) {
         assert(receipt.documents.length > 0, "INVALID_STATE", "Receipt needs document hashes");
     }
 }
+function validateMaterialReference(material, version) {
+    if (!Object.hasOwn(material, "artifact")) { return; }
+    assert(version === 1 && material.status === "available", "INVALID_FORMAT", "Artifact needs explicit storage version and available status");
+    object(material.artifact); string(material.artifact.path); hash(material.artifact.hash);
+    assert(Number.isSafeInteger(material.artifact.byteLength) && material.artifact.byteLength >= 0, "INVALID_FORMAT", "Invalid artifact length");
+    member(material.artifact.encoding, ["raw", "json"]);
+    assert(material.artifact.encoding === (material.kind === "commit_inventory" ? "json" : "raw"), "INVALID_FORMAT", "Artifact encoding differs from material kind");
+    assert(!Object.hasOwn(material, "hash") || material.hash === material.artifact.hash, "INVALID_HASH", "Material and artifact hashes differ");
+    assert(!["bytes", "text", "files"].some((key) => Object.hasOwn(material, key)), "INVALID_FORMAT", "Artifact cannot shadow inline payload");
+}
 export function validatePrepared(value, sources) {
     envelope(value, "prepared");
     validateSources(sources);
@@ -357,6 +369,7 @@ export function validatePrepared(value, sources) {
     context(value.context);
     if (value.expectedLockHash !== null) { hash(value.expectedLockHash); }
     const ids = unique(value.items, "prId");
+    if (Object.hasOwn(value, "materialStorageVersion")) { assert(value.materialStorageVersion === 1, "UNSUPPORTED_SCHEMA", "Unsupported material storage version"); }
     for (const item of value.items) {
         assert(sources.prs.some((pr) => pr.id === item.prId), "UNKNOWN_REFERENCE", "Unknown prepared PR");
         hash(item.sourceFingerprint);
@@ -370,6 +383,7 @@ export function validatePrepared(value, sources) {
             string(material.id);
             member(material.status, ["available", "missing"]);
             string(material.provenance);
+            validateMaterialReference(material, value.materialStorageVersion);
         }
     }
     assert(Number.isInteger(value.totalPending) && value.totalPending >= ids.size, "INVALID_FORMAT", "Invalid pending count");
@@ -467,6 +481,7 @@ export function validateLock(value, expectedRepository) {
     rules(value.rules);
     unique(value.entries, "prId");
     for (const item of value.entries) {
+        if (isStoredEntry(item)) { continue; }
         unique(item.sourceIds.map((id) => ({id})));
         entry(item, new Set(item.sourceIds), value.schemaVersion === 2);
     }
@@ -485,4 +500,10 @@ export function pendingReasons(entryValue, {sourceFingerprint: currentSources, c
     if (entryValue.analysis !== "complete") { reasons.push("analysis_pending"); }
     if (entryValue.delivery === "delivery_pending") { reasons.push("delivery_pending"); }
     return reasons;
+}
+
+export function validateStoredEntry(item) {
+    unique(item.sourceIds.map((id) => ({id})));
+    entry(item, new Set(item.sourceIds), true);
+    return item;
 }
