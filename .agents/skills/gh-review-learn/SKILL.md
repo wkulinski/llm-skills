@@ -173,11 +173,11 @@ konkretny PR i rewizje: `--pr 493 --history`; audyt offline: `--verify`.
 Status rozróżnia liczbę unikalnych PR-ów, ostatni zapis analizy, kolejność
 scalenia i skład aktywnej partii. Nie odgaduje brakujących historycznych dat.
 
-Migracja V1/V2/V3: `<skill_dir>/scripts/compact-lock.mjs --dry-run`, potem
+Migracja V1/V2: `<skill_dir>/scripts/compact-lock.mjs --dry-run`, potem
 `<skill_dir>/scripts/compact-lock.mjs`. Zachowuje oryginał i odzyskuje dostępne
 podstawy historycznych ocen; braki zapisuje jawnie. Opcjonalne
-`--recover-history` odzyskuje później odnalezione dokładne bajty i zdarzenia. V3 jest czytany wyłącznie
-podczas migracji; normalna obsługa nie używa kompresji. Narzędzia konsumenta
+`--recover-history` odzyskuje później odnalezione dokładne bajty i zdarzenia.
+Narzędzia konsumenta
 muszą obsługiwać V4; po migracji ponów `prepare`, bo zmienia się token locka.
 Szczegóły i ścieżki opisuje `<skill_dir>/references/data-contract.md`.
 

@@ -10,9 +10,11 @@ import {readSnapshot} from "./learning-store.mjs";
 const fail = (message) => Object.assign(new Error(message), {code: "STORAGE_CONFLICT"});
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
-/** V1/V2 are read-only compatible; V3 is accepted only by the explicit migration. */
+/** V1/V2 are readable and V4 resolves references from the durable store. */
 export function decodeLock(value, options = {}) {
-    if (value?.schemaVersion === 3) { throw fail("Compressed V3 requires compact-lock.mjs migration to plain JSON V4"); }
+    if (value?.schemaVersion === 3) {
+        throw Object.assign(new Error("V3 is unsupported. Use a plain JSON V1/V2 lock or a migrated V4 store."), {code: "UNSUPPORTED_SCHEMA"});
+    }
     return value?.schemaVersion === 4 ? readSnapshot(value, options) : value;
 }
 

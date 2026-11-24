@@ -5,8 +5,7 @@ import path from "node:path";
 import {execFileSync} from "../../../.agents/skills/_shared/scripts/file-process.mjs";
 import {decodeLock, createMaterialStore, readArtifact, readPreparedMaterial, validateMaterialArtifacts} from "../../../.agents/skills/gh-review-learn/scripts/storage.mjs";
 import {compactLock} from "../../../.agents/skills/gh-review-learn/scripts/compact-lock.mjs";
-import {RULES, validateLock, upgradeLock} from "../../../.agents/skills/gh-review-learn/scripts/contracts.mjs";
-import {gzipSync} from "node:zlib";
+import {RULES, upgradeLock} from "../../../.agents/skills/gh-review-learn/scripts/contracts.mjs";
 import {createHash} from "node:crypto";
 import {withConsumerLock} from "../../../.agents/skills/gh-review-learn/scripts/lock-store.mjs";
 import {readLearningLock, readPrHistory, verifyLearningStore, createLearningStore, snapshotOf, sameLearningState} from "../../../.agents/skills/gh-review-learn/scripts/learning-store.mjs";
@@ -27,11 +26,6 @@ function fixture() {
     return {root, lock, target: path.join(root, "review-learning.lock.json")};
 }
 const hashBytes = (bytes) => createHash("sha256").update(bytes).digest("hex");
-function v3(lock) {
-    return {...lock, schemaVersion:3, entryEncoding:"gzip-base64", entries:lock.entries.map(entry=>{
-        const bytes=Buffer.from(JSON.stringify(entry));return {prId:entry.prId,hash:hashBytes(bytes),byteLength:bytes.length,data:gzipSync(bytes).toString("base64")};
-    })};
-}
 describe("plain JSON learning history", () => {
     it.each(["", "contexts", "materials"])("rejects symlinked migration input directory %s", async (component) => {
         const {root, lock, target} = fixture();
@@ -64,9 +58,9 @@ describe("plain JSON learning history", () => {
         }
         expect(fs.readFileSync(target)).toEqual(before);
     });
-    it.each([1,2,3])("migrates V%s without loss, leaves an exact durable backup, resumes and survives cache loss", async version => {
+    it.each([1,2])("migrates V%s without loss, leaves an exact durable backup, resumes and survives cache loss", async version => {
         const {root,lock,target}=fixture();
-        const legacy=version===1?{schemaVersion:1,kind:"lock",repository:lock.repository,rules:lock.rules,entries:lock.entries}:version===3?v3(lock):lock;
+        const legacy=version===1?{schemaVersion:1,kind:"lock",repository:lock.repository,rules:lock.rules,entries:lock.entries}:lock;
         const before=Buffer.from(JSON.stringify(legacy,null,2)+"\n");fs.writeFileSync(target,before);
         expect((await compactLock({cwd:root,dryRun:true})).changed).toBe(false);expect(fs.readFileSync(target)).toEqual(before);
         const result=await compactLock({cwd:root});expect(result.changed).toBe(true);expect(result.toVersion).toBe(4);
@@ -119,11 +113,15 @@ describe("plain JSON learning history", () => {
         const file=path.join(root,manifest.index.path);const good=fs.readFileSync(file);fs.writeFileSync(file,"bad");expect(()=>readLearningLock({cwd:root})).toThrow(/corrupted/);
         fs.writeFileSync(file,good);fs.unlinkSync(file);fs.symlinkSync(target,file);expect(()=>readLearningLock({cwd:root})).toThrow(/Symlink/);
     });
-    it("rejects compressed locks outside migration and corrupt compressed migration input",()=>{
-        const {lock}=fixture();const value=v3(lock);expect(()=>decodeLock(value)).toThrow(/migration/);
-        value.entries[0].data="eA==";
-        const {root,target}=fixture();fs.writeFileSync(target,JSON.stringify(value));
-        return expect(compactLock({cwd:root})).rejects.toThrow(/decompress/);
+    it("rejects V3 without changing the lock or creating a backup", async () => {
+        const {root, lock, target} = fixture();
+        const stored = {...lock, schemaVersion: 3, entryEncoding: "gzip-base64", entries: []};
+        const before = JSON.stringify(stored);
+        fs.writeFileSync(target, before);
+        expect(() => decodeLock(stored)).toThrow(/V3 is unsupported/);
+        await expect(compactLock({cwd: root})).rejects.toMatchObject({code: "UNSUPPORTED_SCHEMA"});
+        expect(fs.readFileSync(target, "utf8")).toBe(before);
+        expect(fs.existsSync(path.join(root, "review-learning", "backups"))).toBe(false);
     });
     it("recovers exact legacy proof bytes from prepared data and enriches V4 without rewriting learning outcomes",async()=>{
         const {root,lock,target}=fixture();const bytes=Buffer.from("Historical documentation\n");const proof={kind:"worktree_file",path:"gone.md",hash:hashBytes(bytes)};

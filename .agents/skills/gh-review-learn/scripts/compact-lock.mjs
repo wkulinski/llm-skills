@@ -2,8 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import {createHash} from "node:crypto";
-import {upgradeLock, validateLock, validateSources, validateInventory, sourceFingerprint, canonicalJson} from "./contracts.mjs";
-import {decodeLegacyV3} from "./legacy-v3.mjs";
+import {upgradeLock, validateSources, validateInventory, sourceFingerprint, canonicalJson} from "./contracts.mjs";
 import {withConsumerLock} from "./lock-store.mjs";
 import {createLearningStore, readLearningLock, durablePath, sameLearningState, readPrHistory} from "./learning-store.mjs";
 import {archiveAnalysis, proofsOf} from "./learning-history.mjs";
@@ -83,10 +82,10 @@ function recoverInputs(root, lock) {
     }
     return {versions, contexts, archives, operations, patches, inventory, directory, proofBytes};
 }
-/** Explicit lossless V1/V2/V3 -> plain JSON V4 migration, with exact original backup. */
+/** Explicit lossless V1/V2 -> plain JSON V4 migration, with exact original backup. */
 export async function compactLock({cwd = process.cwd(), dryRun = false, recoverHistory = false, fsOps = fs} = {}) {
     resolveArtifactCacheRoot(cwd);
-    return withConsumerLock({cwd, fsOps, readStored: (stored) => stored.schemaVersion === 3 ? validateLock(decodeLegacyV3(stored)) : stored.schemaVersion === 4 ? readLearningLock({cwd, fsOps}) : validateLock(stored)}, ({root, current, bytes, commit}) => {
+    return withConsumerLock({cwd, fsOps}, ({root, current, bytes, commit}) => {
         if (!current) { throw new Error("No consumer review-learning.lock.json to migrate"); }
         const fromVersion = JSON.parse(bytes).schemaVersion;
         const next = upgradeLock(current);
@@ -140,7 +139,7 @@ export async function compactLock({cwd = process.cwd(), dryRun = false, recoverH
     });
 }
 export async function main(argv = process.argv.slice(2), {cwd = process.cwd()} = {}) {
-    if (argv.length === 1 && ["--help", "-h"].includes(argv[0])) { return {code: 0, stdout: "Usage: compact-lock.mjs [--dry-run | --recover-history]\nExplicit V1/V2/V3 migration to durable plain JSON V4, with exact backup and recovery of available historical sources/proofs. No compression. V4 is a no-op; --recover-history can fill existing gaps with exact bytes from legacy working artifacts. Use status.mjs --pr N for targeted inspection.\n"}; }
+    if (argv.length === 1 && ["--help", "-h"].includes(argv[0])) { return {code: 0, stdout: "Usage: compact-lock.mjs [--dry-run | --recover-history]\nExplicit V1/V2 migration to durable plain JSON V4, with exact backup and recovery of available historical sources/proofs. V4 is a no-op by default. --recover-history can fill existing gaps with exact bytes from legacy working artifacts. Use status.mjs --pr N for targeted inspection.\n"}; }
     try {
         if (argv.length > 1 || argv.some((arg) => !["--dry-run", "--recover-history"].includes(arg))) { throw new Error("Expected --dry-run, --recover-history or no arguments"); }
         const data = await compactLock({cwd: requireRepositoryRoot(cwd), dryRun: argv[0] === "--dry-run", recoverHistory: argv[0] === "--recover-history"});

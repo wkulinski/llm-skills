@@ -11,7 +11,7 @@ const fail = (code, message) => Object.assign(new Error(message), {code});
 const digest = (bytes) => bytes === null ? null : createHash("sha256").update(bytes).digest("hex");
 
 /** The callback owns the claim across asynchronous refresh and validation. */
-export async function withConsumerLock({cwd = process.cwd(), repository, fsOps = fs, readStored}, work) {
+export async function withConsumerLock({cwd = process.cwd(), repository, fsOps = fs}, work) {
     const root = requireRepositoryRoot(cwd);
     const target = path.join(root, "review-learning.lock.json");
     const guard = `${target}.write-lock`;
@@ -29,7 +29,7 @@ export async function withConsumerLock({cwd = process.cwd(), repository, fsOps =
             return fsOps.readFileSync(target);
         };
         const bytes = read();
-        const current = bytes === null ? null : validateLock(readStored ? readStored(JSON.parse(bytes)) : decodeLock(JSON.parse(bytes), {cwd: root, fsOps}), repository);
+        const current = bytes === null ? null : validateLock(decodeLock(JSON.parse(bytes), {cwd: root, fsOps}), repository);
         const previousChanges = structuredClone(current?.documentationChanges ?? []);
         let committed = false;
         return await work({root, current, bytes, commit(next, {expectedLockHash, dryRun = false, compact = false, histories, contexts, inventory, archives}) {

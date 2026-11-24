@@ -4,8 +4,7 @@ Właścicielem formatu i walidacji jest `../scripts/contracts.mjs`. Wszystkie
 artefakty są JSON UTF-8, mają `schemaVersion`, `kind`, `repository`.
 Źródła GitHuba pozostają w V1. Przygotowanie i wynik używają V2;
 logiczny lock nadal ma kontrakt V1/V2, a nowe zapisy na dysku używają
-manifestu V4 i trwałych plików JSON. V1/V2 są czytelne bez migracji;
-porzucony skompresowany V3 przyjmuje wyłącznie jawny migrator.
+manifestu V4 i trwałych plików JSON. V1/V2 są czytelne bez migracji.
 Zmiana przechowywania nie podnosi `rules.analysis`.
 `repository` zawiera stabilne GraphQL `id`, bieżące `name` (`owner/name`) i
 `branch`. Zmiana dowolnego pola oznacza `REPOSITORY_CONFLICT`, bez zapisu.
@@ -114,14 +113,13 @@ node <skill_dir>/scripts/compact-lock.mjs
 node <skill_dir>/scripts/status.mjs --verify
 ```
 
-Migrator przyjmuje V1/V2/V3, zachowuje oryginał w
+Migrator przyjmuje V1/V2, zachowuje oryginał w
 `review-learning/backups/<sha256>.lock.json` i porównuje logiczną zawartość.
 Odzyskuje dostępne wersje źródeł z dotychczasowych danych roboczych,
 wykorzystane dowody z dokładnych obiektów Git lub zgodnych bajtów worktree,
 manifesty kontekstu oraz materiały zmian dokumentacji. Nie podstawia nowszych
 wersji pod historyczne hashe. Braki zapisuje w `history.gaps`; zachowanie
-oceny nie stanowi dowodu odzyskania jej wszystkich podstaw. Odczyt V3 jest
-ograniczony do migracji, a normalne zapisy nie używają pakowania/rozpakowywania.
+oceny nie stanowi dowodu odzyskania jej wszystkich podstaw.
 Ponowienie migracji V4 jest no-op. Opcjonalne `--recover-history` uzupełnia
 wyłącznie braki dokładnymi bajtami odzyskanymi z dawnych artefaktów i zachowuje
 zdarzenia operacji; nie zmienia ocen, dat ich wykonania ani decyzji. Kolejne
